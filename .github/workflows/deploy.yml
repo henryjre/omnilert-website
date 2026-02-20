@@ -1,0 +1,49 @@
+name: Deploy Omnilert
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: ${{ secrets.DROPLET_USER }}
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          script: |
+            set -e
+            cd /root/omnilert-website
+            git pull origin main
+            pnpm install --frozen-lockfile
+            pnpm -C apps/api migrate:master
+            pnpm -C apps/api migrate:tenant
+            TURBO_CONCURRENCY=1 pnpm build
+            pm2 restart omnilert-api || pm2 start "pnpm -C apps/api start" --name omnilert-api
+            pm2 restart omnilert-web || pm2 start "pnpm -C apps/web preview -- --host 127.0.0.1 --port 4173" --name omnilert-web
+            pm2 save
