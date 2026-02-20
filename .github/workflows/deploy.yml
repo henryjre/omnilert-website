@@ -38,7 +38,7 @@ jobs:
           key: ${{ secrets.DROPLET_SSH_KEY }}
           script: |
             set -e
-            APP_DIR="/home/deploy/omnilert-website"
+            APP_DIR="/home/${{ secrets.DROPLET_USER }}/omnilert-website"
             REPO_URL="https://github.com/${{ github.repository }}.git"
 
             # Load Node from nvm if available (common on droplets)
@@ -54,9 +54,11 @@ jobs:
             fi
 
             # Ensure pnpm is available in this non-interactive SSH session
+            export PNPM_HOME="$HOME/.local/share/pnpm"
+            export PATH="$PNPM_HOME:$PATH"
             if ! command -v pnpm >/dev/null 2>&1; then
-              corepack enable
-              corepack prepare pnpm@9.15.0 --activate
+              echo "pnpm is not installed for this user. Install pnpm first."
+              exit 1
             fi
 
             mkdir -p "$APP_DIR"
