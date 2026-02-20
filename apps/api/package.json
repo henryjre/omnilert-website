@@ -7,12 +7,12 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "migrate:master": "knex migrate:latest --knexfile knexfile.ts --env master",
-    "migrate:master:rollback": "knex migrate:rollback --knexfile knexfile.ts --env master",
+    "migrate:master": "tsx ./node_modules/knex/bin/cli.js migrate:latest --knexfile knexfile.ts --env master",
+    "migrate:master:rollback": "tsx ./node_modules/knex/bin/cli.js migrate:rollback --knexfile knexfile.ts --env master",
     "migrate:tenant": "tsx src/scripts/migrate-tenants.ts",
     "migrate:tenant:status": "tsx src/scripts/migration-status-tenants.ts",
     "migrate:tenant:rollback": "tsx src/scripts/rollback-tenants.ts",
-    "seed:master": "knex seed:run --knexfile knexfile.ts --env master",
+    "seed:master": "tsx ./node_modules/knex/bin/cli.js seed:run --knexfile knexfile.ts --env master",
     "clean": "rimraf dist"
   },
   "dependencies": {
