@@ -41,13 +41,13 @@ export function getCurrentSemiMonthRange(cutoff?: number): { date_from: string; 
 }
 
 /**
- * Search for employee by website user ID (x_website_id) and company_id
- * @param websiteUserId - The website user ID
+ * Search for employee by website user ID (x_website_key) and company_id
+ * @param websiteUserKey - The website user ID
  * @param companyId - The Odoo company ID
  * @returns Employee record or null
  */
-export async function getEmployeeByWebsiteUserId(
-  websiteUserId: string,
+export async function getEmployeeByWebsiteUserKey(
+  websiteUserKey: string,
   companyId: number
 ): Promise<{ id: number; name: string } | null> {
   try {
@@ -57,22 +57,22 @@ export async function getEmployeeByWebsiteUserId(
       [],
       {
         domain: [
-          ["x_website_id", "=", websiteUserId],
+          ["x_website_key", "=", websiteUserKey],
           ["company_id", "=", companyId],
         ],
-        fields: ["id", "name", "x_website_id", "company_id"],
+        fields: ["id", "name", "x_website_key", "company_id"],
         limit: 1,
       }
-    )) as Array<{ id: number; name: string; x_website_id: string; company_id: [number, string] }>;
+    )) as Array<{ id: number; name: string; x_website_key: string; company_id: [number, string] }>;
 
     if (!result || result.length === 0) {
-      logger.warn(`No employee found for website user ID: ${websiteUserId}, company: ${companyId}`);
+      logger.warn(`No employee found for website user ID: ${websiteUserKey}, company: ${companyId}`);
       return null;
     }
 
     return { id: result[0].id, name: result[0].name };
   } catch (err) {
-    logger.error(`Failed to get employee by website user ID ${websiteUserId}: ${err}`);
+    logger.error(`Failed to get employee by website user ID ${websiteUserKey}: ${err}`);
     throw err;
   }
 }
@@ -383,11 +383,11 @@ export async function createViewOnlyPayslip(
 
 /**
  * Get Employee Performance Index (EPI) data
- * @param websiteUserId - The website user ID (x_website_id)
+ * @param websiteUserKey - The website user ID (x_website_key)
  * @returns Employee EPI data or null if not found
  */
 export async function getEmployeeEPIData(
-  websiteUserId: string
+  websiteUserKey: string
 ): Promise<{
   id: number;
   employee_id: [number, string];
@@ -403,7 +403,7 @@ export async function getEmployeeEPIData(
       [],
       {
         domain: [
-          ["x_website_id", "=", websiteUserId],
+          ["x_website_key", "=", websiteUserKey],
           ["company_id", "=", 1], // Famous Belgian Waffle
         ],
         fields: [
@@ -426,13 +426,13 @@ export async function getEmployeeEPIData(
     }>;
 
     if (!result || result.length === 0) {
-      logger.warn(`No employee found for website user ID: ${websiteUserId}`);
+      logger.warn(`No employee found for website user ID: ${websiteUserKey}`);
       return null;
     }
 
     return result[0];
   } catch (err) {
-    logger.error(`Failed to get employee EPI data for website user ID ${websiteUserId}: ${err}`);
+    logger.error(`Failed to get employee EPI data for website user ID ${websiteUserKey}: ${err}`);
     throw err;
   }
 }
@@ -488,13 +488,13 @@ export async function getAllEmployeesWithEPI(
 
 /**
  * Get Employee Audit Ratings with pagination
- * @param websiteUserId - The website user ID (x_website_id as UUID string)
+ * @param websiteUserKey - The website user ID (x_website_key as UUID string)
  * @param page - Page number (default 1)
  * @param limit - Items per page (default 5)
  * @returns Paginated audit ratings with metadata
  */
 export async function getEmployeeAuditRatings(
-  websiteUserId: string,
+  websiteUserKey: string,
   page: number = 1,
   limit: number = 5
 ): Promise<{
@@ -516,13 +516,13 @@ export async function getEmployeeAuditRatings(
   try {
     const offset = (page - 1) * limit;
 
-    // Search for audit ratings by x_website_id
+    // Search for audit ratings by x_website_key
     const result = (await callOdooKw(
       "x_audit_ratings",
       "search_read",
       [],
       {
-        domain: [["x_website_id", "=", websiteUserId]],
+        domain: [["x_website_key", "=", websiteUserKey]],
         fields: ["id", "x_audit_date", "x_audit_code", "x_name", "x_rating", "x_employee_id"],
         order: "x_audit_date desc",
         offset,
@@ -542,7 +542,7 @@ export async function getEmployeeAuditRatings(
       "x_audit_ratings",
       "search_count",
       [],
-      { domain: [["x_website_id", "=", websiteUserId]] }
+      { domain: [["x_website_key", "=", websiteUserKey]] }
     )) as number;
 
     const total = countResult;
@@ -950,15 +950,15 @@ export async function updateWorkEntryDateStop(
 
 /**
  * Syncs user profile details to Odoo
- * 1. Finds res.partner by x_website_id (or by email as fallback)
+ * 1. Finds res.partner by x_website_key (or by email as fallback)
  * 2. Updates partner's email
  * 3. Finds all hr.employee records linked to that partner
  * 4. Updates each employee's work_email, private_email, private_phone, legal_name, birthday, sex
- * @param websiteUserId - The website user ID (UUID string) - optional if email is provided
+ * @param websiteUserKey - The website user ID (UUID string) - optional if email is provided
  * @param profileData - User profile data to sync
  */
 export async function syncUserProfileToOdoo(
-  websiteUserId: string | null,
+  websiteUserKey: string | null,
   profileData: {
     email: string;
     mobileNumber: string;
@@ -969,31 +969,31 @@ export async function syncUserProfileToOdoo(
 ): Promise<boolean> {
   try {
     let partnerSearchResult:
-      | Array<{ id: number; x_website_id?: string; email?: string }>
+      | Array<{ id: number; x_website_key?: string; email?: string }>
       | null = null;
 
-    // 1. Search for res.partner by x_website_id or by email
-    if (websiteUserId) {
+    // 1. Search for res.partner by x_website_key or by email
+    if (websiteUserKey) {
       partnerSearchResult = (await callOdooKw(
         "res.partner",
         "search_read",
         [],
-        { domain: [["x_website_id", "=", websiteUserId]], fields: ["id", "x_website_id", "email"] }
-      )) as Array<{ id: number; x_website_id?: string; email?: string }>;
+        { domain: [["x_website_key", "=", websiteUserKey]], fields: ["id", "x_website_key", "email"] }
+      )) as Array<{ id: number; x_website_key?: string; email?: string }>;
     }
 
-    // Fallback: search by email if x_website_id not found
+    // Fallback: search by email if x_website_key not found
     if (!partnerSearchResult || partnerSearchResult.length === 0) {
       partnerSearchResult = (await callOdooKw(
         "res.partner",
         "search_read",
         [],
-        { domain: [["email", "=", profileData.email]], fields: ["id", "x_website_id", "email"] }
-      )) as Array<{ id: number; x_website_id?: string; email?: string }>;
+        { domain: [["email", "=", profileData.email]], fields: ["id", "x_website_key", "email"] }
+      )) as Array<{ id: number; x_website_key?: string; email?: string }>;
     }
 
     if (!partnerSearchResult || partnerSearchResult.length === 0) {
-      logger.warn(`No res.partner found for x_website_id: ${websiteUserId} or email: ${profileData.email}`);
+      logger.warn(`No res.partner found for x_website_key: ${websiteUserKey} or email: ${profileData.email}`);
       return false;
     }
 
@@ -1065,25 +1065,25 @@ export async function syncUserProfileToOdoo(
 
 /**
  * Gets the PIN code from Odoo hr.employee
- * @param websiteUserId - The Omnilert user ID (UUID)
+ * @param websiteUserKey - The Omnilert user ID (UUID)
  * @param companyId - The Odoo company ID (branch ID)
  * @returns The PIN code string or null
  */
-export async function getCompanyPin(websiteUserId: string, companyId: number): Promise<string | null> {
+export async function getCompanyPin(websiteUserKey: string, companyId: number): Promise<string | null> {
   try {
     const result = (await callOdooKw(
       "hr.employee",
       "search_read",
       [],
       {
-        domain: [["x_website_id", "=", websiteUserId], ["company_id", "=", companyId]],
+        domain: [["x_website_key", "=", websiteUserKey], ["company_id", "=", companyId]],
         fields: ["pin"],
         limit: 1,
       }
     )) as Array<{ pin?: string | null }>;
 
     if (!result || result.length === 0) {
-      logger.warn(`No employee found for website user: ${websiteUserId}, company: ${companyId}`);
+      logger.warn(`No employee found for website user: ${websiteUserKey}, company: ${companyId}`);
       return null;
     }
 
@@ -1093,3 +1093,4 @@ export async function getCompanyPin(websiteUserId: string, companyId: number): P
     throw err;
   }
 }
+

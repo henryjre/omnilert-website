@@ -9,7 +9,7 @@ export async function list(req: Request, res: Response, next: NextFunction) {
   try {
     const tenantDb = req.tenantDb!;
     const users = await tenantDb('users')
-      .select('id', 'email', 'first_name', 'last_name', 'avatar_url', 'is_active', 'last_login_at', 'created_at')
+      .select('id', 'email', 'first_name', 'last_name', 'user_key', 'avatar_url', 'is_active', 'last_login_at', 'created_at')
       .orderBy('created_at', 'desc');
 
     // Attach roles and branches to each user
@@ -36,7 +36,7 @@ export async function list(req: Request, res: Response, next: NextFunction) {
 export async function create(req: Request, res: Response, next: NextFunction) {
   try {
     const tenantDb = req.tenantDb!;
-    const { email, password, firstName, lastName, roleIds, branchIds } = req.body;
+    const { email, password, firstName, lastName, userKey, roleIds, branchIds } = req.body;
 
     const passwordHash = await hashPassword(password);
 
@@ -46,6 +46,7 @@ export async function create(req: Request, res: Response, next: NextFunction) {
         password_hash: passwordHash,
         first_name: firstName,
         last_name: lastName,
+        user_key: userKey,
       })
       .returning('*');
 
@@ -70,7 +71,11 @@ export async function create(req: Request, res: Response, next: NextFunction) {
     }
 
     res.status(201).json({ success: true, data: user });
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.code === '23505' && String(err?.detail ?? '').includes('user_key')) {
+      next(new AppError(409, 'User key already exists'));
+      return;
+    }
     next(err);
   }
 }
@@ -84,13 +89,18 @@ export async function update(req: Request, res: Response, next: NextFunction) {
     if (req.body.email !== undefined) updates.email = req.body.email;
     if (req.body.firstName !== undefined) updates.first_name = req.body.firstName;
     if (req.body.lastName !== undefined) updates.last_name = req.body.lastName;
+    if (req.body.userKey !== undefined) updates.user_key = req.body.userKey;
     if (req.body.isActive !== undefined) updates.is_active = req.body.isActive;
 
     const [user] = await tenantDb('users').where({ id }).update(updates).returning('*');
     if (!user) throw new AppError(404, 'User not found');
 
     res.json({ success: true, data: user });
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.code === '23505' && String(err?.detail ?? '').includes('user_key')) {
+      next(new AppError(409, 'User key already exists'));
+      return;
+    }
     next(err);
   }
 }
@@ -179,7 +189,7 @@ export async function getMe(req: Request, res: Response, next: NextFunction) {
 
     const user = await tenantDb('users')
       .where({ id: userId })
-      .select('id', 'email', 'first_name', 'last_name', 'mobile_number', 'legal_name', 'birthday', 'gender', 'avatar_url', 'pin')
+      .select('id', 'email', 'first_name', 'last_name', 'user_key', 'mobile_number', 'legal_name', 'birthday', 'gender', 'avatar_url', 'pin')
       .first();
 
     if (!user) throw new AppError(404, 'User not found');
@@ -207,7 +217,7 @@ export async function updateMe(req: Request, res: Response, next: NextFunction) 
     if (!user) throw new AppError(404, 'User not found');
 
     // Sync to Odoo (fire and forget, don't wait for response)
-    syncUserProfileToOdoo(userId, {
+    syncUserProfileToOdoo(user.user_key ?? null, {
       email: email || user.email,
       mobileNumber: mobileNumber || user.mobile_number || "",
       legalName: legalName || user.legal_name || "",
@@ -250,7 +260,7 @@ export async function setPin(req: Request, res: Response, next: NextFunction) {
     // Get user to check if already has pin
     const existingUser = await tenantDb('users')
       .where({ id: userId })
-      .select('id', 'pin')
+      .select('id', 'pin', 'user_key')
       .first();
 
     if (!existingUser) throw new AppError(404, 'User not found');
@@ -260,12 +270,15 @@ export async function setPin(req: Request, res: Response, next: NextFunction) {
       res.json({ success: true, data: { pin: existingUser.pin } });
       return;
     }
+    if (!existingUser.user_key) {
+      throw new AppError(400, 'User key is required before fetching PIN');
+    }
 
     // Default company ID if not provided (use 1 as default)
     const odooCompanyId = companyId || 1;
 
     // Fetch pin from Odoo
-    const pin = await getCompanyPin(userId, odooCompanyId);
+    const pin = await getCompanyPin(existingUser.user_key, odooCompanyId);
 
     if (!pin) {
       throw new AppError(404, 'No PIN code found for this company');

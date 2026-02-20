@@ -13,7 +13,7 @@ export const odooShiftPayloadSchema = z.object({
   x_interim_form_id: z.union([z.number(), z.literal(false)]).optional(),
   x_role_color: z.number().optional(),
   x_role_name: z.string().optional(),
-  x_website_id: z.string().optional(),
+  x_website_key: z.string().uuid().optional(),
 }).superRefine((data, ctx) => {
   const action = String(data._action ?? '').toLowerCase();
   const isDeleteAction = action.includes('delete');

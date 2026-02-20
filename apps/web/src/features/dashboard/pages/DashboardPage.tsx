@@ -47,11 +47,18 @@ function PerformanceIndex() {
     setLoading(true);
     api.get('/dashboard/performance-index', { params: { page: 1 } })
       .then((res) => {
-        const epiData = res.data.data;
-        setEpiData(epiData);
-        setAuditRatings(epiData.auditRatings || []);
-        setPagination(epiData.pagination || null);
-        setCurrentUserEmployeeId(epiData.currentUserEmployeeId || null);
+        const nextData = res.data.data;
+        if (!nextData) {
+          setEpiData(null);
+          setAuditRatings([]);
+          setPagination(null);
+          setCurrentUserEmployeeId(null);
+          return;
+        }
+        setEpiData(nextData);
+        setAuditRatings(nextData.auditRatings || []);
+        setPagination(nextData.pagination || null);
+        setCurrentUserEmployeeId(nextData.currentUserEmployeeId || null);
       })
       .finally(() => setLoading(false));
   }, []);
@@ -74,8 +81,9 @@ function PerformanceIndex() {
     api
       .get('/dashboard/performance-index', { params: { page } })
       .then((res) => {
-        setAuditRatings(res.data.data.auditRatings || []);
-        setPagination(res.data.data.pagination || null);
+        const nextData = res.data.data;
+        setAuditRatings(nextData?.auditRatings || []);
+        setPagination(nextData?.pagination || null);
       })
       .finally(() => setRatingsLoading(false));
   }, [page, epiData]);
@@ -236,7 +244,8 @@ function PerformanceIndex() {
 
 function PayslipDetails() {
   const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [branchesLoading, setBranchesLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(false);
   const [allBranches, setAllBranches] = useState<any[]>([]);
@@ -266,10 +275,12 @@ function PayslipDetails() {
 
   // Fetch all branches for payslip controls (includes inactive)
   useEffect(() => {
+    setBranchesLoading(true);
     api
       .get('/dashboard/payslip-branches')
       .then((res) => setAllBranches(res.data.data || []))
-      .catch(() => setAllBranches([]));
+      .catch(() => setAllBranches([]))
+      .finally(() => setBranchesLoading(false));
   }, []);
 
   const fetchPayslip = (isRefresh = false) => {
@@ -295,8 +306,16 @@ function PayslipDetails() {
 
   // Initialize selected branch
   useEffect(() => {
-    if (allBranches.length > 0 && !selectedBranchOdooId && allBranches[0].odoo_branch_id) {
-      setSelectedBranchOdooId(allBranches[0].odoo_branch_id);
+    if (allBranches.length > 0 && !selectedBranchOdooId) {
+      const firstWithOdooId = allBranches.find((b) => b.odoo_branch_id);
+      if (firstWithOdooId?.odoo_branch_id) {
+        setSelectedBranchOdooId(firstWithOdooId.odoo_branch_id);
+      } else {
+        // No selectable Odoo branch IDs; avoid perpetual loading state.
+        setLoading(false);
+      }
+    } else if (allBranches.length === 0) {
+      setLoading(false);
     }
   }, [allBranches, selectedBranchOdooId]);
 
@@ -315,7 +334,7 @@ function PayslipDetails() {
   const cutoffLabel = selectedCutoff === 1 ? "1st Cutoff" : "2nd Cutoff";
   const isSecondCutoffDisabled = today <= 16;
 
-  if (loading) return <LoadingCard title="Payslip Details" />;
+  if (branchesLoading || loading) return <LoadingCard title="Payslip Details" />;
 
   return (
     <Card>

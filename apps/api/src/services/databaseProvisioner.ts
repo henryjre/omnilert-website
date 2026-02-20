@@ -90,6 +90,7 @@ async function createTenantTables(tenantDb: ReturnType<typeof db.getMasterDb>): 
     table.string('password_hash', 255).notNullable();
     table.string('first_name', 100).notNullable();
     table.string('last_name', 100).notNullable();
+    table.uuid('user_key').unique();
     table.string('avatar_url', 500);
     table.boolean('is_active').notNullable().defaultTo(true);
     table.timestamp('last_login_at');

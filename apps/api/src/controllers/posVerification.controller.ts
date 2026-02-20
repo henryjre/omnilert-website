@@ -178,7 +178,7 @@ export async function confirm(req: Request, res: Response, next: NextFunction) {
     }
 
     // Discount/refund/non-cash/token-pay orders: only the assigned cashier or an Administrator may act.
-    // Fallback: if cashier_user_id is NULL (x_website_id was absent from payload), allow any branch member.
+    // Fallback: if cashier_user_id is NULL (x_website_key was absent from payload), allow any branch member.
     if (
       verification.verification_type === 'discount_order' ||
       verification.verification_type === 'refund_order' ||
@@ -355,7 +355,7 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
     }
 
     // Discount/refund/non-cash/token-pay orders: only the assigned cashier or an Administrator may act.
-    // Fallback: if cashier_user_id is NULL (x_website_id was absent from payload), allow any branch member.
+    // Fallback: if cashier_user_id is NULL (x_website_key was absent from payload), allow any branch member.
     if (
       verification.verification_type === 'discount_order' ||
       verification.verification_type === 'refund_order' ||

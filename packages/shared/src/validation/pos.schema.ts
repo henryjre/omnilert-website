@@ -57,7 +57,7 @@ export const odooDiscountOrderPayloadSchema = z.object({
   amount_total: z.number(),
   x_session_name: z.string().optional(),
   x_company_name: z.string().optional(),
-  x_website_id: z.string().optional(),
+  x_website_key: z.string().uuid().optional(),
   x_order_lines: z.array(z.object({
     product_id: z.number().optional(),
     product_name: z.string(),
@@ -80,7 +80,7 @@ export const odooRefundOrderPayloadSchema = z.object({
   amount_total: z.number(),
   x_session_name: z.string().optional(),
   x_company_name: z.string().optional(),
-  x_website_id: z.string().optional(),
+  x_website_key: z.string().uuid().optional(),
   x_order_lines: z.array(z.object({
     product_id: z.number().optional(),
     product_name: z.string(),
@@ -103,7 +103,7 @@ export const odooNonCashOrderPayloadSchema = z.object({
   amount_total: z.number(),
   x_session_name: z.string().optional(),
   x_company_name: z.string().optional(),
-  x_website_id: z.string().optional(),
+  x_website_key: z.string().uuid().optional(),
   x_order_lines: z.array(z.object({
     product_id: z.number().optional(),
     product_name: z.string(),
@@ -131,8 +131,8 @@ export const odooTokenPayOrderPayloadSchema = z.object({
   amount_total: z.number(),
   x_session_name: z.string().optional(),
   x_company_name: z.string().optional(),
-  x_website_id: z.string().optional(),
-  x_customer_website_id: z.string().optional(),
+  x_website_key: z.string().uuid().optional(),
+  x_customer_website_key: z.string().uuid().optional(),
   x_discord_id: z.unknown().optional(),
   x_order_lines: z.array(z.object({
     product_id: z.number().optional(),

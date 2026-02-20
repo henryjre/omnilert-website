@@ -25,6 +25,15 @@ export async function resolveCompanyByOdooBranchId(odooCompanyId: number) {
   throw new AppError(404, `No company found for Odoo company_id: ${odooCompanyId}`);
 }
 
+async function resolveUserIdByUserKey(
+  tenantDb: Awaited<ReturnType<typeof db.getTenantDb>>,
+  userKey?: string | null,
+): Promise<string | null> {
+  if (!userKey) return null;
+  const user = await tenantDb('users').where({ user_key: userKey }).select('id').first();
+  return user?.id ?? null;
+}
+
 export async function processPosVerification(
   companyDbName: string,
   payload: {
@@ -246,7 +255,7 @@ export async function processEmployeeShift(
     x_employee_contact_name: string;
     x_role_color: number;
     x_role_name: string;
-    x_website_id?: string;
+    x_website_key?: string;
     [key: string]: unknown;
   },
 ) {
@@ -262,12 +271,7 @@ export async function processEmployeeShift(
   const shiftEnd = new Date(payload.end_datetime + ' UTC');
   const allocatedHours = (shiftEnd.getTime() - shiftStart.getTime()) / 3600000;
 
-  // Resolve internal user_id from x_website_id if present
-  let userId: string | null = null;
-  if (payload.x_website_id) {
-    const user = await tenantDb('users').where({ id: payload.x_website_id }).first();
-    if (user) userId = user.id;
-  }
+  const userId = await resolveUserIdByUserKey(tenantDb, payload.x_website_key);
 
   const existing = await tenantDb('employee_shifts')
     .where({ odoo_shift_id: payload.id, branch_id: branch.id })
@@ -281,7 +285,7 @@ export async function processEmployeeShift(
       'start_datetime', 'end_datetime',
       'x_role_name', 'x_role_color',
       'x_employee_contact_name', 'x_employee_avatar',
-      'x_website_id',
+      'x_website_key',
     ];
     const existingPayload = existing.odoo_payload as Record<string, unknown>;
     const changes: Record<string, { from: unknown; to: unknown }> = {};
@@ -695,7 +699,7 @@ export async function processDiscountOrder(
     amount_total: number;
     x_session_name?: string;
     x_company_name?: string;
-    x_website_id?: string;
+    x_website_key?: string;
     x_order_lines: {
       product_name: string;
       qty: number;
@@ -730,6 +734,8 @@ export async function processDiscountOrder(
     if (session) posSessionId = session.id;
   }
 
+  const cashierUserId = await resolveUserIdByUserKey(tenantDb, payload.x_website_key);
+
   const [verification] = await tenantDb('pos_verifications')
     .insert({
       branch_id: branch.id,
@@ -739,7 +745,7 @@ export async function processDiscountOrder(
       amount: payload.amount_total,
       status: 'pending',
       verification_type: 'discount_order',
-      cashier_user_id: payload.x_website_id || null,
+      cashier_user_id: cashierUserId,
     })
     .returning('*');
 
@@ -769,7 +775,7 @@ export async function processRefundOrder(
     amount_total: number;
     x_session_name?: string;
     x_company_name?: string;
-    x_website_id?: string;
+    x_website_key?: string;
     x_order_lines: {
       product_name: string;
       qty: number;
@@ -799,6 +805,8 @@ export async function processRefundOrder(
     if (session) posSessionId = session.id;
   }
 
+  const cashierUserId = await resolveUserIdByUserKey(tenantDb, payload.x_website_key);
+
   const [verification] = await tenantDb('pos_verifications')
     .insert({
       branch_id: branch.id,
@@ -808,7 +816,7 @@ export async function processRefundOrder(
       amount: payload.amount_total,
       status: 'pending',
       verification_type: 'refund_order',
-      cashier_user_id: payload.x_website_id || null,
+      cashier_user_id: cashierUserId,
     })
     .returning('*');
 
@@ -838,8 +846,8 @@ export async function processTokenPayOrder(
     amount_total: number;
     x_session_name?: string;
     x_company_name?: string;
-    x_website_id?: string;
-    x_customer_website_id?: string;
+    x_website_key?: string;
+    x_customer_website_key?: string;
     x_order_lines: {
       product_name: string;
       qty: number;
@@ -869,6 +877,9 @@ export async function processTokenPayOrder(
     if (session) posSessionId = session.id;
   }
 
+  const cashierUserId = await resolveUserIdByUserKey(tenantDb, payload.x_website_key);
+  const customerUserId = await resolveUserIdByUserKey(tenantDb, payload.x_customer_website_key);
+
   const [verification] = await tenantDb('pos_verifications')
     .insert({
       branch_id: branch.id,
@@ -878,8 +889,8 @@ export async function processTokenPayOrder(
       amount: payload.amount_total,
       status: 'pending',
       verification_type: 'token_pay_order',
-      cashier_user_id: payload.x_website_id || null,
-      customer_user_id: payload.x_customer_website_id || null,
+      cashier_user_id: cashierUserId,
+      customer_user_id: customerUserId,
     })
     .returning('*');
 
@@ -909,7 +920,7 @@ export async function processNonCashOrder(
     amount_total: number;
     x_session_name?: string;
     x_company_name?: string;
-    x_website_id?: string;
+    x_website_key?: string;
     x_order_lines: {
       product_name: string;
       qty: number;
@@ -944,6 +955,8 @@ export async function processNonCashOrder(
     if (session) posSessionId = session.id;
   }
 
+  const cashierUserId = await resolveUserIdByUserKey(tenantDb, payload.x_website_key);
+
   const [verification] = await tenantDb('pos_verifications')
     .insert({
       branch_id: branch.id,
@@ -953,7 +966,7 @@ export async function processNonCashOrder(
       amount: payload.amount_total,
       status: 'pending',
       verification_type: 'non_cash_order',
-      cashier_user_id: payload.x_website_id || null,
+      cashier_user_id: cashierUserId,
     })
     .returning('*');
 

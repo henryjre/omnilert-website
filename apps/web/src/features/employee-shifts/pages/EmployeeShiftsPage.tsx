@@ -27,7 +27,8 @@ const FIELD_LABELS: Record<string, string> = {
   x_role_color: 'Duty Color',
   x_employee_contact_name: 'Employee',
   x_employee_avatar: 'Avatar',
-  x_website_id: 'User Link',
+  x_website_key: 'User Key',
+  x_customer_website_key: 'Customer User Key',
 };
 
 const SHIFT_STATUS_CONFIG: Record<string, { label: string; cls: string }> = {

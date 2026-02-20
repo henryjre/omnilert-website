@@ -53,6 +53,15 @@ export type {
 } from './validation/role.schema.js';
 
 export {
+  createUserSchema,
+  updateUserSchema,
+} from './validation/user.schema.js';
+export type {
+  CreateUserInput,
+  UpdateUserInput,
+} from './validation/user.schema.js';
+
+export {
   odooPosVerificationPayloadSchema,
   odooPosSessionPayloadSchema,
   odooDiscountOrderPayloadSchema,

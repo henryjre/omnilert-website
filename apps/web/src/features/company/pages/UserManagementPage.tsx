@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import axios from 'axios';
 import { Card, CardHeader, CardBody } from '@/shared/components/ui/Card';
 import { Button } from '@/shared/components/ui/Button';
 import { Input } from '@/shared/components/ui/Input';
@@ -10,6 +11,7 @@ import { PERMISSIONS } from '@omnilert/shared';
 import { Plus, Pencil, Save, X, Copy, Check, Archive, ArchiveRestore, Trash2 } from 'lucide-react';
 
 type UserFilter = 'all' | 'active' | 'archived';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function UserManagementPage() {
   const [users, setUsers] = useState<any[]>([]);
@@ -23,13 +25,17 @@ export function UserManagementPage() {
     password: '',
     firstName: '',
     lastName: '',
+    userKey: '',
     roleIds: [] as string[],
     branchIds: [] as string[],
   });
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [editUserKey, setEditUserKey] = useState('');
   const [editRoleIds, setEditRoleIds] = useState<string[]>([]);
   const [editBranchIds, setEditBranchIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [copiedUserId, setCopiedUserId] = useState<string | null>(null);
   const [deleteConfirmUserId, setDeleteConfirmUserId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -86,11 +92,38 @@ export function UserManagementPage() {
     }
   };
 
-  const copyUserId = (id: string) => {
-    navigator.clipboard.writeText(id).then(() => {
+  const copyUserId = async (id: string) => {
+    const markCopied = () => {
       setCopiedUserId(id);
       setTimeout(() => setCopiedUserId(null), 2000);
-    });
+    };
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(id);
+        markCopied();
+        return;
+      }
+    } catch {
+      // Fall back to execCommand-based copy for non-secure contexts.
+    }
+
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = id;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      const copied = document.execCommand('copy');
+      document.body.removeChild(textarea);
+      if (copied) {
+        markCopied();
+      }
+    } catch {
+      // No-op: keep UI stable even if copy is blocked by browser policy.
+    }
   };
 
   const fetchData = async () => {
@@ -121,10 +154,25 @@ export function UserManagementPage() {
   }, []);
 
   const createUser = async () => {
-    await api.post('/users', formData);
-    setShowForm(false);
-    setFormData({ email: '', password: '', firstName: '', lastName: '', roleIds: [], branchIds: [] });
-    fetchData();
+    const userKey = formData.userKey.trim();
+    if (!UUID_RE.test(userKey)) {
+      setCreateError('User Key must be a valid UUID.');
+      return;
+    }
+
+    try {
+      setCreateError(null);
+      await api.post('/users', { ...formData, userKey });
+      setShowForm(false);
+      setFormData({ email: '', password: '', firstName: '', lastName: '', userKey: '', roleIds: [], branchIds: [] });
+      fetchData();
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        setCreateError(err.response?.data?.error || 'Failed to create user');
+      } else {
+        setCreateError('Failed to create user');
+      }
+    }
   };
 
   const archiveUser = async (id: string) => {
@@ -193,27 +241,46 @@ export function UserManagementPage() {
 
   const startEditing = (user: any) => {
     setEditingUserId(user.id);
+    setEditUserKey(user.user_key || '');
     setEditRoleIds(user.roles?.map((r: any) => r.id) || []);
     setEditBranchIds(user.branches?.map((b: any) => b.id) || []);
   };
 
   const cancelEditing = () => {
     setEditingUserId(null);
+    setEditUserKey('');
     setEditRoleIds([]);
     setEditBranchIds([]);
   };
 
   const saveEditing = async () => {
     if (!editingUserId) return;
+    const trimmedUserKey = editUserKey.trim();
+    if (trimmedUserKey && !UUID_RE.test(trimmedUserKey)) {
+      setSaveError('User Key must be a valid UUID.');
+      return;
+    }
+
     setSaving(true);
     try {
-      await Promise.all([
+      setSaveError(null);
+      const updates: Promise<any>[] = [
         api.put(`/users/${editingUserId}/roles`, { roleIds: editRoleIds }),
         api.put(`/users/${editingUserId}/branches`, { branchIds: editBranchIds }),
-      ]);
+      ];
+      if (trimmedUserKey) {
+        updates.push(api.put(`/users/${editingUserId}`, { userKey: trimmedUserKey }));
+      }
+
+      await Promise.all(updates);
       setEditingUserId(null);
       fetchData();
     } catch (err) {
+      if (axios.isAxiosError(err)) {
+        setSaveError(err.response?.data?.error || 'Failed to save user');
+      } else {
+        setSaveError('Failed to save user');
+      }
       console.error('Failed to save:', err);
     } finally {
       setSaving(false);
@@ -280,6 +347,13 @@ export function UserManagementPage() {
               value={formData.password}
               onChange={(e) => setFormData({ ...formData, password: e.target.value })}
             />
+            <Input
+              label="User Key"
+              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+              value={formData.userKey}
+              onChange={(e) => setFormData({ ...formData, userKey: e.target.value })}
+              required
+            />
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-700">Roles</label>
               <div className="flex flex-wrap gap-2">
@@ -320,13 +394,14 @@ export function UserManagementPage() {
               </div>
             </div>
             <div className="flex gap-2">
-              <Button onClick={createUser} disabled={!formData.email || !formData.password || !formData.firstName}>
+              <Button onClick={createUser} disabled={!formData.email || !formData.password || !formData.firstName || !formData.userKey}>
                 Create User
               </Button>
               <Button variant="ghost" onClick={() => setShowForm(false)}>
                 Cancel
               </Button>
             </div>
+            {createError && <p className="text-sm text-red-600">{createError}</p>}
           </CardBody>
         </Card>
       )}
@@ -435,6 +510,7 @@ export function UserManagementPage() {
                         {user.first_name} {user.last_name}
                       </p>
                       <p className="text-sm text-gray-500">{user.email}</p>
+                      <p className="text-xs text-gray-400">User Key: {user.user_key || 'Not set'}</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -520,6 +596,11 @@ export function UserManagementPage() {
 
                 {isEditing && (
                   <div className="mt-4 space-y-3 border-t border-gray-100 pt-4">
+                    <Input
+                      label="User Key"
+                      value={editUserKey}
+                      onChange={(e) => setEditUserKey(e.target.value)}
+                    />
                     <div>
                       <label className="mb-1 block text-sm font-medium text-gray-700">Roles</label>
                       <div className="flex flex-wrap gap-2">
@@ -569,6 +650,7 @@ export function UserManagementPage() {
                         Cancel
                       </Button>
                     </div>
+                    {saveError && <p className="text-sm text-red-600">{saveError}</p>}
                   </div>
                 )}
               </CardBody>

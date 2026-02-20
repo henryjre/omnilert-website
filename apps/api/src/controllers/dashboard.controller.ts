@@ -2,27 +2,34 @@ import type { Request, Response, NextFunction } from 'express';
 import { db } from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
-import { getEmployeeByWebsiteUserId, getEmployeePayslipData, createViewOnlyPayslip, getEmployeeEPIData, getEmployeeAuditRatings, getAllEmployeesWithEPI } from '../services/odoo.service.js';
+import { getEmployeeByWebsiteUserKey, getEmployeePayslipData, createViewOnlyPayslip, getEmployeeEPIData, getEmployeeAuditRatings, getAllEmployeesWithEPI } from '../services/odoo.service.js';
 
 export async function getPerformanceIndex(req: Request, res: Response, next: NextFunction) {
   try {
-    // Get user ID from JWT
+    const tenantDb = req.tenantDb!;
     const userId = req.user!.sub;
+    const currentUser = await tenantDb('users').where({ id: userId }).select('user_key').first();
+    const userKey = currentUser?.user_key as string | undefined;
+
+    if (!userKey) {
+      res.json({ success: true, data: null });
+      return;
+    }
 
     // Get page from query params (default 1)
     const pageParam = req.query.page as string | undefined;
     const page = pageParam ? parseInt(pageParam, 10) : 1;
 
     // Get employee EPI data using website user ID
-    const epiData = await getEmployeeEPIData(userId);
+    const epiData = await getEmployeeEPIData(userKey);
 
     if (!epiData) {
       res.json({ success: true, data: null });
       return;
     }
 
-    // Get audit ratings with pagination using x_website_id
-    const auditRatings = await getEmployeeAuditRatings(userId, page);
+    // Get audit ratings with pagination using x_website_key
+    const auditRatings = await getEmployeeAuditRatings(userKey, page);
 
     // Return the EPI data with audit ratings
     res.json({ 
@@ -45,6 +52,7 @@ export async function getPerformanceIndex(req: Request, res: Response, next: Nex
 
 export async function getPayslip(req: Request, res: Response, next: NextFunction) {
   try {
+    const tenantDb = req.tenantDb!;
     // Get companyId (Odoo company ID) from query params
     const companyIdParam = req.query.companyId as string | undefined;
     
@@ -65,11 +73,19 @@ export async function getPayslip(req: Request, res: Response, next: NextFunction
       throw new AppError(400, "Invalid cutoff. Must be 1 or 2.");
     }
 
-    // Get the user ID from JWT
+    // Get the user key from tenant user record
     const userId = req.user!.sub;
+    const currentUser = await tenantDb('users').where({ id: userId }).select('user_key').first();
+    const userKey = currentUser?.user_key as string | undefined;
 
-    // Search for employee by x_website_id = user ID (the Omnilert user ID) and company_id
-    const employee = await getEmployeeByWebsiteUserId(userId, odooCompanyId);
+    if (!userKey) {
+      logger.warn(`No user_key set for user ID: ${userId}`);
+      res.json({ success: true, data: null });
+      return;
+    }
+
+    // Search for employee by x_website_key and company_id
+    const employee = await getEmployeeByWebsiteUserKey(userKey, odooCompanyId);
 
     if (!employee) {
       logger.warn(`No employee found for user ID: ${userId}`);
