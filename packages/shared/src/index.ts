@@ -55,10 +55,12 @@ export type {
 export {
   createUserSchema,
   updateUserSchema,
+  changeMyPasswordSchema,
 } from './validation/user.schema.js';
 export type {
   CreateUserInput,
   UpdateUserInput,
+  ChangeMyPasswordInput,
 } from './validation/user.schema.js';
 
 export {

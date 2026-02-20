@@ -3,7 +3,13 @@ import multer from 'multer';
 import { authenticate } from '../middleware/auth.js';
 import { resolveCompany } from '../middleware/companyResolver.js';
 import { requirePermission } from '../middleware/rbac.js';
-import { PERMISSIONS, assignRolesSchema, createUserSchema, updateUserSchema } from '@omnilert/shared';
+import {
+  PERMISSIONS,
+  assignRolesSchema,
+  createUserSchema,
+  updateUserSchema,
+  changeMyPasswordSchema,
+} from '@omnilert/shared';
 import { validateBody } from '../middleware/validateRequest.js';
 import * as userController from '../controllers/user.controller.js';
 
@@ -24,6 +30,7 @@ router.use(authenticate, resolveCompany);
 
 router.get('/me', userController.getMe);
 router.put('/me', userController.updateMe);
+router.post('/me/password', validateBody(changeMyPasswordSchema), userController.changeMyPassword);
 router.get('/me/pin', userController.getPin);
 router.post('/me/pin', userController.setPin);
 router.post('/me/avatar', avatarUpload.single('avatar'), userController.uploadAvatar);

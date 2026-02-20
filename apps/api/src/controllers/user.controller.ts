@@ -1,9 +1,11 @@
 import type { Request, Response, NextFunction } from 'express';
-import { hashPassword } from '../utils/password.js';
+import crypto from 'crypto';
+import { comparePassword, hashPassword } from '../utils/password.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import { syncUserProfileToOdoo, getCompanyPin } from '../services/odoo.service.js';
 import { uploadFile, deleteFolder } from '../services/storage.service.js';
+import { verifyRefreshToken } from '../utils/jwt.js';
 
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
@@ -246,6 +248,55 @@ export async function getPin(req: Request, res: Response, next: NextFunction) {
     if (!user) throw new AppError(404, 'User not found');
 
     res.json({ success: true, data: { pin: user.pin } });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function changeMyPassword(req: Request, res: Response, next: NextFunction) {
+  try {
+    const tenantDb = req.tenantDb!;
+    const userId = req.user!.sub;
+    const { currentPassword, newPassword, currentRefreshToken } = req.body;
+
+    if (currentPassword === newPassword) {
+      throw new AppError(400, 'New password must be different from current password');
+    }
+
+    const user = await tenantDb('users')
+      .where({ id: userId })
+      .select('id', 'password_hash')
+      .first();
+
+    if (!user) throw new AppError(404, 'User not found');
+
+    const isCurrentValid = await comparePassword(currentPassword, user.password_hash);
+    if (!isCurrentValid) {
+      throw new AppError(400, 'Current password is incorrect');
+    }
+
+    const passwordHash = await hashPassword(newPassword);
+    // Ensure provided refresh token belongs to this user/session context
+    const refreshPayload = verifyRefreshToken(currentRefreshToken);
+    if (refreshPayload.sub !== userId || refreshPayload.companyDbName !== req.user!.companyDbName) {
+      throw new AppError(401, 'Invalid current session token');
+    }
+
+    const currentTokenHash = crypto.createHash('sha256').update(currentRefreshToken).digest('hex');
+
+    await tenantDb.transaction(async (trx) => {
+      await trx('users')
+        .where({ id: userId })
+        .update({ password_hash: passwordHash, updated_at: new Date() });
+
+      // Revoke every other session token; keep current session active.
+      await trx('refresh_tokens')
+        .where({ user_id: userId, is_revoked: false })
+        .whereNot({ token_hash: currentTokenHash })
+        .update({ is_revoked: true });
+    });
+
+    res.json({ success: true, message: 'Password updated. Other sessions were logged out.' });
   } catch (err) {
     next(err);
   }

@@ -20,5 +20,12 @@ export const updateUserSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
+export const changeMyPasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(6),
+  currentRefreshToken: z.string().min(1),
+});
+
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
+export type ChangeMyPasswordInput = z.infer<typeof changeMyPasswordSchema>;
