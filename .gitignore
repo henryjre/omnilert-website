@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+dist-node/
+.turbo/
+coverage/
+
+# Runtime artifacts
+uploads/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Local environment files (keep examples tracked)
+**/.env
+**/.env.local
+**/.env.development
+**/.env.production
+!**/.env.example
+
+# Editor and workspace metadata
+.cursor/
+.claude/
+.vscode/
+.idea/
+*.swp
+
+# OS files
+.DS_Store
