@@ -38,6 +38,7 @@ jobs:
           key: ${{ secrets.DROPLET_SSH_KEY }}
           script: |
             set -e
+            export CI=true
             APP_DIR="/home/${{ secrets.DROPLET_USER }}/omnilert-website"
             REPO_URL="https://github.com/${{ github.repository }}.git"
 
@@ -69,7 +70,7 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
             git clean -fd
-            pnpm install --frozen-lockfile
+            pnpm install --frozen-lockfile --force
             pnpm -C apps/api migrate:master
             pnpm -C apps/api migrate:tenant
             TURBO_CONCURRENCY=1 pnpm build
