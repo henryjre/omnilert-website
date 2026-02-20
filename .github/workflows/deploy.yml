@@ -38,8 +38,16 @@ jobs:
           key: ${{ secrets.DROPLET_SSH_KEY }}
           script: |
             set -e
-            cd /home/deploy/omnilert-website
-            git pull origin main
+            APP_DIR="/home/deploy/omnilert-website"
+            REPO_URL="https://github.com/${{ github.repository }}.git"
+            mkdir -p "$APP_DIR"
+            cd "$APP_DIR"
+            if [ ! -d .git ]; then
+              git clone "$REPO_URL" .
+            fi
+            git fetch origin main
+            git reset --hard origin/main
+            git clean -fd
             pnpm install --frozen-lockfile
             pnpm -C apps/api migrate:master
             pnpm -C apps/api migrate:tenant
