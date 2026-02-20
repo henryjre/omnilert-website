@@ -340,9 +340,13 @@ async function createTenantTables(tenantDb: ReturnType<typeof db.getMasterDb>): 
 
 async function seedDefaultData(tenantDb: ReturnType<typeof db.getMasterDb>): Promise<void> {
   // Seed permissions
+  const categories = PERMISSION_CATEGORIES as Record<
+    string,
+    { label: string; permissions: string[] }
+  >;
   const permissionRows: { key: string; name: string; description: string; category: string }[] =
     [];
-  for (const [category, config] of Object.entries(PERMISSION_CATEGORIES)) {
+  for (const [category, config] of Object.entries(categories)) {
     for (const permKey of config.permissions) {
       permissionRows.push({
         key: permKey,
@@ -350,7 +354,7 @@ async function seedDefaultData(tenantDb: ReturnType<typeof db.getMasterDb>): Pro
           .split('.')
           .pop()!
           .replace(/_/g, ' ')
-          .replace(/\b\w/g, (c) => c.toUpperCase()),
+          .replace(/\b\w/g, (c: string) => c.toUpperCase()),
         description: `Permission: ${permKey}`,
         category,
       });
