@@ -1,4 +1,4 @@
-import { PERMISSIONS } from './permissions';
+import { PERMISSIONS } from './permissions.js';
 
 export const SYSTEM_ROLES = {
   ADMINISTRATOR: 'Administrator',
