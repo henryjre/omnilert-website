@@ -2,7 +2,7 @@ import { db } from '../config/database.js';
 import { provisionTenantDatabase } from './databaseProvisioner.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { getTenantMigrationStatus, updateCompanyMigrationState } from './tenantMigration.service.js';
-import { deleteFile, deleteFolder, deletePrefixRecursive } from './storage.service.js';
+import { deleteFile, deleteFolder, deletePrefixRecursive, getCompanyStorageRoot } from './storage.service.js';
 import * as superAdminService from './superAdmin.service.js';
 import { getIO } from '../config/socket.js';
 import { env } from '../config/env.js';
@@ -487,11 +487,13 @@ export async function deleteCurrentCompany(
 
   emitForceLogoutToUsers(tenantUserIds, input.companyId, input.userId);
 
-  const prefixDeleteResult = await deletePrefixRecursive(`${String(company.slug)}/`);
+  const companyStorageRoot = getCompanyStorageRoot(String(company.slug));
+  const prefixDeleteResult = await deletePrefixRecursive(`${companyStorageRoot}/`);
   logger.info(
     {
       companyId: input.companyId,
       companySlug: company.slug,
+      companyStorageRoot,
       prefix: prefixDeleteResult.prefix,
       attemptedCount: prefixDeleteResult.attemptedCount,
       deletedCount: prefixDeleteResult.deletedCount,

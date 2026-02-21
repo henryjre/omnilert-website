@@ -92,6 +92,15 @@ function normalizePathSegment(segment: string): string {
     .trim();
 }
 
+export function getCompanyStorageRoot(companySlug: string): string {
+  const slug = normalizePathSegment(String(companySlug));
+  const envSuffix = env.NODE_ENV === 'production' ? 'prod' : 'dev';
+  if (!slug) {
+    return envSuffix;
+  }
+  return `${slug}-${envSuffix}`;
+}
+
 export function buildTenantStoragePrefix(companyStorageRoot: string, ...parts: string[]): string {
   const segments = [companyStorageRoot, ...parts]
     .map((segment) => normalizePathSegment(String(segment)))

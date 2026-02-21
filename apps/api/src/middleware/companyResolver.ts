@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import type { Knex } from 'knex';
 import { db } from '../config/database.js';
+import { getCompanyStorageRoot } from '../services/storage.service.js';
 
 declare global {
   namespace Express {
@@ -51,7 +52,7 @@ export async function resolveCompany(
       companyId: String(company.id),
       companySlug: String(company.slug),
       companyName: String(company.name),
-      companyStorageRoot: String(company.slug),
+      companyStorageRoot: getCompanyStorageRoot(String(company.slug)),
     };
     next();
   } catch {
