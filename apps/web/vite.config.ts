@@ -9,6 +9,11 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  preview: {
+    host: true,
+    port: 4173,
+    allowedHosts: ['omnilert.app', 'www.omnilert.app'],
+  },
   server: {
     port: 5173,
     proxy: {
