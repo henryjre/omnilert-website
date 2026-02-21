@@ -807,11 +807,25 @@ export function ScheduleTab() {
   const [selectedShift, setSelectedShift] = useState<any | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [currentMonth, setCurrentMonth] = useState<Date>(() => new Date());
+  const [page, setPage] = useState(1);
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined'
+      ? window.matchMedia('(max-width: 639px)').matches
+      : false,
+  );
 
   const socket = useSocket('/employee-shifts');
   const currentUser = useAuthStore((s) => s.user);
   const { hasPermission } = usePermission();
   const canApprove = hasPermission(PERMISSIONS.SHIFT_APPROVE_AUTHORIZATIONS);
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 639px)');
+    const handleChange = () => setIsMobile(media.matches);
+    handleChange();
+    media.addEventListener('change', handleChange);
+    return () => media.removeEventListener('change', handleChange);
+  }, []);
 
   useEffect(() => {
     Promise.all([api.get('/account/schedule'), api.get('/account/schedule-branches')])
@@ -968,6 +982,27 @@ export function ScheduleTab() {
     return filtered;
   }, [shifts, activeTab, filters]);
 
+  const listPageSize = isMobile ? 6 : 12;
+  const totalListPages = Math.max(1, Math.ceil(visibleShifts.length / listPageSize));
+  const pagedShifts = visibleShifts.slice((page - 1) * listPageSize, page * listPageSize);
+
+  useEffect(() => {
+    setPage(1);
+  }, [
+    activeTab,
+    filters.branchId,
+    filters.dateFrom,
+    filters.dateTo,
+    filters.sortBy,
+    filters.sortOrder,
+    view,
+    isMobile,
+  ]);
+
+  useEffect(() => {
+    setPage((prev) => Math.min(prev, totalListPages));
+  }, [totalListPages]);
+
   const grouped: Record<string, any[]> = {};
   for (const s of visibleShifts) {
     const k = dayKey(s.shift_start);
@@ -1020,13 +1055,16 @@ export function ScheduleTab() {
   return (
     <>
       <div className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <div className="flex flex-wrap items-center justify-center gap-2">
             {TABS.map((tab) => (
               <button
                 key={tab.key}
                 type="button"
-                onClick={() => setActiveTab(tab.key)}
+                onClick={() => {
+                  setActiveTab(tab.key);
+                  setPage(1);
+                }}
                 className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
                   activeTab === tab.key
                     ? 'bg-primary-600 text-white'
@@ -1038,7 +1076,7 @@ export function ScheduleTab() {
             ))}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-center gap-2">
             <button
               onClick={() => setView('list')}
               className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
@@ -1074,7 +1112,7 @@ export function ScheduleTab() {
               <Filter className="h-4 w-4 text-gray-500" />
               <span className="text-sm font-medium text-gray-700">Filters</span>
               {hasActiveFilters && (
-                <Badge variant="info">Active</Badge>
+                <Badge variant="info">Filtered</Badge>
               )}
             </div>
             {filtersOpen ? <ChevronUp className="h-4 w-4 text-gray-500" /> : <ChevronDown className="h-4 w-4 text-gray-500" />}
@@ -1174,16 +1212,42 @@ export function ScheduleTab() {
             </CardBody>
           </Card>
         ) : view === 'list' ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {visibleShifts.map((s) => (
-              <MyShiftCard
-                key={s.id}
-                shift={s}
-                branchName={s.branch_name ?? "Unknown Branch"}
-                onClick={() => openDetail(s.id)}
-                onEndShift={handleEndShift}
-              />
-            ))}
+          <div className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {pagedShifts.map((s) => (
+                <MyShiftCard
+                  key={s.id}
+                  shift={s}
+                  branchName={s.branch_name ?? "Unknown Branch"}
+                  onClick={() => openDetail(s.id)}
+                  onEndShift={handleEndShift}
+                />
+              ))}
+            </div>
+
+            {totalListPages > 1 && (
+              <div className="flex items-center justify-between text-sm text-gray-600">
+                <span>
+                  Page {page} of {totalListPages}
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                    disabled={page === 1}
+                    className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => setPage((prev) => Math.min(totalListPages, prev + 1))}
+                    disabled={page === totalListPages}
+                    className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="space-y-4">

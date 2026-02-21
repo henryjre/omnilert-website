@@ -28,8 +28,17 @@ export const useBranchStore = create<BranchState>()((set, get) => ({
       const res = await api.get('/branches');
       const data: Branch[] = res.data.data || [];
       set({ branches: data });
-      // Auto-select all branches on first load
-      if (get().selectedBranchIds.length === 0) {
+      const currentSelected = get().selectedBranchIds;
+      const validIds = new Set(data.map((b) => b.id));
+      const sanitizedSelection = currentSelected.filter((id) => validIds.has(id));
+
+      // Remove stale branch IDs from selection (e.g., deleted/inactive branch no longer returned).
+      if (sanitizedSelection.length !== currentSelected.length) {
+        set({ selectedBranchIds: sanitizedSelection });
+      }
+
+      // Auto-select all branches when nothing valid is selected.
+      if (sanitizedSelection.length === 0) {
         set({ selectedBranchIds: data.map((b) => b.id) });
       }
     } finally {

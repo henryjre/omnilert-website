@@ -8,6 +8,7 @@ export const createUserSchema = z.object({
   firstName: z.string().min(1),
   lastName: z.string().min(1),
   userKey: uuid,
+  employeeNumber: z.number().int().positive().optional(),
   roleIds: z.array(z.string().uuid()).optional(),
   branchIds: z.array(z.string().uuid()).optional(),
 });
@@ -17,6 +18,7 @@ export const updateUserSchema = z.object({
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
   userKey: uuid.optional(),
+  employeeNumber: z.number().int().positive().optional(),
   isActive: z.boolean().optional(),
 });
 

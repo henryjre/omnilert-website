@@ -162,12 +162,7 @@ function DetailPanel({
 
   return (
     <>
-      {/* Overlay */}
-      <div className="fixed inset-0 z-40 bg-black/20" onClick={onClose} />
-
-      {/* Panel */}
-      <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[520px] flex-col bg-white shadow-2xl">
-        <div className="flex h-full flex-col">
+      <div className="flex h-full flex-col">
           {/* Header — matches auth requests panel */}
           <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
             <div>
@@ -319,7 +314,6 @@ function DetailPanel({
               )}
             </div>
           )}
-        </div>
       </div>
       {confirmModal && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
@@ -369,6 +363,12 @@ export function CashRequestsPage() {
   const [selectedRequest, setSelectedRequest] = useState<any | null>(null);
   const [imageModalOpen, setImageModalOpen] = useState(false);
   const [attachmentUrl, setAttachmentUrl] = useState('');
+  const [page, setPage] = useState(1);
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined'
+      ? window.matchMedia('(max-width: 639px)').matches
+      : false,
+  );
 
   const selectedBranchIds = useBranchStore((s) => s.selectedBranchIds);
   const { hasPermission } = usePermission();
@@ -386,17 +386,36 @@ export function CashRequestsPage() {
 
   useEffect(() => { fetchRequests(); }, [fetchRequests]);
 
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 639px)');
+    const handleChange = () => setIsMobile(media.matches);
+    handleChange();
+    media.addEventListener('change', handleChange);
+    return () => media.removeEventListener('change', handleChange);
+  }, []);
+
   function handleUpdated(updated: any) {
     setRequests((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
     setSelectedRequest(updated);
   }
 
   const filtered = statusTab === 'all' ? requests : requests.filter((r) => r.status === statusTab);
+  const pageSize = isMobile ? 6 : 12;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const pagedFiltered = filtered.slice((page - 1) * pageSize, page * pageSize);
   const pendingCount = requests.filter((r) => r.status === 'pending').length;
+
+  useEffect(() => {
+    setPage(1);
+  }, [statusTab, isMobile]);
+
+  useEffect(() => {
+    setPage((prev) => Math.min(prev, totalPages));
+  }, [totalPages]);
 
   return (
     <>
-      <div className="space-y-6 p-6">
+      <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center gap-3">
           <DollarSign className="h-6 w-6 text-primary-600" />
@@ -409,20 +428,25 @@ export function CashRequestsPage() {
         </div>
 
         {/* Status tabs */}
-        <div className="flex w-fit items-center gap-1 rounded-lg bg-gray-100 p-1">
-          {STATUS_TABS.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setStatusTab(tab.key)}
-              className={`rounded-md px-4 py-1.5 text-sm font-medium transition-colors ${
-                statusTab === tab.key
-                  ? 'bg-primary-600 text-white shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
+        <div className="flex justify-center sm:justify-start">
+          <div className="mx-auto flex max-w-full items-center gap-1 overflow-x-auto rounded-lg bg-gray-100 p-1 sm:mx-0">
+            {STATUS_TABS.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => {
+                  setStatusTab(tab.key);
+                  setPage(1);
+                }}
+                className={`shrink-0 rounded-md px-4 py-1.5 text-sm font-medium transition-colors ${
+                  statusTab === tab.key
+                    ? 'bg-primary-600 text-white shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {loading ? (
@@ -439,31 +463,71 @@ export function CashRequestsPage() {
             </CardBody>
           </Card>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {filtered.map((r) => (
-              <CashRequestCard
-                key={r.id}
-                request={r}
-                onClick={() => setSelectedRequest(r)}
-              />
-            ))}
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {pagedFiltered.map((r) => (
+                <CashRequestCard
+                  key={r.id}
+                  request={r}
+                  onClick={() => setSelectedRequest(r)}
+                />
+              ))}
+            </div>
+
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between text-sm text-gray-600">
+                <span>
+                  Page {page} of {totalPages}
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                    disabled={page === 1}
+                    className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+                    disabled={page === totalPages}
+                    className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
 
-      {/* Detail panel */}
+      {/* Backdrop */}
       {selectedRequest && (
-        <DetailPanel
-          request={selectedRequest}
-          canApprove={canApprove}
-          onClose={() => setSelectedRequest(null)}
-          onUpdated={handleUpdated}
-          onViewAttachment={(url) => {
-            setAttachmentUrl(url);
-            setImageModalOpen(true);
-          }}
+        <div
+          className="fixed inset-0 z-40 bg-black/30"
+          onClick={() => setSelectedRequest(null)}
         />
       )}
+
+      {/* Detail panel */}
+      <div
+        className={`fixed inset-y-0 right-0 z-50 w-full max-w-[520px] transform bg-white shadow-2xl transition-transform duration-300 ${
+          selectedRequest ? 'translate-x-0' : 'translate-x-full'
+        }`}
+      >
+        {selectedRequest && (
+          <DetailPanel
+            request={selectedRequest}
+            canApprove={canApprove}
+            onClose={() => setSelectedRequest(null)}
+            onUpdated={handleUpdated}
+            onViewAttachment={(url) => {
+              setAttachmentUrl(url);
+              setImageModalOpen(true);
+            }}
+          />
+        )}
+      </div>
 
       {/* Image modal for attachment preview */}
       <ImageModal

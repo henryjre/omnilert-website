@@ -46,6 +46,12 @@ export const PERMISSIONS = {
   // Cash Requests
   CASH_REQUEST_VIEW_ALL: 'cash_request.view_all',
   CASH_REQUEST_APPROVE: 'cash_request.approve',
+
+  // Employee Verifications
+  EMPLOYEE_VERIFICATION_VIEW: 'employee_verification.view',
+  REGISTRATION_APPROVE: 'registration.approve',
+  PERSONAL_INFORMATION_APPROVE: 'personal_information.approve',
+  EMPLOYEE_REQUIREMENTS_APPROVE: 'employee_requirements.approve',
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -127,6 +133,15 @@ export const PERMISSION_CATEGORIES: Record<string, { label: string; permissions:
       permissions: [
         PERMISSIONS.CASH_REQUEST_VIEW_ALL,
         PERMISSIONS.CASH_REQUEST_APPROVE,
+      ],
+    },
+    employee_verifications: {
+      label: 'Employee Verifications',
+      permissions: [
+        PERMISSIONS.EMPLOYEE_VERIFICATION_VIEW,
+        PERMISSIONS.REGISTRATION_APPROVE,
+        PERMISSIONS.PERSONAL_INFORMATION_APPROVE,
+        PERMISSIONS.EMPLOYEE_REQUIREMENTS_APPROVE,
       ],
     },
   };

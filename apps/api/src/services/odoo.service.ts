@@ -948,6 +948,271 @@ export async function updateWorkEntryDateStop(
   }
 }
 
+async function withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
+  let lastError: unknown;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (i < attempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 300 * (i + 1)));
+      }
+    }
+  }
+  throw lastError;
+}
+
+export function formatBranchEmployeeCode(odooBranchId: number, employeeNumber: number): string {
+  const segment = String(employeeNumber).padStart(3, "0");
+  return `${odooBranchId - 1}${segment}`;
+}
+
+export function formatEmployeeDisplayName(
+  odooBranchId: number,
+  employeeNumber: number,
+  firstName: string,
+  lastName: string
+): string {
+  const fullName = `${firstName} ${lastName}`.trim();
+  return `${formatBranchEmployeeCode(odooBranchId, employeeNumber)} - ${fullName}`;
+}
+
+export async function createOrUpdateEmployeeForRegistration(input: {
+  companyId: number;
+  name: string;
+  workEmail: string;
+  pin: string;
+  barcode: string;
+  websiteKey: string;
+}): Promise<number> {
+  logger.info(
+    {
+      phase: 'registration-approve',
+      companyId: input.companyId,
+      barcode: input.barcode,
+      websiteKey: input.websiteKey,
+      email: input.workEmail,
+      name: input.name,
+    },
+    'Preparing Odoo employee upsert',
+  );
+  const existing = (await callOdooKw(
+    'hr.employee',
+    'search_read',
+    [],
+    {
+      domain: [
+        ['x_website_key', '=', input.websiteKey],
+        ['company_id', '=', input.companyId],
+      ],
+      fields: ['id'],
+      limit: 1,
+    },
+  )) as Array<{ id: number }>;
+
+  const payload = {
+    name: input.name,
+    work_email: input.workEmail,
+    pin: input.pin,
+    barcode: input.barcode,
+    x_website_key: input.websiteKey,
+    company_id: input.companyId,
+  };
+
+  if (existing.length > 0) {
+    logger.info(
+      {
+        phase: 'registration-approve',
+        employeeId: existing[0].id,
+        companyId: input.companyId,
+        barcode: input.barcode,
+      },
+      'Updating existing Odoo employee',
+    );
+    await withRetry(() => callOdooKw('hr.employee', 'write', [[existing[0].id], payload]).then(() => undefined));
+    return existing[0].id;
+  }
+
+  logger.info(
+    {
+      phase: 'registration-approve',
+      companyId: input.companyId,
+      barcode: input.barcode,
+    },
+    'Creating new Odoo employee',
+  );
+  const employeeId = (await withRetry(() =>
+    callOdooKw('hr.employee', 'create', [payload]) as Promise<number>,
+  )) as number;
+  return employeeId;
+}
+
+async function mergePartnerChunk(chunkIds: number[], destinationPartnerId: number): Promise<void> {
+  try {
+    const wizardId = (await callOdooKw('base.partner.merge.automatic.wizard', 'create', [{
+      partner_ids: [[6, 0, chunkIds]],
+      dst_partner_id: destinationPartnerId,
+    }])) as number;
+    await callOdooKw('base.partner.merge.automatic.wizard', 'action_merge', [[wizardId]]);
+  } catch (error) {
+    logger.error(`Failed to merge partner chunk (${chunkIds.join(',')}): ${error}`);
+    throw error;
+  }
+}
+
+export async function unifyPartnerContactsByEmail(input: {
+  email: string;
+  mainCompanyId: number;
+  websiteKey: string;
+  employeeNumber: number;
+  firstName: string;
+  lastName: string;
+}): Promise<number | null> {
+  const contacts = (await callOdooKw(
+    'res.partner',
+    'search_read',
+    [],
+    {
+      domain: [['email', '=', input.email], ['active', '=', true]],
+      fields: ['id', 'company_id', 'active'],
+      order: 'id asc',
+      limit: 200,
+    },
+  )) as Array<{ id: number; company_id?: [number, string] | false; active?: boolean }>;
+
+  if (!contacts.length) {
+    return null;
+  }
+
+  const mainCompanyContact = contacts.find((contact) => Array.isArray(contact.company_id) && contact.company_id[0] === input.mainCompanyId);
+  let canonicalId = mainCompanyContact?.id ?? contacts[0].id;
+  const otherIds = contacts.filter((contact) => contact.id !== canonicalId).map((contact) => contact.id);
+
+  while (otherIds.length > 0) {
+    const chunk = otherIds.splice(0, 2);
+    await withRetry(() => mergePartnerChunk([canonicalId, ...chunk], canonicalId));
+  }
+
+  const canonicalLookup = (await callOdooKw(
+    'res.partner',
+    'search_read',
+    [],
+    {
+      domain: [['id', '=', canonicalId]],
+      fields: ['id'],
+      limit: 1,
+    },
+  )) as Array<{ id: number }>;
+  if (canonicalLookup.length === 0) {
+    const refreshed = (await callOdooKw(
+      'res.partner',
+      'search_read',
+      [],
+      {
+        domain: [['email', '=', input.email], ['active', '=', true]],
+        fields: ['id', 'company_id'],
+        order: 'id asc',
+        limit: 1,
+      },
+    )) as Array<{ id: number }>;
+    if (refreshed.length > 0) {
+      canonicalId = refreshed[0].id;
+    }
+  }
+
+  await callOdooKw('res.partner', 'write', [[canonicalId], {
+    company_id: false,
+    x_website_key: input.websiteKey,
+    name: formatEmployeeDisplayName(
+      input.mainCompanyId,
+      input.employeeNumber,
+      input.firstName,
+      input.lastName,
+    ),
+    category_id: [[4, 3]],
+  }]);
+  return canonicalId;
+}
+
+async function fetchImageAsBase64(url: string): Promise<string> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+  }
+  const buffer = Buffer.from(await response.arrayBuffer());
+  return buffer.toString('base64');
+}
+
+export async function syncAvatarToOdoo(input: {
+  websiteUserKey: string | null;
+  email: string | null;
+  avatarUrl: string;
+}): Promise<boolean> {
+  try {
+    const avatarBase64 = await fetchImageAsBase64(input.avatarUrl);
+    let partnerSearchResult: Array<{ id: number }> = [];
+
+    if (input.websiteUserKey) {
+      partnerSearchResult = (await callOdooKw(
+        'res.partner',
+        'search_read',
+        [],
+        {
+          domain: [['x_website_key', '=', input.websiteUserKey]],
+          fields: ['id'],
+          limit: 1,
+        },
+      )) as Array<{ id: number }>;
+    }
+
+    if (partnerSearchResult.length === 0 && input.email) {
+      partnerSearchResult = (await callOdooKw(
+        'res.partner',
+        'search_read',
+        [],
+        {
+          domain: [['email', '=', input.email]],
+          fields: ['id'],
+          limit: 1,
+        },
+      )) as Array<{ id: number }>;
+    }
+
+    if (partnerSearchResult.length === 0) {
+      logger.warn(`No res.partner found for avatar sync (key=${input.websiteUserKey}, email=${input.email})`);
+      return false;
+    }
+
+    const partnerId = partnerSearchResult[0].id;
+    await callOdooKw('res.partner', 'write', [[partnerId], { image_1920: avatarBase64 }]);
+
+    const employeeRows = (await callOdooKw(
+      'hr.employee',
+      'search_read',
+      [],
+      {
+        domain: [['work_contact_id', '=', partnerId]],
+        fields: ['id'],
+        limit: 1000,
+      },
+    )) as Array<{ id: number }>;
+
+    if (employeeRows.length > 0) {
+      await callOdooKw(
+        'hr.employee',
+        'write',
+        [employeeRows.map((row) => row.id), { image_1920: avatarBase64 }],
+      );
+    }
+
+    return true;
+  } catch (err) {
+    logger.error(`Failed to sync avatar to Odoo: ${err}`);
+    throw err;
+  }
+}
+
 /**
  * Syncs user profile details to Odoo
  * 1. Finds res.partner by x_website_key (or by email as fallback)
@@ -965,6 +1230,10 @@ export async function syncUserProfileToOdoo(
     legalName: string;
     birthday: string | null;
     gender: string | null;
+    firstName?: string;
+    lastName?: string;
+    employeeNumber?: number | null;
+    mainCompanyId?: number | null;
   }
 ): Promise<boolean> {
   try {
@@ -999,22 +1268,46 @@ export async function syncUserProfileToOdoo(
 
     const partnerId = partnerSearchResult[0].id;
 
-    // 2. Update partner's email
+    // 2. Update partner data
+    const partnerUpdateData: Record<string, unknown> = { email: profileData.email };
+    const shouldSyncName = typeof profileData.firstName === "string"
+      || typeof profileData.lastName === "string";
+    const canFormatPrefixedName = Number.isInteger(profileData.employeeNumber)
+      && Number.isInteger(profileData.mainCompanyId);
+
+    if (shouldSyncName && canFormatPrefixedName) {
+      partnerUpdateData.name = formatEmployeeDisplayName(
+        Number(profileData.mainCompanyId),
+        Number(profileData.employeeNumber),
+        profileData.firstName || "",
+        profileData.lastName || "",
+      );
+    } else if (shouldSyncName) {
+      logger.warn(
+        {
+          websiteUserKey,
+          email: profileData.email,
+          employeeNumber: profileData.employeeNumber,
+          mainCompanyId: profileData.mainCompanyId,
+        },
+        "Skipping partner name update because prefixed-name context is missing",
+      );
+    }
     await callOdooKw(
       "res.partner",
       "write",
-      [[partnerId], { email: profileData.email }]
+      [[partnerId], partnerUpdateData]
     );
 
-    logger.info(`Updated res.partner ${partnerId} email to ${profileData.email}`);
+    logger.info(`Updated res.partner ${partnerId} for profile sync`);
 
     // 3. Search for all hr.employee records linked to this partner
     const employeeSearchResult = (await callOdooKw(
       "hr.employee",
       "search_read",
       [],
-      { domain: [["work_contact_id", "=", partnerId]], fields: ["id", "name"] }
-    )) as Array<{ id: number; name: string }>;
+      { domain: [["work_contact_id", "=", partnerId]], fields: ["id", "name", "company_id"] }
+    )) as Array<{ id: number; name: string; company_id?: [number, string] | false }>;
 
     if (!employeeSearchResult || employeeSearchResult.length === 0) {
       logger.warn(`No hr.employee found for work_contact_id: ${partnerId}`);
@@ -1049,11 +1342,46 @@ export async function syncUserProfileToOdoo(
 
     // 5. Update all employees linked to this partner
     const employeeIds = employeeSearchResult.map((emp: { id: number }) => emp.id);
-    await callOdooKw(
-      "hr.employee",
-      "write",
-      [employeeIds, employeeUpdateData]
-    );
+    await callOdooKw("hr.employee", "write", [employeeIds, employeeUpdateData]);
+
+    if (shouldSyncName) {
+      if (!canFormatPrefixedName) {
+        logger.warn(
+          {
+            websiteUserKey,
+            email: profileData.email,
+            employeeNumber: profileData.employeeNumber,
+            mainCompanyId: profileData.mainCompanyId,
+          },
+          "Skipping employee name update because prefixed-name context is missing",
+        );
+      } else {
+        const employeeNumber = Number(profileData.employeeNumber);
+        const firstName = profileData.firstName || "";
+        const lastName = profileData.lastName || "";
+
+        for (const employee of employeeSearchResult) {
+          const branchCompanyId = Array.isArray(employee.company_id)
+            ? Number(employee.company_id[0])
+            : Number(profileData.mainCompanyId);
+          if (!Number.isInteger(branchCompanyId)) {
+            logger.warn(
+              { employeeId: employee.id, companyId: employee.company_id },
+              "Skipping employee name update due to missing company_id",
+            );
+            continue;
+          }
+
+          await callOdooKw(
+            "hr.employee",
+            "write",
+            [[employee.id], {
+              name: formatEmployeeDisplayName(branchCompanyId, employeeNumber, firstName, lastName),
+            }]
+          );
+        }
+      }
+    }
 
     logger.info(`Updated ${employeeIds.length} hr.employee records for partner ${partnerId}`);
     return true;

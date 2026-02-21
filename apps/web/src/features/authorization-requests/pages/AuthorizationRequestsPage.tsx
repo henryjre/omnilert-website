@@ -626,6 +626,13 @@ export function AuthorizationRequestsPage() {
   const [serviceCrewRequests, setServiceCrewRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedItem, setSelectedItem] = useState<DetailItem | null>(null);
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined'
+      ? window.matchMedia('(max-width: 639px)').matches
+      : false,
+  );
+  const [mgmtPage, setMgmtPage] = useState(1);
+  const [crewPage, setCrewPage] = useState(1);
 
   type StatusTab = 'all' | 'pending' | 'approved' | 'rejected';
   const STATUS_TABS: { key: StatusTab; label: string }[] = [
@@ -649,6 +656,11 @@ export function AuthorizationRequestsPage() {
 
   const filteredManagement = mgmtTab === 'all' ? managementRequests : managementRequests.filter((r) => r.status === mgmtTab);
   const filteredServiceCrew = crewTab === 'all' ? serviceCrewRequests : serviceCrewRequests.filter((r) => r.status === crewTab);
+  const pageSize = isMobile ? 6 : 12;
+  const totalMgmtPages = Math.max(1, Math.ceil(filteredManagement.length / pageSize));
+  const totalCrewPages = Math.max(1, Math.ceil(filteredServiceCrew.length / pageSize));
+  const pagedManagement = filteredManagement.slice((mgmtPage - 1) * pageSize, mgmtPage * pageSize);
+  const pagedServiceCrew = filteredServiceCrew.slice((crewPage - 1) * pageSize, crewPage * pageSize);
 
   const fetchRequests = useCallback(() => {
     setLoading(true);
@@ -662,6 +674,30 @@ export function AuthorizationRequestsPage() {
   }, [selectedBranchIds]);
 
   useEffect(() => { fetchRequests(); }, [fetchRequests]);
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 639px)');
+    const handleChange = () => setIsMobile(media.matches);
+    handleChange();
+    media.addEventListener('change', handleChange);
+    return () => media.removeEventListener('change', handleChange);
+  }, []);
+
+  useEffect(() => {
+    setMgmtPage(1);
+  }, [mgmtTab, isMobile]);
+
+  useEffect(() => {
+    setCrewPage(1);
+  }, [crewTab, isMobile]);
+
+  useEffect(() => {
+    setMgmtPage((prev) => Math.min(prev, totalMgmtPages));
+  }, [totalMgmtPages]);
+
+  useEffect(() => {
+    setCrewPage((prev) => Math.min(prev, totalCrewPages));
+  }, [totalCrewPages]);
 
   function handleManagementUpdated(updated: any) {
     setManagementRequests((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
@@ -683,7 +719,7 @@ export function AuthorizationRequestsPage() {
 
   return (
     <>
-      <div className="space-y-6 p-6">
+      <div className="space-y-6">
         {/* Header */}
         <div className="flex items-center gap-3">
           <FileText className="h-6 w-6 text-primary-600" />
@@ -709,12 +745,15 @@ export function AuthorizationRequestsPage() {
                     </span>
                   )}
                 </div>
-                <div className="flex w-fit items-center gap-1 rounded-lg bg-gray-100 p-1">
+                <div className="mx-auto flex w-full items-center gap-1 rounded-lg bg-gray-100 p-1 sm:mx-0 sm:w-fit">
                   {STATUS_TABS.map((tab) => (
                     <button
                       key={tab.key}
-                      onClick={() => setMgmtTab(tab.key)}
-                      className={`rounded-md px-4 py-1.5 text-sm font-medium transition-colors ${
+                      onClick={() => {
+                        setMgmtTab(tab.key);
+                        setMgmtPage(1);
+                      }}
+                      className={`flex-1 rounded-md px-4 py-1.5 text-center text-sm font-medium transition-colors sm:flex-none ${
                         mgmtTab === tab.key
                           ? 'bg-primary-600 text-white shadow-sm'
                           : 'text-gray-500 hover:text-gray-700'
@@ -733,14 +772,40 @@ export function AuthorizationRequestsPage() {
                     </CardBody>
                   </Card>
                 ) : (
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {filteredManagement.map((r) => (
-                      <ManagementRequestCard
-                        key={r.id}
-                        request={r}
-                        onClick={() => setSelectedItem({ type: 'management', data: r })}
-                      />
-                    ))}
+                  <div className="space-y-4">
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {pagedManagement.map((r) => (
+                        <ManagementRequestCard
+                          key={r.id}
+                          request={r}
+                          onClick={() => setSelectedItem({ type: 'management', data: r })}
+                        />
+                      ))}
+                    </div>
+
+                    {totalMgmtPages > 1 && (
+                      <div className="flex items-center justify-between text-sm text-gray-600">
+                        <span>
+                          Page {mgmtPage} of {totalMgmtPages}
+                        </span>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setMgmtPage((prev) => Math.max(1, prev - 1))}
+                            disabled={mgmtPage === 1}
+                            className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            Previous
+                          </button>
+                          <button
+                            onClick={() => setMgmtPage((prev) => Math.min(totalMgmtPages, prev + 1))}
+                            disabled={mgmtPage === totalMgmtPages}
+                            className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -759,12 +824,15 @@ export function AuthorizationRequestsPage() {
                     </span>
                   )}
                 </div>
-                <div className="flex w-fit items-center gap-1 rounded-lg bg-gray-100 p-1">
+                <div className="mx-auto flex w-full items-center gap-1 rounded-lg bg-gray-100 p-1 sm:mx-0 sm:w-fit">
                   {STATUS_TABS.map((tab) => (
                     <button
                       key={tab.key}
-                      onClick={() => setCrewTab(tab.key)}
-                      className={`rounded-md px-4 py-1.5 text-sm font-medium transition-colors ${
+                      onClick={() => {
+                        setCrewTab(tab.key);
+                        setCrewPage(1);
+                      }}
+                      className={`flex-1 rounded-md px-4 py-1.5 text-center text-sm font-medium transition-colors sm:flex-none ${
                         crewTab === tab.key
                           ? 'bg-primary-600 text-white shadow-sm'
                           : 'text-gray-500 hover:text-gray-700'
@@ -783,14 +851,40 @@ export function AuthorizationRequestsPage() {
                     </CardBody>
                   </Card>
                 ) : (
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {filteredServiceCrew.map((r) => (
-                      <ServiceCrewRequestCard
-                        key={r.id}
-                        auth={r}
-                        onClick={() => setSelectedItem({ type: 'service_crew', data: r })}
-                      />
-                    ))}
+                  <div className="space-y-4">
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {pagedServiceCrew.map((r) => (
+                        <ServiceCrewRequestCard
+                          key={r.id}
+                          auth={r}
+                          onClick={() => setSelectedItem({ type: 'service_crew', data: r })}
+                        />
+                      ))}
+                    </div>
+
+                    {totalCrewPages > 1 && (
+                      <div className="flex items-center justify-between text-sm text-gray-600">
+                        <span>
+                          Page {crewPage} of {totalCrewPages}
+                        </span>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setCrewPage((prev) => Math.max(1, prev - 1))}
+                            disabled={crewPage === 1}
+                            className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            Previous
+                          </button>
+                          <button
+                            onClick={() => setCrewPage((prev) => Math.min(totalCrewPages, prev + 1))}
+                            disabled={crewPage === totalCrewPages}
+                            className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

@@ -1089,6 +1089,12 @@ export function EmployeeShiftsPage() {
   const [activeTab, setActiveTab] = useState<TabType>('active');
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [page, setPage] = useState(1);
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined'
+      ? window.matchMedia('(max-width: 639px)').matches
+      : false,
+  );
 
   const selectedBranchIds = useBranchStore((s) => s.selectedBranchIds);
   const branchList = useBranchStore((s) => s.branches);
@@ -1148,6 +1154,14 @@ export function EmployeeShiftsPage() {
   useEffect(() => {
     fetchShifts();
   }, [fetchShifts]);
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 639px)');
+    const handleChange = () => setIsMobile(media.matches);
+    handleChange();
+    media.addEventListener('change', handleChange);
+    return () => media.removeEventListener('change', handleChange);
+  }, []);
 
   useEffect(() => {
     if (!socket || selectedBranchIds.length === 0) return;
@@ -1235,6 +1249,20 @@ export function EmployeeShiftsPage() {
     };
   }, [socket, activeTab]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [
+    activeTab,
+    filters.employeeName,
+    filters.dateFrom,
+    filters.dateTo,
+    filters.sortBy,
+    filters.sortOrder,
+    filters.hasPendingApprovals,
+    selectedBranchIds.join(','),
+    isMobile,
+  ]);
+
   const hasActiveFilters =
     filters.employeeName ||
     filters.dateFrom ||
@@ -1250,9 +1278,17 @@ export function EmployeeShiftsPage() {
     { key: 'ended', label: 'Closed' },
   ];
 
+  const pageSize = isMobile ? 6 : 12;
+  const totalPages = Math.max(1, Math.ceil(shifts.length / pageSize));
+  const pagedShifts = shifts.slice((page - 1) * pageSize, page * pageSize);
+
+  useEffect(() => {
+    setPage((prev) => Math.min(prev, totalPages));
+  }, [totalPages]);
+
   return (
     <>
-      <div className="space-y-4 p-6">
+      <div className="space-y-4">
         {/* Page header */}
         <div className="flex items-center gap-3">
           <Calendar className="h-6 w-6 text-primary-600" />
@@ -1260,13 +1296,13 @@ export function EmployeeShiftsPage() {
         </div>
 
         {/* Status tabs + filter toggle */}
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-1 rounded-lg bg-gray-100 p-1">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="mx-auto flex w-full items-center justify-center gap-1 rounded-lg bg-gray-100 p-1 sm:mx-0 sm:w-fit sm:justify-start">
             {TABS.map((tab) => (
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
-                className={`rounded-md px-4 py-1.5 text-sm font-medium transition-colors ${
+                className={`flex-1 rounded-md px-4 py-1.5 text-center text-sm font-medium transition-colors sm:flex-none ${
                   activeTab === tab.key
                     ? 'bg-primary-600 text-white shadow-sm'
                     : 'text-gray-500 hover:text-gray-700'
@@ -1278,7 +1314,7 @@ export function EmployeeShiftsPage() {
           </div>
           <button
             onClick={() => setFiltersOpen((v) => !v)}
-            className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors ${
+            className={`flex w-full items-center justify-between gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors sm:w-auto sm:justify-start ${
               hasActiveFilters
                 ? 'border-primary-300 bg-primary-50 text-primary-700'
                 : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'
@@ -1401,17 +1437,43 @@ export function EmployeeShiftsPage() {
             </CardBody>
           </Card>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {shifts.map((shift) => (
-              <ShiftCard
-                key={shift.id}
-                shift={shift}
-                branchName={branchMap[shift.branch_id]}
-                canEndShift={canEndShift}
-                onClick={() => openDetail(shift.id)}
-                onEndShift={handleEndShift}
-              />
-            ))}
+          <div className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {pagedShifts.map((shift) => (
+                <ShiftCard
+                  key={shift.id}
+                  shift={shift}
+                  branchName={branchMap[shift.branch_id]}
+                  canEndShift={canEndShift}
+                  onClick={() => openDetail(shift.id)}
+                  onEndShift={handleEndShift}
+                />
+              ))}
+            </div>
+
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between text-sm text-gray-600">
+                <span>
+                  Page {page} of {totalPages}
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                    disabled={page === 1}
+                    className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+                    disabled={page === totalPages}
+                    className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

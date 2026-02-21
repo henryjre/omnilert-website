@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import * as authService from '../services/auth.service.js';
+import * as registrationService from '../services/registration.service.js';
 
 export async function login(req: Request, res: Response, next: NextFunction) {
   try {
@@ -33,4 +34,20 @@ export async function logout(req: Request, res: Response, next: NextFunction) {
 
 export async function me(req: Request, res: Response) {
   res.json({ success: true, data: req.user });
+}
+
+export async function registerRequest(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { companySlug, firstName, lastName, email, password } = req.body;
+    await registrationService.createRegistrationRequest({
+      companySlug,
+      firstName,
+      lastName,
+      email,
+      password,
+    });
+    res.status(201).json({ success: true, message: 'Request submitted successfully' });
+  } catch (err) {
+    next(err);
+  }
 }

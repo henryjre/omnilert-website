@@ -367,7 +367,7 @@ function SessionCard({
               )}
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="hidden items-center gap-2 sm:flex">
             {pendingAuditCount > 0 && (
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
                 <Clock className="h-3 w-3" />
@@ -377,6 +377,20 @@ function SessionCard({
             <Badge variant={statusVariant(session.status)}>
               {session.status.replace('_', ' ')}
             </Badge>
+            <ChevronRight className="h-4 w-4 text-gray-400" />
+          </div>
+          <div className="flex items-center gap-2 sm:hidden">
+            <div className="flex flex-col items-center justify-center gap-1">
+              <Badge variant={statusVariant(session.status)}>
+                {session.status.replace('_', ' ')}
+              </Badge>
+              {pendingAuditCount > 0 && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                  <Clock className="h-3 w-3" />
+                  {pendingAuditCount} pending audit{pendingAuditCount > 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
             <ChevronRight className="h-4 w-4 text-gray-400" />
           </div>
         </div>
@@ -625,14 +639,14 @@ function SessionDetailPanel({
                     {reports.salesReport.discountGroups?.map((g: any) => (
                       <span key={g.name} className="contents">
                         <span className="text-gray-500 pl-2">– {g.name}:</span>
-                        <span className="font-medium text-red-600">-{fmt(g.totalAmount)}</span>
+                        <span className="font-medium text-red-600">{fmt(g.totalAmount)}</span>
                       </span>
                     ))}
 
                     {reports.salesReport.refundClaims > 0 && (
                       <>
                         <span className="text-gray-500 pl-2">– Refund Claims:</span>
-                        <span className="font-medium text-red-600">-{fmt(reports.salesReport.refundClaims)}</span>
+                        <span className="font-medium text-red-600">{fmt(reports.salesReport.refundClaims)}</span>
                       </>
                     )}
 
@@ -973,7 +987,7 @@ function VerificationDetailSection({
         <div className="flex items-center gap-2">
           <span className="font-medium text-gray-900 text-sm">{v.title}</span>
           {typeLabel && (
-            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${typeBadgeClass}`}>
+            <span className={`hidden items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium sm:inline-flex ${typeBadgeClass}`}>
               <Layers className="h-3 w-3" />
               {typeLabel}
             </span>

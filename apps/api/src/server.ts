@@ -4,6 +4,7 @@ import { initializeSocket } from './config/socket.js';
 import { env } from './config/env.js';
 import { db } from './config/database.js';
 import { initAttendanceQueue, stopAttendanceQueue } from './services/attendanceQueue.service.js';
+import { verifyMailConnection } from './services/mail.service.js';
 import { logger } from './utils/logger.js';
 import fs from 'fs';
 
@@ -45,6 +46,7 @@ async function bootstrap(): Promise<void> {
   initializeSocket(server);
 
   await initAttendanceQueue();
+  await verifyMailConnection();
 
   server.listen(env.PORT, () => {
     logger.info(`Server running on port ${env.PORT}`);

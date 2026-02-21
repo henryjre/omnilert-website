@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, MapPin, CheckCheck } from 'lucide-react';
+import { Bell, MapPin, CheckCheck, Menu, X } from 'lucide-react';
 import axios from 'axios';
 import { BranchSelector } from '@/shared/components/BranchSelector';
 import { useAuthStore } from '@/features/auth/store/authSlice';
@@ -9,6 +9,7 @@ import { useNotificationStore } from '@/shared/store/notificationStore';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useSocket } from '@/shared/hooks/useSocket';
 import { api } from '@/shared/services/api.client';
+import { applyCompanyThemeFromHex, DEFAULT_THEME_COLOR } from '@/shared/utils/theme';
 import { PERMISSIONS } from '@omnilert/shared';
 
 function timeAgo(dateStr: string): string {
@@ -29,10 +30,15 @@ const TYPE_DOT: Record<string, string> = {
   info: 'bg-blue-500',
 };
 
-export function TopBar() {
+interface TopBarProps {
+  onOpenSidebar?: () => void;
+}
+
+export function TopBar({ onOpenSidebar }: TopBarProps) {
   const user = useAuthStore((s) => s.user);
   const updateUser = useAuthStore((s) => s.updateUser);
   const setTokens = useAuthStore((s) => s.setTokens);
+  const logoutStore = useAuthStore((s) => s.logout);
   const { branches, fetchBranches, setSelectedBranchIds } = useBranchStore();
   const { hasPermission } = usePermission();
   const navigate = useNavigate();
@@ -94,6 +100,12 @@ export function TopBar() {
       increment();
     });
 
+    socket.on('auth:force-logout', () => {
+      applyCompanyThemeFromHex(DEFAULT_THEME_COLOR);
+      logoutStore();
+      navigate('/login', { replace: true });
+    });
+
     socket.on('user:branch-assignments-updated', async (data: any) => {
       const nextBranchIds: string[] = Array.isArray(data?.branchIds) ? data.branchIds : [];
 
@@ -125,9 +137,10 @@ export function TopBar() {
 
     return () => {
       socket.off('notification:new');
+      socket.off('auth:force-logout');
       socket.off('user:branch-assignments-updated');
     };
-  }, [socket, updateUser, setTokens, fetchBranches, hasPermission, setSelectedBranchIds, increment, pushNotification, syncSelectedBranchFromActiveShift]);
+  }, [socket, updateUser, setTokens, fetchBranches, hasPermission, setSelectedBranchIds, increment, pushNotification, syncSelectedBranchFromActiveShift, logoutStore, navigate]);
 
   // Real-time: auto-select designated branch after employee check-in / active shift updates.
   useEffect(() => {
@@ -168,6 +181,18 @@ export function TopBar() {
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    const isMobile = window.matchMedia('(max-width: 767px)').matches;
+    if (!isMobile) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
   const handleClickNotification = async (n: any) => {
     if (!n.is_read) {
       api.put(`/account/notifications/${n.id}/read`).catch(() => {});
@@ -193,10 +218,22 @@ export function TopBar() {
         .filter(Boolean)
         .join(', ') || null
     : null;
+  const unreadNotifications = notifications.filter((n) => !n.is_read);
 
   return (
-    <header className="flex h-16 items-center justify-end border-b border-gray-200 bg-white px-6">
-      <div className="flex items-center gap-4">
+    <header className="flex h-16 items-center justify-between border-b border-gray-200 bg-white px-3 sm:px-6">
+      <div className="flex items-center lg:hidden">
+        <button
+          type="button"
+          onClick={onOpenSidebar}
+          className="rounded-lg p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-800"
+          aria-label="Open navigation menu"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+      </div>
+
+      <div className="ml-auto flex items-center gap-4">
         {assignedBranchLabel ? (
           <div className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm font-medium text-gray-600">
             <MapPin className="h-3.5 w-3.5 text-gray-400" />
@@ -221,60 +258,125 @@ export function TopBar() {
           </button>
 
           {open && (
-            <div className="absolute right-0 top-full z-50 mt-2 w-96 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl">
-              {/* Header */}
-              <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
-                <h3 className="text-sm font-semibold text-gray-900">Notifications</h3>
-                {unreadCount > 0 && (
-                  <button
-                    onClick={handleMarkAllRead}
-                    className="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700"
-                  >
-                    <CheckCheck className="h-3.5 w-3.5" />
-                    Mark all read
-                  </button>
-                )}
-              </div>
-
-              {/* Notification list */}
-              <div className="max-h-96 overflow-y-auto">
-                {notifications.length === 0 ? (
-                  <div className="px-4 py-8 text-center">
-                    <Bell className="mx-auto h-8 w-8 text-gray-300" />
-                    <p className="mt-2 text-sm text-gray-500">No notifications yet</p>
-                  </div>
-                ) : (
-                  notifications.map((n) => (
+            <>
+              {/* Mobile panel */}
+              <button
+                type="button"
+                className="fixed inset-0 z-40 bg-black/30 md:hidden"
+                onClick={() => setOpen(false)}
+                aria-label="Close notifications"
+              />
+              <div className="fixed inset-x-3 top-20 bottom-3 z-50 flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl md:hidden">
+                <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+                  <h3 className="text-sm font-semibold text-gray-900">Notifications</h3>
+                  <div className="flex items-center gap-2">
+                    {unreadCount > 0 && (
+                      <button
+                        onClick={handleMarkAllRead}
+                        className="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700"
+                      >
+                        <CheckCheck className="h-3.5 w-3.5" />
+                        Mark all read
+                      </button>
+                    )}
                     <button
-                      key={n.id}
-                      onClick={() => handleClickNotification(n)}
-                      className={`flex w-full gap-3 px-4 py-3 text-left transition-colors hover:bg-gray-50 ${
-                        !n.is_read ? 'bg-primary-50/40' : ''
-                      }`}
+                      type="button"
+                      onClick={() => setOpen(false)}
+                      className="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                      aria-label="Close notifications"
                     >
-                      <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${!n.is_read ? (TYPE_DOT[n.type] ?? TYPE_DOT.info) : 'bg-transparent'}`} />
-                      <div className="min-w-0 flex-1">
-                        <p className={`truncate text-sm ${!n.is_read ? 'font-semibold text-gray-900' : 'font-medium text-gray-600'}`}>
-                          {n.title}
-                        </p>
-                        <p className="mt-0.5 line-clamp-2 text-xs text-gray-500">{n.message}</p>
-                        <p className="mt-1 text-[11px] text-gray-400">{timeAgo(n.created_at)}</p>
-                      </div>
+                      <X className="h-4 w-4" />
                     </button>
-                  ))
-                )}
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto">
+                  {unreadNotifications.length === 0 ? (
+                    <div className="px-4 py-8 text-center">
+                      <Bell className="mx-auto h-8 w-8 text-gray-300" />
+                      <p className="mt-2 text-sm text-gray-500">No unread notifications</p>
+                    </div>
+                  ) : (
+                    unreadNotifications.map((n) => (
+                      <button
+                        key={n.id}
+                        onClick={() => handleClickNotification(n)}
+                        className="flex w-full gap-3 bg-primary-50/40 px-4 py-3 text-left transition-colors hover:bg-gray-50"
+                      >
+                        <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${TYPE_DOT[n.type] ?? TYPE_DOT.info}`} />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-gray-900">
+                            {n.title}
+                          </p>
+                          <p className="mt-0.5 line-clamp-3 text-xs text-gray-500">{n.message}</p>
+                          <p className="mt-1 text-[11px] text-gray-400">{timeAgo(n.created_at)}</p>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+
+                <div className="border-t border-gray-100">
+                  <button
+                    onClick={() => { setOpen(false); navigate('/account/notifications'); }}
+                    className="flex w-full items-center justify-center py-3 text-sm font-medium text-primary-600 hover:bg-gray-50"
+                  >
+                    View all notifications
+                  </button>
+                </div>
               </div>
 
-              {/* Footer */}
-              <div className="border-t border-gray-100">
-                <button
-                  onClick={() => { setOpen(false); navigate('/account/notifications'); }}
-                  className="flex w-full items-center justify-center py-2.5 text-xs font-medium text-primary-600 hover:bg-gray-50"
-                >
-                  View all notifications
-                </button>
+              {/* Desktop dropdown */}
+              <div className="absolute right-0 top-full z-50 mt-2 hidden w-96 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl md:block">
+                <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+                  <h3 className="text-sm font-semibold text-gray-900">Notifications</h3>
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={handleMarkAllRead}
+                      className="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-700"
+                    >
+                      <CheckCheck className="h-3.5 w-3.5" />
+                      Mark all read
+                    </button>
+                  )}
+                </div>
+
+                <div className="max-h-96 overflow-y-auto">
+                  {unreadNotifications.length === 0 ? (
+                    <div className="px-4 py-8 text-center">
+                      <Bell className="mx-auto h-8 w-8 text-gray-300" />
+                      <p className="mt-2 text-sm text-gray-500">No unread notifications</p>
+                    </div>
+                  ) : (
+                    unreadNotifications.map((n) => (
+                      <button
+                        key={n.id}
+                        onClick={() => handleClickNotification(n)}
+                        className="flex w-full gap-3 bg-primary-50/40 px-4 py-3 text-left transition-colors hover:bg-gray-50"
+                      >
+                        <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${TYPE_DOT[n.type] ?? TYPE_DOT.info}`} />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-gray-900">
+                            {n.title}
+                          </p>
+                          <p className="mt-0.5 line-clamp-2 text-xs text-gray-500">{n.message}</p>
+                          <p className="mt-1 text-[11px] text-gray-400">{timeAgo(n.created_at)}</p>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+
+                <div className="border-t border-gray-100">
+                  <button
+                    onClick={() => { setOpen(false); navigate('/account/notifications'); }}
+                    className="flex w-full items-center justify-center py-2.5 text-xs font-medium text-primary-600 hover:bg-gray-50"
+                  >
+                    View all notifications
+                  </button>
+                </div>
               </div>
-            </div>
+            </>
           )}
         </div>
 

@@ -23,8 +23,23 @@ export type { SystemRoleName } from './constants/roles.js';
 export {
   loginSchema,
   refreshTokenSchema,
+  registerRequestSchema,
+  approveRegistrationRequestSchema,
+  rejectRegistrationRequestSchema,
+  submitPersonalInformationVerificationSchema,
+  approvePersonalInformationVerificationSchema,
+  rejectVerificationSchema,
 } from './validation/auth.schema.js';
-export type { LoginInput, RefreshTokenInput } from './validation/auth.schema.js';
+export type {
+  LoginInput,
+  RefreshTokenInput,
+  RegisterRequestInput,
+  ApproveRegistrationRequestInput,
+  RejectRegistrationRequestInput,
+  SubmitPersonalInformationVerificationInput,
+  ApprovePersonalInformationVerificationInput,
+  RejectVerificationInput,
+} from './validation/auth.schema.js';
 export { superAdminBootstrapSchema, superAdminLoginSchema } from './validation/superAdmin.schema.js';
 export type { SuperAdminBootstrapInput, SuperAdminLoginInput } from './validation/superAdmin.schema.js';
 
@@ -32,11 +47,13 @@ export {
   createCompanySchema,
   createCompanyBySuperAdminSchema,
   updateCompanySchema,
+  deleteCurrentCompanySchema,
 } from './validation/company.schema.js';
 export type {
   CreateCompanyInput,
   CreateCompanyBySuperAdminInput,
   UpdateCompanyInput,
+  DeleteCurrentCompanyInput,
 } from './validation/company.schema.js';
 
 export {

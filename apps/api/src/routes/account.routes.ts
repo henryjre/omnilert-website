@@ -3,7 +3,8 @@ import multer from 'multer';
 import { authenticate } from '../middleware/auth.js';
 import { resolveCompany } from '../middleware/companyResolver.js';
 import { requirePermission } from '../middleware/rbac.js';
-import { PERMISSIONS } from '@omnilert/shared';
+import { PERMISSIONS, submitPersonalInformationVerificationSchema } from '@omnilert/shared';
+import { validateBody } from '../middleware/validateRequest.js';
 import * as accountController from '../controllers/account.controller.js';
 
 // Use memory storage for S3 uploads
@@ -15,8 +16,9 @@ const upload = multer({
   storage,
   limits: { fileSize: MAX_FILE_SIZE },
   fileFilter: (_req, file, cb) => {
-    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-    cb(null, allowed.includes(file.mimetype));
+    const isImage = file.mimetype.startsWith('image/');
+    const isPdf = file.mimetype === 'application/pdf';
+    cb(null, isImage || isPdf);
   },
 });
 
@@ -61,6 +63,25 @@ router.post(
   requirePermission(PERMISSIONS.ACCOUNT_SUBMIT_CASH_REQUEST),
   upload.single('attachment'),
   accountController.createCashRequest,
+);
+
+router.post(
+  '/personal-information/verifications',
+  validateBody(submitPersonalInformationVerificationSchema),
+  accountController.submitPersonalInformationVerification,
+);
+
+router.post(
+  '/valid-id',
+  upload.single('document'),
+  accountController.uploadValidId,
+);
+
+router.get('/employment/requirements', accountController.getEmploymentRequirements);
+router.post(
+  '/employment/requirements/:requirementCode/submit',
+  upload.single('document'),
+  accountController.submitEmploymentRequirement,
 );
 
 router.get(

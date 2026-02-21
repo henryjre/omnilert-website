@@ -12,6 +12,7 @@ import {
   LogOut,
   FileText,
   DollarSign,
+  ClipboardCheck,
 } from 'lucide-react';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useAuth } from '@/features/auth/hooks/useAuth';
@@ -32,17 +33,11 @@ const categoryLabel = (label: string) => (
   </p>
 );
 
-const placeholderLink = (icon: React.ReactNode, label: string) => (
-  <button
-    disabled
-    className="flex w-full cursor-not-allowed items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-gray-400 opacity-50"
-  >
-    {icon}
-    {label}
-  </button>
-);
+interface SidebarProps {
+  className?: string;
+}
 
-export function Sidebar() {
+export function Sidebar({ className = '' }: SidebarProps) {
   const { hasPermission, hasAnyPermission } = usePermission();
   const { logout, user } = useAuth();
   const companyName = useAuthStore((s) => s.companyName);
@@ -50,7 +45,7 @@ export function Sidebar() {
   const pendingVerificationCount = usePosVerificationStore((s) => s.pendingCount);
 
   return (
-    <aside className="flex h-screen w-64 flex-col border-r border-gray-200 bg-white">
+    <aside className={`flex h-screen w-64 flex-col border-r border-gray-200 bg-white ${className}`}>
       {/* Logo */}
       <div className="flex h-16 items-center border-b border-gray-200 px-6">
         <div className="leading-tight">
@@ -79,6 +74,7 @@ export function Sidebar() {
           PERMISSIONS.AUTH_REQUEST_VIEW_ALL,
           PERMISSIONS.AUTH_REQUEST_APPROVE_SERVICE_CREW,
           PERMISSIONS.CASH_REQUEST_VIEW_ALL,
+          PERMISSIONS.EMPLOYEE_VERIFICATION_VIEW,
         ) && (
           <>
             <div className="my-2 border-t border-gray-200" />
@@ -99,6 +95,12 @@ export function Sidebar() {
                 Cash Requests
               </NavLink>
             )}
+            {hasPermission(PERMISSIONS.EMPLOYEE_VERIFICATION_VIEW) && (
+              <NavLink to="/employee-verifications" className={linkClass}>
+                <Users className="h-5 w-5" />
+                Employee Verifications
+              </NavLink>
+            )}
           </>
         )}
 
@@ -110,6 +112,10 @@ export function Sidebar() {
             <NavLink to="/employee-schedule" className={linkClass}>
               <Calendar className="h-5 w-5" />
               Employee Schedule
+            </NavLink>
+            <NavLink to="/employee-requirements" className={linkClass}>
+              <ClipboardCheck className="h-5 w-5" />
+              Employee Requirements
             </NavLink>
           </>
         )}

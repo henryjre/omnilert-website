@@ -28,6 +28,46 @@ export interface ServerToClientEvents {
   }) => void;
   'notification:count': (data: { unreadCount: number }) => void;
   'user:branch-assignments-updated': (data: { branchIds: string[] }) => void;
+  'auth:force-logout': (data: {
+    companyId: string;
+    reason: string;
+    timestamp: string;
+  }) => void;
+
+  'employee-verification:updated': (data: {
+    companyId: string;
+    verificationId: string;
+    verificationType: 'registration' | 'personal_information' | 'employment_requirement';
+    action: 'created' | 'approved' | 'rejected' | 'submitted';
+    userId?: string;
+  }) => void;
+
+  'employee-requirement:updated': (data: {
+    companyId: string;
+    action: 'submitted' | 'approved' | 'rejected';
+    submissionId?: string;
+    userId?: string;
+    requirementCode?: string;
+  }) => void;
+
+  'employee-verification:approval-progress': (data: {
+    companyId: string;
+    verificationId: string;
+    verificationType: 'registration';
+    reviewerId: string;
+    step:
+      | 'start'
+      | 'validate'
+      | 'identity'
+      | 'pin'
+      | 'employees'
+      | 'merge'
+      | 'user'
+      | 'email'
+      | 'done';
+    message: string;
+    createdAt: string;
+  }) => void;
 }
 
 export interface ClientToServerEvents {

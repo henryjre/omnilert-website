@@ -1,6 +1,107 @@
 import type { Request, Response, NextFunction } from 'express';
 import { AppError } from '../middleware/errorHandler.js';
-import { uploadFile } from '../services/storage.service.js';
+import { buildTenantStoragePrefix, uploadFile } from '../services/storage.service.js';
+import { getIO } from '../config/socket.js';
+
+function toDisplayStatus(status: string | null): 'complete' | 'rejected' | 'verification' | 'pending' {
+  if (!status) return 'pending';
+  if (status === 'approved') return 'complete';
+  if (status === 'rejected') return 'rejected';
+  if (status === 'pending') return 'verification';
+  return 'pending';
+}
+
+async function notifyUser(
+  tenantDb: any,
+  userId: string,
+  title: string,
+  message: string,
+  type: 'info' | 'success' | 'danger' | 'warning',
+  linkUrl: string,
+) {
+  const [notif] = await tenantDb('employee_notifications')
+    .insert({
+      user_id: userId,
+      title,
+      message,
+      type,
+      link_url: linkUrl,
+    })
+    .returning('*');
+
+  try {
+    getIO().of('/notifications').to(`user:${userId}`).emit('notification:new', notif);
+  } catch {
+    // ignore socket failures
+  }
+}
+
+function emitEmployeeVerificationUpdated(payload: {
+  companyId: string;
+  verificationId: string;
+  verificationType: 'personal_information' | 'employment_requirement';
+  action: 'submitted';
+  userId?: string;
+}) {
+  try {
+    getIO().of('/employee-verifications')
+      .to(`company:${payload.companyId}`)
+      .emit('employee-verification:updated', payload);
+  } catch {
+    // ignore socket failures
+  }
+}
+
+function emitEmployeeRequirementUpdated(payload: {
+  companyId: string;
+  action: 'submitted';
+  submissionId?: string;
+  userId?: string;
+  requirementCode?: string;
+}) {
+  try {
+    getIO().of('/employee-requirements')
+      .to(`company:${payload.companyId}`)
+      .emit('employee-requirement:updated', payload);
+  } catch {
+    // ignore socket failures
+  }
+}
+
+async function resolveAndValidateBranchId(
+  tenantDb: any,
+  userId: string,
+  branchIdInput: unknown,
+): Promise<string> {
+  const branchId = typeof branchIdInput === 'string' ? branchIdInput.trim() : '';
+  if (!branchId) {
+    throw new AppError(400, 'Branch is required');
+  }
+
+  const branch = await tenantDb('branches')
+    .where({ id: branchId })
+    .select('id', 'is_active')
+    .first();
+
+  if (!branch || branch.is_active !== true) {
+    throw new AppError(400, 'Selected branch is invalid or inactive. Please refresh and try again.');
+  }
+
+  const assignedBranches = await tenantDb('user_branches')
+    .where({ user_id: userId })
+    .select('branch_id');
+
+  if (assignedBranches.length > 0) {
+    const isAssigned = assignedBranches.some(
+      (row: { branch_id: string }) => row.branch_id === branchId,
+    );
+    if (!isAssigned) {
+      throw new AppError(403, 'You are not assigned to the selected branch');
+    }
+  }
+
+  return branchId;
+}
 
 export async function getSchedule(req: Request, res: Response, next: NextFunction) {
   try {
@@ -93,7 +194,8 @@ export async function createAuthorizationRequest(req: Request, res: Response, ne
   try {
     const tenantDb = req.tenantDb!;
     const userId = req.user!.sub;
-    const { branchId, requestType, description, level, reference, requestedAmount, bankName, accountName, accountNumber } = req.body;
+    const { requestType, description, level, reference, requestedAmount, bankName, accountName, accountNumber } = req.body;
+    const branchId = await resolveAndValidateBranchId(tenantDb, userId, req.body.branchId);
 
     const requestLevel: string = level || 'management';
 
@@ -149,7 +251,9 @@ export async function createCashRequest(req: Request, res: Response, next: NextF
   try {
     const tenantDb = req.tenantDb!;
     const userId = req.user!.sub;
-    const { branchId, requestType, reference, amount, bankName, accountName, accountNumber } = req.body;
+    const companyStorageRoot = req.companyContext?.companyStorageRoot ?? '';
+    const { requestType, reference, amount, bankName, accountName, accountNumber } = req.body;
+    const branchId = await resolveAndValidateBranchId(tenantDb, userId, req.body.branchId);
     const attachmentFile = (req as any).file as Express.Multer.File | undefined;
 
     if (!requestType) throw new AppError(400, 'Request type is required');
@@ -167,11 +271,12 @@ export async function createCashRequest(req: Request, res: Response, next: NextF
     // Upload attachment to S3 if provided
     let attachmentUrl: string | null = null;
     if (attachmentFile) {
+      const folder = buildTenantStoragePrefix(companyStorageRoot, 'Cash Requests', userId);
       attachmentUrl = await uploadFile(
         attachmentFile.buffer,
         attachmentFile.originalname,
         attachmentFile.mimetype,
-        "Cash Requests"
+        folder,
       );
       if (!attachmentUrl) {
         throw new AppError(500, 'Failed to upload attachment');
@@ -298,6 +403,276 @@ export async function markAllNotificationsRead(req: Request, res: Response, next
       .update({ is_read: true });
 
     res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function submitPersonalInformationVerification(req: Request, res: Response, next: NextFunction) {
+  try {
+    const tenantDb = req.tenantDb!;
+    const userId = req.user!.sub;
+
+    const user = await tenantDb('users')
+      .where({ id: userId })
+      .select(
+        'id',
+        'first_name',
+        'last_name',
+        'email',
+        'mobile_number',
+        'legal_name',
+        'birthday',
+        'gender',
+        'valid_id_url',
+      )
+      .first();
+    if (!user) throw new AppError(404, 'User not found');
+    if (!user.valid_id_url) {
+      throw new AppError(400, 'A valid ID upload is required before submitting personal information verification');
+    }
+
+    const pending = await tenantDb('personal_information_verifications')
+      .where({ user_id: userId, status: 'pending' })
+      .first('id');
+    if (pending) {
+      throw new AppError(409, 'You already have a pending personal information verification');
+    }
+
+    const requestedChanges: Record<string, unknown> = {};
+    if (req.body.firstName !== undefined && req.body.firstName !== user.first_name) requestedChanges.firstName = req.body.firstName;
+    if (req.body.lastName !== undefined && req.body.lastName !== user.last_name) requestedChanges.lastName = req.body.lastName;
+    if (req.body.email !== undefined && req.body.email !== user.email) requestedChanges.email = req.body.email;
+    if (req.body.mobileNumber !== undefined && req.body.mobileNumber !== user.mobile_number) requestedChanges.mobileNumber = req.body.mobileNumber;
+    if (req.body.legalName !== undefined && req.body.legalName !== user.legal_name) requestedChanges.legalName = req.body.legalName;
+    if (req.body.birthday !== undefined && req.body.birthday !== user.birthday) requestedChanges.birthday = req.body.birthday;
+    if (req.body.gender !== undefined && req.body.gender !== user.gender) requestedChanges.gender = req.body.gender;
+
+    if (Object.keys(requestedChanges).length === 0) {
+      throw new AppError(400, 'No changes detected for verification');
+    }
+
+    const [verification] = await tenantDb('personal_information_verifications')
+      .insert({
+        user_id: userId,
+        status: 'pending',
+        requested_changes: JSON.stringify(requestedChanges),
+        valid_id_url: user.valid_id_url,
+        updated_at: new Date(),
+      })
+      .returning('*');
+
+    await notifyUser(
+      tenantDb,
+      userId,
+      'Personal Information Submitted',
+      'Your personal information changes were submitted for verification.',
+      'info',
+      '/account/settings',
+    );
+
+    emitEmployeeVerificationUpdated({
+      companyId: req.user!.companyId,
+      verificationId: verification.id as string,
+      verificationType: 'personal_information',
+      action: 'submitted',
+      userId,
+    });
+
+    res.status(201).json({ success: true, data: verification });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function uploadValidId(req: Request, res: Response, next: NextFunction) {
+  try {
+    const tenantDb = req.tenantDb!;
+    const userId = req.user!.sub;
+    const companyStorageRoot = req.companyContext?.companyStorageRoot ?? '';
+    const file = (req as any).file as Express.Multer.File | undefined;
+    if (!file) throw new AppError(400, 'No document uploaded');
+
+    const folder = buildTenantStoragePrefix(companyStorageRoot, 'Valid IDs', userId);
+    const validIdUrl = await uploadFile(
+      file.buffer,
+      file.originalname,
+      file.mimetype,
+      folder,
+    );
+    if (!validIdUrl) throw new AppError(500, 'Failed to upload valid ID');
+
+    await tenantDb('users')
+      .where({ id: userId })
+      .update({
+        valid_id_url: validIdUrl,
+        valid_id_updated_at: new Date(),
+        updated_at: new Date(),
+      });
+
+    res.json({ success: true, data: { validIdUrl } });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getEmploymentRequirements(req: Request, res: Response, next: NextFunction) {
+  try {
+    const tenantDb = req.tenantDb!;
+    const userId = req.user!.sub;
+
+    const user = await tenantDb('users').where({ id: userId }).select('valid_id_url').first();
+    const types = await tenantDb('employment_requirement_types')
+      .where({ is_active: true })
+      .select('code', 'label', 'sort_order')
+      .orderBy('sort_order', 'asc');
+
+    const latestRowsResult = await tenantDb.raw(
+      `
+      SELECT DISTINCT ON (requirement_code)
+        id,
+        requirement_code,
+        document_url,
+        status,
+        reviewed_by,
+        reviewed_at,
+        rejection_reason,
+        created_at,
+        updated_at
+      FROM employment_requirement_submissions
+      WHERE user_id = ?
+      ORDER BY requirement_code, created_at DESC
+      `,
+      [userId],
+    );
+    const latestRows = latestRowsResult.rows as Array<{
+      id: string;
+      requirement_code: string;
+      document_url: string;
+      status: string;
+      reviewed_by: string | null;
+      reviewed_at: string | null;
+      rejection_reason: string | null;
+      created_at: string;
+      updated_at: string;
+    }>;
+    const latestByCode = new Map(latestRows.map((row) => [row.requirement_code, row]));
+
+    const requirements = types.map((type: any) => {
+      const latest = latestByCode.get(type.code) ?? null;
+      const documentUrl = latest?.document_url ?? null;
+      const sharedDocument = type.code === 'government_issued_id'
+        ? (documentUrl ?? user?.valid_id_url ?? null)
+        : documentUrl;
+      return {
+        code: type.code,
+        label: type.label,
+        sort_order: type.sort_order,
+        latest_submission: latest,
+        display_status: toDisplayStatus(latest?.status ?? null),
+        document_url: sharedDocument,
+      };
+    });
+
+    res.json({ success: true, data: requirements });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function submitEmploymentRequirement(req: Request, res: Response, next: NextFunction) {
+  try {
+    const tenantDb = req.tenantDb!;
+    const userId = req.user!.sub;
+    const companyStorageRoot = req.companyContext?.companyStorageRoot ?? '';
+    const requirementCode = req.params.requirementCode as string;
+    const file = (req as any).file as Express.Multer.File | undefined;
+
+    const requirement = await tenantDb('employment_requirement_types')
+      .where({ code: requirementCode, is_active: true })
+      .first('code');
+    if (!requirement) throw new AppError(404, 'Requirement type not found');
+
+    const pending = await tenantDb('employment_requirement_submissions')
+      .where({ user_id: userId, requirement_code: requirementCode, status: 'pending' })
+      .first('id');
+    if (pending) {
+      throw new AppError(409, 'You already have a pending submission for this requirement');
+    }
+
+    let documentUrl: string | null = null;
+    if (file) {
+      const folder = buildTenantStoragePrefix(
+        companyStorageRoot,
+        'Employment Requirements',
+        userId,
+        requirementCode,
+      );
+      documentUrl = await uploadFile(
+        file.buffer,
+        file.originalname,
+        file.mimetype,
+        folder,
+      );
+      if (!documentUrl) throw new AppError(500, 'Failed to upload requirement document');
+    } else if (requirementCode === 'government_issued_id') {
+      const user = await tenantDb('users')
+        .where({ id: userId })
+        .select('valid_id_url')
+        .first();
+      if (!user?.valid_id_url) {
+        throw new AppError(400, 'No document uploaded and no existing valid ID available');
+      }
+      documentUrl = user.valid_id_url as string;
+    } else {
+      throw new AppError(400, 'No document uploaded');
+    }
+
+    const [submission] = await tenantDb('employment_requirement_submissions')
+      .insert({
+        user_id: userId,
+        requirement_code: requirementCode,
+        document_url: documentUrl as string,
+        status: 'pending',
+        updated_at: new Date(),
+      })
+      .returning('*');
+
+    if (requirementCode === 'government_issued_id' && file) {
+      await tenantDb('users')
+        .where({ id: userId })
+        .update({
+          valid_id_url: documentUrl as string,
+          valid_id_updated_at: new Date(),
+          updated_at: new Date(),
+        });
+    }
+
+    await notifyUser(
+      tenantDb,
+      userId,
+      'Employment Requirement Submitted',
+      'Your employment requirement was submitted for verification.',
+      'info',
+      '/account/employment',
+    );
+
+    emitEmployeeVerificationUpdated({
+      companyId: req.user!.companyId,
+      verificationId: submission.id as string,
+      verificationType: 'employment_requirement',
+      action: 'submitted',
+      userId,
+    });
+    emitEmployeeRequirementUpdated({
+      companyId: req.user!.companyId,
+      action: 'submitted',
+      submissionId: submission.id as string,
+      userId,
+      requirementCode,
+    });
+
+    res.status(201).json({ success: true, data: submission });
   } catch (err) {
     next(err);
   }

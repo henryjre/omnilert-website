@@ -76,6 +76,10 @@ function NewRequestModal({ onClose, onCreated, defaultBranchId }: NewRequestModa
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
+    if (!defaultBranchId) {
+      setError('No active branch selected. Please choose a branch from the top bar and try again.');
+      return;
+    }
     if (!form.reference || !form.requestedAmount || !form.bankName || !form.accountName || !form.accountNumber) {
       setError('All fields are required.');
       return;
@@ -178,9 +182,11 @@ function NewRequestModal({ onClose, onCreated, defaultBranchId }: NewRequestModa
 // --- Main Tab ---
 
 export function AuthorizationRequestsTab() {
+  const PAGE_SIZE = 10;
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [page, setPage] = useState(1);
 
   const selectedBranchIds = useBranchStore((s) => s.selectedBranchIds);
   const defaultBranchId = selectedBranchIds[0];
@@ -193,6 +199,13 @@ export function AuthorizationRequestsTab() {
       .then((res) => setRequests(res.data.data || []))
       .finally(() => setLoading(false));
   }, []);
+
+  const totalPages = Math.max(1, Math.ceil(requests.length / PAGE_SIZE));
+  const pagedRequests = requests.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  useEffect(() => {
+    setPage((prev) => Math.min(prev, totalPages));
+  }, [totalPages]);
 
   if (loading) {
     return (
@@ -208,7 +221,10 @@ export function AuthorizationRequestsTab() {
         <NewRequestModal
           defaultBranchId={defaultBranchId}
           onClose={() => setShowModal(false)}
-          onCreated={(req) => setRequests((prev) => [req, ...prev])}
+          onCreated={(req) => {
+            setRequests((prev) => [req, ...prev]);
+            setPage(1);
+          }}
         />
       )}
 
@@ -233,7 +249,7 @@ export function AuthorizationRequestsTab() {
           </Card>
         ) : (
           <div className="space-y-3">
-            {requests.map((r) => (
+            {pagedRequests.map((r) => (
               <Card key={r.id}>
                 <CardBody>
                   <div className="flex items-start justify-between gap-3">
@@ -266,6 +282,30 @@ export function AuthorizationRequestsTab() {
                 </CardBody>
               </Card>
             ))}
+
+            {totalPages > 1 && (
+              <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
+                <span>
+                  Page {page} of {totalPages}
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                    disabled={page === 1}
+                    className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+                    disabled={page === totalPages}
+                    className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

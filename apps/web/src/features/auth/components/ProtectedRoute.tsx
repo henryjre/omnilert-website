@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Navigate, Outlet } from 'react-router-dom';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../store/authSlice';
 
 export function ProtectedRoute() {
+  const location = useLocation();
   const { isAuthenticated, refreshToken, accessToken, setTokens, logout } = useAuthStore();
   const [initializing, setInitializing] = useState(
     isAuthenticated && !!refreshToken && !accessToken,
@@ -21,7 +22,8 @@ export function ProtectedRoute() {
   if (initializing) return null;
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    const redirect = `${location.pathname}${location.search}${location.hash}`;
+    return <Navigate to={`/login?redirect=${encodeURIComponent(redirect)}`} replace />;
   }
 
   return <Outlet />;

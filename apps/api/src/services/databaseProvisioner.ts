@@ -19,6 +19,20 @@ export interface AdminSeed {
   passwordHash?: string;
 }
 
+const EMPLOYMENT_REQUIREMENT_TYPES = [
+  { code: 'psa_birth_certificate', label: 'Photocopy of PSA Birth Certificate', sort_order: 1 },
+  { code: 'government_issued_id', label: 'Photocopy of Government-issued ID', sort_order: 2 },
+  { code: 'xray_result_impression', label: 'Original Copy of X-ray Result Impression', sort_order: 3 },
+  { code: 'urinalysis_result_impression', label: 'Original Copy of Urinalysis Result Impression', sort_order: 4 },
+  { code: 'fecalysis_result_impression', label: 'Original Copy of Fecalysis Result Impression', sort_order: 5 },
+  { code: 'employment_agreement_signed', label: 'Printed and Signed Employment Agreement', sort_order: 6 },
+  { code: 'nbi_clearance', label: 'Original Copy of NBI Clearance', sort_order: 7 },
+  { code: 'tin_id', label: 'Photocopy of TIN ID', sort_order: 8 },
+  { code: 'sss_id', label: 'Photocopy of SSS ID', sort_order: 9 },
+  { code: 'philhealth_id', label: 'Photocopy of PhilHealth ID', sort_order: 10 },
+  { code: 'pagibig_membership_id', label: 'Photocopy of Pag-IBIG Membership ID', sort_order: 11 },
+] as const;
+
 export async function provisionTenantDatabase(dbName: string, admin: AdminSeed): Promise<void> {
   logger.info(`Provisioning tenant database: ${dbName}`);
 
@@ -96,7 +110,10 @@ async function createTenantTables(tenantDb: ReturnType<typeof db.getMasterDb>): 
     table.date('birthday').nullable();
     table.string('gender', 20).nullable();
     table.string('avatar_url', 500);
+    table.string('valid_id_url', 500).nullable();
+    table.timestamp('valid_id_updated_at').nullable();
     table.string('pin', 50).nullable();
+    table.integer('employee_number').nullable();
     table.boolean('updated').notNullable().defaultTo(false);
     table.boolean('is_active').notNullable().defaultTo(true);
     table.timestamp('last_login_at');
@@ -343,6 +360,86 @@ async function createTenantTables(tenantDb: ReturnType<typeof db.getMasterDb>): 
     table.string('link_url', 500).nullable();
     table.timestamp('created_at').notNullable().defaultTo(tenantDb.fn.now());
   });
+
+  // Registration Requests
+  await tenantDb.schema.createTable('registration_requests', (table) => {
+    table.uuid('id').primary().defaultTo(tenantDb.raw('gen_random_uuid()'));
+    table.string('first_name', 100).notNullable();
+    table.string('last_name', 100).notNullable();
+    table.string('email', 255).notNullable();
+    table.text('encrypted_password').notNullable();
+    table.string('status', 20).notNullable().defaultTo('pending');
+    table.timestamp('requested_at').notNullable().defaultTo(tenantDb.fn.now());
+    table.uuid('reviewed_by').nullable().references('id').inTable('users');
+    table.timestamp('reviewed_at').nullable();
+    table.text('rejection_reason').nullable();
+    table.jsonb('approved_role_ids').nullable();
+    table.jsonb('approved_branch_ids').nullable();
+    table.timestamp('created_at').notNullable().defaultTo(tenantDb.fn.now());
+    table.timestamp('updated_at').notNullable().defaultTo(tenantDb.fn.now());
+  });
+
+  await tenantDb.raw(`
+    CREATE UNIQUE INDEX IF NOT EXISTS registration_requests_pending_email_unique
+    ON registration_requests (email)
+    WHERE status = 'pending'
+  `);
+
+  // Personal Information Verifications
+  await tenantDb.schema.createTable('personal_information_verifications', (table) => {
+    table.uuid('id').primary().defaultTo(tenantDb.raw('gen_random_uuid()'));
+    table.uuid('user_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
+    table.string('status', 20).notNullable().defaultTo('pending');
+    table.jsonb('requested_changes').notNullable();
+    table.jsonb('approved_changes').nullable();
+    table.string('valid_id_url', 500).notNullable();
+    table.uuid('reviewed_by').nullable().references('id').inTable('users');
+    table.timestamp('reviewed_at').nullable();
+    table.text('rejection_reason').nullable();
+    table.timestamp('created_at').notNullable().defaultTo(tenantDb.fn.now());
+    table.timestamp('updated_at').notNullable().defaultTo(tenantDb.fn.now());
+  });
+
+  await tenantDb.raw(`
+    CREATE UNIQUE INDEX IF NOT EXISTS personal_information_verifications_pending_user_unique
+    ON personal_information_verifications (user_id)
+    WHERE status = 'pending'
+  `);
+
+  // Employment requirement definitions
+  await tenantDb.schema.createTable('employment_requirement_types', (table) => {
+    table.string('code', 100).primary();
+    table.string('label', 255).notNullable();
+    table.integer('sort_order').notNullable().defaultTo(0);
+    table.boolean('is_active').notNullable().defaultTo(true);
+    table.timestamp('created_at').notNullable().defaultTo(tenantDb.fn.now());
+    table.timestamp('updated_at').notNullable().defaultTo(tenantDb.fn.now());
+  });
+
+  // Employment requirement submissions
+  await tenantDb.schema.createTable('employment_requirement_submissions', (table) => {
+    table.uuid('id').primary().defaultTo(tenantDb.raw('gen_random_uuid()'));
+    table.uuid('user_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
+    table
+      .string('requirement_code', 100)
+      .notNullable()
+      .references('code')
+      .inTable('employment_requirement_types')
+      .onDelete('CASCADE');
+    table.string('document_url', 500).notNullable();
+    table.string('status', 20).notNullable().defaultTo('pending');
+    table.uuid('reviewed_by').nullable().references('id').inTable('users');
+    table.timestamp('reviewed_at').nullable();
+    table.text('rejection_reason').nullable();
+    table.timestamp('created_at').notNullable().defaultTo(tenantDb.fn.now());
+    table.timestamp('updated_at').notNullable().defaultTo(tenantDb.fn.now());
+  });
+
+  await tenantDb.raw(`
+    CREATE UNIQUE INDEX IF NOT EXISTS employment_requirement_submissions_pending_user_requirement_unique
+    ON employment_requirement_submissions (user_id, requirement_code)
+    WHERE status = 'pending'
+  `);
 }
 
 async function seedDefaultData(tenantDb: ReturnType<typeof db.getMasterDb>): Promise<void> {
@@ -401,6 +498,14 @@ async function seedDefaultData(tenantDb: ReturnType<typeof db.getMasterDb>): Pro
       }
     }
   }
+
+  // Seed fixed employment requirement catalog
+  await tenantDb('employment_requirement_types').insert(
+    EMPLOYMENT_REQUIREMENT_TYPES.map((item) => ({
+      ...item,
+      is_active: true,
+    })),
+  );
 }
 
 async function seedAdminUser(

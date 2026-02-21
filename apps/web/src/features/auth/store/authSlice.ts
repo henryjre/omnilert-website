@@ -7,6 +7,7 @@ interface AuthUser {
   firstName: string;
   lastName: string;
   avatarUrl: string | null;
+  employeeNumber: number | null;
   roles: { id: string; name: string; color: string | null }[];
   permissions: string[];
   branchIds: string[];

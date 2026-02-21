@@ -8,6 +8,14 @@ import { env } from "../config/env.js";
 
 let s3Client: S3Client | null = null;
 
+export interface PrefixDeleteResult {
+  prefix: string;
+  attemptedCount: number;
+  deletedCount: number;
+  failedKeys: string[];
+  error?: string;
+}
+
 /**
  * Initialize the S3 client with DigitalOcean Spaces configuration.
  * Returns null if environment variables are not configured.
@@ -76,6 +84,21 @@ function generateKey(filename: string, folder?: string): string {
   return `${folderPath}${timestamp}-${random}.${ext}`;
 }
 
+function normalizePathSegment(segment: string): string {
+  return segment
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "")
+    .trim();
+}
+
+export function buildTenantStoragePrefix(companyStorageRoot: string, ...parts: string[]): string {
+  const segments = [companyStorageRoot, ...parts]
+    .map((segment) => normalizePathSegment(String(segment)))
+    .filter((segment) => segment.length > 0);
+  return segments.join("/");
+}
+
 /**
  * Upload a file buffer to DigitalOcean Spaces.
  * @param buffer - File buffer data
@@ -126,6 +149,85 @@ export async function uploadFile(
   }
 }
 
+export async function deletePrefixRecursive(prefix: string): Promise<PrefixDeleteResult> {
+  const client = getS3Client();
+  const bucket = env.DO_SPACES_BUCKET;
+  const normalizedPrefix = normalizePathSegment(prefix);
+  const effectivePrefix = normalizedPrefix.endsWith("/") ? normalizedPrefix : `${normalizedPrefix}/`;
+
+  if (!normalizedPrefix) {
+    return {
+      prefix: normalizedPrefix,
+      attemptedCount: 0,
+      deletedCount: 0,
+      failedKeys: [],
+      error: "Prefix is empty",
+    };
+  }
+
+  if (!client || !bucket) {
+    return {
+      prefix: normalizedPrefix,
+      attemptedCount: 0,
+      deletedCount: 0,
+      failedKeys: [],
+      error: "S3 storage not configured",
+    };
+  }
+
+  const keys: string[] = [];
+  let continuationToken: string | undefined;
+
+  try {
+    do {
+      const listCommand = new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: effectivePrefix,
+        ContinuationToken: continuationToken,
+      });
+      const response = await client.send(listCommand);
+      for (const obj of response.Contents ?? []) {
+        if (obj.Key) {
+          keys.push(obj.Key);
+        }
+      }
+      continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+    } while (continuationToken);
+
+    const failedKeys: string[] = [];
+    let deletedCount = 0;
+
+    for (const key of keys) {
+      try {
+        await client.send(
+          new DeleteObjectCommand({
+            Bucket: bucket,
+            Key: key,
+          }),
+        );
+        deletedCount += 1;
+      } catch {
+        failedKeys.push(key);
+      }
+    }
+
+    return {
+      prefix: effectivePrefix,
+      attemptedCount: keys.length,
+      deletedCount,
+      failedKeys,
+    };
+  } catch (error) {
+    return {
+      prefix: effectivePrefix,
+      attemptedCount: keys.length,
+      deletedCount: 0,
+      failedKeys: [],
+      error: error instanceof Error ? error.message : "Failed to delete prefix",
+    };
+  }
+}
+
 /**
  * Delete a file from DigitalOcean Spaces.
  * @param url - Public URL of the file to delete
@@ -171,41 +273,6 @@ export async function deleteFile(url: string): Promise<boolean> {
  * @returns True if deletion was successful
  */
 export async function deleteFolder(folderPath: string): Promise<boolean> {
-  const client = getS3Client();
-  const bucket = env.DO_SPACES_BUCKET;
-
-  if (!client || !bucket) {
-    console.error("S3 storage not configured");
-    return false;
-  }
-
-  try {
-    // List all objects in the folder
-    const listCommand = new ListObjectsV2Command({
-      Bucket: bucket,
-      Prefix: folderPath,
-    });
-
-    const response = await client.send(listCommand);
-
-    if (!response.Contents || response.Contents.length === 0) {
-      return true; // No files to delete
-    }
-
-    // Delete each file
-    for (const obj of response.Contents) {
-      if (obj.Key) {
-        const deleteCommand = new DeleteObjectCommand({
-          Bucket: bucket,
-          Key: obj.Key,
-        });
-        await client.send(deleteCommand);
-      }
-    }
-
-    return true;
-  } catch (error) {
-    console.error("Failed to delete folder from S3:", error);
-    return false;
-  }
+  const result = await deletePrefixRecursive(folderPath);
+  return !result.error && result.failedKeys.length === 0;
 }

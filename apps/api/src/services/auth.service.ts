@@ -16,6 +16,7 @@ interface TenantUserRow {
   password_hash: string;
   first_name: string;
   last_name: string;
+  employee_number: number | null;
   avatar_url: string | null;
   is_active: boolean;
   updated?: boolean;
@@ -203,6 +204,53 @@ export async function loginTenantUser(email: string, password: string, companySl
     });
   }
 
+  // Always notify employees about employment requirement submission progress on login.
+  if (!isSuperAdminFallback) {
+    try {
+      const hasRequirementTypesTable = await tenantDb.schema.hasTable('employment_requirement_types');
+      const hasRequirementSubmissionsTable = await tenantDb.schema.hasTable('employment_requirement_submissions');
+
+      if (hasRequirementTypesTable && hasRequirementSubmissionsTable) {
+        const totalResult = await tenantDb('employment_requirement_types')
+          .where({ is_active: true })
+          .count<{ count: string }>('code as count')
+          .first();
+        const totalRequirements = Number(totalResult?.count ?? 0);
+
+        if (totalRequirements > 0) {
+          const submittedRows = await tenantDb('employment_requirement_submissions')
+            .where({ user_id: user.id })
+            .distinct('requirement_code');
+          const submittedCount = submittedRows.length;
+
+          if (submittedCount === 0) {
+            await tenantDb('employee_notifications').insert({
+              user_id: user.id,
+              title: 'Submit Your Requirements',
+              message: 'Please submit your employment requirements in My Account > Employment.',
+              type: 'warning',
+              link_url: '/account/employment',
+            });
+          } else if (submittedCount < totalRequirements) {
+            const remaining = totalRequirements - submittedCount;
+            await tenantDb('employee_notifications').insert({
+              user_id: user.id,
+              title: 'Complete Your Requirements',
+              message: `You have submitted ${submittedCount} of ${totalRequirements} employment requirements. Please submit the remaining ${remaining}.`,
+              type: 'warning',
+              link_url: '/account/employment',
+            });
+          }
+        }
+      }
+    } catch (error) {
+      logger.warn(
+        { err: error, userId: user.id, companySlug },
+        'Failed to evaluate employment requirement progress notification on login',
+      );
+    }
+  }
+
   return {
     accessToken,
     refreshToken,
@@ -214,6 +262,7 @@ export async function loginTenantUser(email: string, password: string, companySl
       firstName: user.first_name,
       lastName: user.last_name,
       avatarUrl: user.avatar_url || null,
+      employeeNumber: user.employee_number ?? null,
       roles,
       permissions,
       branchIds,
@@ -223,7 +272,20 @@ export async function loginTenantUser(email: string, password: string, companySl
 
 export async function refreshTokens(refreshTokenStr: string) {
   const payload = verifyRefreshToken(refreshTokenStr);
-  const tenantDb = await db.getTenantDb(payload.companyDbName);
+  const masterDb = db.getMasterDb();
+  const company = await masterDb('companies')
+    .where({ db_name: payload.companyDbName, is_active: true })
+    .first();
+  if (!company) {
+    throw new AppError(401, 'Company is no longer available');
+  }
+
+  let tenantDb;
+  try {
+    tenantDb = await db.getTenantDb(payload.companyDbName);
+  } catch {
+    throw new AppError(401, 'Company is no longer available');
+  }
 
   // Verify stored token
   const tokenHash = crypto.createHash('sha256').update(refreshTokenStr).digest('hex');
@@ -244,10 +306,6 @@ export async function refreshTokens(refreshTokenStr: string) {
   if (!user) {
     throw new AppError(401, 'User not found');
   }
-
-  // Get company info
-  const masterDb = db.getMasterDb();
-  const company = await masterDb('companies').where({ db_name: payload.companyDbName }).first();
 
   // Reload roles and permissions
   const roles = await tenantDb('user_roles')

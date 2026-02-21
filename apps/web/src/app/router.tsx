@@ -11,15 +11,18 @@ import { AuthorizationRequestsTab } from '@/features/account/components/Authoriz
 import { CashRequestsTab } from '@/features/account/components/CashRequestsTab';
 import { EmployeeNotificationsTab } from '@/features/account/components/EmployeeNotificationsTab';
 import { SettingsTab } from '@/features/account/components/SettingsTab';
+import { EmploymentTab } from '@/features/account/components/EmploymentTab';
 import { PosVerificationPage } from '@/features/pos-verification/pages/PosVerificationPage';
 import { PosSessionPage } from '@/features/pos-session/pages/PosSessionPage';
 import { EmployeeShiftsPage } from '@/features/employee-shifts/pages/EmployeeShiftsPage';
+import { EmployeeRequirementsPage } from '@/features/employee-requirements/pages/EmployeeRequirementsPage';
 import { RoleManagementPage } from '@/features/roles/pages/RoleManagementPage';
 import { BranchManagementPage } from '@/features/company/pages/BranchManagementPage';
 import { UserManagementPage } from '@/features/company/pages/UserManagementPage';
 import { CompanyPage } from '@/features/company/pages/CompanyPage';
 import { AuthorizationRequestsPage } from '@/features/authorization-requests/pages/AuthorizationRequestsPage';
 import { CashRequestsPage } from '@/features/cash-requests/pages/CashRequestsPage';
+import { EmployeeVerificationsPage } from '@/features/employee-verifications/pages/EmployeeVerificationsPage';
 import { PERMISSIONS } from '@omnilert/shared';
 
 export const router = createBrowserRouter([
@@ -59,6 +62,7 @@ export const router = createBrowserRouter([
               { path: 'cash-requests', element: <CashRequestsTab /> },
               { path: 'notifications', element: <EmployeeNotificationsTab /> },
               { path: 'settings', element: <SettingsTab /> },
+              { path: 'employment', element: <EmploymentTab /> },
             ],
           },
           {
@@ -104,6 +108,26 @@ export const router = createBrowserRouter([
             element: (
               <PermissionGuard permission={PERMISSIONS.CASH_REQUEST_VIEW_ALL}>
                 <CashRequestsPage />
+              </PermissionGuard>
+            ),
+          },
+          {
+            path: 'employee-verifications',
+            element: (
+              <PermissionGuard permission={PERMISSIONS.EMPLOYEE_VERIFICATION_VIEW}>
+                <EmployeeVerificationsPage />
+              </PermissionGuard>
+            ),
+          },
+          {
+            path: 'registration-requests',
+            element: <Navigate to="/employee-verifications" replace />,
+          },
+          {
+            path: 'employee-requirements',
+            element: (
+              <PermissionGuard permission={PERMISSIONS.SHIFT_VIEW_ALL}>
+                <EmployeeRequirementsPage />
               </PermissionGuard>
             ),
           },

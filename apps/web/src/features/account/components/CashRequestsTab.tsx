@@ -222,11 +222,13 @@ function NewRequestModal({ onClose, onCreated }: NewRequestModalProps) {
 // --- Main Tab ---
 
 export function CashRequestsTab() {
+  const PAGE_SIZE = 10;
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [imageModalOpen, setImageModalOpen] = useState(false);
   const [attachmentUrl, setAttachmentUrl] = useState('');
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     api
@@ -234,6 +236,13 @@ export function CashRequestsTab() {
       .then((res) => setRequests(res.data.data || []))
       .finally(() => setLoading(false));
   }, []);
+
+  const totalPages = Math.max(1, Math.ceil(requests.length / PAGE_SIZE));
+  const pagedRequests = requests.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  useEffect(() => {
+    setPage((prev) => Math.min(prev, totalPages));
+  }, [totalPages]);
 
   if (loading) {
     return (
@@ -248,7 +257,10 @@ export function CashRequestsTab() {
       {showModal && (
         <NewRequestModal
           onClose={() => setShowModal(false)}
-          onCreated={(r) => setRequests((prev) => [r, ...prev])}
+          onCreated={(r) => {
+            setRequests((prev) => [r, ...prev]);
+            setPage(1);
+          }}
         />
       )}
 
@@ -271,7 +283,7 @@ export function CashRequestsTab() {
           </Card>
         ) : (
           <div className="space-y-3">
-            {requests.map((r) => (
+            {pagedRequests.map((r) => (
               <Card key={r.id}>
                 <CardBody>
                   <div className="flex items-start justify-between gap-3">
@@ -315,6 +327,30 @@ export function CashRequestsTab() {
                 </CardBody>
               </Card>
             ))}
+
+            {totalPages > 1 && (
+              <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
+                <span>
+                  Page {page} of {totalPages}
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                    disabled={page === 1}
+                    className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+                    disabled={page === totalPages}
+                    className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

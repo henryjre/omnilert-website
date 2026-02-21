@@ -18,13 +18,19 @@ import { ImageModal } from '../components/ImageModal';
 
 const DENOMINATIONS = [1000, 500, 200, 100, 50, 20, 10, 5, 1];
 
+function isMobileViewport(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.matchMedia('(max-width: 639px)').matches;
+}
+
 function fmtOdooDate(dateStr: string): string {
   // Odoo sends "YYYY-MM-DD HH:MM:SS" without timezone — treat as UTC
   const utcStr = dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T') + 'Z';
+  const monthFormat = isMobileViewport() ? 'short' : 'long';
   return new Intl.DateTimeFormat('en-PH', {
     timeZone: 'Asia/Manila',
     year: 'numeric',
-    month: 'long',
+    month: monthFormat,
     day: '2-digit',
     hour: 'numeric',
     minute: '2-digit',
@@ -34,11 +40,12 @@ function fmtOdooDate(dateStr: string): string {
 
 function fmtDateTime(dateStr: string): string {
   const d = new Date(dateStr);
+  const monthFormat = isMobileViewport() ? 'short' : 'long';
   const datePart = new Intl.DateTimeFormat('en-PH', {
     timeZone: 'Asia/Manila',
     year: 'numeric',
-    month: 'short',
-    day: 'numeric',
+    month: monthFormat,
+    day: '2-digit',
   }).format(d);
   const timePart = new Intl.DateTimeFormat('en-PH', {
     timeZone: 'Asia/Manila',
@@ -458,34 +465,40 @@ function VerificationCard({
   return (
     <>
     <Card>
-      <CardHeader className={`flex items-start justify-between ${typeHeaderClass}`}>
-        <div>
-          <div className="flex items-center gap-2">
-            <h3 className="font-semibold text-gray-900">{verification.title || 'POS Verification'}</h3>
-            {typeLabel && (
-              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${typeBadgeClass}`}>
-                <Layers className="h-3 w-3" />
-                {typeLabel}
-              </span>
+      <CardHeader className={`space-y-1.5 sm:space-y-0 ${typeHeaderClass}`}>
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-base font-semibold leading-tight text-gray-900">
+                {verification.title || 'POS Verification'}
+              </h3>
+              {typeLabel && (
+                <span className={`hidden items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium sm:inline-flex ${typeBadgeClass}`}>
+                  <Layers className="h-3 w-3" />
+                  {typeLabel}
+                </span>
+              )}
+            </div>
+            {verification.amount != null && (
+              <p className="mt-1 text-lg font-bold text-primary-600 sm:text-xl">
+                {isRefundOrder ? 'Refund Total' : isRegisterCashOut ? 'Cash Out Amount' : isRegisterCashIn ? 'Cash In Amount' : isDiscountOrder || isNonCashOrder || isTokenPayOrder || isISPEPurchaseOrder ? 'Order Total' : 'Expected'}:{' '}
+                {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(
+                  verification.amount,
+                )}
+              </p>
             )}
           </div>
-          {verification.amount != null && (
-            <p className="mt-1 text-lg font-bold text-primary-600">
-              {isRefundOrder ? 'Refund Total' : isRegisterCashOut ? 'Cash Out Amount' : isRegisterCashIn ? 'Cash In Amount' : isDiscountOrder || isNonCashOrder || isTokenPayOrder || isISPEPurchaseOrder ? 'Order Total' : 'Expected'}:{' '}
-              {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(
-                verification.amount,
-              )}
-            </p>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          {isAwaitingCustomer && (
-            <span className="rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-medium text-yellow-800">
-              Awaiting Customer Verification
-            </span>
-          )}
+
           <Badge variant={statusVariant(verification.status)}>{verification.status}</Badge>
         </div>
+
+        {isAwaitingCustomer && !isTokenPayOrder && (
+          <div>
+            <span className="rounded-full bg-yellow-100 px-2.5 py-0.5 text-[11px] font-medium text-yellow-800 sm:text-xs">
+              Awaiting Customer Verification
+            </span>
+          </div>
+        )}
       </CardHeader>
 
       <CardBody className="space-y-4">
@@ -1035,6 +1048,10 @@ function VerificationCard({
             onChange={(e) => setRefundReason(e.target.value)}
             className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
           />
+        )}
+
+        {isAwaitingCustomer && isTokenPayOrder && (
+          <p className="text-center text-xs text-amber-700">Awaiting customer verification.</p>
         )}
       </CardBody>
 

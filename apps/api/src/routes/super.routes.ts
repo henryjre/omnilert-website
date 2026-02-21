@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   createCompanyBySuperAdminSchema,
   updateCompanySchema,
+  deleteCurrentCompanySchema,
   superAdminBootstrapSchema,
   superAdminLoginSchema,
 } from '@omnilert/shared';
@@ -28,6 +29,12 @@ router.put(
   authenticate,
   validateBody(updateCompanySchema),
   companyController.updateCurrent,
+);
+router.post(
+  '/companies/current/delete',
+  authenticate,
+  validateBody(deleteCurrentCompanySchema),
+  companyController.deleteCurrent,
 );
 
 // Protected - company management (requires admin permission)

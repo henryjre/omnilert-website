@@ -4,7 +4,7 @@ import { getIO } from '../config/socket.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import { updatePosSessionOpeningPcf, updatePosSessionClosingPcf } from '../services/odoo.service.js';
-import { uploadFile } from '../services/storage.service.js';
+import { buildTenantStoragePrefix, uploadFile } from '../services/storage.service.js';
 
 async function resolveUserName(db: Knex, userId: string | null | undefined): Promise<string | null> {
   if (!userId) return null;
@@ -113,6 +113,7 @@ export async function uploadImage(req: Request, res: Response, next: NextFunctio
     const tenantDb = req.tenantDb!;
     const verificationId = req.params.id as string;
     const user = req.user!;
+    const companyStorageRoot = req.companyContext?.companyStorageRoot ?? '';
 
     const verification = await tenantDb('pos_verifications').where({ id: verificationId }).first();
     if (!verification) throw new AppError(404, 'Verification not found');
@@ -120,11 +121,12 @@ export async function uploadImage(req: Request, res: Response, next: NextFunctio
     if (!req.file) throw new AppError(400, 'No file uploaded');
 
     // Upload to S3
+    const folder = buildTenantStoragePrefix(companyStorageRoot, 'POS Verifications', user.sub);
     const fileUrl = await uploadFile(
       req.file.buffer,
       req.file.originalname,
       req.file.mimetype,
-      "POS Verifications"
+      folder,
     );
     if (!fileUrl) {
       throw new AppError(500, 'Failed to upload image to storage');

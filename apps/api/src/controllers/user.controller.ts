@@ -3,15 +3,15 @@ import crypto from 'crypto';
 import { comparePassword, hashPassword } from '../utils/password.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
-import { syncUserProfileToOdoo, getCompanyPin } from '../services/odoo.service.js';
-import { uploadFile, deleteFolder } from '../services/storage.service.js';
+import { syncUserProfileToOdoo, getCompanyPin, syncAvatarToOdoo } from '../services/odoo.service.js';
+import { buildTenantStoragePrefix, uploadFile, deleteFolder } from '../services/storage.service.js';
 import { verifyRefreshToken } from '../utils/jwt.js';
 
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
     const tenantDb = req.tenantDb!;
     const users = await tenantDb('users')
-      .select('id', 'email', 'first_name', 'last_name', 'user_key', 'avatar_url', 'is_active', 'last_login_at', 'created_at')
+      .select('id', 'email', 'first_name', 'last_name', 'user_key', 'employee_number', 'avatar_url', 'is_active', 'last_login_at', 'created_at')
       .orderBy('created_at', 'desc');
 
     // Attach roles and branches to each user
@@ -38,7 +38,7 @@ export async function list(req: Request, res: Response, next: NextFunction) {
 export async function create(req: Request, res: Response, next: NextFunction) {
   try {
     const tenantDb = req.tenantDb!;
-    const { email, password, firstName, lastName, userKey, roleIds, branchIds } = req.body;
+    const { email, password, firstName, lastName, userKey, employeeNumber, roleIds, branchIds } = req.body;
 
     const passwordHash = await hashPassword(password);
 
@@ -49,6 +49,7 @@ export async function create(req: Request, res: Response, next: NextFunction) {
         first_name: firstName,
         last_name: lastName,
         user_key: userKey,
+        employee_number: employeeNumber ?? null,
       })
       .returning('*');
 
@@ -92,6 +93,7 @@ export async function update(req: Request, res: Response, next: NextFunction) {
     if (req.body.firstName !== undefined) updates.first_name = req.body.firstName;
     if (req.body.lastName !== undefined) updates.last_name = req.body.lastName;
     if (req.body.userKey !== undefined) updates.user_key = req.body.userKey;
+    if (req.body.employeeNumber !== undefined) updates.employee_number = req.body.employeeNumber;
     if (req.body.isActive !== undefined) updates.is_active = req.body.isActive;
 
     const [user] = await tenantDb('users').where({ id }).update(updates).returning('*');
@@ -191,7 +193,7 @@ export async function getMe(req: Request, res: Response, next: NextFunction) {
 
     const user = await tenantDb('users')
       .where({ id: userId })
-      .select('id', 'email', 'first_name', 'last_name', 'user_key', 'mobile_number', 'legal_name', 'birthday', 'gender', 'avatar_url', 'pin')
+      .select('id', 'email', 'first_name', 'last_name', 'user_key', 'mobile_number', 'legal_name', 'birthday', 'gender', 'avatar_url', 'pin', 'valid_id_url')
       .first();
 
     if (!user) throw new AppError(404, 'User not found');
@@ -204,32 +206,10 @@ export async function getMe(req: Request, res: Response, next: NextFunction) {
 
 export async function updateMe(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
-    const userId = req.user!.sub;
-    const { email, mobileNumber, legalName, birthday, gender } = req.body;
-
-    const updates: Record<string, unknown> = { updated_at: new Date(), updated: true };
-    if (email !== undefined) updates.email = email;
-    if (mobileNumber !== undefined) updates.mobile_number = mobileNumber;
-    if (legalName !== undefined) updates.legal_name = legalName;
-    if (birthday !== undefined) updates.birthday = birthday;
-    if (gender !== undefined) updates.gender = gender;
-
-    const [user] = await tenantDb('users').where({ id: userId }).update(updates).returning('*');
-    if (!user) throw new AppError(404, 'User not found');
-
-    // Sync to Odoo (fire and forget, don't wait for response)
-    syncUserProfileToOdoo(user.user_key ?? null, {
-      email: email || user.email,
-      mobileNumber: mobileNumber || user.mobile_number || "",
-      legalName: legalName || user.legal_name || "",
-      birthday: birthday || user.birthday,
-      gender: gender || user.gender,
-    }).catch((err) => {
-      logger.error(`Failed to sync user profile to Odoo: ${err}`);
-    });
-
-    res.json({ success: true, data: user });
+    throw new AppError(
+      400,
+      'Direct profile updates are disabled. Submit personal information verification via /account/personal-information/verifications.',
+    );
   } catch (err) {
     next(err);
   }
@@ -354,6 +334,7 @@ export async function uploadAvatar(req: Request, res: Response, next: NextFuncti
   try {
     const tenantDb = req.tenantDb!;
     const userId = req.user!.sub;
+    const companyStorageRoot = req.companyContext?.companyStorageRoot ?? '';
     const file = req.file as Express.Multer.File | undefined;
 
     if (!file) {
@@ -361,11 +342,13 @@ export async function uploadAvatar(req: Request, res: Response, next: NextFuncti
     }
 
     // Get current user to check for existing avatar
-    const currentUser = await tenantDb('users').where({ id: userId }).first('avatar_url');
+    const currentUser = await tenantDb('users')
+      .where({ id: userId })
+      .first('avatar_url', 'user_key', 'email');
     const currentAvatarUrl = currentUser?.avatar_url;
 
     // Delete old avatar folder if exists
-    const folderPath = `Profile Pictures/${userId}`;
+    const folderPath = buildTenantStoragePrefix(companyStorageRoot, 'Profile Pictures', userId);
     if (currentAvatarUrl) {
       await deleteFolder(folderPath);
     }
@@ -386,6 +369,15 @@ export async function uploadAvatar(req: Request, res: Response, next: NextFuncti
     await tenantDb('users')
       .where({ id: userId })
       .update({ avatar_url: avatarUrl, updated_at: new Date() });
+
+    // Sync avatar to Odoo without blocking user response.
+    syncAvatarToOdoo({
+      websiteUserKey: currentUser?.user_key ?? null,
+      email: currentUser?.email ?? null,
+      avatarUrl,
+    }).catch((err) => {
+      logger.error(`Failed to sync avatar to Odoo: ${err}`);
+    });
 
     res.json({ success: true, data: { avatar_url: avatarUrl } });
   } catch (err) {

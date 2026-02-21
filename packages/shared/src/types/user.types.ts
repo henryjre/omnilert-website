@@ -4,6 +4,8 @@ export interface User {
   firstName: string;
   lastName: string;
   avatarUrl: string | null;
+  validIdUrl?: string | null;
+  employeeNumber: number | null;
   isActive: boolean;
   lastLoginAt: string | null;
   createdAt: string;
@@ -27,6 +29,7 @@ export interface CreateUserRequest {
   password: string;
   firstName: string;
   lastName: string;
+  employeeNumber?: number;
   roleIds: string[];
   branchIds: string[];
 }
@@ -35,5 +38,6 @@ export interface UpdateUserRequest {
   email?: string;
   firstName?: string;
   lastName?: string;
+  employeeNumber?: number;
   isActive?: boolean;
 }

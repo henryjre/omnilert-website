@@ -38,6 +38,13 @@ const envSchema = z.object({
   ODOO_USERNAME: z.string().email(),
   ODOO_PASSWORD: z.string().min(1),
 
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().optional(),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_FROM: z.string().optional(),
+  DISCORD_INVITE_URL: z.string().url().default('https://discord.gg/9E2e4TPS7g'),
+
   QUEUE_SCHEMA: z.string().default('pgboss'),
   EARLY_CHECKIN_QUEUE_NAME: z.string().default('early-checkin-auth'),
   EARLY_CHECKIN_RETRY_LIMIT: z.coerce.number().int().min(0).default(3),

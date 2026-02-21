@@ -20,10 +20,11 @@ interface BranchFormData {
   name: string;
   address: string;
   odooBranchId: string;
+  isActive: boolean;
   isMainBranch: boolean;
 }
 
-const initialFormData: BranchFormData = { name: '', address: '', odooBranchId: '', isMainBranch: false };
+const initialFormData: BranchFormData = { name: '', address: '', odooBranchId: '', isActive: true, isMainBranch: false };
 
 export function BranchManagementPage() {
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -31,7 +32,6 @@ export function BranchManagementPage() {
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState<BranchFormData>(initialFormData);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [updatingKeys, setUpdatingKeys] = useState<string[]>([]);
 
   const fetchBranches = () => {
     setLoading(true);
@@ -47,9 +47,20 @@ export function BranchManagementPage() {
 
   const handleSubmit = async () => {
     if (editingId) {
-      await api.put(`/branches/${editingId}`, formData);
+      await api.put(`/branches/${editingId}`, {
+        name: formData.name,
+        address: formData.address,
+        odooBranchId: formData.odooBranchId,
+        isActive: formData.isActive,
+        isMainBranch: formData.isMainBranch,
+      });
     } else {
-      await api.post('/branches', formData);
+      await api.post('/branches', {
+        name: formData.name,
+        address: formData.address,
+        odooBranchId: formData.odooBranchId,
+        isMainBranch: formData.isMainBranch,
+      });
     }
     setShowForm(false);
     setEditingId(null);
@@ -62,34 +73,11 @@ export function BranchManagementPage() {
       name: branch.name,
       address: branch.address || '',
       odooBranchId: branch.odoo_branch_id || '',
+      isActive: Boolean(branch.is_active),
       isMainBranch: Boolean(branch.is_main_branch),
     });
     setEditingId(branch.id);
     setShowForm(true);
-  };
-
-  const toggleBranchField = async (
-    branchId: string,
-    updates: { isActive?: boolean; isMainBranch?: boolean },
-    key: string,
-  ) => {
-    setUpdatingKeys((prev) => [...prev, key]);
-    try {
-      await api.put(`/branches/${branchId}`, updates);
-      setBranches((prev) =>
-        prev.map((branch) =>
-          branch.id === branchId
-            ? {
-                ...branch,
-                is_active: updates.isActive ?? branch.is_active,
-                is_main_branch: updates.isMainBranch ?? branch.is_main_branch,
-              }
-            : branch,
-        ),
-      );
-    } finally {
-      setUpdatingKeys((prev) => prev.filter((item) => item !== key));
-    }
   };
 
   if (loading) {
@@ -140,14 +128,46 @@ export function BranchManagementPage() {
               onChange={(e) => setFormData({ ...formData, odooBranchId: e.target.value })}
               placeholder="Maps to Odoo branch identifier"
             />
-            <label className="flex items-center gap-2 text-sm text-gray-700">
-              <input
-                type="checkbox"
-                checked={formData.isMainBranch}
-                onChange={(e) => setFormData({ ...formData, isMainBranch: e.target.checked })}
-              />
-              Main Branch
-            </label>
+            {editingId && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2">
+                  <span className="text-sm font-medium text-gray-700">Active</span>
+                  <button
+                    type="button"
+                    onClick={() => setFormData((prev) => ({ ...prev, isActive: !prev.isActive }))}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      formData.isActive ? 'bg-primary-600' : 'bg-gray-300'
+                    }`}
+                    aria-label="Toggle Active"
+                    aria-pressed={formData.isActive}
+                  >
+                    <span
+                      className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                        formData.isActive ? 'translate-x-5' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+                <div className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2">
+                  <span className="text-sm font-medium text-gray-700">Main Branch</span>
+                  <button
+                    type="button"
+                    onClick={() => setFormData((prev) => ({ ...prev, isMainBranch: !prev.isMainBranch }))}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      formData.isMainBranch ? 'bg-primary-600' : 'bg-gray-300'
+                    }`}
+                    aria-label="Toggle Main Branch"
+                    aria-pressed={formData.isMainBranch}
+                  >
+                    <span
+                      className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                        formData.isMainBranch ? 'translate-x-5' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="flex gap-2">
               <Button onClick={handleSubmit} disabled={!formData.name}>
                 {editingId ? 'Update' : 'Create'}
@@ -186,32 +206,6 @@ export function BranchManagementPage() {
                 <Badge variant={branch.is_active ? 'success' : 'default'}>
                   {branch.is_active ? 'Active' : 'Inactive'}
                 </Badge>
-                <label className="flex items-center gap-1 text-xs text-gray-600">
-                  <input
-                    type="checkbox"
-                    checked={branch.is_active}
-                    disabled={updatingKeys.includes(`${branch.id}:active`)}
-                    onChange={(e) =>
-                      toggleBranchField(branch.id, { isActive: e.target.checked }, `${branch.id}:active`)
-                    }
-                  />
-                  Active
-                </label>
-                <label className="flex items-center gap-1 text-xs text-gray-600">
-                  <input
-                    type="checkbox"
-                    checked={branch.is_main_branch}
-                    disabled={updatingKeys.includes(`${branch.id}:main`)}
-                    onChange={(e) =>
-                      toggleBranchField(
-                        branch.id,
-                        { isMainBranch: e.target.checked },
-                        `${branch.id}:main`,
-                      )
-                    }
-                  />
-                  Main
-                </label>
                 {branch.is_main_branch && <Badge variant="default">Main</Badge>}
                 <button
                   onClick={() => startEdit(branch)}

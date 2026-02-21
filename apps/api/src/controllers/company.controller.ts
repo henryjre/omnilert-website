@@ -23,17 +23,20 @@ function mapCompany(company: any) {
     isActive: company.is_active,
     odooApiKey: company.odoo_api_key,
     themeColor: company.theme_color ?? '#2563EB',
+    companyCode: company.company_code ?? null,
+    canDeleteCompany: company.canDeleteCompany ?? false,
     createdAt: company.created_at,
     updatedAt: company.updated_at,
   };
 }
 
 async function createCompanyFromBody(req: Request) {
-  const { name, odooApiKey, adminEmail, adminPassword, adminFirstName, adminLastName } = req.body;
+  const { name, odooApiKey, adminEmail, adminPassword, adminFirstName, adminLastName, companyCode } = req.body;
   return companyService.createCompany(
     name,
     { email: adminEmail, password: adminPassword, firstName: adminFirstName, lastName: adminLastName },
     odooApiKey,
+    companyCode,
   );
 }
 
@@ -53,8 +56,8 @@ export async function createBySuperAdmin(req: Request, res: Response, next: Next
       throw new AppError(401, 'Unauthorized');
     }
 
-    const { name, odooApiKey } = req.body;
-    const company = await companyService.createCompanyForSuperAdmin(name, superAdminId, odooApiKey);
+    const { name, odooApiKey, companyCode } = req.body;
+    const company = await companyService.createCompanyForSuperAdmin(name, superAdminId, odooApiKey, companyCode);
     logger.info(
       { superAdminId, companyId: company.id, companySlug: company.slug },
       'Company created by super admin',
@@ -124,8 +127,10 @@ export async function getCurrent(req: Request, res: Response, next: NextFunction
   try {
     ensureAdministrator(req);
     const companyId = req.user!.companyId;
+    const userId = req.user!.sub;
     const company = await companyService.getCurrentCompany(companyId);
-    res.json({ success: true, data: mapCompany(company) });
+    const canDeleteCompany = await companyService.canUserDeleteCompany(companyId, userId);
+    res.json({ success: true, data: mapCompany({ ...company, canDeleteCompany }) });
   } catch (err) {
     next(err);
   }
@@ -137,6 +142,36 @@ export async function updateCurrent(req: Request, res: Response, next: NextFunct
     const companyId = req.user!.companyId;
     const company = await companyService.updateCurrentCompany(companyId, req.body);
     res.json({ success: true, data: mapCompany(company) });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function deleteCurrent(req: Request, res: Response, next: NextFunction) {
+  try {
+    const user = req.user;
+    if (!user) {
+      throw new AppError(401, 'Unauthorized');
+    }
+
+    const result = await companyService.deleteCurrentCompany({
+      companyId: user.companyId,
+      userId: user.sub,
+      typedCompanyName: req.body.companyName,
+      superAdminEmail: req.body.superAdminEmail,
+      superAdminPassword: req.body.superAdminPassword,
+    });
+
+    logger.warn(
+      {
+        companyId: user.companyId,
+        companyDbName: user.companyDbName,
+        deletedByUserId: user.sub,
+      },
+      'Company deleted via superuser action',
+    );
+
+    res.json({ success: true, data: result });
   } catch (err) {
     next(err);
   }

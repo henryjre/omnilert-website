@@ -3,11 +3,19 @@ import { useAuthStore } from '@/features/auth/store/authSlice';
 
 const api = axios.create({
   baseURL: '/api/v1',
-  headers: { 'Content-Type': 'application/json' },
 });
 
 // Attach access token to every request
 api.interceptors.request.use((config) => {
+  // Let the browser set multipart boundaries for file uploads.
+  if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+    if (config.headers) {
+      delete (config.headers as Record<string, unknown>)['Content-Type'];
+    }
+  } else if (config.headers && !config.headers['Content-Type']) {
+    config.headers['Content-Type'] = 'application/json';
+  }
+
   const token = useAuthStore.getState().accessToken;
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
