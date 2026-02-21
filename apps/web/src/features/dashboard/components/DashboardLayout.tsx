@@ -50,7 +50,7 @@ export function DashboardLayout() {
           aria-label="Close navigation drawer"
         />
         <div
-          className={`absolute inset-y-0 left-0 flex w-72 max-w-[85vw] transform flex-col bg-white shadow-xl transition-transform ${
+          className={`absolute inset-y-0 left-0 flex h-[100dvh] w-72 max-w-[85vw] transform flex-col bg-white shadow-xl transition-transform ${
             mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >

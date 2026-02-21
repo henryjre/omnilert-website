@@ -45,7 +45,7 @@ export function Sidebar({ className = '' }: SidebarProps) {
   const pendingVerificationCount = usePosVerificationStore((s) => s.pendingCount);
 
   return (
-    <aside className={`flex h-screen w-64 flex-col border-r border-gray-200 bg-white ${className}`}>
+    <aside className={`flex h-[100dvh] w-64 flex-col border-r border-gray-200 bg-white ${className}`}>
       {/* Logo */}
       <div className="flex h-16 items-center border-b border-gray-200 px-6">
         <div className="leading-tight">
@@ -55,7 +55,7 @@ export function Sidebar({ className = '' }: SidebarProps) {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
+      <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-4">
         {hasPermission(PERMISSIONS.DASHBOARD_VIEW) && (
           <NavLink to="/dashboard" className={linkClass}>
             <LayoutDashboard className="h-5 w-5" />
@@ -183,7 +183,7 @@ export function Sidebar({ className = '' }: SidebarProps) {
       </nav>
 
       {/* User section */}
-      <div className="border-t border-gray-200 p-4">
+      <div className="mt-auto border-t border-gray-200 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
         <div className="mb-2 text-sm">
           <p className="font-medium text-gray-900">
             {user?.firstName} {user?.lastName}
