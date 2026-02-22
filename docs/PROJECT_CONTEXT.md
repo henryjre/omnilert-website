@@ -170,8 +170,9 @@ Tenant migrations (`apps/api/src/migrations/tenant`):
 - `010_add_push_notifications.ts`
 - `011_drop_employee_notifications_user_fk.ts`
 - `012_add_suspended_employment_status.ts`
+- `013_drop_employee_shifts_user_fk.ts` (drops tenant FK on `employee_shifts.user_id` for global-user UUID compatibility)
 - Compatibility `.js` shim files exist for legacy entries recorded in `knex_migrations`
-  (currently `001` to `005`) to prevent Knex “migration directory is corrupt” errors on older tenants.
+  (currently `001` to `012`) to prevent Knex "migration directory is corrupt" errors on older tenants.
 
 Operational scripts (`apps/api/src/scripts`):
 - `migrate-tenants.ts`
@@ -713,3 +714,4 @@ Known risks/gaps:
 - Legacy migration helper `apps/api/src/scripts/migration.ts` may diverge from standard migration flow.
 
 This file should be updated whenever route contracts, permission keys, migrations, realtime contracts, queue behavior, storage topology, or deletion behavior changes.
+
