@@ -140,6 +140,8 @@ Tenant migrations (`apps/api/src/migrations/tenant`):
 - `007_departments_employee_profiles.ts`
 - `008_expand_personal_information_fields.ts`
 - `009_add_employment_status_to_users.ts`
+- Compatibility `.js` shim files exist for legacy entries recorded in `knex_migrations`
+  (currently `001` to `005`) to prevent Knex “migration directory is corrupt” errors on older tenants.
 
 Operational scripts (`apps/api/src/scripts`):
 - `migrate-tenants.ts`
