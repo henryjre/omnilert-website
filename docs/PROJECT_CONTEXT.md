@@ -105,6 +105,7 @@ Tenant DB key additions:
 - `users.emergency_contact`, `users.emergency_phone`, `users.emergency_relationship`
 - `users.bank_id`, `users.bank_account_number`
 - `users.department_id`, `users.position_title`, `users.date_started`
+- `users.employment_status` (`active|resigned|inactive`; `is_active` compatibility remains)
 - `registration_requests`
 - `personal_information_verifications`
 - `employment_requirement_types`
@@ -138,6 +139,7 @@ Tenant migrations (`apps/api/src/migrations/tenant`):
 - `006_profile_bank_verifications.ts`
 - `007_departments_employee_profiles.ts`
 - `008_expand_personal_information_fields.ts`
+- `009_add_employment_status_to_users.ts`
 
 Operational scripts (`apps/api/src/scripts`):
 - `migrate-tenants.ts`
@@ -282,6 +284,14 @@ Registration compatibility endpoints (`/registration-requests`):
 Employee Requirements manager endpoints (`/employee-requirements`):
 - `GET /employee-requirements`
 - `GET /employee-requirements/:userId`
+
+Employee Profiles endpoints (`/employee-profiles`):
+- `GET /employee-profiles`
+  - Supports `status=all|active|resigned|inactive`, `page`, `pageSize`, `search`
+  - Supports advanced filters: `departmentId`, `roleIdsCsv` (ANY match), `sortBy`, `sortDirection`
+- `GET /employee-profiles/filter-options`
+- `GET /employee-profiles/:userId`
+- `PATCH /employee-profiles/:userId/work-information` (`employmentStatus` preferred; `isActive` compatibility accepted)
 
 My Account verification/requirements endpoints (`/account`):
 - `GET /account/profile`
@@ -455,8 +465,26 @@ My Account Profile tab and Employee Requirements page:
   - Government Identification & Contributions
 - Pending verification helper text for Personal and Bank sections is rendered directly below each disabled submit button.
 
+Employee Schedule page:
+- Filter panel now uses staged controls with explicit `Clear`, `Apply`, and `Cancel` actions (instead of live-apply on input change).
+- Displays small `Filters applied` helper text when any non-default filter is active.
+- `Pending Approvals` filter control is rendered as a toggle switch (not a checkbox).
+- Mobile filter toggle header groups icon/label/badge together on the left, with chevron on the right.
+
 Employee Profiles page:
 - Uses card list + right-side detail panel.
+- Card summary includes `PIN` alongside Department/Position/Mobile.
+- Superuser accounts (emails present in master `super_admins`) are excluded from Employee Profiles list/detail/work-update flows.
+- Responsive pagination is enabled for card list:
+  - Desktop: 12 cards per page
+  - Mobile: 6 cards per page
+- Status model supports `Active`, `Resigned`, and `Inactive` (work edit + filters + badges).
+- Employee Profiles controls now mirror Employee Schedule layout:
+  - status tabs + single filter toggle row
+  - filter panel contains search + advanced filters
+- Filter button provides: department dropdown, roles filter, sort by date started, sort by days of employment.
+- Filter button is toggleable (click again to hide filter panel).
+- Mobile filter toggle header groups icon/label/badge together on the left, with chevron on the right.
 - Panel includes conditional call actions:
   - `Call Employee` (shown only when employee mobile exists)
   - `Call Emergency` (shown only when emergency phone exists)

@@ -504,6 +504,7 @@ export async function getProfile(req: Request, res: Response, next: NextFunction
         'users.department_id',
         'users.position_title',
         'users.date_started',
+        'users.employment_status',
         'users.is_active',
         'users.created_at',
         'departments.name as department_name',
@@ -558,7 +559,13 @@ export async function getProfile(req: Request, res: Response, next: NextFunction
           department_id: user.department_id ?? null,
           department_name: user.department_name ?? null,
           position_title: user.position_title ?? null,
-          status: user.is_active ? 'active' : 'inactive',
+          status: (
+            user.employment_status === 'active'
+            || user.employment_status === 'resigned'
+            || user.employment_status === 'inactive'
+          )
+            ? user.employment_status
+            : (user.is_active ? 'active' : 'inactive'),
           date_started: toDateOnly(user.date_started ?? user.created_at),
           days_of_employment: computeDaysOfEmployment(user.date_started, user.created_at),
         },

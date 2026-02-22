@@ -220,6 +220,7 @@ async function upsertTenantUser(input: {
         employee_number: input.employeeNumber,
         user_key: input.websiteKey,
         is_active: true,
+        employment_status: 'active',
         updated_at: new Date(),
       })
       .returning('id');
@@ -234,6 +235,7 @@ async function upsertTenantUser(input: {
         employee_number: input.employeeNumber,
         user_key: input.websiteKey,
         is_active: true,
+        employment_status: 'active',
       })
       .returning('id');
     user = created;

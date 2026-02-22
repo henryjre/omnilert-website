@@ -6,9 +6,12 @@ import { Spinner } from '@/shared/components/ui/Spinner';
 import { api } from '@/shared/services/api.client';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { PERMISSIONS } from '@omnilert/shared';
-import { BadgeCheck, Phone, Users, X } from 'lucide-react';
+import { BadgeCheck, ChevronDown, ChevronUp, Filter, Phone, Users, X } from 'lucide-react';
 
-type StatusFilter = 'all' | 'active' | 'inactive';
+type StatusFilter = 'all' | 'active' | 'resigned' | 'inactive';
+type EmploymentStatus = 'active' | 'resigned' | 'inactive';
+type SortBy = 'date_started' | 'days_of_employment' | '';
+type SortDirection = 'asc' | 'desc';
 
 type EmployeeCard = {
   id: string;
@@ -20,6 +23,7 @@ type EmployeeCard = {
   avatar_url: string | null;
   department_name: string | null;
   position_title: string | null;
+  employment_status: EmploymentStatus;
   is_active: boolean;
   date_started_effective: string | null;
   days_of_employment: number | null;
@@ -53,7 +57,7 @@ type EmployeeDetail = {
     department_id: string | null;
     department_name: string | null;
     position_title: string | null;
-    status: 'active' | 'inactive';
+    status: EmploymentStatus;
     date_started: string | null;
     days_of_employment: number | null;
   };
@@ -69,8 +73,20 @@ type EmployeeDetail = {
 type WorkFormState = {
   departmentId: string;
   positionTitle: string;
-  isActive: boolean;
+  employmentStatus: EmploymentStatus;
   dateStarted: string;
+};
+
+type EmployeeProfileFilterState = {
+  departmentId: string;
+  roleIds: string[];
+  sortBy: SortBy;
+  sortDirection: SortDirection;
+};
+
+type FilterOptionsPayload = {
+  departments: Array<{ id: string; name: string }>;
+  roles: Array<{ id: string; name: string }>;
 };
 
 const BANK_LABEL: Record<number, string> = {
@@ -110,8 +126,31 @@ function toDialHref(phone: string | null | undefined): string | null {
   return `tel:${normalized}`;
 }
 
+function normalizeEmploymentStatus(status: unknown, isActive: boolean): EmploymentStatus {
+  if (status === 'active' || status === 'resigned' || status === 'inactive') return status;
+  return isActive ? 'active' : 'inactive';
+}
+
+function getStatusBadge(status: EmploymentStatus): { label: string; className: string } {
+  if (status === 'active') return { label: 'Active', className: 'bg-green-100 text-green-700' };
+  if (status === 'resigned') return { label: 'Resigned', className: 'bg-amber-100 text-amber-700' };
+  return { label: 'Inactive', className: 'bg-gray-200 text-gray-700' };
+}
+
+function isMobileViewport(): boolean {
+  if (typeof window === 'undefined') return false;
+  return window.matchMedia('(max-width: 767px)').matches;
+}
+
 export function EmployeeProfilesPage() {
-  const PAGE_SIZE = 12;
+  const DESKTOP_PAGE_SIZE = 12;
+  const MOBILE_PAGE_SIZE = 6;
+  const INITIAL_FILTERS: EmployeeProfileFilterState = {
+    departmentId: '',
+    roleIds: [],
+    sortBy: '',
+    sortDirection: 'desc',
+  };
   const PANEL_ANIMATION_MS = 300;
   const { hasPermission } = usePermission();
   const canEditWorkProfile = hasPermission(PERMISSIONS.EMPLOYEE_EDIT_WORK_PROFILE);
@@ -123,9 +162,16 @@ export function EmployeeProfilesPage() {
   const [success, setSuccess] = useState('');
   const [status, setStatus] = useState<StatusFilter>('all');
   const [search, setSearch] = useState('');
+  const [draftSearch, setDraftSearch] = useState('');
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [appliedFilters, setAppliedFilters] = useState<EmployeeProfileFilterState>(INITIAL_FILTERS);
+  const [draftFilters, setDraftFilters] = useState<EmployeeProfileFilterState>(INITIAL_FILTERS);
+  const [filterOptions, setFilterOptions] = useState<FilterOptionsPayload>({ departments: [], roles: [] });
   const [page, setPage] = useState(1);
+  const [isMobile, setIsMobile] = useState(isMobileViewport);
+  const pageSize = isMobile ? MOBILE_PAGE_SIZE : DESKTOP_PAGE_SIZE;
   const [items, setItems] = useState<EmployeeCard[]>([]);
-  const [pagination, setPagination] = useState({ total: 0, page: 1, pageSize: PAGE_SIZE, totalPages: 1 });
+  const [pagination, setPagination] = useState({ total: 0, page: 1, pageSize: pageSize, totalPages: 1 });
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [detail, setDetail] = useState<EmployeeDetail | null>(null);
@@ -138,7 +184,7 @@ export function EmployeeProfilesPage() {
   const [workForm, setWorkForm] = useState<WorkFormState>({
     departmentId: '',
     positionTitle: '',
-    isActive: true,
+    employmentStatus: 'active',
     dateStarted: '',
   });
 
@@ -170,7 +216,7 @@ export function EmployeeProfilesPage() {
       department_id: null,
       department_name: card.department_name,
       position_title: card.position_title,
-      status: card.is_active ? 'active' : 'inactive',
+      status: normalizeEmploymentStatus(card.employment_status, card.is_active),
       date_started: card.date_started_effective,
       days_of_employment: card.days_of_employment,
     },
@@ -188,7 +234,7 @@ export function EmployeeProfilesPage() {
     setWorkForm({
       departmentId: payload.work_information.department_id ?? '',
       positionTitle: payload.work_information.position_title ?? '',
-      isActive: payload.work_information.status === 'active',
+      employmentStatus: normalizeEmploymentStatus(payload.work_information.status, false),
       dateStarted: toDateInput(payload.work_information.date_started),
     });
   }, []);
@@ -203,13 +249,22 @@ export function EmployeeProfilesPage() {
         params: {
           status,
           page,
-          pageSize: PAGE_SIZE,
+          pageSize,
           search: search.trim() || undefined,
+          departmentId: appliedFilters.departmentId || undefined,
+          roleIdsCsv: appliedFilters.roleIds.length > 0 ? appliedFilters.roleIds.join(',') : undefined,
+          sortBy: appliedFilters.sortBy || undefined,
+          sortDirection: appliedFilters.sortBy ? appliedFilters.sortDirection : undefined,
         },
       });
       const payload = res.data.data || {};
-      setItems(payload.items || []);
-      setPagination(payload.pagination || { total: 0, page: 1, pageSize: PAGE_SIZE, totalPages: 1 });
+      setItems(
+        (payload.items || []).map((item: EmployeeCard) => ({
+          ...item,
+          employment_status: normalizeEmploymentStatus(item.employment_status, item.is_active),
+        })),
+      );
+      setPagination(payload.pagination || { total: 0, page: 1, pageSize: pageSize, totalPages: 1 });
       const currentSelectedUserId = selectedUserIdRef.current;
       if ((payload.items || []).length === 0) {
         setPanelOpen(false);
@@ -230,7 +285,7 @@ export function EmployeeProfilesPage() {
         setLoading(false);
       }
     }
-  }, [page, search, status]);
+  }, [appliedFilters, page, pageSize, search, status]);
 
   const fetchDetail = useCallback(async (userId: string, options?: { silentError?: boolean }) => {
     const requestId = ++activeDetailRequestRef.current;
@@ -268,6 +323,17 @@ export function EmployeeProfilesPage() {
   }, [fetchList]);
 
   useEffect(() => {
+    api
+      .get('/employee-profiles/filter-options')
+      .then((res) => {
+        setFilterOptions(res.data.data || { departments: [], roles: [] });
+      })
+      .catch(() => {
+        setFilterOptions({ departments: [], roles: [] });
+      });
+  }, []);
+
+  useEffect(() => {
     selectedUserIdRef.current = selectedUserId;
   }, [selectedUserId]);
 
@@ -277,8 +343,24 @@ export function EmployeeProfilesPage() {
   }, [selectedUserId, fetchDetail]);
 
   useEffect(() => {
+    const media = window.matchMedia('(max-width: 767px)');
+    const handleChange = () => setIsMobile(media.matches);
+    handleChange();
+    media.addEventListener('change', handleChange);
+    return () => media.removeEventListener('change', handleChange);
+  }, []);
+
+  useEffect(() => {
     setPage(1);
   }, [status]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [pageSize]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [appliedFilters.departmentId, appliedFilters.roleIds, appliedFilters.sortBy, appliedFilters.sortDirection]);
 
   useEffect(() => {
     if (!success) return;
@@ -306,6 +388,60 @@ export function EmployeeProfilesPage() {
     () => toDialHref(detail?.emergency_contact_information.emergency_phone),
     [detail?.emergency_contact_information.emergency_phone],
   );
+
+  const hasActiveFilters = useMemo(
+    () =>
+      search.trim().length > 0
+      || Boolean(appliedFilters.departmentId)
+      || appliedFilters.roleIds.length > 0
+      || Boolean(appliedFilters.sortBy),
+    [appliedFilters.departmentId, appliedFilters.roleIds.length, appliedFilters.sortBy, search],
+  );
+
+  const openFilters = () => {
+    if (filtersOpen) {
+      setFiltersOpen(false);
+      return;
+    }
+    setDraftSearch(search);
+    setDraftFilters({
+      departmentId: appliedFilters.departmentId,
+      roleIds: [...appliedFilters.roleIds],
+      sortBy: appliedFilters.sortBy,
+      sortDirection: appliedFilters.sortDirection,
+    });
+    setFiltersOpen(true);
+  };
+
+  const applyFilters = () => {
+    setSearch(draftSearch.trim());
+    setAppliedFilters({
+      departmentId: draftFilters.departmentId,
+      roleIds: [...draftFilters.roleIds],
+      sortBy: draftFilters.sortBy,
+      sortDirection: draftFilters.sortDirection,
+    });
+    setPage(1);
+    setFiltersOpen(false);
+  };
+
+  const clearFilters = () => {
+    setSearch('');
+    setDraftSearch('');
+    setDraftFilters(INITIAL_FILTERS);
+    setAppliedFilters(INITIAL_FILTERS);
+    setPage(1);
+    setFiltersOpen(false);
+  };
+
+  const toggleRoleFilter = (roleId: string) => {
+    setDraftFilters((prev) => ({
+      ...prev,
+      roleIds: prev.roleIds.includes(roleId)
+        ? prev.roleIds.filter((id) => id !== roleId)
+        : [...prev.roleIds, roleId],
+    }));
+  };
 
   const openPanel = (userId: string) => {
     const card = items.find((item) => item.id === userId);
@@ -386,7 +522,8 @@ export function EmployeeProfilesPage() {
       const res = await api.patch(`/employee-profiles/${detail.id}/work-information`, {
         departmentId: workForm.departmentId || null,
         positionTitle: workForm.positionTitle.trim() || null,
-        isActive: workForm.isActive,
+        employmentStatus: workForm.employmentStatus,
+        isActive: workForm.employmentStatus === 'active',
         dateStarted: workForm.dateStarted || null,
       });
       const payload = res.data.data as EmployeeDetail;
@@ -403,6 +540,7 @@ export function EmployeeProfilesPage() {
           avatar_url: payload.avatar_url,
           department_name: payload.work_information.department_name,
           position_title: payload.work_information.position_title,
+          employment_status: normalizeEmploymentStatus(payload.work_information.status, false),
           is_active: payload.work_information.status === 'active',
           date_started_effective: payload.work_information.date_started,
           days_of_employment: payload.work_information.days_of_employment,
@@ -437,43 +575,149 @@ export function EmployeeProfilesPage() {
 
         {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>}
 
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="inline-flex w-full rounded-lg bg-gray-100 p-1 md:w-auto">
-            {(['all', 'active', 'inactive'] as StatusFilter[]).map((item) => (
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="mx-auto flex w-full items-center justify-center gap-1 rounded-lg bg-gray-100 p-1 sm:mx-0 sm:w-fit sm:justify-start">
+            {(['all', 'active', 'resigned', 'inactive'] as StatusFilter[]).map((item) => (
               <button
                 key={item}
                 type="button"
                 onClick={() => setStatus(item)}
-                className={`flex-1 rounded-md px-4 py-2 text-sm font-medium capitalize transition-colors md:flex-none ${
+                className={`flex-1 rounded-md px-4 py-1.5 text-center text-sm font-medium capitalize transition-colors sm:flex-none ${
                   status === item
-                    ? 'bg-primary-600 text-white'
-                    : 'text-gray-600 hover:bg-gray-200'
+                    ? 'bg-primary-600 text-white shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
                 {item}
               </button>
             ))}
           </div>
-
-          <div className="flex w-full gap-2 md:w-auto">
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search employee"
-              className="w-full md:w-64"
-            />
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                setPage(1);
-                fetchList();
-              }}
-            >
-              Search
-            </Button>
-          </div>
+          <button
+            type="button"
+            onClick={openFilters}
+            className={`flex w-full items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors sm:w-auto ${
+              hasActiveFilters || search.trim().length > 0
+                ? 'border-primary-300 bg-primary-50 text-primary-700'
+                : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4" />
+              <span>Filters</span>
+              {(hasActiveFilters || search.trim().length > 0) && (
+                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary-600 text-[10px] text-white">
+                  !
+                </span>
+              )}
+            </div>
+            <span className="ml-auto">
+              {filtersOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            </span>
+          </button>
         </div>
+
+        {filtersOpen && (
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Search Employee</label>
+                <Input
+                  value={draftSearch}
+                  onChange={(e) => setDraftSearch(e.target.value)}
+                  placeholder="Search employee"
+                  className="w-full"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Department</label>
+                <select
+                  value={draftFilters.departmentId}
+                  onChange={(e) => setDraftFilters((prev) => ({ ...prev, departmentId: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                >
+                  <option value="">All departments</option>
+                  {filterOptions.departments.map((department) => (
+                    <option key={department.id} value={department.id}>
+                      {department.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Sort By</label>
+                <select
+                  value={draftFilters.sortBy}
+                  onChange={(e) =>
+                    setDraftFilters((prev) => ({ ...prev, sortBy: e.target.value as SortBy }))
+                  }
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                >
+                  <option value="">Default</option>
+                  <option value="date_started">Date Started</option>
+                  <option value="days_of_employment">Days of Employment</option>
+                </select>
+              </div>
+              <div className="sm:col-span-2 lg:col-span-3">
+                <label className="mb-1 block text-sm font-medium text-gray-700">Roles</label>
+                <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 p-2">
+                  <div className="flex flex-wrap gap-2">
+                    {filterOptions.roles.map((role) => {
+                      const selected = draftFilters.roleIds.includes(role.id);
+                      return (
+                        <button
+                          key={role.id}
+                          type="button"
+                          onClick={() => toggleRoleFilter(role.id)}
+                          className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                            selected
+                              ? 'bg-primary-600 text-white'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          {role.name}
+                        </button>
+                      );
+                    })}
+                    {filterOptions.roles.length === 0 && (
+                      <span className="text-xs text-gray-500">No roles available</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Sort Direction</label>
+                <select
+                  value={draftFilters.sortDirection}
+                  onChange={(e) =>
+                    setDraftFilters((prev) => ({ ...prev, sortDirection: e.target.value as SortDirection }))
+                  }
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                  disabled={!draftFilters.sortBy}
+                >
+                  <option value="desc">Descending</option>
+                  <option value="asc">Ascending</option>
+                </select>
+              </div>
+            </div>
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+              <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={clearFilters}>
+                Clear
+              </Button>
+              <Button type="button" className="w-full sm:w-auto" onClick={applyFilters}>
+                Apply
+              </Button>
+              <Button type="button" variant="ghost" className="w-full sm:w-auto" onClick={() => setFiltersOpen(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {hasActiveFilters && (
+          <div className="text-xs text-gray-500">
+            Filters applied
+          </div>
+        )}
 
         {items.length === 0 ? (
           <Card>
@@ -484,7 +728,9 @@ export function EmployeeProfilesPage() {
         ) : (
           <>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {items.map((item) => (
+              {items.map((item) => {
+                const badge = getStatusBadge(item.employment_status);
+                return (
                 <button
                   key={item.id}
                   type="button"
@@ -514,11 +760,9 @@ export function EmployeeProfilesPage() {
                       </div>
                     </div>
                     <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                        item.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-700'
-                      }`}
+                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.className}`}
                     >
-                      {item.is_active ? 'Active' : 'Inactive'}
+                      {badge.label}
                     </span>
                   </div>
 
@@ -533,7 +777,8 @@ export function EmployeeProfilesPage() {
                     <span className="font-medium text-gray-800">{item.pin || 'Not set'}</span>
                   </div>
                 </button>
-              ))}
+                );
+              })}
             </div>
 
             {pagination.totalPages > 1 && (
@@ -753,11 +998,17 @@ export function EmployeeProfilesPage() {
                           <div>
                             <label className="mb-1 block text-sm font-medium text-gray-700">Status</label>
                             <select
-                              value={workForm.isActive ? 'active' : 'inactive'}
-                              onChange={(e) => setWorkForm((prev) => ({ ...prev, isActive: e.target.value === 'active' }))}
+                              value={workForm.employmentStatus}
+                              onChange={(e) =>
+                                setWorkForm((prev) => ({
+                                  ...prev,
+                                  employmentStatus: e.target.value as EmploymentStatus,
+                                }))
+                              }
                               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
                             >
                               <option value="active">Active</option>
+                              <option value="resigned">Resigned</option>
                               <option value="inactive">Inactive</option>
                             </select>
                           </div>
@@ -772,7 +1023,7 @@ export function EmployeeProfilesPage() {
                                 setWorkForm({
                                   departmentId: detail.work_information.department_id ?? '',
                                   positionTitle: detail.work_information.position_title ?? '',
-                                  isActive: detail.work_information.status === 'active',
+                                  employmentStatus: normalizeEmploymentStatus(detail.work_information.status, false),
                                   dateStarted: toDateInput(detail.work_information.date_started),
                                 });
                               }}

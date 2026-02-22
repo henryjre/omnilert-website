@@ -1,6 +1,8 @@
 import type { Knex } from 'knex';
 import { AppError } from '../middleware/errorHandler.js';
 
+type EmploymentStatus = 'active' | 'resigned' | 'inactive';
+
 function toEffectiveStartDate(dateStarted: unknown, createdAt: unknown): Date | null {
   const raw = dateStarted ?? createdAt;
   if (!raw) return null;
@@ -24,12 +26,21 @@ function toDateOnly(value: unknown): string | null {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
+function normalizeEmploymentStatus(raw: unknown, isActive: unknown): EmploymentStatus {
+  if (raw === 'active' || raw === 'resigned' || raw === 'inactive') return raw;
+  return isActive ? 'active' : 'inactive';
+}
+
 export async function listEmployeeProfiles(input: {
   tenantDb: Knex;
-  status: 'all' | 'active' | 'inactive';
+  status: 'all' | 'active' | 'resigned' | 'inactive';
   page: number;
   pageSize: number;
   search?: string;
+  departmentId?: string;
+  roleIds?: string[];
+  sortBy?: 'date_started' | 'days_of_employment';
+  sortDirection?: 'asc' | 'desc';
   excludedEmails?: string[];
 }) {
   const excludedEmails = (input.excludedEmails ?? [])
@@ -47,6 +58,7 @@ export async function listEmployeeProfiles(input: {
       'users.pin',
       'users.avatar_url',
       'users.position_title',
+      'users.employment_status',
       'users.is_active',
       'users.date_started',
       'users.created_at',
@@ -57,10 +69,22 @@ export async function listEmployeeProfiles(input: {
     baseQuery.whereNotIn('users.email', excludedEmails);
   }
 
-  if (input.status === 'active') {
-    baseQuery.where('users.is_active', true);
-  } else if (input.status === 'inactive') {
-    baseQuery.where('users.is_active', false);
+  if (input.status !== 'all') {
+    baseQuery.where('users.employment_status', input.status);
+  }
+
+  if (input.departmentId) {
+    baseQuery.where('users.department_id', input.departmentId);
+  }
+
+  if (input.roleIds && input.roleIds.length > 0) {
+    baseQuery.whereExists((builder) => {
+      builder
+        .select(input.tenantDb.raw('1'))
+        .from('user_roles as ur')
+        .whereRaw('ur.user_id = users.id')
+        .whereIn('ur.role_id', input.roleIds as string[]);
+    });
   }
 
   if (input.search?.trim()) {
@@ -85,12 +109,23 @@ export async function listEmployeeProfiles(input: {
 
   const rows = await baseQuery
     .clone()
-    .orderBy('users.created_at', 'desc')
+    .modify((queryBuilder) => {
+      const direction = (input.sortDirection ?? 'desc').toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+      if (input.sortBy === 'date_started') {
+        queryBuilder.orderByRaw(`COALESCE(users.date_started::timestamp, users.created_at) ${direction}`);
+      } else if (input.sortBy === 'days_of_employment') {
+        queryBuilder.orderByRaw(`DATE_PART('day', NOW() - COALESCE(users.date_started::timestamp, users.created_at)) ${direction}`);
+      } else {
+        queryBuilder.orderBy('users.created_at', 'desc');
+      }
+      queryBuilder.orderBy('users.created_at', 'desc');
+    })
     .offset(offset)
     .limit(input.pageSize);
 
   const items = rows.map((row: any) => {
     const dateStartedEffective = toDateOnly(row.date_started ?? row.created_at);
+    const employmentStatus = normalizeEmploymentStatus(row.employment_status, row.is_active);
     return {
       id: row.id as string,
       first_name: row.first_name as string,
@@ -101,7 +136,8 @@ export async function listEmployeeProfiles(input: {
       avatar_url: (row.avatar_url as string | null) ?? null,
       department_name: (row.department_name as string | null) ?? null,
       position_title: (row.position_title as string | null) ?? null,
-      is_active: Boolean(row.is_active),
+      employment_status: employmentStatus,
+      is_active: employmentStatus === 'active',
       date_started_effective: dateStartedEffective,
       days_of_employment: computeDaysOfEmployment(row.date_started, row.created_at),
     };
@@ -158,6 +194,7 @@ export async function getEmployeeProfileDetail(
       'users.bank_account_number',
       'users.valid_id_url',
       'users.avatar_url',
+      'users.employment_status',
       'users.is_active',
       'users.department_id',
       'users.position_title',
@@ -183,6 +220,7 @@ export async function getEmployeeProfileDetail(
 
   const dateStartedEffective = toDateOnly(user.date_started ?? user.created_at);
   const daysOfEmployment = computeDaysOfEmployment(user.date_started, user.created_at);
+  const employmentStatus = normalizeEmploymentStatus(user.employment_status, user.is_active);
 
   return {
     id: user.id as string,
@@ -212,7 +250,7 @@ export async function getEmployeeProfileDetail(
       department_id: (user.department_id as string | null) ?? null,
       department_name: (user.department_name as string | null) ?? null,
       position_title: (user.position_title as string | null) ?? null,
-      status: user.is_active ? 'active' : 'inactive',
+      status: employmentStatus,
       date_started: dateStartedEffective,
       days_of_employment: daysOfEmployment,
     },
@@ -238,7 +276,8 @@ export async function updateEmployeeWorkInformation(input: {
   userId: string;
   departmentId: string | null;
   positionTitle: string | null;
-  isActive: boolean;
+  employmentStatus?: EmploymentStatus;
+  isActive?: boolean;
   dateStarted: string | null;
   excludedEmails?: string[];
 }) {
@@ -265,15 +304,45 @@ export async function updateEmployeeWorkInformation(input: {
     }
   }
 
+  const employmentStatus: EmploymentStatus | null = input.employmentStatus
+    ?? (input.isActive === undefined ? null : (input.isActive ? 'active' : 'inactive'));
+  if (!employmentStatus) {
+    throw new AppError(400, 'employmentStatus or isActive is required');
+  }
+
   await input.tenantDb('users')
     .where({ id: input.userId })
     .update({
       department_id: input.departmentId,
       position_title: input.positionTitle,
-      is_active: input.isActive,
+      employment_status: employmentStatus,
+      is_active: employmentStatus === 'active',
       date_started: input.dateStarted,
       updated_at: new Date(),
     });
 
   return getEmployeeProfileDetail(input.tenantDb, input.userId, normalizedExcludedEmails);
+}
+
+export async function getEmployeeProfileFilterOptions(tenantDb: Knex) {
+  const [departments, roles] = await Promise.all([
+    tenantDb('departments')
+      .select('id', 'name')
+      .orderBy('name', 'asc'),
+    tenantDb('roles')
+      .select('id', 'name')
+      .orderBy('priority', 'desc')
+      .orderBy('name', 'asc'),
+  ]);
+
+  return {
+    departments: departments.map((department: any) => ({
+      id: department.id as string,
+      name: department.name as string,
+    })),
+    roles: roles.map((role: any) => ({
+      id: role.id as string,
+      name: role.name as string,
+    })),
+  };
 }

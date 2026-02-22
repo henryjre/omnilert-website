@@ -94,7 +94,10 @@ export async function update(req: Request, res: Response, next: NextFunction) {
     if (req.body.lastName !== undefined) updates.last_name = req.body.lastName;
     if (req.body.userKey !== undefined) updates.user_key = req.body.userKey;
     if (req.body.employeeNumber !== undefined) updates.employee_number = req.body.employeeNumber;
-    if (req.body.isActive !== undefined) updates.is_active = req.body.isActive;
+    if (req.body.isActive !== undefined) {
+      updates.is_active = req.body.isActive;
+      updates.employment_status = req.body.isActive ? 'active' : 'inactive';
+    }
 
     const [user] = await tenantDb('users').where({ id }).update(updates).returning('*');
     if (!user) throw new AppError(404, 'User not found');
@@ -116,7 +119,7 @@ export async function remove(req: Request, res: Response, next: NextFunction) {
 
     const [user] = await tenantDb('users')
       .where({ id })
-      .update({ is_active: false, updated_at: new Date() })
+      .update({ is_active: false, employment_status: 'inactive', updated_at: new Date() })
       .returning('*');
 
     if (!user) throw new AppError(404, 'User not found');

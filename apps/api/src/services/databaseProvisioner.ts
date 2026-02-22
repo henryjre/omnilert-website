@@ -130,9 +130,18 @@ async function createTenantTables(tenantDb: ReturnType<typeof db.getMasterDb>): 
     table.integer('employee_number').nullable();
     table.boolean('updated').notNullable().defaultTo(false);
     table.boolean('is_active').notNullable().defaultTo(true);
+    table.string('employment_status', 20).notNullable().defaultTo('active');
     table.timestamp('last_login_at');
     table.timestamp('created_at').notNullable().defaultTo(tenantDb.fn.now());
     table.timestamp('updated_at').notNullable().defaultTo(tenantDb.fn.now());
+  });
+
+  await tenantDb.raw(`
+    ALTER TABLE users
+    ADD CONSTRAINT users_employment_status_check
+    CHECK (employment_status IN ('active', 'resigned', 'inactive'))
+  `).catch(() => {
+    // Ignore if constraint already exists (provisioning rerun safety).
   });
 
   // Departments

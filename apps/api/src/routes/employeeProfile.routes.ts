@@ -16,6 +16,11 @@ router.get(
   employeeProfileController.list,
 );
 router.get(
+  '/filter-options',
+  requirePermission(PERMISSIONS.EMPLOYEE_VIEW_ALL_PROFILES),
+  employeeProfileController.filterOptions,
+);
+router.get(
   '/:userId',
   requirePermission(PERMISSIONS.EMPLOYEE_VIEW_ALL_PROFILES),
   employeeProfileController.detail,

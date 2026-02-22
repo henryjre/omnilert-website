@@ -88,6 +88,7 @@ async function ensureSuperAdminMirrorUser(
         last_name: lastName,
         password_hash: superAdmin.password_hash,
         is_active: true,
+        employment_status: 'active',
         updated_at: new Date(),
       })
       .returning('*');
@@ -101,6 +102,7 @@ async function ensureSuperAdminMirrorUser(
         first_name: firstName,
         last_name: lastName,
         is_active: true,
+        employment_status: 'active',
       })
       .returning('*');
     user = created as TenantUserRow;

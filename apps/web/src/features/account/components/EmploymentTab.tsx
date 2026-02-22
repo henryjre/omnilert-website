@@ -70,7 +70,7 @@ interface ProfilePayload {
     department_id: string | null;
     department_name: string | null;
     position_title: string | null;
-    status: 'active' | 'inactive';
+    status: 'active' | 'resigned' | 'inactive';
     date_started: string | null;
     days_of_employment: number | null;
   };
@@ -892,7 +892,13 @@ export function EmploymentTab() {
               <div className="space-y-1">
                 <label className="text-sm font-medium text-gray-700">Status</label>
                 <Input
-                  value={profile?.workInfo.status === 'inactive' ? 'Inactive' : 'Active'}
+                  value={
+                    profile?.workInfo.status === 'resigned'
+                      ? 'Resigned'
+                      : profile?.workInfo.status === 'inactive'
+                        ? 'Inactive'
+                        : 'Active'
+                  }
                   readOnly
                   className="bg-gray-50"
                 />
