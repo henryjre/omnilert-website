@@ -657,6 +657,7 @@ My Account Schedule + Notifications + Authorization Requests:
   - `Awaiting Employee Acceptance`
   - `Pending HR Approval`
 - Shift exchange details/actions in Authorization Requests are served through `/shift-exchanges/:id*` endpoints and enforce HR/fallback-management policy server-side.
+- In Authorization Requests, clicking a `shift_exchange` item opens the same right-side detail panel pattern as other request types (not a centered modal).
 
 User Management page:
 - Hard-cutover to global master-backed user management (no tenant-local admin user CRUD path).

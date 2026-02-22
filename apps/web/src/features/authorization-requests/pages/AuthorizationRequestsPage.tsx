@@ -663,14 +663,13 @@ function ServiceCrewRequestCard({ auth, onClick }: { auth: any; onClick: () => v
 
 // --- Page ---
 
-type DetailItem = { type: 'management' | 'service_crew'; data: any };
+type DetailItem = { type: 'management' | 'service_crew' | 'shift_exchange'; data: any };
 
 export function AuthorizationRequestsPage() {
   const [managementRequests, setManagementRequests] = useState<any[]>([]);
   const [serviceCrewRequests, setServiceCrewRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedItem, setSelectedItem] = useState<DetailItem | null>(null);
-  const [shiftExchangeRequestId, setShiftExchangeRequestId] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== 'undefined'
       ? window.matchMedia('(max-width: 639px)').matches
@@ -904,7 +903,7 @@ export function AuthorizationRequestsPage() {
                           auth={r}
                           onClick={() => {
                             if (r.auth_type === 'shift_exchange') {
-                              setShiftExchangeRequestId(r.id);
+                              setSelectedItem({ type: 'shift_exchange', data: r });
                               return;
                             }
                             setSelectedItem({ type: 'service_crew', data: r });
@@ -974,16 +973,18 @@ export function AuthorizationRequestsPage() {
             onUpdated={handleServiceCrewUpdated}
           />
         )}
+        {selectedItem?.type === 'shift_exchange' && (
+          <ShiftExchangeDetailModal
+            isOpen
+            mode="panel"
+            requestId={selectedItem.data.id}
+            onClose={() => setSelectedItem(null)}
+            onUpdated={() => {
+              fetchRequests();
+            }}
+          />
+        )}
       </div>
-
-      <ShiftExchangeDetailModal
-        isOpen={Boolean(shiftExchangeRequestId)}
-        requestId={shiftExchangeRequestId}
-        onClose={() => setShiftExchangeRequestId(null)}
-        onUpdated={() => {
-          fetchRequests();
-        }}
-      />
     </>
   );
 }
