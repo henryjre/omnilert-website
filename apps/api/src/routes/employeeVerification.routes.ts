@@ -59,4 +59,16 @@ router.post(
   employeeVerificationController.rejectEmploymentRequirement,
 );
 
+router.post(
+  '/bank-information/:id/approve',
+  requirePermission(PERMISSIONS.BANK_INFORMATION_APPROVE),
+  employeeVerificationController.approveBankInformation,
+);
+router.post(
+  '/bank-information/:id/reject',
+  requirePermission(PERMISSIONS.BANK_INFORMATION_APPROVE),
+  validateBody(rejectVerificationSchema),
+  employeeVerificationController.rejectBankInformation,
+);
+
 export default router;

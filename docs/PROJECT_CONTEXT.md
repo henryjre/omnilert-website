@@ -1,6 +1,6 @@
 # Omnilert Project Context
 
-Last updated: 2026-02-21
+Last updated: 2026-02-22
 
 This document is for AI and engineer handoff. It captures the current implementation state of this repository from code-confirmed behavior.
 
@@ -18,6 +18,7 @@ Core responsibilities:
   - Registration Request verification
   - Personal Information verification
   - Employment Requirements verification
+  - Bank Information verification
 - Support super-admin managed tenant lifecycle, including hard delete of a tenant company.
 
 Primary business context:
@@ -100,16 +101,22 @@ Master DB key tables:
 Tenant DB key additions:
 - `users.employee_number`
 - `users.valid_id_url`, `users.valid_id_updated_at`
+- `users.address`, `users.sss_number`, `users.tin_number`, `users.pagibig_number`, `users.philhealth_number`, `users.marital_status`
+- `users.emergency_contact`, `users.emergency_phone`, `users.emergency_relationship`
+- `users.bank_id`, `users.bank_account_number`
+- `users.department_id`, `users.position_title`, `users.date_started`
 - `registration_requests`
 - `personal_information_verifications`
 - `employment_requirement_types`
 - `employment_requirement_submissions`
+- `bank_information_verifications`
+- `departments`
 
 Request-scoped company context (`apps/api/src/middleware/companyResolver.ts`):
 - `req.companyContext.companyId`
 - `req.companyContext.companySlug`
 - `req.companyContext.companyName`
-- `req.companyContext.companyStorageRoot` (currently `company.slug`)
+- `req.companyContext.companyStorageRoot` (from `getCompanyStorageRoot(company.slug)`, includes env suffix)
 
 Company resolver also enforces active company (`companies.is_active = true`) before tenant DB resolution.
 
@@ -128,6 +135,9 @@ Tenant migrations (`apps/api/src/migrations/tenant`):
 - `003_add_user_profile_columns.ts`
 - `004_add_registration_requests_and_employee_number.ts`
 - `005_employee_verifications_expansion.ts`
+- `006_profile_bank_verifications.ts`
+- `007_departments_employee_profiles.ts`
+- `008_expand_personal_information_fields.ts`
 
 Operational scripts (`apps/api/src/scripts`):
 - `migrate-tenants.ts`
@@ -180,6 +190,8 @@ Account
 Employee
 - `employee.view_own_profile`
 - `employee.edit_own_profile`
+- `employee.view_all_profiles`
+- `employee.edit_work_profile`
 
 Shifts
 - `shift.view_all`
@@ -200,6 +212,7 @@ Employee Verifications
 - `registration.approve`
 - `personal_information.approve`
 - `employee_requirements.approve`
+- `bank_information.approve`
 
 Permission migration note:
 - Legacy `registration.view` is migrated to `employee_verification.view` in tenant migration `005_employee_verifications_expansion.ts`.
@@ -245,6 +258,8 @@ Company-scoped authenticated route groups (`apps/api/src/routes/index.ts`):
 - `/employee-verifications`
 - `/registration-requests` (compatibility alias for registration-only verification endpoints)
 - `/employee-requirements`
+- `/departments`
+- `/employee-profiles`
 - `/account/*`
 - `/dashboard/*`
 
@@ -256,6 +271,8 @@ Employee Verifications endpoints (`/employee-verifications`):
 - `POST /employee-verifications/personal-information/:id/reject`
 - `POST /employee-verifications/employment-requirements/:id/approve`
 - `POST /employee-verifications/employment-requirements/:id/reject`
+- `POST /employee-verifications/bank-information/:id/approve`
+- `POST /employee-verifications/bank-information/:id/reject`
 
 Registration compatibility endpoints (`/registration-requests`):
 - `GET /registration-requests`
@@ -267,7 +284,10 @@ Employee Requirements manager endpoints (`/employee-requirements`):
 - `GET /employee-requirements/:userId`
 
 My Account verification/requirements endpoints (`/account`):
+- `GET /account/profile`
+- `PATCH /account/email`
 - `POST /account/personal-information/verifications`
+- `POST /account/bank-information/verifications`
 - `POST /account/valid-id` (multipart field: `document`)
 - `GET /account/employment/requirements`
 - `POST /account/employment/requirements/:requirementCode/submit` (multipart field: `document`)
@@ -327,6 +347,13 @@ Personal information verification:
 - User profile changes are submitted as a verification first.
 - Odoo profile sync happens on approval (`employeeVerification.service.ts` + `odoo.service.ts`).
 - Name updates preserve prefixed naming format when context is available.
+- Current expanded personal verification fields include:
+  - name, birthday, gender, address
+  - SSS, TIN, Pag-IBIG, PhilHealth, marital status
+  - emergency contact name/phone/relationship
+- Odoo sync scope on personal verification approval:
+  - synced: name, email, mobile, legal name, birthday, gender, address (`private_street`), emergency contact name/phone
+  - tenant DB only (not synced to Odoo): SSS, TIN, Pag-IBIG, PhilHealth, marital status, emergency relationship
 
 Avatar sync:
 - Avatar upload updates website user avatar and asynchronously syncs Odoo `image_1920` on:
@@ -350,7 +377,7 @@ Mail service (`apps/api/src/services/mail.service.ts`):
   - account credentials
   - onboarding steps
   - employment reminder
-  - login link with redirect to employment tab (`/login?redirect=/account/employment`)
+  - login link with redirect to profile tab (`/login?redirect=/account/profile`)
   - optional `companySlug` query for preselection
 
 Login-triggered employee notifications (`auth.service.ts`):
@@ -368,14 +395,16 @@ Storage service source:
 
 Tenant-rooted object key strategy:
 - `buildTenantStoragePrefix(companyStorageRoot, ...parts)`
-- `companyStorageRoot` currently equals `company.slug` from resolver context.
+- `companyStorageRoot` is derived from slug + environment suffix:
+  - production: `${company.slug}-prod`
+  - non-production: `${company.slug}-dev`
 
 Current upload paths:
-- Cash requests: `${company.slug}/Cash Requests/${userId}`
-- Valid IDs: `${company.slug}/Valid IDs/${userId}`
-- Employment requirements: `${company.slug}/Employment Requirements/${userId}/${requirementCode}`
-- Profile pictures: `${company.slug}/Profile Pictures/${userId}`
-- POS verification images: `${company.slug}/POS Verifications/${userId}`
+- Cash requests: `${companyStorageRoot}/Cash Requests/${userId}`
+- Valid IDs: `${companyStorageRoot}/Valid IDs/${userId}`
+- Employment requirements: `${companyStorageRoot}/Employment Requirements/${userId}/${requirementCode}`
+- Profile pictures: `${companyStorageRoot}/Profile Pictures/${userId}`
+- POS verification images: `${companyStorageRoot}/POS Verifications/${userId}`
 
 Company hard delete flow (`apps/api/src/services/company.service.ts`):
 1. Validate current tenant user is an active superuser (email exists in master `super_admins`).
@@ -385,7 +414,7 @@ Company hard delete flow (`apps/api/src/services/company.service.ts`):
 5. Revoke tenant refresh tokens.
 6. Emit `auth:force-logout` to tenant users (best effort).
 7. Storage cleanup in order:
-   - Recursive tenant prefix sweep: `${company.slug}/`
+   - Recursive tenant prefix sweep: `${companyStorageRoot}/`
    - Legacy URL-based file cleanup
    - Legacy per-user folder cleanup (`Cash Requests`, `Employment Requirements`, `Valid IDs`, `Profile Pictures`)
 8. Best-effort queue cleanup by `companyDbName` in pg-boss tables.
@@ -413,13 +442,25 @@ Login page (`apps/web/src/features/auth/components/LoginForm.tsx`):
 
 Employee Verifications UI:
 - Card list with right-side detail panel for approve/reject actions.
-- Type tabs: Registration, Personal Information, Employment Requirements.
+- Type tabs: Registration, Personal Information, Employment Requirements, Bank Information.
 - Status tabs order: All, Pending, Approved, Rejected (default Pending).
 - Registration approval panel includes backend progress log stream from realtime event.
 
-My Account Employment tab and Employee Requirements page:
+My Account Profile tab and Employee Requirements page:
 - Requirement cards support image/PDF previews (inline modal).
 - Status language uses Incomplete for not-yet-submitted state.
+- Profile personal verification form is grouped into subsections:
+  - Personal Information
+  - Private Contact
+  - Government Identification & Contributions
+- Pending verification helper text for Personal and Bank sections is rendered directly below each disabled submit button.
+
+Employee Profiles page:
+- Uses card list + right-side detail panel.
+- Panel includes conditional call actions:
+  - `Call Employee` (shown only when employee mobile exists)
+  - `Call Emergency` (shown only when emergency phone exists)
+- Call links use `tel:` and normalize common PH formats (`+639...`/`639...` -> `09...`) in display and dial target.
 
 Company page:
 - Includes Danger Zone delete action shown only when `canDeleteCompany` is true.

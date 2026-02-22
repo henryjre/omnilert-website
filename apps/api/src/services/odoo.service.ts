@@ -1230,6 +1230,9 @@ export async function syncUserProfileToOdoo(
     legalName: string;
     birthday: string | null;
     gender: string | null;
+    address?: string;
+    emergencyContact?: string;
+    emergencyPhone?: string;
     firstName?: string;
     lastName?: string;
     employeeNumber?: number | null;
@@ -1339,6 +1342,16 @@ export async function syncUserProfileToOdoo(
     if (profileData.gender) {
       employeeUpdateData.sex = profileData.gender.toLowerCase();
     }
+    if (profileData.address !== undefined) {
+      employeeUpdateData.private_street = profileData.address;
+    }
+
+    if (profileData.emergencyContact !== undefined) {
+      employeeUpdateData.emergency_contact = profileData.emergencyContact;
+    }
+    if (profileData.emergencyPhone !== undefined) {
+      employeeUpdateData.emergency_phone = profileData.emergencyPhone;
+    }
 
     // 5. Update all employees linked to this partner
     const employeeIds = employeeSearchResult.map((emp: { id: number }) => emp.id);
@@ -1389,6 +1402,71 @@ export async function syncUserProfileToOdoo(
     logger.error(`Failed to sync user profile to Odoo: ${err}`);
     throw err;
   }
+}
+
+export async function createPartnerBankAndAssignEmployees(input: {
+  websiteUserKey: string | null;
+  email: string | null;
+  bankId: number;
+  accountNumber: string;
+}): Promise<{ partnerId: number; partnerBankId: number; employeeIds: number[] }> {
+  let partnerRows: Array<{ id: number }> = [];
+
+  if (input.websiteUserKey) {
+    partnerRows = (await callOdooKw(
+      'res.partner',
+      'search_read',
+      [],
+      {
+        domain: [['x_website_key', '=', input.websiteUserKey]],
+        fields: ['id'],
+        limit: 1,
+      },
+    )) as Array<{ id: number }>;
+  }
+
+  if (partnerRows.length === 0 && input.email) {
+    partnerRows = (await callOdooKw(
+      'res.partner',
+      'search_read',
+      [],
+      {
+        domain: [['email', '=', input.email]],
+        fields: ['id'],
+        limit: 1,
+      },
+    )) as Array<{ id: number }>;
+  }
+
+  if (partnerRows.length === 0) {
+    throw new Error('No res.partner found for bank information sync');
+  }
+
+  const partnerId = partnerRows[0].id;
+  const partnerBankId = (await callOdooKw('res.partner.bank', 'create', [{
+    bank_id: input.bankId,
+    acc_number: input.accountNumber,
+    partner_id: partnerId,
+    allow_out_payment: true,
+  }])) as number;
+
+  const employeeRows = (await callOdooKw(
+    'hr.employee',
+    'search_read',
+    [],
+    {
+      domain: [['work_contact_id', '=', partnerId]],
+      fields: ['id'],
+      limit: 1000,
+    },
+  )) as Array<{ id: number }>;
+
+  const employeeIds = employeeRows.map((row) => row.id);
+  if (employeeIds.length > 0) {
+    await callOdooKw('hr.employee', 'write', [employeeIds, { bank_account_id: partnerBankId }]);
+  }
+
+  return { partnerId, partnerBankId, employeeIds };
 }
 
 /**

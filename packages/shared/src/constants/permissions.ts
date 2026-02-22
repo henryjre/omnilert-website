@@ -32,6 +32,8 @@ export const PERMISSIONS = {
   // Employee
   EMPLOYEE_VIEW_OWN_PROFILE: 'employee.view_own_profile',
   EMPLOYEE_EDIT_OWN_PROFILE: 'employee.edit_own_profile',
+  EMPLOYEE_VIEW_ALL_PROFILES: 'employee.view_all_profiles',
+  EMPLOYEE_EDIT_WORK_PROFILE: 'employee.edit_work_profile',
 
   // Shifts
   SHIFT_VIEW_ALL: 'shift.view_all',
@@ -52,6 +54,7 @@ export const PERMISSIONS = {
   REGISTRATION_APPROVE: 'registration.approve',
   PERSONAL_INFORMATION_APPROVE: 'personal_information.approve',
   EMPLOYEE_REQUIREMENTS_APPROVE: 'employee_requirements.approve',
+  BANK_INFORMATION_APPROVE: 'bank_information.approve',
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -110,6 +113,8 @@ export const PERMISSION_CATEGORIES: Record<string, { label: string; permissions:
       permissions: [
         PERMISSIONS.EMPLOYEE_VIEW_OWN_PROFILE,
         PERMISSIONS.EMPLOYEE_EDIT_OWN_PROFILE,
+        PERMISSIONS.EMPLOYEE_VIEW_ALL_PROFILES,
+        PERMISSIONS.EMPLOYEE_EDIT_WORK_PROFILE,
       ],
     },
     shifts: {
@@ -142,6 +147,7 @@ export const PERMISSION_CATEGORIES: Record<string, { label: string; permissions:
         PERMISSIONS.REGISTRATION_APPROVE,
         PERMISSIONS.PERSONAL_INFORMATION_APPROVE,
         PERMISSIONS.EMPLOYEE_REQUIREMENTS_APPROVE,
+        PERMISSIONS.BANK_INFORMATION_APPROVE,
       ],
     },
   };

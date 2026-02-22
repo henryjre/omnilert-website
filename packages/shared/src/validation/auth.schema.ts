@@ -35,6 +35,15 @@ const personalInformationChangesShape = {
   legalName: z.string().max(255).optional(),
   birthday: z.string().nullable().optional(),
   gender: z.string().max(20).nullable().optional(),
+  maritalStatus: z.string().max(50).optional(),
+  address: z.string().max(500).optional(),
+  sssNumber: z.string().max(100).optional(),
+  tinNumber: z.string().max(100).optional(),
+  pagibigNumber: z.string().max(100).optional(),
+  philhealthNumber: z.string().max(100).optional(),
+  emergencyContact: z.string().max(255).optional(),
+  emergencyPhone: z.string().max(50).optional(),
+  emergencyRelationship: z.string().max(100).optional(),
 };
 
 export const submitPersonalInformationVerificationSchema = z
@@ -47,9 +56,33 @@ export const submitPersonalInformationVerificationSchema = z
       || payload.mobileNumber !== undefined
       || payload.legalName !== undefined
       || payload.birthday !== undefined
-      || payload.gender !== undefined,
+      || payload.gender !== undefined
+      || payload.maritalStatus !== undefined
+      || payload.address !== undefined
+      || payload.sssNumber !== undefined
+      || payload.tinNumber !== undefined
+      || payload.pagibigNumber !== undefined
+      || payload.philhealthNumber !== undefined
+      || payload.emergencyContact !== undefined
+      || payload.emergencyPhone !== undefined
+      || payload.emergencyRelationship !== undefined,
     'At least one field is required',
   );
+
+export const updateAccountEmailSchema = z.object({
+  email: z.string().email('Invalid email address'),
+});
+
+export const submitBankInformationVerificationSchema = z.object({
+  bankId: z.union([
+    z.literal(2),
+    z.literal(3),
+    z.literal(4),
+    z.literal(5),
+    z.literal(6),
+  ]),
+  accountNumber: z.string().min(1, 'Account number is required').max(255),
+});
 
 export const approvePersonalInformationVerificationSchema = z.object(
   personalInformationChangesShape,
@@ -67,3 +100,5 @@ export type RejectRegistrationRequestInput = z.infer<typeof rejectRegistrationRe
 export type SubmitPersonalInformationVerificationInput = z.infer<typeof submitPersonalInformationVerificationSchema>;
 export type ApprovePersonalInformationVerificationInput = z.infer<typeof approvePersonalInformationVerificationSchema>;
 export type RejectVerificationInput = z.infer<typeof rejectVerificationSchema>;
+export type UpdateAccountEmailInput = z.infer<typeof updateAccountEmailSchema>;
+export type SubmitBankInformationVerificationInput = z.infer<typeof submitBankInformationVerificationSchema>;

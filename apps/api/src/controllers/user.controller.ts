@@ -193,7 +193,24 @@ export async function getMe(req: Request, res: Response, next: NextFunction) {
 
     const user = await tenantDb('users')
       .where({ id: userId })
-      .select('id', 'email', 'first_name', 'last_name', 'user_key', 'mobile_number', 'legal_name', 'birthday', 'gender', 'avatar_url', 'pin', 'valid_id_url')
+      .select(
+        'id',
+        'email',
+        'first_name',
+        'last_name',
+        'user_key',
+        'mobile_number',
+        'legal_name',
+        'birthday',
+        'gender',
+        'avatar_url',
+        'pin',
+        'valid_id_url',
+        'emergency_contact',
+        'emergency_phone',
+        'bank_id',
+        'bank_account_number',
+      )
       .first();
 
     if (!user) throw new AppError(404, 'User not found');

@@ -3,7 +3,12 @@ import multer from 'multer';
 import { authenticate } from '../middleware/auth.js';
 import { resolveCompany } from '../middleware/companyResolver.js';
 import { requirePermission } from '../middleware/rbac.js';
-import { PERMISSIONS, submitPersonalInformationVerificationSchema } from '@omnilert/shared';
+import {
+  PERMISSIONS,
+  submitPersonalInformationVerificationSchema,
+  submitBankInformationVerificationSchema,
+  updateAccountEmailSchema,
+} from '@omnilert/shared';
 import { validateBody } from '../middleware/validateRequest.js';
 import * as accountController from '../controllers/account.controller.js';
 
@@ -71,10 +76,24 @@ router.post(
   accountController.submitPersonalInformationVerification,
 );
 
+router.get('/profile', accountController.getProfile);
+
+router.patch(
+  '/email',
+  validateBody(updateAccountEmailSchema),
+  accountController.updateAccountEmail,
+);
+
 router.post(
   '/valid-id',
   upload.single('document'),
   accountController.uploadValidId,
+);
+
+router.post(
+  '/bank-information/verifications',
+  validateBody(submitBankInformationVerificationSchema),
+  accountController.submitBankInformationVerification,
 );
 
 router.get('/employment/requirements', accountController.getEmploymentRequirements);

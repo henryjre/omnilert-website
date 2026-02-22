@@ -52,8 +52,8 @@ export async function sendRegistrationApprovedEmail(input: {
     '',
     'Next steps:',
     '1. Complete your profile: add a formal profile picture, complete your details, and get your PIN code.',
-    '2. IMPORTANT: Complete your Employment Requirements in My Account > Employment.',
-    `   Open Employment tab: ${employmentAccessLink}`,
+    '2. IMPORTANT: Complete your Employment Requirements in My Account > Profile.',
+    `   Open Profile tab: ${employmentAccessLink}`,
     '   (If you are not logged in, you will be shown the login page first and then redirected.)',
     '3. Check your schedule.',
     `4. Join the Omnilert Discord for communications: ${discordLink}`,
@@ -122,8 +122,8 @@ function buildRegistrationApprovedEmailHtml(input: {
                 <ol style="margin:0 0 0 18px;padding:0;color:#374151;font-size:14px;line-height:1.7;">
                   <li>Complete your profile: add a formal profile picture, fill in your details, and get your PIN code.</li>
                   <li>
-                    <strong>Important:</strong> Complete your employment requirements in <em>My Account &gt; Employment</em>.
-                    <a href="${escapeHtml(input.employmentAccessLink)}" style="color:#2563eb;text-decoration:none;">Open Employment tab</a>.
+                    <strong>Important:</strong> Complete your employment requirements in <em>My Account &gt; Profile</em>.
+                    <a href="${escapeHtml(input.employmentAccessLink)}" style="color:#2563eb;text-decoration:none;">Open Profile tab</a>.
                     <span style="color:#6b7280;"> (If not signed in, login first and you will be redirected automatically.)</span>
                   </li>
                   <li>Check your schedule.</li>
@@ -159,7 +159,7 @@ function buildEmploymentAccessLink(companySlug?: string): string {
     loginUrl = new URL('/login', 'http://localhost:5173');
   }
 
-  loginUrl.searchParams.set('redirect', '/account/employment');
+  loginUrl.searchParams.set('redirect', '/account/profile');
   if (companySlug) {
     loginUrl.searchParams.set('companySlug', companySlug);
   }

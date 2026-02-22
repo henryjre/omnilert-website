@@ -109,3 +109,32 @@ export async function rejectEmploymentRequirement(req: Request, res: Response, n
     next(error);
   }
 }
+
+export async function approveBankInformation(req: Request, res: Response, next: NextFunction) {
+  try {
+    await employeeVerificationService.approveBankInformationVerification({
+      tenantDb: req.tenantDb!,
+      companyId: req.user!.companyId,
+      verificationId: req.params.id as string,
+      reviewerId: req.user!.sub,
+    });
+    res.json({ success: true, message: 'Bank information verification approved' });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function rejectBankInformation(req: Request, res: Response, next: NextFunction) {
+  try {
+    await employeeVerificationService.rejectBankInformationVerification({
+      tenantDb: req.tenantDb!,
+      companyId: req.user!.companyId,
+      verificationId: req.params.id as string,
+      reviewerId: req.user!.sub,
+      reason: req.body.reason,
+    });
+    res.json({ success: true, message: 'Bank information verification rejected' });
+  } catch (error) {
+    next(error);
+  }
+}

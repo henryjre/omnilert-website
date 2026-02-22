@@ -16,6 +16,8 @@ import cashRequestRoutes from './cashRequest.routes.js';
 import registrationRequestRoutes from './registrationRequest.routes.js';
 import employeeVerificationRoutes from './employeeVerification.routes.js';
 import employeeRequirementRoutes from './employeeRequirement.routes.js';
+import departmentRoutes from './department.routes.js';
+import employeeProfileRoutes from './employeeProfile.routes.js';
 import { authenticate } from '../middleware/auth.js';
 import { resolveCompany } from '../middleware/companyResolver.js';
 import { requirePermission } from '../middleware/rbac.js';
@@ -50,6 +52,8 @@ router.use('/cash-requests', cashRequestRoutes);
 router.use('/employee-verifications', employeeVerificationRoutes);
 router.use('/registration-requests', registrationRequestRoutes);
 router.use('/employee-requirements', employeeRequirementRoutes);
+router.use('/departments', departmentRoutes);
+router.use('/employee-profiles', employeeProfileRoutes);
 router.use('/account', accountRoutes);
 router.use('/dashboard', dashboardRoutes);
 

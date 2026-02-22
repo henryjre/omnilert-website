@@ -75,6 +75,7 @@ export function Sidebar({ className = '' }: SidebarProps) {
           PERMISSIONS.AUTH_REQUEST_APPROVE_SERVICE_CREW,
           PERMISSIONS.CASH_REQUEST_VIEW_ALL,
           PERMISSIONS.EMPLOYEE_VERIFICATION_VIEW,
+          PERMISSIONS.EMPLOYEE_VIEW_ALL_PROFILES,
         ) && (
           <>
             <div className="my-2 border-t border-gray-200" />
@@ -99,6 +100,12 @@ export function Sidebar({ className = '' }: SidebarProps) {
               <NavLink to="/employee-verifications" className={linkClass}>
                 <Users className="h-5 w-5" />
                 Employee Verifications
+              </NavLink>
+            )}
+            {hasPermission(PERMISSIONS.EMPLOYEE_VIEW_ALL_PROFILES) && (
+              <NavLink to="/employee-profiles" className={linkClass}>
+                <User className="h-5 w-5" />
+                Employee Profiles
               </NavLink>
             )}
           </>
@@ -170,6 +177,12 @@ export function Sidebar({ className = '' }: SidebarProps) {
               <NavLink to="/admin/branches" className={linkClass}>
                 <GitBranch className="h-5 w-5" />
                 Branches
+              </NavLink>
+            )}
+            {hasPermission(PERMISSIONS.ADMIN_MANAGE_USERS) && (
+              <NavLink to="/admin/departments" className={linkClass}>
+                <Building2 className="h-5 w-5" />
+                Departments
               </NavLink>
             )}
             {isAdministrator && (

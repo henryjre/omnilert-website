@@ -8,15 +8,16 @@ import { usePermission } from '@/shared/hooks/usePermission';
 import { useSocket } from '@/shared/hooks/useSocket';
 import { useAuthStore } from '@/features/auth/store/authSlice';
 import { PERMISSIONS } from '@omnilert/shared';
-import { CheckCircle, ClipboardCheck, ExternalLink, IdCard, UserRoundPlus, Users, X, XCircle } from 'lucide-react';
+import { CheckCircle, ClipboardCheck, ExternalLink, IdCard, Landmark, UserRoundPlus, Users, X, XCircle } from 'lucide-react';
 
 type VerificationStatus = 'pending' | 'approved' | 'rejected';
-type VerificationType = 'registration' | 'personalInformation' | 'employmentRequirements';
+type VerificationType = 'registration' | 'personalInformation' | 'employmentRequirements' | 'bankInformation';
 
 type VerificationData = {
   registration: any[];
   personalInformation: any[];
   employmentRequirements: any[];
+  bankInformation: any[];
 };
 
 type SelectedItem = {
@@ -43,7 +44,16 @@ type PersonalInfoKey =
   | 'mobileNumber'
   | 'legalName'
   | 'birthday'
-  | 'gender';
+  | 'gender'
+  | 'maritalStatus'
+  | 'address'
+  | 'sssNumber'
+  | 'tinNumber'
+  | 'pagibigNumber'
+  | 'philhealthNumber'
+  | 'emergencyContact'
+  | 'emergencyPhone'
+  | 'emergencyRelationship';
 
 const PERSONAL_FIELD_ORDER: PersonalInfoKey[] = [
   'firstName',
@@ -53,6 +63,15 @@ const PERSONAL_FIELD_ORDER: PersonalInfoKey[] = [
   'legalName',
   'birthday',
   'gender',
+  'maritalStatus',
+  'address',
+  'sssNumber',
+  'tinNumber',
+  'pagibigNumber',
+  'philhealthNumber',
+  'emergencyContact',
+  'emergencyPhone',
+  'emergencyRelationship',
 ];
 
 const PERSONAL_FIELD_LABEL: Record<PersonalInfoKey, string> = {
@@ -63,6 +82,23 @@ const PERSONAL_FIELD_LABEL: Record<PersonalInfoKey, string> = {
   legalName: 'Legal Name',
   birthday: 'Birthday',
   gender: 'Gender',
+  maritalStatus: 'Marital Status',
+  address: 'Address',
+  sssNumber: 'SSS Number',
+  tinNumber: 'TIN Number',
+  pagibigNumber: 'Pag-IBIG Number',
+  philhealthNumber: 'PhilHealth Number',
+  emergencyContact: 'Emergency Contact',
+  emergencyPhone: 'Emergency Phone',
+  emergencyRelationship: 'Relationship',
+};
+
+const BANK_LABEL: Record<number, string> = {
+  2: 'Metrobank',
+  3: 'Gcash',
+  4: 'BDO',
+  5: 'BPI',
+  6: 'Maya',
 };
 
 function getUrlPath(url: string): string {
@@ -89,6 +125,45 @@ function formatPersonalValue(key: PersonalInfoKey, value: unknown): string {
     }
   }
   return String(value);
+}
+
+function normalizePersonalCompareValue(key: PersonalInfoKey, value: unknown): string {
+  if (value === null || value === undefined) return '';
+  const raw = String(value).trim();
+  if (!raw) return '';
+
+  if (key === 'email' || key === 'gender') {
+    return raw.toLowerCase();
+  }
+
+  if (key === 'birthday') {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    const date = new Date(raw);
+    if (Number.isNaN(date.getTime())) return '';
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  }
+
+  return raw;
+}
+
+function getCurrentPersonalValue(item: any, key: PersonalInfoKey): unknown {
+  if (!item) return null;
+  if (key === 'firstName') return item.first_name;
+  if (key === 'lastName') return item.last_name;
+  if (key === 'email') return item.email;
+  if (key === 'mobileNumber') return item.mobile_number;
+  if (key === 'legalName') return item.legal_name;
+  if (key === 'birthday') return item.birthday;
+  if (key === 'gender') return item.gender;
+  if (key === 'maritalStatus') return item.marital_status;
+  if (key === 'address') return item.address;
+  if (key === 'sssNumber') return item.sss_number;
+  if (key === 'tinNumber') return item.tin_number;
+  if (key === 'pagibigNumber') return item.pagibig_number;
+  if (key === 'philhealthNumber') return item.philhealth_number;
+  if (key === 'emergencyContact') return item.emergency_contact;
+  if (key === 'emergencyPhone') return item.emergency_phone;
+  return item.emergency_relationship;
 }
 
 function TypeCard({
@@ -145,6 +220,20 @@ function TypeCard({
                   </p>
                 </>
               )}
+              {type === 'bankInformation' && (
+                <>
+                  <p className="font-medium text-gray-900">
+                    {item.first_name} {item.last_name}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    {BANK_LABEL[Number(item.bank_id)] ?? `Bank ID ${item.bank_id}`}
+                  </p>
+                  <p className="text-xs text-gray-500">Account: {item.account_number}</p>
+                  <p className="text-xs text-gray-500">
+                    Submitted: {new Date(item.created_at).toLocaleString()}
+                  </p>
+                </>
+              )}
             </div>
             <span
               className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
@@ -173,6 +262,7 @@ export function EmployeeVerificationsPage() {
     registration: [],
     personalInformation: [],
     employmentRequirements: [],
+    bankInformation: [],
   });
   const [roles, setRoles] = useState<any[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
@@ -194,6 +284,15 @@ export function EmployeeVerificationsPage() {
     legalName: '',
     birthday: '',
     gender: '',
+    maritalStatus: '',
+    emergencyContact: '',
+    emergencyPhone: '',
+    emergencyRelationship: '',
+    address: '',
+    sssNumber: '',
+    tinNumber: '',
+    pagibigNumber: '',
+    philhealthNumber: '',
   });
   const socket = useSocket('/employee-verifications');
   const currentUserId = useAuthStore((s) => s.user?.id ?? null);
@@ -202,11 +301,13 @@ export function EmployeeVerificationsPage() {
   const canApproveRegistration = hasPermission(PERMISSIONS.REGISTRATION_APPROVE);
   const canApprovePersonalInfo = hasPermission(PERMISSIONS.PERSONAL_INFORMATION_APPROVE);
   const canApproveRequirements = hasPermission(PERMISSIONS.EMPLOYEE_REQUIREMENTS_APPROVE);
+  const canApproveBankInfo = hasPermission(PERMISSIONS.BANK_INFORMATION_APPROVE);
 
   const listByType = useMemo(() => {
     if (activeType === 'registration') return data.registration;
     if (activeType === 'personalInformation') return data.personalInformation;
-    return data.employmentRequirements;
+    if (activeType === 'employmentRequirements') return data.employmentRequirements;
+    return data.bankInformation;
   }, [activeType, data]);
 
   const filtered = useMemo(() => {
@@ -221,14 +322,16 @@ export function EmployeeVerificationsPage() {
     () =>
       data.registration.filter((row) => row.status === 'pending').length +
       data.personalInformation.filter((row) => row.status === 'pending').length +
-      data.employmentRequirements.filter((row) => row.status === 'pending').length,
+      data.employmentRequirements.filter((row) => row.status === 'pending').length +
+      data.bankInformation.filter((row) => row.status === 'pending').length,
     [data],
   );
 
   const canApproveType = (type: VerificationType) => {
     if (type === 'registration') return canApproveRegistration;
     if (type === 'personalInformation') return canApprovePersonalInfo;
-    return canApproveRequirements;
+    if (type === 'employmentRequirements') return canApproveRequirements;
+    return canApproveBankInfo;
   };
 
   const canActOnSelected = !!selectedItem
@@ -240,7 +343,9 @@ export function EmployeeVerificationsPage() {
       ? 'Registration'
       : activeType === 'personalInformation'
         ? 'Personal Information'
-        : 'Employment Requirements';
+        : activeType === 'employmentRequirements'
+          ? 'Employment Requirements'
+          : 'Bank Information';
 
   useEffect(() => {
     setPage(1);
@@ -267,6 +372,7 @@ export function EmployeeVerificationsPage() {
           registration: [],
           personalInformation: [],
           employmentRequirements: [],
+          bankInformation: [],
         },
       );
       setRoles(rolesRes.data.data || []);
@@ -342,6 +448,15 @@ export function EmployeeVerificationsPage() {
         legalName: requested.legalName || '',
         birthday: requested.birthday || '',
         gender: requested.gender || '',
+        maritalStatus: requested.maritalStatus || '',
+        address: requested.address || '',
+        sssNumber: requested.sssNumber || '',
+        tinNumber: requested.tinNumber || '',
+        pagibigNumber: requested.pagibigNumber || '',
+        philhealthNumber: requested.philhealthNumber || '',
+        emergencyContact: requested.emergencyContact || '',
+        emergencyPhone: requested.emergencyPhone || '',
+        emergencyRelationship: requested.emergencyRelationship || '',
       });
     }
   };
@@ -362,7 +477,9 @@ export function EmployeeVerificationsPage() {
       ? data.registration
       : selectedItem.type === 'personalInformation'
         ? data.personalInformation
-        : data.employmentRequirements;
+        : selectedItem.type === 'employmentRequirements'
+          ? data.employmentRequirements
+          : data.bankInformation;
     const refreshed = source.find((row: any) => row.id === selectedItem.data.id);
     if (!refreshed) {
       closePanel();
@@ -373,13 +490,22 @@ export function EmployeeVerificationsPage() {
 
   const selectedRequestedChanges = useMemo(() => {
     if (!selectedItem || selectedItem.type !== 'personalInformation') return {};
-    return (selectedItem.data.requested_changes || {}) as Partial<Record<PersonalInfoKey, string>>;
+    return (selectedItem.data.requested_changes || {}) as Partial<Record<PersonalInfoKey, unknown>>;
   }, [selectedItem]);
 
   const personalChangedKeys = useMemo(() => {
     const keys = Object.keys(selectedRequestedChanges) as PersonalInfoKey[];
-    return PERSONAL_FIELD_ORDER.filter((key) => keys.includes(key));
-  }, [selectedRequestedChanges]);
+    return PERSONAL_FIELD_ORDER.filter((key) => {
+      if (!keys.includes(key)) return false;
+      const requested = normalizePersonalCompareValue(key, selectedRequestedChanges[key]);
+      if (!requested) return false;
+      const current = normalizePersonalCompareValue(
+        key,
+        getCurrentPersonalValue(selectedItem?.data, key),
+      );
+      return requested !== current;
+    });
+  }, [selectedRequestedChanges, selectedItem?.data]);
 
   const toggleSelection = (
     list: string[],
@@ -424,14 +550,31 @@ export function EmployeeVerificationsPage() {
         if (personalChangedKeys.includes('legalName')) payload.legalName = personalInfoEdits.legalName;
         if (personalChangedKeys.includes('birthday')) payload.birthday = personalInfoEdits.birthday || null;
         if (personalChangedKeys.includes('gender')) payload.gender = personalInfoEdits.gender || null;
+        if (personalChangedKeys.includes('maritalStatus')) payload.maritalStatus = personalInfoEdits.maritalStatus;
+        if (personalChangedKeys.includes('address')) payload.address = personalInfoEdits.address;
+        if (personalChangedKeys.includes('sssNumber')) payload.sssNumber = personalInfoEdits.sssNumber;
+        if (personalChangedKeys.includes('tinNumber')) payload.tinNumber = personalInfoEdits.tinNumber;
+        if (personalChangedKeys.includes('pagibigNumber')) payload.pagibigNumber = personalInfoEdits.pagibigNumber;
+        if (personalChangedKeys.includes('philhealthNumber')) payload.philhealthNumber = personalInfoEdits.philhealthNumber;
+        if (personalChangedKeys.includes('emergencyContact')) payload.emergencyContact = personalInfoEdits.emergencyContact;
+        if (personalChangedKeys.includes('emergencyPhone')) payload.emergencyPhone = personalInfoEdits.emergencyPhone;
+        if (personalChangedKeys.includes('emergencyRelationship')) {
+          payload.emergencyRelationship = personalInfoEdits.emergencyRelationship;
+        }
         await api.post(
           `/employee-verifications/personal-information/${selectedItem.data.id}/approve`,
           payload,
         );
       } else {
-        await api.post(
-          `/employee-verifications/employment-requirements/${selectedItem.data.id}/approve`,
-        );
+        if (selectedItem.type === 'employmentRequirements') {
+          await api.post(
+            `/employee-verifications/employment-requirements/${selectedItem.data.id}/approve`,
+          );
+        } else {
+          await api.post(
+            `/employee-verifications/bank-information/${selectedItem.data.id}/approve`,
+          );
+        }
       }
 
       setSuccess('Verification approved.');
@@ -473,10 +616,17 @@ export function EmployeeVerificationsPage() {
           body,
         );
       } else {
-        await api.post(
-          `/employee-verifications/employment-requirements/${selectedItem.data.id}/reject`,
-          body,
-        );
+        if (selectedItem.type === 'employmentRequirements') {
+          await api.post(
+            `/employee-verifications/employment-requirements/${selectedItem.data.id}/reject`,
+            body,
+          );
+        } else {
+          await api.post(
+            `/employee-verifications/bank-information/${selectedItem.data.id}/reject`,
+            body,
+          );
+        }
       }
 
       setSuccess('Verification rejected.');
@@ -518,6 +668,7 @@ export function EmployeeVerificationsPage() {
             { key: 'registration', label: 'Registration', icon: UserRoundPlus },
             { key: 'personalInformation', label: 'Personal Information', icon: IdCard },
             { key: 'employmentRequirements', label: 'Employment Requirements', icon: ClipboardCheck },
+            { key: 'bankInformation', label: 'Bank Information', icon: Landmark },
           ] as Array<{ key: VerificationType; label: string; icon: React.ElementType }>).map((tab) => (
             <button
               key={tab.key}
@@ -612,7 +763,9 @@ export function EmployeeVerificationsPage() {
                     ? 'Registration Verification'
                     : selectedItem.type === 'personalInformation'
                       ? 'Personal Information Verification'
-                      : 'Employment Requirement Verification'}
+                      : selectedItem.type === 'employmentRequirements'
+                        ? 'Employment Requirement Verification'
+                        : 'Bank Information Verification'}
                 </p>
                 <p className="text-xs text-gray-500">
                   {selectedItem.data.first_name} {selectedItem.data.last_name}
@@ -794,7 +947,7 @@ export function EmployeeVerificationsPage() {
                         <p className="text-gray-500">No requested changes.</p>
                       )}
                       {personalChangedKeys.map((key) => {
-                        const original = selectedRequestedChanges[key];
+                        const original = getCurrentPersonalValue(selectedItem.data, key);
                         const approvedChanges = (selectedItem.data.approved_changes || {}) as Record<string, unknown>;
                         const next = canActOnSelected
                           ? personalInfoEdits[key]
@@ -897,6 +1050,90 @@ export function EmployeeVerificationsPage() {
                           </select>
                         </div>
                       )}
+                      {personalChangedKeys.includes('address') && (
+                        <Input
+                          label="Address"
+                          value={personalInfoEdits.address}
+                          onChange={(e) =>
+                            setPersonalInfoEdits((prev) => ({ ...prev, address: e.target.value }))
+                          }
+                        />
+                      )}
+                      {personalChangedKeys.includes('maritalStatus') && (
+                        <Input
+                          label="Marital Status"
+                          value={personalInfoEdits.maritalStatus}
+                          onChange={(e) =>
+                            setPersonalInfoEdits((prev) => ({ ...prev, maritalStatus: e.target.value }))
+                          }
+                        />
+                      )}
+                      {personalChangedKeys.includes('sssNumber') && (
+                        <Input
+                          label="SSS Number"
+                          value={personalInfoEdits.sssNumber}
+                          onChange={(e) =>
+                            setPersonalInfoEdits((prev) => ({ ...prev, sssNumber: e.target.value }))
+                          }
+                        />
+                      )}
+                      {personalChangedKeys.includes('tinNumber') && (
+                        <Input
+                          label="TIN Number"
+                          value={personalInfoEdits.tinNumber}
+                          onChange={(e) =>
+                            setPersonalInfoEdits((prev) => ({ ...prev, tinNumber: e.target.value }))
+                          }
+                        />
+                      )}
+                      {personalChangedKeys.includes('pagibigNumber') && (
+                        <Input
+                          label="Pag-IBIG Number"
+                          value={personalInfoEdits.pagibigNumber}
+                          onChange={(e) =>
+                            setPersonalInfoEdits((prev) => ({ ...prev, pagibigNumber: e.target.value }))
+                          }
+                        />
+                      )}
+                      {personalChangedKeys.includes('philhealthNumber') && (
+                        <Input
+                          label="PhilHealth Number"
+                          value={personalInfoEdits.philhealthNumber}
+                          onChange={(e) =>
+                            setPersonalInfoEdits((prev) => ({ ...prev, philhealthNumber: e.target.value }))
+                          }
+                        />
+                      )}
+                      {personalChangedKeys.includes('emergencyContact') && (
+                        <Input
+                          label="Emergency Contact"
+                          value={personalInfoEdits.emergencyContact}
+                          onChange={(e) =>
+                            setPersonalInfoEdits((prev) => ({ ...prev, emergencyContact: e.target.value }))
+                          }
+                        />
+                      )}
+                      {personalChangedKeys.includes('emergencyPhone') && (
+                        <Input
+                          label="Emergency Phone"
+                          value={personalInfoEdits.emergencyPhone}
+                          onChange={(e) =>
+                            setPersonalInfoEdits((prev) => ({ ...prev, emergencyPhone: e.target.value }))
+                          }
+                        />
+                      )}
+                      {personalChangedKeys.includes('emergencyRelationship') && (
+                        <Input
+                          label="Relationship"
+                          value={personalInfoEdits.emergencyRelationship}
+                          onChange={(e) =>
+                            setPersonalInfoEdits((prev) => ({
+                              ...prev,
+                              emergencyRelationship: e.target.value,
+                            }))
+                          }
+                        />
+                      )}
                     </div>
                   )}
                 </>
@@ -950,6 +1187,40 @@ export function EmployeeVerificationsPage() {
                       )}
                     </div>
                   )}
+
+                  {selectedItem.data.status === 'rejected' && selectedItem.data.rejection_reason && (
+                    <div className="rounded bg-red-50 p-3 text-sm text-red-700">
+                      <span className="font-medium">Rejection reason: </span>
+                      {selectedItem.data.rejection_reason}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {selectedItem.type === 'bankInformation' && (
+                <>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                    <span className="text-gray-500">Email</span>
+                    <span className="font-medium text-gray-900">{selectedItem.data.email}</span>
+                    <span className="text-gray-500">Bank</span>
+                    <span className="font-medium text-gray-900">
+                      {BANK_LABEL[Number(selectedItem.data.bank_id)] ?? `Bank ID ${selectedItem.data.bank_id}`}
+                    </span>
+                    <span className="text-gray-500">Account Number</span>
+                    <span className="font-medium text-gray-900">{selectedItem.data.account_number}</span>
+                    <span className="text-gray-500">Submitted</span>
+                    <span className="font-medium text-gray-900">
+                      {new Date(selectedItem.data.created_at).toLocaleString()}
+                    </span>
+                    {selectedItem.data.reviewed_by_name && (
+                      <>
+                        <span className="text-gray-500">Reviewed By</span>
+                        <span className="font-medium text-gray-900">
+                          {selectedItem.data.reviewed_by_name}
+                        </span>
+                      </>
+                    )}
+                  </div>
 
                   {selectedItem.data.status === 'rejected' && selectedItem.data.rejection_reason && (
                     <div className="rounded bg-red-50 p-3 text-sm text-red-700">

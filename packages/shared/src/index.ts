@@ -29,6 +29,8 @@ export {
   submitPersonalInformationVerificationSchema,
   approvePersonalInformationVerificationSchema,
   rejectVerificationSchema,
+  updateAccountEmailSchema,
+  submitBankInformationVerificationSchema,
 } from './validation/auth.schema.js';
 export type {
   LoginInput,
@@ -39,7 +41,19 @@ export type {
   SubmitPersonalInformationVerificationInput,
   ApprovePersonalInformationVerificationInput,
   RejectVerificationInput,
+  UpdateAccountEmailInput,
+  SubmitBankInformationVerificationInput,
 } from './validation/auth.schema.js';
+export { upsertDepartmentSchema } from './validation/department.schema.js';
+export type { UpsertDepartmentInput } from './validation/department.schema.js';
+export {
+  employeeProfilesListQuerySchema,
+  updateEmployeeWorkInformationSchema,
+} from './validation/employeeProfile.schema.js';
+export type {
+  EmployeeProfilesListQueryInput,
+  UpdateEmployeeWorkInformationInput,
+} from './validation/employeeProfile.schema.js';
 export { superAdminBootstrapSchema, superAdminLoginSchema } from './validation/superAdmin.schema.js';
 export type { SuperAdminBootstrapInput, SuperAdminLoginInput } from './validation/superAdmin.schema.js';
 

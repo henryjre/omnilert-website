@@ -37,7 +37,7 @@ export interface ServerToClientEvents {
   'employee-verification:updated': (data: {
     companyId: string;
     verificationId: string;
-    verificationType: 'registration' | 'personal_information' | 'employment_requirement';
+    verificationType: 'registration' | 'personal_information' | 'employment_requirement' | 'bank_information';
     action: 'created' | 'approved' | 'rejected' | 'submitted';
     userId?: string;
   }) => void;

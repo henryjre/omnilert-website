@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Calendar, FileText, DollarSign, Bell, Settings, ClipboardCheck } from 'lucide-react';
+import { Calendar, FileText, DollarSign, Bell, Settings, IdCard } from 'lucide-react';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { PERMISSIONS } from '@omnilert/shared';
 
@@ -22,8 +22,8 @@ export function AccountPage() {
       show: hasPermission(PERMISSIONS.ACCOUNT_VIEW_CASH_REQUESTS),
     },
     { to: '/account/notifications', label: 'Notifications', icon: Bell, show: true },
+    { to: '/account/profile', label: 'Profile', icon: IdCard, show: true },
     { to: '/account/settings', label: 'Settings', icon: Settings, show: true },
-    { to: '/account/employment', label: 'Employment', icon: ClipboardCheck, show: true },
   ];
 
   const visibleTabs = tabs.filter((t) => t.show);

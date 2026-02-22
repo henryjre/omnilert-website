@@ -20,9 +20,11 @@ import { RoleManagementPage } from '@/features/roles/pages/RoleManagementPage';
 import { BranchManagementPage } from '@/features/company/pages/BranchManagementPage';
 import { UserManagementPage } from '@/features/company/pages/UserManagementPage';
 import { CompanyPage } from '@/features/company/pages/CompanyPage';
+import { DepartmentManagementPage } from '@/features/company/pages/DepartmentManagementPage';
 import { AuthorizationRequestsPage } from '@/features/authorization-requests/pages/AuthorizationRequestsPage';
 import { CashRequestsPage } from '@/features/cash-requests/pages/CashRequestsPage';
 import { EmployeeVerificationsPage } from '@/features/employee-verifications/pages/EmployeeVerificationsPage';
+import { EmployeeProfilesPage } from '@/features/employee-profiles/pages/EmployeeProfilesPage';
 import { PERMISSIONS } from '@omnilert/shared';
 
 export const router = createBrowserRouter([
@@ -62,7 +64,8 @@ export const router = createBrowserRouter([
               { path: 'cash-requests', element: <CashRequestsTab /> },
               { path: 'notifications', element: <EmployeeNotificationsTab /> },
               { path: 'settings', element: <SettingsTab /> },
-              { path: 'employment', element: <EmploymentTab /> },
+              { path: 'profile', element: <EmploymentTab /> },
+              { path: 'employment', element: <Navigate to="/account/profile" replace /> },
             ],
           },
           {
@@ -120,6 +123,14 @@ export const router = createBrowserRouter([
             ),
           },
           {
+            path: 'employee-profiles',
+            element: (
+              <PermissionGuard permission={PERMISSIONS.EMPLOYEE_VIEW_ALL_PROFILES}>
+                <EmployeeProfilesPage />
+              </PermissionGuard>
+            ),
+          },
+          {
             path: 'registration-requests',
             element: <Navigate to="/employee-verifications" replace />,
           },
@@ -152,6 +163,14 @@ export const router = createBrowserRouter([
             element: (
               <PermissionGuard permission={PERMISSIONS.ADMIN_MANAGE_BRANCHES}>
                 <BranchManagementPage />
+              </PermissionGuard>
+            ),
+          },
+          {
+            path: 'admin/departments',
+            element: (
+              <PermissionGuard permission={PERMISSIONS.ADMIN_MANAGE_USERS}>
+                <DepartmentManagementPage />
               </PermissionGuard>
             ),
           },

@@ -109,16 +109,52 @@ async function createTenantTables(tenantDb: ReturnType<typeof db.getMasterDb>): 
     table.string('legal_name', 255).nullable();
     table.date('birthday').nullable();
     table.string('gender', 20).nullable();
+    table.string('address', 500).nullable();
+    table.string('sss_number', 100).nullable();
+    table.string('tin_number', 100).nullable();
+    table.string('pagibig_number', 100).nullable();
+    table.string('philhealth_number', 100).nullable();
+    table.string('marital_status', 50).nullable();
     table.string('avatar_url', 500);
     table.string('valid_id_url', 500).nullable();
     table.timestamp('valid_id_updated_at').nullable();
     table.string('pin', 50).nullable();
+    table.string('emergency_contact', 255).nullable();
+    table.string('emergency_phone', 50).nullable();
+    table.string('emergency_relationship', 100).nullable();
+    table.string('bank_account_number', 255).nullable();
+    table.integer('bank_id').nullable();
+    table.uuid('department_id').nullable();
+    table.string('position_title', 255).nullable();
+    table.date('date_started').nullable();
     table.integer('employee_number').nullable();
     table.boolean('updated').notNullable().defaultTo(false);
     table.boolean('is_active').notNullable().defaultTo(true);
     table.timestamp('last_login_at');
     table.timestamp('created_at').notNullable().defaultTo(tenantDb.fn.now());
     table.timestamp('updated_at').notNullable().defaultTo(tenantDb.fn.now());
+  });
+
+  // Departments
+  await tenantDb.schema.createTable('departments', (table) => {
+    table.uuid('id').primary().defaultTo(tenantDb.raw('gen_random_uuid()'));
+    table.string('name', 255).notNullable().unique();
+    table.uuid('head_user_id').nullable().references('id').inTable('users').onDelete('SET NULL');
+    table.timestamp('created_at').notNullable().defaultTo(tenantDb.fn.now());
+    table.timestamp('updated_at').notNullable().defaultTo(tenantDb.fn.now());
+  });
+
+  await tenantDb.raw(`
+    CREATE UNIQUE INDEX IF NOT EXISTS departments_name_ci_unique
+    ON departments (LOWER(name))
+  `);
+
+  await tenantDb.schema.alterTable('users', (table) => {
+    table
+      .foreign('department_id', 'users_department_id_foreign')
+      .references('id')
+      .inTable('departments')
+      .onDelete('SET NULL');
   });
 
   // User Roles
@@ -438,6 +474,27 @@ async function createTenantTables(tenantDb: ReturnType<typeof db.getMasterDb>): 
   await tenantDb.raw(`
     CREATE UNIQUE INDEX IF NOT EXISTS employment_requirement_submissions_pending_user_requirement_unique
     ON employment_requirement_submissions (user_id, requirement_code)
+    WHERE status = 'pending'
+  `);
+
+  // Bank information verifications
+  await tenantDb.schema.createTable('bank_information_verifications', (table) => {
+    table.uuid('id').primary().defaultTo(tenantDb.raw('gen_random_uuid()'));
+    table.uuid('user_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
+    table.integer('bank_id').notNullable();
+    table.string('account_number', 255).notNullable();
+    table.string('status', 20).notNullable().defaultTo('pending');
+    table.uuid('reviewed_by').nullable().references('id').inTable('users');
+    table.timestamp('reviewed_at').nullable();
+    table.text('rejection_reason').nullable();
+    table.integer('odoo_partner_bank_id').nullable();
+    table.timestamp('created_at').notNullable().defaultTo(tenantDb.fn.now());
+    table.timestamp('updated_at').notNullable().defaultTo(tenantDb.fn.now());
+  });
+
+  await tenantDb.raw(`
+    CREATE UNIQUE INDEX IF NOT EXISTS bank_information_verifications_pending_user_unique
+    ON bank_information_verifications (user_id)
     WHERE status = 'pending'
   `);
 }

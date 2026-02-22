@@ -1,6 +1,6 @@
 import type { Knex } from 'knex';
 import { AppError } from '../middleware/errorHandler.js';
-import { syncUserProfileToOdoo } from './odoo.service.js';
+import { createPartnerBankAndAssignEmployees, syncUserProfileToOdoo } from './odoo.service.js';
 import { getIO } from '../config/socket.js';
 
 type NotificationType = 'info' | 'success' | 'danger' | 'warning';
@@ -20,7 +20,7 @@ function parseJsonField<T>(value: unknown, fallback: T): T {
 function emitEmployeeVerificationUpdated(payload: {
   companyId: string;
   verificationId: string;
-  verificationType: 'personal_information' | 'employment_requirement';
+  verificationType: 'personal_information' | 'employment_requirement' | 'bank_information';
   action: 'submitted' | 'approved' | 'rejected';
   userId?: string;
 }) {
@@ -75,7 +75,7 @@ async function notifyUser(
 }
 
 export async function listEmployeeVerifications(tenantDb: Knex) {
-  const [registration, personalInformation, employmentRequirements] = await Promise.all([
+  const [registration, personalInformation, employmentRequirements, bankInformation] = await Promise.all([
     tenantDb('registration_requests')
       .leftJoin('users as reviewers', 'registration_requests.reviewed_by', 'reviewers.id')
       .select(
@@ -91,6 +91,19 @@ export async function listEmployeeVerifications(tenantDb: Knex) {
         'users.first_name',
         'users.last_name',
         'users.email',
+        'users.mobile_number',
+        'users.legal_name',
+        'users.birthday',
+        'users.gender',
+        'users.address',
+        'users.sss_number',
+        'users.tin_number',
+        'users.pagibig_number',
+        'users.philhealth_number',
+        'users.marital_status',
+        'users.emergency_contact',
+        'users.emergency_phone',
+        'users.emergency_relationship',
         tenantDb.raw("CONCAT(reviewers.first_name, ' ', reviewers.last_name) as reviewed_by_name"),
       )
       .orderBy('personal_information_verifications.created_at', 'desc'),
@@ -111,6 +124,17 @@ export async function listEmployeeVerifications(tenantDb: Knex) {
         tenantDb.raw("CONCAT(reviewers.first_name, ' ', reviewers.last_name) as reviewed_by_name"),
       )
       .orderBy('employment_requirement_submissions.created_at', 'desc'),
+    tenantDb('bank_information_verifications')
+      .join('users', 'bank_information_verifications.user_id', 'users.id')
+      .leftJoin('users as reviewers', 'bank_information_verifications.reviewed_by', 'reviewers.id')
+      .select(
+        'bank_information_verifications.*',
+        'users.first_name',
+        'users.last_name',
+        'users.email',
+        tenantDb.raw("CONCAT(reviewers.first_name, ' ', reviewers.last_name) as reviewed_by_name"),
+      )
+      .orderBy('bank_information_verifications.created_at', 'desc'),
   ]);
 
   return {
@@ -121,6 +145,7 @@ export async function listEmployeeVerifications(tenantDb: Knex) {
       approved_changes: parseJsonField<Record<string, unknown> | null>(row.approved_changes, null),
     })),
     employmentRequirements: employmentRequirements,
+    bankInformation,
   };
 }
 
@@ -147,6 +172,15 @@ export async function approvePersonalInformationVerification(input: {
     legalName?: string;
     birthday?: string | null;
     gender?: string | null;
+    address?: string;
+    sssNumber?: string;
+    tinNumber?: string;
+    pagibigNumber?: string;
+    philhealthNumber?: string;
+    maritalStatus?: string;
+    emergencyContact?: string;
+    emergencyPhone?: string;
+    emergencyRelationship?: string;
   };
 }) {
   const verification = await input.tenantDb('personal_information_verifications')
@@ -168,6 +202,15 @@ export async function approvePersonalInformationVerification(input: {
     legalName: input.edits.legalName ?? requested.legalName,
     birthday: input.edits.birthday ?? requested.birthday ?? null,
     gender: input.edits.gender ?? requested.gender ?? null,
+    address: input.edits.address ?? requested.address,
+    sssNumber: input.edits.sssNumber ?? requested.sssNumber,
+    tinNumber: input.edits.tinNumber ?? requested.tinNumber,
+    pagibigNumber: input.edits.pagibigNumber ?? requested.pagibigNumber,
+    philhealthNumber: input.edits.philhealthNumber ?? requested.philhealthNumber,
+    maritalStatus: input.edits.maritalStatus ?? requested.maritalStatus,
+    emergencyContact: input.edits.emergencyContact ?? requested.emergencyContact,
+    emergencyPhone: input.edits.emergencyPhone ?? requested.emergencyPhone,
+    emergencyRelationship: input.edits.emergencyRelationship ?? requested.emergencyRelationship,
   } as const;
 
   const user = await input.tenantDb('users')
@@ -183,6 +226,15 @@ export async function approvePersonalInformationVerification(input: {
       'legal_name',
       'birthday',
       'gender',
+      'address',
+      'sss_number',
+      'tin_number',
+      'pagibig_number',
+      'philhealth_number',
+      'marital_status',
+      'emergency_contact',
+      'emergency_phone',
+      'emergency_relationship',
     )
     .first();
   if (!user) {
@@ -197,6 +249,17 @@ export async function approvePersonalInformationVerification(input: {
   if (approved.legalName !== undefined) updates.legal_name = approved.legalName;
   if (approved.birthday !== undefined) updates.birthday = approved.birthday;
   if (approved.gender !== undefined) updates.gender = approved.gender;
+  if (approved.address !== undefined) updates.address = approved.address;
+  if (approved.sssNumber !== undefined) updates.sss_number = approved.sssNumber;
+  if (approved.tinNumber !== undefined) updates.tin_number = approved.tinNumber;
+  if (approved.pagibigNumber !== undefined) updates.pagibig_number = approved.pagibigNumber;
+  if (approved.philhealthNumber !== undefined) updates.philhealth_number = approved.philhealthNumber;
+  if (approved.maritalStatus !== undefined) updates.marital_status = approved.maritalStatus;
+  if (approved.emergencyContact !== undefined) updates.emergency_contact = approved.emergencyContact;
+  if (approved.emergencyPhone !== undefined) updates.emergency_phone = approved.emergencyPhone;
+  if (approved.emergencyRelationship !== undefined) {
+    updates.emergency_relationship = approved.emergencyRelationship;
+  }
 
   await input.tenantDb.transaction(async (trx) => {
     await trx('users').where({ id: user.id }).update(updates);
@@ -228,6 +291,11 @@ export async function approvePersonalInformationVerification(input: {
     legalName: (approved.legalName as string) || user.legal_name || '',
     birthday: (approved.birthday as string | null) ?? user.birthday,
     gender: (approved.gender as string | null) ?? user.gender,
+    address: approved.address !== undefined
+      ? String(approved.address ?? '')
+      : undefined,
+    emergencyContact: (approved.emergencyContact as string) || user.emergency_contact || '',
+    emergencyPhone: (approved.emergencyPhone as string) || user.emergency_phone || '',
     firstName: hasNameChange ? ((approved.firstName as string) || user.first_name) : undefined,
     lastName: hasNameChange ? ((approved.lastName as string) || user.last_name) : undefined,
     employeeNumber: (user.employee_number as number | null) ?? null,
@@ -240,7 +308,7 @@ export async function approvePersonalInformationVerification(input: {
     'Personal Information Verified',
     'Your personal information verification request has been approved.',
     'success',
-    '/account/settings',
+    '/account/profile',
   );
 
   emitEmployeeVerificationUpdated({
@@ -285,7 +353,7 @@ export async function rejectPersonalInformationVerification(input: {
     'Personal Information Rejected',
     `Your personal information verification was rejected: ${input.reason.trim()}`,
     'danger',
-    '/account/settings',
+    '/account/profile',
   );
 
   emitEmployeeVerificationUpdated({
@@ -337,7 +405,7 @@ export async function approveEmploymentRequirementSubmission(input: {
     'Employment Requirement Approved',
     'Your employment requirement submission has been approved.',
     'success',
-    '/account/employment',
+    '/account/profile',
   );
 
   emitEmployeeVerificationUpdated({
@@ -385,7 +453,7 @@ export async function rejectEmploymentRequirementSubmission(input: {
     'Employment Requirement Rejected',
     `Your employment requirement submission was rejected: ${input.reason.trim()}`,
     'danger',
-    '/account/employment',
+    '/account/profile',
   );
 
   emitEmployeeVerificationUpdated({
@@ -401,5 +469,119 @@ export async function rejectEmploymentRequirementSubmission(input: {
     submissionId: input.submissionId,
     userId: submission.user_id as string,
     requirementCode: submission.requirement_code as string,
+  });
+}
+
+export async function approveBankInformationVerification(input: {
+  tenantDb: Knex;
+  companyId: string;
+  verificationId: string;
+  reviewerId: string;
+}) {
+  const verification = await input.tenantDb('bank_information_verifications')
+    .where({ id: input.verificationId })
+    .first();
+  if (!verification) {
+    throw new AppError(404, 'Bank information verification not found');
+  }
+  if (verification.status !== 'pending') {
+    throw new AppError(400, 'Verification is already resolved');
+  }
+
+  const user = await input.tenantDb('users')
+    .where({ id: verification.user_id })
+    .select('id', 'user_key', 'email')
+    .first();
+  if (!user) {
+    throw new AppError(404, 'User not found');
+  }
+
+  const { partnerBankId } = await createPartnerBankAndAssignEmployees({
+    websiteUserKey: user.user_key ?? null,
+    email: user.email ?? null,
+    bankId: Number(verification.bank_id),
+    accountNumber: String(verification.account_number),
+  });
+
+  await input.tenantDb.transaction(async (trx) => {
+    await trx('users')
+      .where({ id: user.id })
+      .update({
+        bank_id: Number(verification.bank_id),
+        bank_account_number: String(verification.account_number),
+        updated_at: new Date(),
+      });
+
+    await trx('bank_information_verifications')
+      .where({ id: input.verificationId })
+      .update({
+        status: 'approved',
+        reviewed_by: input.reviewerId,
+        reviewed_at: new Date(),
+        odoo_partner_bank_id: partnerBankId,
+        updated_at: new Date(),
+      });
+  });
+
+  await notifyUser(
+    input.tenantDb,
+    user.id as string,
+    'Bank Information Approved',
+    'Your bank information verification has been approved.',
+    'success',
+    '/account/profile',
+  );
+
+  emitEmployeeVerificationUpdated({
+    companyId: input.companyId,
+    verificationId: input.verificationId,
+    verificationType: 'bank_information',
+    action: 'approved',
+    userId: user.id as string,
+  });
+}
+
+export async function rejectBankInformationVerification(input: {
+  tenantDb: Knex;
+  companyId: string;
+  verificationId: string;
+  reviewerId: string;
+  reason: string;
+}) {
+  const verification = await input.tenantDb('bank_information_verifications')
+    .where({ id: input.verificationId })
+    .first();
+  if (!verification) {
+    throw new AppError(404, 'Bank information verification not found');
+  }
+  if (verification.status !== 'pending') {
+    throw new AppError(400, 'Verification is already resolved');
+  }
+
+  await input.tenantDb('bank_information_verifications')
+    .where({ id: input.verificationId })
+    .update({
+      status: 'rejected',
+      rejection_reason: input.reason.trim(),
+      reviewed_by: input.reviewerId,
+      reviewed_at: new Date(),
+      updated_at: new Date(),
+    });
+
+  await notifyUser(
+    input.tenantDb,
+    verification.user_id as string,
+    'Bank Information Rejected',
+    `Your bank information verification was rejected: ${input.reason.trim()}`,
+    'danger',
+    '/account/profile',
+  );
+
+  emitEmployeeVerificationUpdated({
+    companyId: input.companyId,
+    verificationId: input.verificationId,
+    verificationType: 'bank_information',
+    action: 'rejected',
+    userId: verification.user_id as string,
   });
 }

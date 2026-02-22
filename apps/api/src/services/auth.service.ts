@@ -200,7 +200,7 @@ export async function loginTenantUser(email: string, password: string, companySl
       title: 'Complete Your Profile',
       message: 'Please update your account profile settings with your personal information.',
       type: 'warning',
-      link_url: '/account/settings',
+      link_url: '/account/profile',
     });
   }
 
@@ -227,9 +227,9 @@ export async function loginTenantUser(email: string, password: string, companySl
             await tenantDb('employee_notifications').insert({
               user_id: user.id,
               title: 'Submit Your Requirements',
-              message: 'Please submit your employment requirements in My Account > Employment.',
+              message: 'Please submit your employment requirements in My Account > Profile.',
               type: 'warning',
-              link_url: '/account/employment',
+              link_url: '/account/profile',
             });
           } else if (submittedCount < totalRequirements) {
             const remaining = totalRequirements - submittedCount;
@@ -238,7 +238,7 @@ export async function loginTenantUser(email: string, password: string, companySl
               title: 'Complete Your Requirements',
               message: `You have submitted ${submittedCount} of ${totalRequirements} employment requirements. Please submit the remaining ${remaining}.`,
               type: 'warning',
-              link_url: '/account/employment',
+              link_url: '/account/profile',
             });
           }
         }

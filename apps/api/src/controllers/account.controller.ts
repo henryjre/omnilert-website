@@ -2,6 +2,8 @@ import type { Request, Response, NextFunction } from 'express';
 import { AppError } from '../middleware/errorHandler.js';
 import { buildTenantStoragePrefix, uploadFile } from '../services/storage.service.js';
 import { getIO } from '../config/socket.js';
+import { env } from '../config/env.js';
+import { syncUserProfileToOdoo } from '../services/odoo.service.js';
 
 function toDisplayStatus(status: string | null): 'complete' | 'rejected' | 'verification' | 'pending' {
   if (!status) return 'pending';
@@ -39,7 +41,7 @@ async function notifyUser(
 function emitEmployeeVerificationUpdated(payload: {
   companyId: string;
   verificationId: string;
-  verificationType: 'personal_information' | 'employment_requirement';
+  verificationType: 'personal_information' | 'employment_requirement' | 'bank_information';
   action: 'submitted';
   userId?: string;
 }) {
@@ -50,6 +52,66 @@ function emitEmployeeVerificationUpdated(payload: {
   } catch {
     // ignore socket failures
   }
+}
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+function normalizeOptionalString(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  return String(value).trim();
+}
+
+function normalizeBirthdayValue(value: unknown): string {
+  const raw = normalizeOptionalString(value);
+  if (!raw) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return '';
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function toVerificationStatus(status: string | null | undefined): 'none' | 'pending' | 'approved' | 'rejected' {
+  if (status === 'pending' || status === 'approved' || status === 'rejected') {
+    return status;
+  }
+  return 'none';
+}
+
+function computeBankCooldown(latestApprovedReviewedAt: Date | null): {
+  cooldownActive: boolean;
+  nextAllowedAt: string | null;
+} {
+  if (env.NODE_ENV !== 'production') {
+    return { cooldownActive: false, nextAllowedAt: null };
+  }
+  if (!latestApprovedReviewedAt) {
+    return { cooldownActive: false, nextAllowedAt: null };
+  }
+  const nextAllowedAt = new Date(latestApprovedReviewedAt.getTime() + 60 * 60 * 1000);
+  const cooldownActive = Date.now() < nextAllowedAt.getTime();
+  return {
+    cooldownActive,
+    nextAllowedAt: cooldownActive ? nextAllowedAt.toISOString() : null,
+  };
+}
+
+function toDateOnly(value: unknown): string | null {
+  if (!value) return null;
+  const date = new Date(String(value));
+  if (Number.isNaN(date.getTime())) return null;
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function computeDaysOfEmployment(dateStarted: unknown, createdAt: unknown): number | null {
+  const raw = dateStarted ?? createdAt;
+  if (!raw) return null;
+  const date = new Date(String(raw));
+  if (Number.isNaN(date.getTime())) return null;
+  const diffMs = Date.now() - date.getTime();
+  if (diffMs <= 0) return 0;
+  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
 }
 
 function emitEmployeeRequirementUpdated(payload: {
@@ -408,6 +470,171 @@ export async function markAllNotificationsRead(req: Request, res: Response, next
   }
 }
 
+export async function getProfile(req: Request, res: Response, next: NextFunction) {
+  try {
+    const tenantDb = req.tenantDb!;
+    const userId = req.user!.sub;
+
+    const user = await tenantDb('users as users')
+      .leftJoin('departments as departments', 'users.department_id', 'departments.id')
+      .where('users.id', userId)
+      .select(
+        'users.id',
+        'users.email',
+        'users.first_name',
+        'users.last_name',
+        'users.mobile_number',
+        'users.legal_name',
+        'users.birthday',
+        'users.gender',
+        'users.address',
+        'users.sss_number',
+        'users.tin_number',
+        'users.pagibig_number',
+        'users.philhealth_number',
+        'users.marital_status',
+        'users.avatar_url',
+        'users.pin',
+        'users.valid_id_url',
+        'users.emergency_contact',
+        'users.emergency_phone',
+        'users.emergency_relationship',
+        'users.bank_account_number',
+        'users.bank_id',
+        'users.department_id',
+        'users.position_title',
+        'users.date_started',
+        'users.is_active',
+        'users.created_at',
+        'departments.name as department_name',
+      )
+      .first();
+    if (!user) {
+      throw new AppError(404, 'User not found');
+    }
+
+    const personalVerification = await tenantDb('personal_information_verifications')
+      .where({ user_id: userId })
+      .orderBy('created_at', 'desc')
+      .first(
+        'id',
+        'status',
+        'requested_changes',
+        'created_at',
+        'reviewed_at',
+        'rejection_reason',
+      );
+
+    const bankVerification = await tenantDb('bank_information_verifications')
+      .where({ user_id: userId })
+      .orderBy('created_at', 'desc')
+      .first(
+        'id',
+        'status',
+        'bank_id',
+        'account_number',
+        'created_at',
+        'reviewed_at',
+        'rejection_reason',
+      );
+
+    const latestApprovedBank = await tenantDb('bank_information_verifications')
+      .where({ user_id: userId, status: 'approved' })
+      .orderBy('reviewed_at', 'desc')
+      .first('reviewed_at');
+
+    const reviewedAtRaw = latestApprovedBank?.reviewed_at
+      ? new Date(latestApprovedBank.reviewed_at)
+      : null;
+    const bankCooldown = computeBankCooldown(
+      reviewedAtRaw && !Number.isNaN(reviewedAtRaw.getTime()) ? reviewedAtRaw : null,
+    );
+
+    res.json({
+      success: true,
+      data: {
+        user,
+        workInfo: {
+          department_id: user.department_id ?? null,
+          department_name: user.department_name ?? null,
+          position_title: user.position_title ?? null,
+          status: user.is_active ? 'active' : 'inactive',
+          date_started: toDateOnly(user.date_started ?? user.created_at),
+          days_of_employment: computeDaysOfEmployment(user.date_started, user.created_at),
+        },
+        personalVerification: {
+          status: toVerificationStatus(personalVerification?.status),
+          latest: personalVerification ?? null,
+        },
+        bankVerification: {
+          status: toVerificationStatus(bankVerification?.status),
+          latest: bankVerification ?? null,
+        },
+        bankCooldown,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function updateAccountEmail(req: Request, res: Response, next: NextFunction) {
+  try {
+    const tenantDb = req.tenantDb!;
+    const userId = req.user!.sub;
+    const email = normalizeEmail(String(req.body.email));
+
+    const user = await tenantDb('users')
+      .where({ id: userId })
+      .first(
+        'id',
+        'email',
+        'user_key',
+        'mobile_number',
+        'legal_name',
+        'birthday',
+        'gender',
+      );
+    if (!user) {
+      throw new AppError(404, 'User not found');
+    }
+
+    if (normalizeEmail(String(user.email)) === email) {
+      res.json({ success: true, data: { email } });
+      return;
+    }
+
+    const existing = await tenantDb('users')
+      .whereRaw('LOWER(email) = ?', [email])
+      .whereNot({ id: userId })
+      .first('id');
+    if (existing) {
+      throw new AppError(409, 'Email already in use');
+    }
+
+    await tenantDb('users')
+      .where({ id: userId })
+      .update({
+        email,
+        updated_at: new Date(),
+      });
+
+    await syncUserProfileToOdoo(user.user_key ?? null, {
+      email,
+      mobileNumber: user.mobile_number ?? '',
+      legalName: user.legal_name ?? '',
+      birthday: user.birthday ?? null,
+      gender: user.gender ?? null,
+      emergencyContact: undefined,
+      emergencyPhone: undefined,
+    });
+
+    res.json({ success: true, data: { email } });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function submitPersonalInformationVerification(req: Request, res: Response, next: NextFunction) {
   try {
     const tenantDb = req.tenantDb!;
@@ -424,7 +651,16 @@ export async function submitPersonalInformationVerification(req: Request, res: R
         'legal_name',
         'birthday',
         'gender',
+        'address',
+        'sss_number',
+        'tin_number',
+        'pagibig_number',
+        'philhealth_number',
+        'marital_status',
         'valid_id_url',
+        'emergency_contact',
+        'emergency_phone',
+        'emergency_relationship',
       )
       .first();
     if (!user) throw new AppError(404, 'User not found');
@@ -440,13 +676,87 @@ export async function submitPersonalInformationVerification(req: Request, res: R
     }
 
     const requestedChanges: Record<string, unknown> = {};
-    if (req.body.firstName !== undefined && req.body.firstName !== user.first_name) requestedChanges.firstName = req.body.firstName;
-    if (req.body.lastName !== undefined && req.body.lastName !== user.last_name) requestedChanges.lastName = req.body.lastName;
-    if (req.body.email !== undefined && req.body.email !== user.email) requestedChanges.email = req.body.email;
-    if (req.body.mobileNumber !== undefined && req.body.mobileNumber !== user.mobile_number) requestedChanges.mobileNumber = req.body.mobileNumber;
-    if (req.body.legalName !== undefined && req.body.legalName !== user.legal_name) requestedChanges.legalName = req.body.legalName;
-    if (req.body.birthday !== undefined && req.body.birthday !== user.birthday) requestedChanges.birthday = req.body.birthday;
-    if (req.body.gender !== undefined && req.body.gender !== user.gender) requestedChanges.gender = req.body.gender;
+
+    if (req.body.firstName !== undefined) {
+      const next = normalizeOptionalString(req.body.firstName);
+      const current = normalizeOptionalString(user.first_name);
+      if (next && next !== current) requestedChanges.firstName = next;
+    }
+    if (req.body.lastName !== undefined) {
+      const next = normalizeOptionalString(req.body.lastName);
+      const current = normalizeOptionalString(user.last_name);
+      if (next && next !== current) requestedChanges.lastName = next;
+    }
+    if (req.body.email !== undefined) {
+      const next = normalizeEmail(normalizeOptionalString(req.body.email));
+      const current = normalizeEmail(normalizeOptionalString(user.email));
+      if (next && next !== current) requestedChanges.email = next;
+    }
+    if (req.body.mobileNumber !== undefined) {
+      const next = normalizeOptionalString(req.body.mobileNumber);
+      const current = normalizeOptionalString(user.mobile_number);
+      if (next && next !== current) requestedChanges.mobileNumber = next;
+    }
+    if (req.body.legalName !== undefined) {
+      const next = normalizeOptionalString(req.body.legalName);
+      const current = normalizeOptionalString(user.legal_name);
+      if (next && next !== current) requestedChanges.legalName = next;
+    }
+    if (req.body.birthday !== undefined) {
+      const next = normalizeBirthdayValue(req.body.birthday);
+      const current = normalizeBirthdayValue(user.birthday);
+      if (next && next !== current) requestedChanges.birthday = next;
+    }
+    if (req.body.gender !== undefined) {
+      const next = normalizeOptionalString(req.body.gender).toLowerCase();
+      const current = normalizeOptionalString(user.gender).toLowerCase();
+      if (next && next !== current) requestedChanges.gender = next;
+    }
+    if (req.body.address !== undefined) {
+      const next = normalizeOptionalString(req.body.address);
+      const current = normalizeOptionalString(user.address);
+      if (next && next !== current) requestedChanges.address = next;
+    }
+    if (req.body.sssNumber !== undefined) {
+      const next = normalizeOptionalString(req.body.sssNumber);
+      const current = normalizeOptionalString(user.sss_number);
+      if (next && next !== current) requestedChanges.sssNumber = next;
+    }
+    if (req.body.tinNumber !== undefined) {
+      const next = normalizeOptionalString(req.body.tinNumber);
+      const current = normalizeOptionalString(user.tin_number);
+      if (next && next !== current) requestedChanges.tinNumber = next;
+    }
+    if (req.body.pagibigNumber !== undefined) {
+      const next = normalizeOptionalString(req.body.pagibigNumber);
+      const current = normalizeOptionalString(user.pagibig_number);
+      if (next && next !== current) requestedChanges.pagibigNumber = next;
+    }
+    if (req.body.philhealthNumber !== undefined) {
+      const next = normalizeOptionalString(req.body.philhealthNumber);
+      const current = normalizeOptionalString(user.philhealth_number);
+      if (next && next !== current) requestedChanges.philhealthNumber = next;
+    }
+    if (req.body.maritalStatus !== undefined) {
+      const next = normalizeOptionalString(req.body.maritalStatus);
+      const current = normalizeOptionalString(user.marital_status);
+      if (next && next !== current) requestedChanges.maritalStatus = next;
+    }
+    if (req.body.emergencyContact !== undefined) {
+      const next = normalizeOptionalString(req.body.emergencyContact);
+      const current = normalizeOptionalString(user.emergency_contact);
+      if (next && next !== current) requestedChanges.emergencyContact = next;
+    }
+    if (req.body.emergencyPhone !== undefined) {
+      const next = normalizeOptionalString(req.body.emergencyPhone);
+      const current = normalizeOptionalString(user.emergency_phone);
+      if (next && next !== current) requestedChanges.emergencyPhone = next;
+    }
+    if (req.body.emergencyRelationship !== undefined) {
+      const next = normalizeOptionalString(req.body.emergencyRelationship);
+      const current = normalizeOptionalString(user.emergency_relationship);
+      if (next && next !== current) requestedChanges.emergencyRelationship = next;
+    }
 
     if (Object.keys(requestedChanges).length === 0) {
       throw new AppError(400, 'No changes detected for verification');
@@ -468,13 +778,84 @@ export async function submitPersonalInformationVerification(req: Request, res: R
       'Personal Information Submitted',
       'Your personal information changes were submitted for verification.',
       'info',
-      '/account/settings',
+      '/account/profile',
     );
 
     emitEmployeeVerificationUpdated({
       companyId: req.user!.companyId,
       verificationId: verification.id as string,
       verificationType: 'personal_information',
+      action: 'submitted',
+      userId,
+    });
+
+    res.status(201).json({ success: true, data: verification });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function submitBankInformationVerification(req: Request, res: Response, next: NextFunction) {
+  try {
+    const tenantDb = req.tenantDb!;
+    const userId = req.user!.sub;
+    const bankId = Number(req.body.bankId);
+    const accountNumber = String(req.body.accountNumber).trim();
+
+    const user = await tenantDb('users').where({ id: userId }).first('id');
+    if (!user) {
+      throw new AppError(404, 'User not found');
+    }
+
+    const pending = await tenantDb('bank_information_verifications')
+      .where({ user_id: userId, status: 'pending' })
+      .first('id');
+    if (pending) {
+      throw new AppError(409, 'You already have a pending bank information verification');
+    }
+
+    if (env.NODE_ENV === 'production') {
+      const latestApproved = await tenantDb('bank_information_verifications')
+        .where({ user_id: userId, status: 'approved' })
+        .orderBy('reviewed_at', 'desc')
+        .first('reviewed_at');
+      if (latestApproved?.reviewed_at) {
+        const reviewedAt = new Date(latestApproved.reviewed_at);
+        if (!Number.isNaN(reviewedAt.getTime())) {
+          const nextAllowedAt = new Date(reviewedAt.getTime() + 60 * 60 * 1000);
+          if (Date.now() < nextAllowedAt.getTime()) {
+            throw new AppError(
+              429,
+              `Bank information can be resubmitted after ${nextAllowedAt.toLocaleString()}`,
+            );
+          }
+        }
+      }
+    }
+
+    const [verification] = await tenantDb('bank_information_verifications')
+      .insert({
+        user_id: userId,
+        bank_id: bankId,
+        account_number: accountNumber,
+        status: 'pending',
+        updated_at: new Date(),
+      })
+      .returning('*');
+
+    await notifyUser(
+      tenantDb,
+      userId,
+      'Bank Information Submitted',
+      'Your bank information was submitted for verification.',
+      'info',
+      '/account/profile',
+    );
+
+    emitEmployeeVerificationUpdated({
+      companyId: req.user!.companyId,
+      verificationId: verification.id as string,
+      verificationType: 'bank_information',
       action: 'submitted',
       userId,
     });
@@ -654,7 +1035,7 @@ export async function submitEmploymentRequirement(req: Request, res: Response, n
       'Employment Requirement Submitted',
       'Your employment requirement was submitted for verification.',
       'info',
-      '/account/employment',
+      '/account/profile',
     );
 
     emitEmployeeVerificationUpdated({
