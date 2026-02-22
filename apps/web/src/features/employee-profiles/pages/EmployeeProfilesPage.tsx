@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Card, CardBody } from '@/shared/components/ui/Card';
 import { Button } from '@/shared/components/ui/Button';
 import { Input } from '@/shared/components/ui/Input';
@@ -8,8 +8,8 @@ import { usePermission } from '@/shared/hooks/usePermission';
 import { PERMISSIONS } from '@omnilert/shared';
 import { BadgeCheck, ChevronDown, ChevronUp, Filter, Phone, Users, X } from 'lucide-react';
 
-type StatusFilter = 'all' | 'active' | 'resigned' | 'inactive';
-type EmploymentStatus = 'active' | 'resigned' | 'inactive';
+type StatusFilter = 'all' | 'active' | 'resigned' | 'inactive' | 'suspended';
+type EmploymentStatus = 'active' | 'resigned' | 'inactive' | 'suspended';
 type SortBy = 'date_started' | 'days_of_employment' | '';
 type SortDirection = 'asc' | 'desc';
 
@@ -21,6 +21,23 @@ type EmployeeCard = {
   mobile_number: string | null;
   pin: string | null;
   avatar_url: string | null;
+  companies: Array<{
+    company_id: string;
+    company_name: string;
+    company_theme_color: string | null;
+  }>;
+  resident_branch: {
+    company_id: string;
+    company_name: string;
+    branch_id: string;
+    branch_name: string;
+  } | null;
+  borrow_branches: Array<{
+    company_id: string;
+    company_name: string;
+    branch_id: string;
+    branch_name: string;
+  }>;
   department_name: string | null;
   position_title: string | null;
   employment_status: EmploymentStatus;
@@ -54,6 +71,36 @@ type EmployeeDetail = {
     emergency_relationship: string | null;
   };
   work_information: {
+    company: { id: string; name: string } | null;
+    companies: Array<{
+      company_id: string;
+      company_name: string;
+      company_theme_color: string | null;
+    }>;
+    resident_branch: {
+      company_id: string;
+      company_name: string;
+      branch_id: string;
+      branch_name: string;
+    } | null;
+    home_resident_branch: {
+      company_id: string;
+      company_name: string;
+      branch_id: string;
+      branch_name: string;
+    } | null;
+    borrow_branches: Array<{
+      company_id: string;
+      company_name: string;
+      branch_id: string;
+      branch_name: string;
+    }>;
+    branch_options: Array<{
+      company_id: string;
+      company_name: string;
+      branch_id: string;
+      branch_name: string;
+    }>;
     department_id: string | null;
     department_name: string | null;
     position_title: string | null;
@@ -74,6 +121,8 @@ type WorkFormState = {
   departmentId: string;
   positionTitle: string;
   employmentStatus: EmploymentStatus;
+  residentCompanyId: string;
+  residentBranchId: string;
   dateStarted: string;
 };
 
@@ -127,19 +176,152 @@ function toDialHref(phone: string | null | undefined): string | null {
 }
 
 function normalizeEmploymentStatus(status: unknown, isActive: boolean): EmploymentStatus {
-  if (status === 'active' || status === 'resigned' || status === 'inactive') return status;
+  if (status === 'active' || status === 'resigned' || status === 'inactive' || status === 'suspended') return status;
   return isActive ? 'active' : 'inactive';
 }
 
 function getStatusBadge(status: EmploymentStatus): { label: string; className: string } {
   if (status === 'active') return { label: 'Active', className: 'bg-green-100 text-green-700' };
   if (status === 'resigned') return { label: 'Resigned', className: 'bg-amber-100 text-amber-700' };
+  if (status === 'suspended') return { label: 'Suspended', className: 'bg-red-100 text-red-700' };
   return { label: 'Inactive', className: 'bg-gray-200 text-gray-700' };
 }
 
 function isMobileViewport(): boolean {
   if (typeof window === 'undefined') return false;
   return window.matchMedia('(max-width: 767px)').matches;
+}
+
+function OverflowMorePill({
+  remaining,
+  children,
+}: {
+  remaining: number;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (!wrapperRef.current) return;
+      if (!wrapperRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [open]);
+
+  return (
+    <div ref={wrapperRef} className="relative inline-flex">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-600 hover:bg-slate-100"
+      >
+        +{remaining} more
+      </button>
+      {open && (
+        <div className="absolute bottom-full right-0 z-20 mb-2 w-max max-w-[280px] rounded-xl border border-gray-200 bg-white p-2 shadow-lg">
+          <div className="flex max-w-[260px] flex-wrap gap-1.5">
+            {children}
+          </div>
+          <div className="absolute -bottom-1 right-4 h-2 w-2 rotate-45 border-b border-r border-gray-200 bg-white" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function pillsWithOverflow(
+  items: Array<{ key: string; label: string }>,
+  maxVisible = 3,
+  color: 'indigo' | 'emerald' | 'slate' = 'indigo',
+) {
+  const visible = items.slice(0, maxVisible);
+  const remaining = Math.max(0, items.length - maxVisible);
+  const colorClass = color === 'emerald'
+    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+    : color === 'slate'
+      ? 'bg-slate-100 text-slate-700 border-slate-200'
+      : 'bg-indigo-50 text-indigo-700 border-indigo-200';
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {visible.map((item) => (
+        <span
+          key={item.key}
+          className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${colorClass}`}
+          title={item.label}
+        >
+          {item.label}
+        </span>
+      ))}
+      {remaining > 0 && (
+        <OverflowMorePill remaining={remaining}>
+          {items.slice(maxVisible).map((item) => (
+            <span
+              key={`more-${item.key}`}
+              className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${colorClass}`}
+              title={item.label}
+            >
+              {item.label}
+            </span>
+          ))}
+        </OverflowMorePill>
+      )}
+    </div>
+  );
+}
+
+function companyPillsWithOverflow(
+  items: Array<{ key: string; label: string; themeColor: string | null }>,
+  maxVisible = 3,
+) {
+  const visible = items.slice(0, maxVisible);
+  const remaining = Math.max(0, items.length - maxVisible);
+  const isHex = (value: string | null | undefined) => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value);
+  const renderCompanyPill = (item: { key: string; label: string; themeColor: string | null }) => {
+    if (isHex(item.themeColor)) {
+      return (
+        <span
+          key={item.key}
+          className="rounded-full border px-2 py-0.5 text-[11px] font-medium"
+          title={item.label}
+          style={{
+            color: item.themeColor as string,
+            backgroundColor: `${item.themeColor}22`,
+            borderColor: `${item.themeColor}55`,
+          }}
+        >
+          {item.label}
+        </span>
+      );
+    }
+
+    return (
+      <span
+        key={item.key}
+        className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700"
+        title={item.label}
+      >
+        {item.label}
+      </span>
+    );
+  };
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {visible.map((item) => renderCompanyPill(item))}
+      {remaining > 0 && (
+        <OverflowMorePill remaining={remaining}>
+          {items.slice(maxVisible).map((item) => renderCompanyPill({ ...item, key: `more-${item.key}` }))}
+        </OverflowMorePill>
+      )}
+    </div>
+  );
 }
 
 export function EmployeeProfilesPage() {
@@ -159,7 +341,8 @@ export function EmployeeProfilesPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [savingWork, setSavingWork] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [workUpdateSuccess, setWorkUpdateSuccess] = useState('');
+  const [workUpdateError, setWorkUpdateError] = useState('');
   const [status, setStatus] = useState<StatusFilter>('all');
   const [search, setSearch] = useState('');
   const [draftSearch, setDraftSearch] = useState('');
@@ -185,6 +368,8 @@ export function EmployeeProfilesPage() {
     departmentId: '',
     positionTitle: '',
     employmentStatus: 'active',
+    residentCompanyId: '',
+    residentBranchId: '',
     dateStarted: '',
   });
 
@@ -213,6 +398,12 @@ export function EmployeeProfilesPage() {
       emergency_relationship: null,
     },
     work_information: {
+      company: null,
+      companies: card.companies,
+      resident_branch: card.resident_branch,
+      home_resident_branch: null,
+      borrow_branches: card.borrow_branches,
+      branch_options: [],
       department_id: null,
       department_name: card.department_name,
       position_title: card.position_title,
@@ -235,6 +426,12 @@ export function EmployeeProfilesPage() {
       departmentId: payload.work_information.department_id ?? '',
       positionTitle: payload.work_information.position_title ?? '',
       employmentStatus: normalizeEmploymentStatus(payload.work_information.status, false),
+      residentCompanyId: payload.work_information.resident_branch?.company_id
+        ?? payload.work_information.branch_options[0]?.company_id
+        ?? '',
+      residentBranchId: payload.work_information.resident_branch?.branch_id
+        ?? payload.work_information.branch_options[0]?.branch_id
+        ?? '',
       dateStarted: toDateInput(payload.work_information.date_started),
     });
   }, []);
@@ -363,10 +560,10 @@ export function EmployeeProfilesPage() {
   }, [appliedFilters.departmentId, appliedFilters.roleIds, appliedFilters.sortBy, appliedFilters.sortDirection]);
 
   useEffect(() => {
-    if (!success) return;
-    const timer = window.setTimeout(() => setSuccess(''), 2500);
+    if (!workUpdateSuccess) return;
+    const timer = window.setTimeout(() => setWorkUpdateSuccess(''), 2500);
     return () => window.clearTimeout(timer);
-  }, [success]);
+  }, [workUpdateSuccess]);
 
   const selectedCard = useMemo(
     () => items.find((item) => item.id === selectedUserId) ?? null,
@@ -495,7 +692,8 @@ export function EmployeeProfilesPage() {
     setPanelOpen(false);
     setDetailLoading(false);
     setWorkEditMode(false);
-    setSuccess('');
+    setWorkUpdateSuccess('');
+    setWorkUpdateError('');
     closeTimerRef.current = window.setTimeout(() => {
       selectedUserIdRef.current = null;
       setSelectedUserId(null);
@@ -517,13 +715,20 @@ export function EmployeeProfilesPage() {
     if (!detail) return;
     setSavingWork(true);
     setError('');
-    setSuccess('');
+    setWorkUpdateSuccess('');
+    setWorkUpdateError('');
     try {
       const res = await api.patch(`/employee-profiles/${detail.id}/work-information`, {
         departmentId: workForm.departmentId || null,
         positionTitle: workForm.positionTitle.trim() || null,
         employmentStatus: workForm.employmentStatus,
         isActive: workForm.employmentStatus === 'active',
+        residentBranch: workForm.residentCompanyId && workForm.residentBranchId
+          ? {
+            companyId: workForm.residentCompanyId,
+            branchId: workForm.residentBranchId,
+          }
+          : null,
         dateStarted: workForm.dateStarted || null,
       });
       const payload = res.data.data as EmployeeDetail;
@@ -538,6 +743,9 @@ export function EmployeeProfilesPage() {
           email: payload.personal_information.email,
           mobile_number: payload.personal_information.mobile_number,
           avatar_url: payload.avatar_url,
+          companies: payload.work_information.companies,
+          resident_branch: payload.work_information.resident_branch,
+          borrow_branches: payload.work_information.borrow_branches,
           department_name: payload.work_information.department_name,
           position_title: payload.work_information.position_title,
           employment_status: normalizeEmploymentStatus(payload.work_information.status, false),
@@ -546,12 +754,12 @@ export function EmployeeProfilesPage() {
           days_of_employment: payload.work_information.days_of_employment,
         };
       }));
-      setSuccess('Work information updated.');
+      setWorkUpdateSuccess('Work information updated.');
       setWorkEditMode(false);
       void fetchDetail(payload.id, { silentError: true });
       await fetchList({ silent: true });
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to update work information');
+      setWorkUpdateError(err.response?.data?.error || 'Failed to update work information');
     } finally {
       setSavingWork(false);
     }
@@ -577,7 +785,7 @@ export function EmployeeProfilesPage() {
 
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="mx-auto flex w-full items-center justify-center gap-1 rounded-lg bg-gray-100 p-1 sm:mx-0 sm:w-fit sm:justify-start">
-            {(['all', 'active', 'resigned', 'inactive'] as StatusFilter[]).map((item) => (
+            {(['all', 'active', 'resigned', 'inactive', 'suspended'] as StatusFilter[]).map((item) => (
               <button
                 key={item}
                 type="button"
@@ -776,6 +984,44 @@ export function EmployeeProfilesPage() {
                     <span>PIN</span>
                     <span className="font-medium text-gray-800">{item.pin || 'Not set'}</span>
                   </div>
+                  <div className="mt-3 space-y-2 text-xs text-gray-600">
+                    <div>
+                      <span className="mb-1 block">Companies</span>
+                      {item.companies.length > 0
+                        ? companyPillsWithOverflow(
+                          item.companies.map((company) => ({
+                            key: company.company_id,
+                            label: company.company_name,
+                            themeColor: company.company_theme_color,
+                          })),
+                          3,
+                        )
+                        : <span className="text-gray-500">Not set</span>}
+                    </div>
+                    <div>
+                      <span className="mb-1 block">Resident Branch</span>
+                      {item.resident_branch ? (
+                        <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                          {item.resident_branch.branch_name}
+                        </span>
+                      ) : (
+                        <span className="text-gray-500">N/A</span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="mb-1 block">Borrow Branches</span>
+                      {item.borrow_branches.length > 0
+                        ? pillsWithOverflow(
+                          item.borrow_branches.map((branch) => ({
+                            key: `${branch.company_id}:${branch.branch_id}`,
+                            label: branch.branch_name,
+                          })),
+                          3,
+                          'slate',
+                        )
+                        : <span className="text-gray-500">None</span>}
+                    </div>
+                  </div>
                 </button>
                 );
               })}
@@ -847,11 +1093,6 @@ export function EmployeeProfilesPage() {
                   </div>
                 ) : (
                   <div className="space-y-5 text-sm">
-                    {success && (
-                      <div className="rounded bg-green-50 px-3 py-2 text-xs text-green-700">
-                        {success}
-                      </div>
-                    )}
                     {detailLoading && (
                       <div className="rounded bg-blue-50 px-3 py-2 text-xs text-blue-700">
                         Updating profile details...
@@ -950,9 +1191,65 @@ export function EmployeeProfilesPage() {
                           </Button>
                         )}
                       </div>
+                      {workUpdateSuccess && (
+                        <div className="mb-2 rounded bg-green-50 px-3 py-2 text-xs text-green-700">
+                          {workUpdateSuccess}
+                        </div>
+                      )}
+                      {workUpdateError && (
+                        <div className="mb-2 rounded bg-red-50 px-3 py-2 text-xs text-red-700">
+                          {workUpdateError}
+                        </div>
+                      )}
 
                       {!workEditMode ? (
                         <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                          <div className="col-span-2">
+                            <span className="mb-1 block text-gray-500">Company</span>
+                            {detail.work_information.companies.length > 0
+                              ? companyPillsWithOverflow(
+                                detail.work_information.companies.map((company) => ({
+                                  key: company.company_id,
+                                  label: company.company_name,
+                                  themeColor: company.company_theme_color,
+                                })),
+                                3,
+                              )
+                              : 'Not set'}
+                          </div>
+                          <div className="col-span-2">
+                            <span className="mb-1 block text-gray-500">Resident Branch</span>
+                            {detail.work_information.resident_branch ? (
+                              <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                                {detail.work_information.resident_branch.branch_name}
+                              </span>
+                            ) : (
+                              <span>N/A</span>
+                            )}
+                          </div>
+                          {!detail.work_information.resident_branch && detail.work_information.home_resident_branch && (
+                            <>
+                              <span className="text-gray-500">Home Resident Branch</span>
+                              <span>
+                                {detail.work_information.home_resident_branch.branch_name}
+                                {' '}
+                                ({detail.work_information.home_resident_branch.company_name})
+                              </span>
+                            </>
+                          )}
+                          <div className="col-span-2">
+                            <span className="mb-1 block text-gray-500">Borrow Branches</span>
+                            {detail.work_information.borrow_branches.length > 0
+                              ? pillsWithOverflow(
+                                detail.work_information.borrow_branches.map((branch) => ({
+                                  key: `${branch.company_id}:${branch.branch_id}`,
+                                  label: branch.branch_name,
+                                })),
+                                3,
+                                'slate',
+                              )
+                              : 'None'}
+                          </div>
                           <span className="text-gray-500">Department</span>
                           <span>{detail.work_information.department_name || 'Not set'}</span>
                           <span className="text-gray-500">Position</span>
@@ -1010,6 +1307,54 @@ export function EmployeeProfilesPage() {
                               <option value="active">Active</option>
                               <option value="resigned">Resigned</option>
                               <option value="inactive">Inactive</option>
+                              <option value="suspended">Suspended</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-sm font-medium text-gray-700">Resident Company</label>
+                            <select
+                              value={workForm.residentCompanyId}
+                              onChange={(e) => {
+                                const companyId = e.target.value;
+                                const firstBranch = detail.work_information.branch_options.find(
+                                  (branch) => branch.company_id === companyId,
+                                );
+                                setWorkForm((prev) => ({
+                                  ...prev,
+                                  residentCompanyId: companyId,
+                                  residentBranchId: firstBranch?.branch_id ?? '',
+                                }));
+                              }}
+                              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                            >
+                              {Array.from(
+                                new Map(
+                                  detail.work_information.branch_options.map((branch) => [
+                                    branch.company_id,
+                                    branch.company_name,
+                                  ]),
+                                ).entries(),
+                              ).map(([companyId, companyName]) => (
+                                <option key={companyId} value={companyId}>
+                                  {companyName}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-sm font-medium text-gray-700">Resident Branch</label>
+                            <select
+                              value={workForm.residentBranchId}
+                              onChange={(e) => setWorkForm((prev) => ({ ...prev, residentBranchId: e.target.value }))}
+                              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                            >
+                              {detail.work_information.branch_options
+                                .filter((branch) => branch.company_id === workForm.residentCompanyId)
+                                .map((branch) => (
+                                  <option key={branch.branch_id} value={branch.branch_id}>
+                                    {branch.branch_name}
+                                  </option>
+                                ))}
                             </select>
                           </div>
                           <div className="flex gap-2">
@@ -1024,6 +1369,12 @@ export function EmployeeProfilesPage() {
                                   departmentId: detail.work_information.department_id ?? '',
                                   positionTitle: detail.work_information.position_title ?? '',
                                   employmentStatus: normalizeEmploymentStatus(detail.work_information.status, false),
+                                  residentCompanyId: detail.work_information.resident_branch?.company_id
+                                    ?? detail.work_information.branch_options[0]?.company_id
+                                    ?? '',
+                                  residentBranchId: detail.work_information.resident_branch?.branch_id
+                                    ?? detail.work_information.branch_options[0]?.branch_id
+                                    ?? '',
                                   dateStarted: toDateInput(detail.work_information.date_started),
                                 });
                               }}

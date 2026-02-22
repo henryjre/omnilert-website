@@ -6,6 +6,7 @@ import { Spinner } from '@/shared/components/ui/Spinner';
 import { Button } from '@/shared/components/ui/Button';
 import { api } from '@/shared/services/api.client';
 import { useNotificationStore } from '@/shared/store/notificationStore';
+import { ShiftExchangeDetailModal } from '@/features/shift-exchange/components/ShiftExchangeDetailModal';
 import { Bell, Check, X } from 'lucide-react';
 
 function fmtDateTime(dateStr: string): string {
@@ -54,6 +55,12 @@ function getTokenPayVerificationId(linkUrl: string | null | undefined): string |
   return null;
 }
 
+function getShiftExchangeId(linkUrl: string | null | undefined): string | null {
+  if (!linkUrl) return null;
+  const match = linkUrl.match(/[?&]shiftExchangeId=([0-9a-f-]{36})/i);
+  return match?.[1] ?? null;
+}
+
 const PAGE_SIZE = 10;
 
 export function EmployeeNotificationsTab() {
@@ -75,6 +82,7 @@ export function EmployeeNotificationsTab() {
   const [rejectReason, setRejectReason] = useState('');
   const [confirmVerify, setConfirmVerify] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [shiftExchangeRequestId, setShiftExchangeRequestId] = useState<string | null>(null);
 
   useEffect(() => {
     api
@@ -117,6 +125,14 @@ export function EmployeeNotificationsTab() {
       clearTimeout(clearTimer);
     };
   }, [location.state, loading]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const shiftExchangeId = params.get('shiftExchangeId');
+    if (shiftExchangeId) {
+      setShiftExchangeRequestId(shiftExchangeId);
+    }
+  }, [location.search]);
 
   const markAsRead = async (id: string) => {
     await api.put(`/account/notifications/${id}/read`);
@@ -216,6 +232,7 @@ export function EmployeeNotificationsTab() {
       <div className="space-y-3">
         {pagedNotifications.map((n) => {
           const tokenPayId = getTokenPayVerificationId(n.link_url);
+          const shiftExchangeId = getShiftExchangeId(n.link_url);
           return (
             <div key={n.id} ref={(el) => { cardRefs.current[n.id] = el; }}>
             <Card className={`transition-all duration-300 ${n.is_read ? 'opacity-60' : ''} ${highlightId === n.id ? 'ring-2 ring-primary-400 animate-pulse' : ''}`}>
@@ -245,6 +262,15 @@ export function EmployeeNotificationsTab() {
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
+                    {shiftExchangeId && (
+                      <Button
+                        variant="secondary"
+                        onClick={() => setShiftExchangeRequestId(shiftExchangeId)}
+                        className="text-xs"
+                      >
+                        View Request
+                      </Button>
+                    )}
                     {tokenPayId && (
                       <Button
                         variant={actedNotifIds.has(n.id) ? 'secondary' : 'primary'}
@@ -513,6 +539,17 @@ export function EmployeeNotificationsTab() {
           </div>
         </div>
       )}
+
+      <ShiftExchangeDetailModal
+        isOpen={Boolean(shiftExchangeRequestId)}
+        requestId={shiftExchangeRequestId}
+        onClose={() => setShiftExchangeRequestId(null)}
+        onUpdated={() => {
+          void api.get('/account/notifications').then((res) => {
+            setNotifications(res.data.data || []);
+          });
+        }}
+      />
     </>
   );
 }

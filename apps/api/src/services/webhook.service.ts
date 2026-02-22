@@ -3,6 +3,7 @@ import { getIO } from '../config/socket.js';
 import { enqueueEarlyCheckInAuthJob } from './attendanceQueue.service.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
+import { createAndDispatchNotification } from './notification.service.js';
 
 export async function resolveCompanyByOdooBranchId(odooCompanyId: number) {
   const masterDb = db.getMasterDb();
@@ -26,11 +27,11 @@ export async function resolveCompanyByOdooBranchId(odooCompanyId: number) {
 }
 
 async function resolveUserIdByUserKey(
-  tenantDb: Awaited<ReturnType<typeof db.getTenantDb>>,
+  _tenantDb: Awaited<ReturnType<typeof db.getTenantDb>>,
   userKey?: string | null,
 ): Promise<string | null> {
   if (!userKey) return null;
-  const user = await tenantDb('users').where({ user_key: userKey }).select('id').first();
+  const user = await db.getMasterDb()('users').where({ user_key: userKey }).select('id').first();
   return user?.id ?? null;
 }
 
@@ -278,6 +279,8 @@ export async function processEmployeeShift(
     .first();
 
   let shift: Record<string, unknown>;
+  const shiftLabel = payload.x_role_name || 'Scheduled Shift';
+  const shiftWindow = `${shiftStart.toLocaleString()} - ${shiftEnd.toLocaleString()}`;
 
   if (existing) {
     // Diff tracked fields to create a change log
@@ -340,6 +343,18 @@ export async function processEmployeeShift(
     } catch {
       logger.warn('Socket.IO not available for employee shift update emit');
     }
+
+    const existingUserId = (existing.user_id as string | null) ?? null;
+    if (userId && userId !== existingUserId) {
+      await createAndDispatchNotification({
+        tenantDb,
+        userId,
+        title: 'New Shift Assigned',
+        message: `You have been assigned a ${shiftLabel} (${shiftWindow}).`,
+        type: 'info',
+        linkUrl: '/account/schedule',
+      });
+    }
   } else {
     const [inserted] = await tenantDb('employee_shifts')
       .insert({
@@ -363,6 +378,17 @@ export async function processEmployeeShift(
       io.of('/employee-shifts').to(`branch:${branch.id}`).emit('shift:new', shift);
     } catch {
       logger.warn('Socket.IO not available for employee shift new emit');
+    }
+
+    if (userId) {
+      await createAndDispatchNotification({
+        tenantDb,
+        userId,
+        title: 'New Shift Assigned',
+        message: `You have been assigned a ${shiftLabel} (${shiftWindow}).`,
+        type: 'info',
+        linkUrl: '/account/schedule',
+      });
     }
   }
 
@@ -593,16 +619,14 @@ export async function processAttendance(
           .where({ id: shift.id as string })
           .increment('pending_approvals', 1);
         if (shift.user_id) {
-          const [notif] = await tenantDb('employee_notifications').insert({
-            user_id: shift.user_id as string,
+          await createAndDispatchNotification({
+            tenantDb,
+            userId: shift.user_id as string,
             title: 'Tardiness Authorization Required',
             message: `You checked in ${formatDiffMinutes(absDiff)} late for your shift. Please submit a reason in the Authorization Requests tab.`,
             type: 'warning',
-            link_url: '/account/schedule',
-          }).returning('*');
-          try {
-            getIO().of('/notifications').to(`user:${shift.user_id}`).emit('notification:new', notif);
-          } catch { /* socket unavailable */ }
+            linkUrl: '/account/schedule',
+          });
         }
         try {
           getIO().of('/employee-shifts').to(`branch:${branch.id}`).emit('shift:authorization-new', auth);
@@ -649,16 +673,14 @@ export async function processAttendance(
           .where({ id: shift.id as string })
           .increment('pending_approvals', 1);
         if (shift.user_id) {
-          const [notif] = await tenantDb('employee_notifications').insert({
-            user_id: shift.user_id as string,
-            title: 'Late Check Out — Reason Required',
+          await createAndDispatchNotification({
+            tenantDb,
+            userId: shift.user_id as string,
+            title: 'Late Check Out - Reason Required',
             message: `You checked out ${formatDiffMinutes(absDiff)} after your scheduled shift end. Please submit a reason in the Authorization Requests tab.`,
             type: 'warning',
-            link_url: '/account/schedule',
-          }).returning('*');
-          try {
-            getIO().of('/notifications').to(`user:${shift.user_id}`).emit('notification:new', notif);
-          } catch { /* socket unavailable */ }
+            linkUrl: '/account/schedule',
+          });
         }
         try {
           getIO().of('/employee-shifts').to(`branch:${branch.id}`).emit('shift:authorization-new', auth);

@@ -8,6 +8,7 @@ import { useBranchStore } from '@/shared/store/branchStore';
 import { useAuthStore } from '@/features/auth/store/authSlice';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { PERMISSIONS } from '@omnilert/shared';
+import { ShiftExchangeDetailModal } from '@/features/shift-exchange/components/ShiftExchangeDetailModal';
 import {
   FileText,
   X,
@@ -16,6 +17,7 @@ import {
   Clock,
   AlertTriangle,
   LogOut,
+  Repeat2,
 } from 'lucide-react';
 
 // --- Constants ---
@@ -564,6 +566,48 @@ function ManagementRequestCard({ request, onClick }: { request: any; onClick: ()
 }
 
 function ServiceCrewRequestCard({ auth, onClick }: { auth: any; onClick: () => void }) {
+  if (auth.auth_type === 'shift_exchange') {
+    return (
+      <div
+        className="cursor-pointer rounded-xl transition-shadow hover:shadow-md"
+        onClick={onClick}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => e.key === 'Enter' && onClick()}
+      >
+        <Card>
+          <CardBody>
+            <div className="flex items-start gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-600">
+                <Repeat2 className="h-4 w-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="font-medium text-gray-900">Shift Exchange</p>
+                    <p className="text-xs text-gray-500">
+                      {auth.requester_name} ↔ {auth.accepting_name}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {auth.requester_company_name} · {auth.requester_branch_name || 'Unknown Branch'}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {auth.accepting_company_name} · {auth.accepting_branch_name || 'Unknown Branch'}
+                    </p>
+                    <p className="mt-1 text-xs text-gray-400">{fmtDate(auth.created_at)}</p>
+                  </div>
+                  <Badge variant={STATUS_VARIANT[auth.status] ?? 'warning'}>
+                    {auth.stage_label || auth.status}
+                  </Badge>
+                </div>
+              </div>
+            </div>
+          </CardBody>
+        </Card>
+      </div>
+    );
+  }
+
   const config = AUTH_TYPE_CONFIG[auth.auth_type] ?? { label: auth.auth_type, color: 'gray', Icon: Clock, diffLabel: '' };
   const { Icon } = config;
   const iconColorCls: Record<string, string> = {
@@ -626,6 +670,7 @@ export function AuthorizationRequestsPage() {
   const [serviceCrewRequests, setServiceCrewRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedItem, setSelectedItem] = useState<DetailItem | null>(null);
+  const [shiftExchangeRequestId, setShiftExchangeRequestId] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== 'undefined'
       ? window.matchMedia('(max-width: 639px)').matches
@@ -857,7 +902,13 @@ export function AuthorizationRequestsPage() {
                         <ServiceCrewRequestCard
                           key={r.id}
                           auth={r}
-                          onClick={() => setSelectedItem({ type: 'service_crew', data: r })}
+                          onClick={() => {
+                            if (r.auth_type === 'shift_exchange') {
+                              setShiftExchangeRequestId(r.id);
+                              return;
+                            }
+                            setSelectedItem({ type: 'service_crew', data: r });
+                          }}
                         />
                       ))}
                     </div>
@@ -924,6 +975,15 @@ export function AuthorizationRequestsPage() {
           />
         )}
       </div>
+
+      <ShiftExchangeDetailModal
+        isOpen={Boolean(shiftExchangeRequestId)}
+        requestId={shiftExchangeRequestId}
+        onClose={() => setShiftExchangeRequestId(null)}
+        onUpdated={() => {
+          fetchRequests();
+        }}
+      />
     </>
   );
 }

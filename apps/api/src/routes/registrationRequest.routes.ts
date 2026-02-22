@@ -8,7 +8,7 @@ import {
   rejectVerificationSchema,
   PERMISSIONS,
 } from '@omnilert/shared';
-import * as employeeVerificationController from '../controllers/employeeVerification.controller.js';
+import * as registrationRequestController from '../controllers/registrationRequest.controller.js';
 
 const router = Router();
 
@@ -17,21 +17,27 @@ router.use(authenticate, resolveCompany);
 router.get(
   '/',
   requirePermission(PERMISSIONS.EMPLOYEE_VERIFICATION_VIEW),
-  employeeVerificationController.listRegistrationOnly,
+  registrationRequestController.list,
+);
+
+router.get(
+  '/assignment-options',
+  requirePermission(PERMISSIONS.REGISTRATION_APPROVE),
+  registrationRequestController.listAssignmentOptions,
 );
 
 router.post(
   '/:id/approve',
   requirePermission(PERMISSIONS.REGISTRATION_APPROVE),
   validateBody(approveRegistrationRequestSchema),
-  employeeVerificationController.approveRegistration,
+  registrationRequestController.approve,
 );
 
 router.post(
   '/:id/reject',
   requirePermission(PERMISSIONS.REGISTRATION_APPROVE),
   validateBody(rejectVerificationSchema),
-  employeeVerificationController.rejectRegistration,
+  registrationRequestController.reject,
 );
 
 export default router;

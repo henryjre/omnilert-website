@@ -1,5 +1,6 @@
 import type { Knex } from 'knex';
 import { AppError } from '../middleware/errorHandler.js';
+import { db } from '../config/database.js';
 
 function displayStatusFromSubmission(status: string | null): 'complete' | 'rejected' | 'verification' | 'pending' {
   if (!status) return 'pending';
@@ -9,12 +10,16 @@ function displayStatusFromSubmission(status: string | null): 'complete' | 'rejec
   return 'pending';
 }
 
-export async function listServiceCrewRequirements(tenantDb: Knex) {
-  const employees = await tenantDb('users')
-    .join('user_roles', 'users.id', 'user_roles.user_id')
-    .join('roles', 'user_roles.role_id', 'roles.id')
-    .where('roles.name', 'Service Crew')
-    .where('users.is_active', true)
+export async function listServiceCrewRequirements(tenantDb: Knex, companyId: string) {
+  const masterDb = db.getMasterDb();
+  const employees = await masterDb('users as users')
+    .join('user_company_access as uca', 'users.id', 'uca.user_id')
+    .join('user_roles as ur', 'users.id', 'ur.user_id')
+    .join('roles as roles', 'ur.role_id', 'roles.id')
+    .where('uca.company_id', companyId)
+    .andWhere('uca.is_active', true)
+    .andWhere('roles.name', 'Service Crew')
+    .andWhere('users.is_active', true)
     .distinct('users.id', 'users.first_name', 'users.last_name', 'users.email', 'users.avatar_url');
 
   const requirementTypes = await tenantDb('employment_requirement_types')
@@ -78,11 +83,15 @@ export async function listServiceCrewRequirements(tenantDb: Knex) {
   });
 }
 
-export async function getServiceCrewRequirementDetail(tenantDb: Knex, userId: string) {
-  const employee = await tenantDb('users')
+export async function getServiceCrewRequirementDetail(tenantDb: Knex, userId: string, companyId: string) {
+  const masterDb = db.getMasterDb();
+  const employee = await masterDb('users as users')
+    .join('user_company_access as uca', 'users.id', 'uca.user_id')
     .join('user_roles', 'users.id', 'user_roles.user_id')
     .join('roles', 'user_roles.role_id', 'roles.id')
     .where('users.id', userId)
+    .andWhere('uca.company_id', companyId)
+    .andWhere('uca.is_active', true)
     .where('roles.name', 'Service Crew')
     .where('users.is_active', true)
     .select(

@@ -22,6 +22,7 @@ export type { SystemRoleName } from './constants/roles.js';
 // Validation schemas
 export {
   loginSchema,
+  switchCompanySchema,
   refreshTokenSchema,
   registerRequestSchema,
   approveRegistrationRequestSchema,
@@ -34,6 +35,7 @@ export {
 } from './validation/auth.schema.js';
 export type {
   LoginInput,
+  SwitchCompanyInput,
   RefreshTokenInput,
   RegisterRequestInput,
   ApproveRegistrationRequestInput,
@@ -54,6 +56,18 @@ export type {
   EmployeeProfilesListQueryInput,
   UpdateEmployeeWorkInformationInput,
 } from './validation/employeeProfile.schema.js';
+export {
+  listShiftExchangeOptionsSchema,
+  createShiftExchangeSchema,
+  respondShiftExchangeSchema,
+  rejectShiftExchangeSchema,
+} from './validation/shiftExchange.schema.js';
+export type {
+  ListShiftExchangeOptionsInput,
+  CreateShiftExchangeInput,
+  RespondShiftExchangeInput,
+  RejectShiftExchangeInput,
+} from './validation/shiftExchange.schema.js';
 export { superAdminBootstrapSchema, superAdminLoginSchema } from './validation/superAdmin.schema.js';
 export type { SuperAdminBootstrapInput, SuperAdminLoginInput } from './validation/superAdmin.schema.js';
 
@@ -87,11 +101,13 @@ export {
   createUserSchema,
   updateUserSchema,
   changeMyPasswordSchema,
+  assignUserCompanyAssignmentsSchema,
 } from './validation/user.schema.js';
 export type {
   CreateUserInput,
   UpdateUserInput,
   ChangeMyPasswordInput,
+  AssignUserCompanyAssignmentsInput,
 } from './validation/user.schema.js';
 
 export {

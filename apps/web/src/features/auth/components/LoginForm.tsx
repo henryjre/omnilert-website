@@ -1,10 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { Button } from '@/shared/components/ui/Button';
 import { Input } from '@/shared/components/ui/Input';
 import axios from 'axios';
-import { applyCompanyThemeFromHex } from '@/shared/utils/theme';
 
 interface Company {
   id: string;
@@ -25,10 +24,7 @@ function sanitizeRedirectPath(raw: string | null): string {
 export function LoginForm() {
   const [searchParams] = useSearchParams();
   const redirectPath = sanitizeRedirectPath(searchParams.get('redirect'));
-  const companySlugFromUrl = searchParams.get('companySlug') || '';
   const [mode, setMode] = useState<AuthMode>('signin');
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [companySlug, setCompanySlug] = useState(companySlugFromUrl);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [companyName, setCompanyName] = useState('');
@@ -45,37 +41,6 @@ export function LoginForm() {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const fetchCompanies = async () => {
-    try {
-      const res = await axios.get('/api/v1/super/companies');
-      const list = (res.data.data || []).map((company: any) => ({
-        id: company.id,
-        name: company.name,
-        slug: company.slug,
-        themeColor: company.themeColor ?? company.theme_color ?? undefined,
-      })) as Company[];
-      setCompanies(list);
-      if (!companySlug && list.length === 1) {
-        setCompanySlug(list[0].slug);
-      }
-      return list;
-    } catch {
-      return [] as Company[];
-    }
-  };
-
-  useEffect(() => {
-    fetchCompanies();
-  }, []);
-
-  useEffect(() => {
-    if (mode !== 'signin') return;
-    const selected = companies.find((company) => company.slug === companySlug);
-    if (selected?.themeColor) {
-      applyCompanyThemeFromHex(selected.themeColor);
-    }
-  }, [companySlug, companies, mode]);
-
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -83,7 +48,7 @@ export function LoginForm() {
     setLoading(true);
 
     try {
-      await login(email, password, companySlug);
+      await login(email, password);
       navigate(redirectPath);
     } catch (err: any) {
       setError(err.response?.data?.error || 'Login failed');
@@ -118,14 +83,12 @@ export function LoginForm() {
       );
 
       const createdCompany = createRes.data.data as Company;
-      await fetchCompanies();
 
       try {
         await login(superAdminEmail, superAdminPassword, createdCompany.slug);
         navigate('/dashboard');
       } catch {
         setMode('signin');
-        setCompanySlug(createdCompany.slug);
         setEmail(superAdminEmail);
         setPassword(superAdminPassword);
         setError('Company created, but auto-login failed. Please sign in manually.');
@@ -144,7 +107,6 @@ export function LoginForm() {
 
     try {
       await axios.post('/api/v1/auth/register-request', {
-        companySlug,
         firstName: registerFirstName,
         lastName: registerLastName,
         email: registerEmail,
@@ -222,26 +184,6 @@ export function LoginForm() {
 
           {mode === 'signin' ? (
             <form onSubmit={handleSignIn} className="space-y-4">
-              <div>
-                <label htmlFor="company" className="mb-1 block text-sm font-medium text-gray-700">
-                  Company
-                </label>
-                <select
-                  id="company"
-                  value={companySlug}
-                  onChange={(e) => setCompanySlug(e.target.value)}
-                  required
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                >
-                  <option value="">Select a company</option>
-                  {companies.map((c) => (
-                    <option key={c.id} value={c.slug}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
               <Input
                 id="email"
                 label="Email"
@@ -266,32 +208,12 @@ export function LoginForm() {
                 <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>
               )}
 
-              <Button type="submit" className="w-full" disabled={loading || !companySlug}>
+              <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? 'Signing in...' : 'Sign In'}
               </Button>
             </form>
           ) : mode === 'register' ? (
             <form onSubmit={handleRegister} className="space-y-4">
-              <div>
-                <label htmlFor="register-company" className="mb-1 block text-sm font-medium text-gray-700">
-                  Company
-                </label>
-                <select
-                  id="register-company"
-                  value={companySlug}
-                  onChange={(e) => setCompanySlug(e.target.value)}
-                  required
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm transition-colors focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                >
-                  <option value="">Select a company</option>
-                  {companies.map((c) => (
-                    <option key={c.id} value={c.slug}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
               <div className="grid gap-4 md:grid-cols-2">
                 <Input
                   id="registerFirstName"
@@ -340,7 +262,7 @@ export function LoginForm() {
                 <div className="rounded-lg bg-green-50 p-3 text-sm text-green-700">{registerSuccess}</div>
               )}
 
-              <Button type="submit" className="w-full" disabled={loading || !companySlug}>
+              <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? 'Submitting request...' : 'Submit Registration Request'}
               </Button>
             </form>

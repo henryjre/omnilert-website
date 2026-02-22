@@ -393,8 +393,7 @@ export async function canUserDeleteCompany(
   if (!company) return false;
 
   try {
-    const tenantDb = await db.getTenantDb(company.db_name as string);
-    const user = await tenantDb('users')
+    const user = await masterDb('users')
       .where({ id: userId, is_active: true })
       .select('email')
       .first();
@@ -440,7 +439,7 @@ export async function deleteCurrentCompany(
   }
 
   const tenantDb = await db.getTenantDb(company.db_name as string);
-  const currentUser = await tenantDb('users')
+  const currentUser = await masterDb('users')
     .where({ id: input.userId, is_active: true })
     .select('email')
     .first();
@@ -478,11 +477,16 @@ export async function deleteCurrentCompany(
     .where({ id: input.companyId })
     .update({ is_active: false, updated_at: new Date() });
 
-  const tenantUsers = await tenantDb('users').select('id');
-  const tenantUserIds = tenantUsers.map((row: { id: string }) => row.id);
+  const tenantUserIds = await masterDb('user_company_access')
+    .where({ company_id: input.companyId, is_active: true })
+    .pluck('user_id') as string[];
 
-  await tenantDb('refresh_tokens')
-    .where({ is_revoked: false })
+  await masterDb('refresh_tokens')
+    .where({ company_id: input.companyId, is_revoked: false })
+    .update({ is_revoked: true });
+  await masterDb('refresh_tokens')
+    .where({ company_db_name: company.db_name as string, is_revoked: false })
+    .whereNull('company_id')
     .update({ is_revoked: true });
 
   emitForceLogoutToUsers(tenantUserIds, input.companyId, input.userId);

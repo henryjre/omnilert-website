@@ -1,5 +1,6 @@
 import type { Knex } from 'knex';
 import { AppError } from '../middleware/errorHandler.js';
+import { db } from '../config/database.js';
 
 type DepartmentMember = {
   id: string;
@@ -27,17 +28,12 @@ function uniqueIds(ids: string[]): string[] {
 
 async function loadDepartmentsBase(tenantDb: Knex, ids?: string[]): Promise<DepartmentRow[]> {
   const query = tenantDb('departments as departments')
-    .leftJoin('users as head', 'departments.head_user_id', 'head.id')
     .select(
       'departments.id',
       'departments.name',
       'departments.head_user_id',
       'departments.created_at',
       'departments.updated_at',
-      'head.first_name as head_first_name',
-      'head.last_name as head_last_name',
-      'head.email as head_email',
-      'head.avatar_url as head_avatar_url',
     )
     .orderBy('departments.name', 'asc');
 
@@ -48,14 +44,17 @@ async function loadDepartmentsBase(tenantDb: Knex, ids?: string[]): Promise<Depa
   return query as Promise<DepartmentRow[]>;
 }
 
-async function loadDepartmentMembers(tenantDb: Knex, departmentIds: string[]): Promise<Map<string, DepartmentMember[]>> {
+async function loadDepartmentMembers(companyId: string, departmentIds: string[]): Promise<Map<string, DepartmentMember[]>> {
   const map = new Map<string, DepartmentMember[]>();
   if (departmentIds.length === 0) return map;
 
-  const members = await tenantDb('users')
-    .whereIn('department_id', departmentIds)
-    .andWhere('is_active', true)
-    .select('id', 'first_name', 'last_name', 'email', 'avatar_url', 'department_id')
+  const members = await db.getMasterDb()('users as users')
+    .join('user_company_access as uca', 'users.id', 'uca.user_id')
+    .where('uca.company_id', companyId)
+    .andWhere('uca.is_active', true)
+    .whereIn('users.department_id', departmentIds)
+    .andWhere('users.is_active', true)
+    .select('users.id', 'users.first_name', 'users.last_name', 'users.email', 'users.avatar_url', 'users.department_id')
     .orderBy('first_name', 'asc')
     .orderBy('last_name', 'asc');
 
@@ -102,35 +101,68 @@ function toDepartmentView(
   };
 }
 
-export async function listDepartments(tenantDb: Knex) {
+export async function listDepartments(tenantDb: Knex, companyId: string) {
   const rows = await loadDepartmentsBase(tenantDb);
   const membersByDepartment = await loadDepartmentMembers(
-    tenantDb,
+    companyId,
     rows.map((row) => row.id),
   );
+  const headUserIds = rows.map((row) => row.head_user_id).filter(Boolean) as string[];
+  const heads = headUserIds.length > 0
+    ? await db.getMasterDb()('users')
+      .whereIn('id', headUserIds)
+      .select('id', 'first_name', 'last_name', 'email', 'avatar_url')
+    : [];
+  const headMap = new Map(heads.map((head: any) => [head.id as string, head]));
 
-  return rows.map((row) => toDepartmentView(row, membersByDepartment.get(row.id) ?? []));
+  return rows.map((row) => {
+    const head = row.head_user_id ? headMap.get(row.head_user_id) : null;
+    const mergedRow = {
+      ...row,
+      head_first_name: head?.first_name ?? null,
+      head_last_name: head?.last_name ?? null,
+      head_email: head?.email ?? null,
+      head_avatar_url: head?.avatar_url ?? null,
+    } as DepartmentRow;
+    return toDepartmentView(mergedRow, membersByDepartment.get(row.id) ?? []);
+  });
 }
 
-export async function listDepartmentMemberOptions(tenantDb: Knex) {
-  return tenantDb('users')
-    .where({ is_active: true })
-    .select('id', 'first_name', 'last_name', 'email', 'avatar_url')
+export async function listDepartmentMemberOptions(companyId: string) {
+  return db.getMasterDb()('users as users')
+    .join('user_company_access as uca', 'users.id', 'uca.user_id')
+    .where('uca.company_id', companyId)
+    .andWhere('uca.is_active', true)
+    .andWhere('users.is_active', true)
+    .select('users.id', 'users.first_name', 'users.last_name', 'users.email', 'users.avatar_url')
     .orderBy('first_name', 'asc')
     .orderBy('last_name', 'asc');
 }
 
-async function loadDepartmentById(tenantDb: Knex, departmentId: string) {
+async function loadDepartmentById(tenantDb: Knex, companyId: string, departmentId: string) {
   const rows = await loadDepartmentsBase(tenantDb, [departmentId]);
   if (rows.length === 0) {
     throw new AppError(404, 'Department not found');
   }
-  const membersByDepartment = await loadDepartmentMembers(tenantDb, [departmentId]);
-  return toDepartmentView(rows[0], membersByDepartment.get(departmentId) ?? []);
+  const membersByDepartment = await loadDepartmentMembers(companyId, [departmentId]);
+  const head = rows[0].head_user_id
+    ? await db.getMasterDb()('users')
+      .where({ id: rows[0].head_user_id })
+      .first('id', 'first_name', 'last_name', 'email', 'avatar_url')
+    : null;
+  const mergedRow = {
+    ...rows[0],
+    head_first_name: head?.first_name ?? null,
+    head_last_name: head?.last_name ?? null,
+    head_email: head?.email ?? null,
+    head_avatar_url: head?.avatar_url ?? null,
+  } as DepartmentRow;
+  return toDepartmentView(mergedRow, membersByDepartment.get(departmentId) ?? []);
 }
 
 export async function createDepartment(input: {
   tenantDb: Knex;
+  companyId: string;
   name: string;
   headUserId: string | null;
   memberUserIds: string[];
@@ -143,6 +175,7 @@ export async function createDepartment(input: {
 
 export async function updateDepartment(input: {
   tenantDb: Knex;
+  companyId: string;
   departmentId: string;
   name: string;
   headUserId: string | null;
@@ -153,6 +186,7 @@ export async function updateDepartment(input: {
 
 async function upsertDepartmentInternal(input: {
   tenantDb: Knex;
+  companyId: string;
   departmentId: string | null;
   name: string;
   headUserId: string | null;
@@ -169,10 +203,13 @@ async function upsertDepartmentInternal(input: {
   }
 
   if (memberUserIds.length > 0) {
-    const validMembers = await input.tenantDb('users')
-      .whereIn('id', memberUserIds)
-      .andWhere('is_active', true)
-      .select('id');
+    const validMembers = await db.getMasterDb()('users as users')
+      .join('user_company_access as uca', 'users.id', 'uca.user_id')
+      .where('uca.company_id', input.companyId)
+      .andWhere('uca.is_active', true)
+      .whereIn('users.id', memberUserIds)
+      .andWhere('users.is_active', true)
+      .select('users.id');
     if (validMembers.length !== memberUserIds.length) {
       throw new AppError(400, 'Department members must be active users');
     }
@@ -216,14 +253,17 @@ async function upsertDepartmentInternal(input: {
     }
 
     const targetDepartmentId = input.departmentId as string;
-    const existingMembers = await trx('users')
-      .where({ department_id: targetDepartmentId })
-      .select('id');
+    const existingMembers = await db.getMasterDb()('users as users')
+      .join('user_company_access as uca', 'users.id', 'uca.user_id')
+      .where('uca.company_id', input.companyId)
+      .andWhere('uca.is_active', true)
+      .andWhere('users.department_id', targetDepartmentId)
+      .select('users.id');
     const existingIds = existingMembers.map((row: { id: string }) => row.id);
     const toRemove = existingIds.filter((id) => !memberUserIds.includes(id));
 
     if (toRemove.length > 0) {
-      await trx('users')
+      await db.getMasterDb()('users')
         .whereIn('id', toRemove)
         .update({
           department_id: null,
@@ -232,7 +272,7 @@ async function upsertDepartmentInternal(input: {
     }
 
     if (memberUserIds.length > 0) {
-      await trx('users')
+      await db.getMasterDb()('users')
         .whereIn('id', memberUserIds)
         .update({
           department_id: targetDepartmentId,
@@ -243,5 +283,5 @@ async function upsertDepartmentInternal(input: {
     return targetDepartmentId;
   });
 
-  return loadDepartmentById(input.tenantDb, departmentId);
+  return loadDepartmentById(input.tenantDb, input.companyId, departmentId);
 }

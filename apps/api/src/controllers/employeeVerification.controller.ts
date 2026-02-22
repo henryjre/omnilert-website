@@ -13,7 +13,16 @@ export async function list(req: Request, res: Response, next: NextFunction) {
 
 export async function listRegistrationOnly(req: Request, res: Response, next: NextFunction) {
   try {
-    const data = await employeeVerificationService.listRegistrationVerifications(req.tenantDb!);
+    const data = await employeeVerificationService.listRegistrationVerifications();
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function listRegistrationAssignmentOptions(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await registrationService.listRegistrationAssignmentOptions();
     res.json({ success: true, data });
   } catch (error) {
     next(error);
@@ -23,12 +32,12 @@ export async function listRegistrationOnly(req: Request, res: Response, next: Ne
 export async function approveRegistration(req: Request, res: Response, next: NextFunction) {
   try {
     const result = await registrationService.approveRegistrationRequest({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
+      reviewerCompanyId: req.user!.companyId,
       reviewerId: req.user!.sub,
       requestId: req.params.id as string,
       roleIds: req.body.roleIds,
-      branchIds: req.body.branchIds,
+      companyAssignments: req.body.companyAssignments,
+      residentBranch: req.body.residentBranch,
     });
     res.json({ success: true, data: result });
   } catch (error) {
@@ -39,8 +48,6 @@ export async function approveRegistration(req: Request, res: Response, next: Nex
 export async function rejectRegistration(req: Request, res: Response, next: NextFunction) {
   try {
     await registrationService.rejectRegistrationRequest({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
       reviewerId: req.user!.sub,
       requestId: req.params.id as string,
       reason: req.body.reason,

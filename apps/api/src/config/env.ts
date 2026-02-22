@@ -48,6 +48,15 @@ const envSchema = z.object({
   QUEUE_SCHEMA: z.string().default('pgboss'),
   EARLY_CHECKIN_QUEUE_NAME: z.string().default('early-checkin-auth'),
   EARLY_CHECKIN_RETRY_LIMIT: z.coerce.number().int().min(0).default(3),
+
+  WEB_PUSH_ENABLED: z.preprocess((value) => {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') return value.trim().toLowerCase() === 'true';
+    return false;
+  }, z.boolean()),
+  WEB_PUSH_VAPID_PUBLIC_KEY: z.string().optional(),
+  WEB_PUSH_VAPID_PRIVATE_KEY: z.string().optional(),
+  WEB_PUSH_VAPID_SUBJECT: z.string().optional(),
 });
 
 const parsed = envSchema.safeParse(process.env);

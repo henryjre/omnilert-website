@@ -3,6 +3,10 @@ import { z } from 'zod';
 export const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
   password: z.string().min(1, 'Password is required'),
+  companySlug: z.string().min(1, 'Company is required').optional(),
+});
+
+export const switchCompanySchema = z.object({
   companySlug: z.string().min(1, 'Company is required'),
 });
 
@@ -11,16 +15,24 @@ export const refreshTokenSchema = z.object({
 });
 
 export const registerRequestSchema = z.object({
-  companySlug: z.string().min(1, 'Company is required'),
   firstName: z.string().min(1, 'First name is required').max(100),
   lastName: z.string().min(1, 'Last name is required').max(100),
   email: z.string().email('Invalid email address'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
 });
 
+const registrationCompanyAssignmentSchema = z.object({
+  companyId: z.string().uuid('Invalid companyId'),
+  branchIds: z.array(z.string().uuid('Invalid branchId')).min(1, 'At least one branch is required per company'),
+});
+
 export const approveRegistrationRequestSchema = z.object({
   roleIds: z.array(z.string().uuid()).min(1, 'At least one role is required'),
-  branchIds: z.array(z.string().uuid()).optional(),
+  companyAssignments: z.array(registrationCompanyAssignmentSchema).min(1, 'At least one company assignment is required'),
+  residentBranch: z.object({
+    companyId: z.string().uuid('Invalid resident companyId'),
+    branchId: z.string().uuid('Invalid resident branchId'),
+  }),
 });
 
 export const rejectRegistrationRequestSchema = z.object({
@@ -93,6 +105,7 @@ export const rejectVerificationSchema = z.object({
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;
+export type SwitchCompanyInput = z.infer<typeof switchCompanySchema>;
 export type RefreshTokenInput = z.infer<typeof refreshTokenSchema>;
 export type RegisterRequestInput = z.infer<typeof registerRequestSchema>;
 export type ApproveRegistrationRequestInput = z.infer<typeof approveRegistrationRequestSchema>;

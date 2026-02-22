@@ -216,3 +216,9 @@ export function getIO(): SocketIOServer<ClientToServerEvents, ServerToClientEven
   }
   return io;
 }
+
+export function hasActiveNotificationSocket(userId: string): boolean {
+  if (!io) return false;
+  const room = io.of('/notifications').adapter.rooms.get(`user:${userId}`);
+  return Boolean(room && room.size > 0);
+}

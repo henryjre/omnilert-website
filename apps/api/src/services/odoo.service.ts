@@ -1500,3 +1500,85 @@ export async function getCompanyPin(websiteUserKey: string, companyId: number): 
   }
 }
 
+/**
+ * Updates planning.slot state (draft/published).
+ */
+export async function updatePlanningSlotState(
+  planningSlotId: number,
+  state: 'draft' | 'published',
+): Promise<boolean> {
+  try {
+    const result = await callOdooKw(
+      'planning.slot',
+      'write',
+      [[planningSlotId], { state }],
+    );
+    logger.info(`Updated planning.slot ${planningSlotId} state to ${state}`);
+    return result === true;
+  } catch (err) {
+    logger.error(`Failed to update planning.slot ${planningSlotId} state: ${err}`);
+    throw err;
+  }
+}
+
+/**
+ * Updates planning.slot resource_id.
+ */
+export async function updatePlanningSlotResource(
+  planningSlotId: number,
+  resourceId: number,
+): Promise<boolean> {
+  try {
+    const result = await callOdooKw(
+      'planning.slot',
+      'write',
+      [[planningSlotId], { resource_id: resourceId }],
+    );
+    logger.info(`Updated planning.slot ${planningSlotId} resource_id to ${resourceId}`);
+    return result === true;
+  } catch (err) {
+    logger.error(`Failed to update planning.slot ${planningSlotId} resource_id: ${err}`);
+    throw err;
+  }
+}
+
+/**
+ * Resolves resource.resource id by employee x_website_key scoped to an Odoo company.
+ */
+export async function getResourceIdByWebsiteUserKeyAndCompanyId(
+  websiteUserKey: string,
+  companyId: number,
+): Promise<number | null> {
+  try {
+    const employees = (await callOdooKw(
+      'hr.employee',
+      'search_read',
+      [],
+      {
+        domain: [
+          ['x_website_key', '=', websiteUserKey],
+          ['company_id', '=', companyId],
+        ],
+        fields: ['id', 'resource_id'],
+        limit: 1,
+      },
+    )) as Array<{ id: number; resource_id?: [number, string] | false }>;
+
+    if (!employees || employees.length === 0) {
+      logger.warn(`No hr.employee found for website key ${websiteUserKey} in company ${companyId}`);
+      return null;
+    }
+
+    const resourceField = employees[0].resource_id;
+    if (!Array.isArray(resourceField) || !resourceField[0]) {
+      logger.warn(`No resource_id on hr.employee ${employees[0].id} for website key ${websiteUserKey}`);
+      return null;
+    }
+
+    return Number(resourceField[0]);
+  } catch (err) {
+    logger.error(`Failed to resolve resource by website key ${websiteUserKey} and company ${companyId}: ${err}`);
+    throw err;
+  }
+}
+

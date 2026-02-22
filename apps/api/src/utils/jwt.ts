@@ -1,5 +1,6 @@
 import jwt, { type SignOptions } from 'jsonwebtoken';
 import { env } from '../config/env.js';
+import crypto from 'crypto';
 
 export interface AccessTokenPayload {
   sub: string;
@@ -18,6 +19,12 @@ export interface SuperAdminTokenPayload {
   scope: 'super_admin';
 }
 
+export interface RefreshTokenPayload {
+  sub: string;
+  companyDbName: string;
+  jti?: string;
+}
+
 export function signAccessToken(payload: AccessTokenPayload): string {
   const options: SignOptions = { expiresIn: env.JWT_EXPIRES_IN as any };
   return jwt.sign(payload as object, env.JWT_SECRET, options);
@@ -25,15 +32,23 @@ export function signAccessToken(payload: AccessTokenPayload): string {
 
 export function signRefreshToken(userId: string, companyDbName: string): string {
   const options: SignOptions = { expiresIn: env.JWT_REFRESH_EXPIRES_IN as any };
-  return jwt.sign({ sub: userId, companyDbName }, env.JWT_REFRESH_SECRET, options);
+  return jwt.sign(
+    {
+      sub: userId,
+      companyDbName,
+      jti: crypto.randomUUID(),
+    },
+    env.JWT_REFRESH_SECRET,
+    options,
+  );
 }
 
 export function verifyAccessToken(token: string): AccessTokenPayload {
   return jwt.verify(token, env.JWT_SECRET) as AccessTokenPayload;
 }
 
-export function verifyRefreshToken(token: string): { sub: string; companyDbName: string } {
-  return jwt.verify(token, env.JWT_REFRESH_SECRET) as { sub: string; companyDbName: string };
+export function verifyRefreshToken(token: string): RefreshTokenPayload {
+  return jwt.verify(token, env.JWT_REFRESH_SECRET) as RefreshTokenPayload;
 }
 
 export function signSuperAdminToken(payload: SuperAdminTokenPayload): string {

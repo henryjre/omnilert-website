@@ -5,6 +5,12 @@ import { Input } from '@/shared/components/ui/Input';
 import { api } from '@/shared/services/api.client';
 import { useAuthStore } from '@/features/auth/store/authSlice';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
+import {
+  getExistingPushSubscription,
+  isPushSupported,
+  requestNotificationPermission,
+  subscribeToPush,
+} from '@/shared/services/push.client';
 
 const SETTINGS_ACTION_BUTTON_WIDTH = 'w-52 justify-center';
 
@@ -14,10 +20,15 @@ export function SettingsTab() {
   const [loading, setLoading] = useState(true);
   const [savingEmail, setSavingEmail] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
+  const [updatingPush, setUpdatingPush] = useState(false);
   const [passwordConfirmOpen, setPasswordConfirmOpen] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [email, setEmail] = useState('');
+  const [pushSupported, setPushSupported] = useState(false);
+  const [pushBackendEnabled, setPushBackendEnabled] = useState(false);
+  const [pushVapidPublicKey, setPushVapidPublicKey] = useState('');
+  const [pushPreferenceEnabled, setPushPreferenceEnabled] = useState(false);
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: '',
     newPassword: '',
@@ -31,6 +42,28 @@ export function SettingsTab() {
         setEmail(res.data.data?.email || '');
       })
       .finally(() => setLoading(false));
+
+    setPushSupported(isPushSupported());
+
+    api
+      .get('/account/push/config')
+      .then((res) => {
+        setPushBackendEnabled(Boolean(res.data.data?.enabled));
+        setPushVapidPublicKey(res.data.data?.vapidPublicKey || '');
+      })
+      .catch(() => {
+        setPushBackendEnabled(false);
+        setPushVapidPublicKey('');
+      });
+
+    api
+      .get('/account/push/preferences')
+      .then((res) => {
+        setPushPreferenceEnabled(Boolean(res.data.data?.enabled));
+      })
+      .catch(() => {
+        setPushPreferenceEnabled(false);
+      });
   }, []);
 
   const validatePasswordForm = (): boolean => {
@@ -94,6 +127,92 @@ export function SettingsTab() {
     }
   };
 
+  const handleEnableDeviceNotifications = async () => {
+    setSuccessMessage('');
+    setErrorMessage('');
+
+    if (!pushBackendEnabled) {
+      setErrorMessage('Device notifications are not enabled by your company configuration.');
+      return;
+    }
+    if (!pushSupported) {
+      setErrorMessage('This browser does not support device push notifications.');
+      return;
+    }
+    if (!pushVapidPublicKey) {
+      setErrorMessage('Push configuration is incomplete. Please contact your administrator.');
+      return;
+    }
+
+    setUpdatingPush(true);
+    try {
+      const permission = await requestNotificationPermission();
+      if (permission !== 'granted') {
+        setErrorMessage('Browser notification permission was denied.');
+        return;
+      }
+
+      const subscription = await subscribeToPush(pushVapidPublicKey);
+      if (!subscription) {
+        setErrorMessage('Failed to subscribe this device for notifications.');
+        return;
+      }
+
+      const payload = subscription.toJSON() as {
+        endpoint?: string;
+        keys?: { p256dh?: string; auth?: string };
+      };
+      if (!payload.endpoint || !payload.keys?.p256dh || !payload.keys?.auth) {
+        setErrorMessage('Push subscription data is incomplete.');
+        return;
+      }
+
+      await api.post('/account/push/subscriptions', {
+        endpoint: payload.endpoint,
+        keys: {
+          p256dh: payload.keys.p256dh,
+          auth: payload.keys.auth,
+        },
+        userAgent: navigator.userAgent,
+      });
+      await api.patch('/account/push/preferences', { enabled: true });
+      setPushPreferenceEnabled(true);
+      setSuccessMessage('Device notifications enabled.');
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string; message?: string } } };
+      setErrorMessage(error.response?.data?.error || error.response?.data?.message || 'Failed to enable device notifications');
+    } finally {
+      setUpdatingPush(false);
+    }
+  };
+
+  const handleDisableDeviceNotifications = async () => {
+    setSuccessMessage('');
+    setErrorMessage('');
+    setUpdatingPush(true);
+    try {
+      const existing = await getExistingPushSubscription();
+      if (existing) {
+        const payload = existing.toJSON() as { endpoint?: string };
+        if (payload.endpoint) {
+          await api.delete('/account/push/subscriptions', {
+            data: { endpoint: payload.endpoint },
+          });
+        }
+        await existing.unsubscribe();
+      }
+
+      await api.patch('/account/push/preferences', { enabled: false });
+      setPushPreferenceEnabled(false);
+      setSuccessMessage('Device notifications disabled.');
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string; message?: string } } };
+      setErrorMessage(error.response?.data?.error || error.response?.data?.message || 'Failed to disable device notifications');
+    } finally {
+      setUpdatingPush(false);
+    }
+  };
+
   if (loading) {
     return (
       <Card>
@@ -145,6 +264,45 @@ export function SettingsTab() {
             >
               {savingEmail ? 'Saving...' : 'Save Email'}
             </Button>
+          </div>
+        </div>
+
+        <div className="space-y-4 border-t border-gray-100 pt-4">
+          <h3 className="text-sm font-semibold text-gray-900">Device Notifications</h3>
+          <p className="text-xs text-gray-500">
+            Receive browser/device push notifications when you are offline.
+          </p>
+          {!pushBackendEnabled && (
+            <p className="text-xs text-amber-700">
+              Device notifications are currently disabled by server configuration.
+            </p>
+          )}
+          {!pushSupported && (
+            <p className="text-xs text-amber-700">
+              Your current browser does not support push notifications.
+            </p>
+          )}
+          <div className="flex justify-center sm:justify-end">
+            {pushPreferenceEnabled ? (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handleDisableDeviceNotifications}
+                disabled={updatingPush}
+                className={SETTINGS_ACTION_BUTTON_WIDTH}
+              >
+                {updatingPush ? 'Updating...' : 'Disable Device Notifications'}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                onClick={handleEnableDeviceNotifications}
+                disabled={updatingPush || !pushBackendEnabled || !pushSupported}
+                className={SETTINGS_ACTION_BUTTON_WIDTH}
+              >
+                {updatingPush ? 'Updating...' : 'Enable Device Notifications'}
+              </Button>
+            )}
           </div>
         </div>
 

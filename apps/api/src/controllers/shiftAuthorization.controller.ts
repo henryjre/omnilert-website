@@ -3,6 +3,8 @@ import { AppError } from '../middleware/errorHandler.js';
 import { getIO } from '../config/socket.js';
 import { logger } from '../utils/logger.js';
 import { updateAttendanceCheckIn, updateAttendanceCheckOut, searchWorkEntriesByAttendanceId, updateWorkEntryDateStart, updateWorkEntryDateStop } from '../services/odoo.service.js';
+import { createAndDispatchNotification } from '../services/notification.service.js';
+import { db } from '../config/database.js';
 
 /** Employee submits a reason for tardiness / late_check_out */
 export async function submitReason(req: Request, res: Response, next: NextFunction) {
@@ -90,7 +92,7 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
       .decrement('pending_approvals', 1);
 
     // Create resolution shift_log
-    const managerUser = await tenantDb('users').where({ id: managerId }).select('id', 'first_name', 'last_name').first();
+    const managerUser = await db.getMasterDb()('users').where({ id: managerId }).select('id', 'first_name', 'last_name').first();
     const managerName = managerUser ? `${managerUser.first_name} ${managerUser.last_name}` : managerId;
     const [resolutionLog] = await tenantDb('shift_logs')
       .insert({
@@ -113,16 +115,14 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
     // Notify employee
     if (auth.user_id) {
       const label = authTypeLabel(auth.auth_type);
-      const [notif] = await tenantDb('employee_notifications').insert({
-        user_id: auth.user_id,
+      await createAndDispatchNotification({
+        tenantDb,
+        userId: auth.user_id,
         title: `${label} Approved`,
         message: `Your ${label.toLowerCase()} authorization has been approved.`,
         type: 'success',
-        link_url: '/account/schedule',
-      }).returning('*');
-      try {
-        getIO().of('/notifications').to(`user:${auth.user_id}`).emit('notification:new', notif);
-      } catch { /* socket unavailable */ }
+        linkUrl: '/account/schedule',
+      });
     }
 
     try {
@@ -177,7 +177,7 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
       .decrement('pending_approvals', 1);
 
     // Create resolution shift_log
-    const managerUser = await tenantDb('users').where({ id: managerId }).select('id', 'first_name', 'last_name').first();
+    const managerUser = await db.getMasterDb()('users').where({ id: managerId }).select('id', 'first_name', 'last_name').first();
     const managerName = managerUser ? `${managerUser.first_name} ${managerUser.last_name}` : managerId;
     const [resolutionLog] = await tenantDb('shift_logs')
       .insert({
@@ -200,16 +200,14 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
     // Notify employee
     if (auth.user_id) {
       const label = authTypeLabel(auth.auth_type);
-      const [notif] = await tenantDb('employee_notifications').insert({
-        user_id: auth.user_id,
+      await createAndDispatchNotification({
+        tenantDb,
+        userId: auth.user_id,
         title: `${label} Rejected`,
         message: `Your ${label.toLowerCase()} authorization has been rejected: ${reason.trim()}`,
         type: 'danger',
-        link_url: '/account/schedule',
-      }).returning('*');
-      try {
-        getIO().of('/notifications').to(`user:${auth.user_id}`).emit('notification:new', notif);
-      } catch { /* socket unavailable */ }
+        linkUrl: '/account/schedule',
+      });
     }
 
     try {

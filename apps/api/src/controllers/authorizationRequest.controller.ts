@@ -1,7 +1,8 @@
 import type { Request, Response, NextFunction } from 'express';
 import { AppError } from '../middleware/errorHandler.js';
-import { getIO } from '../config/socket.js';
-import { logger } from '../utils/logger.js';
+import { db } from '../config/database.js';
+import { createAndDispatchNotification } from '../services/notification.service.js';
+import { listShiftExchangeRequestsForAuthorization } from '../services/shiftExchange.service.js';
 
 /**
  * GET /authorization-requests
@@ -12,6 +13,7 @@ export async function list(req: Request, res: Response, next: NextFunction) {
   try {
     const tenantDb = req.tenantDb!;
     const userPermissions = new Set(req.user!.permissions);
+    const currentCompanyId = req.user!.companyId;
     const { branchIds, status } = req.query as Record<string, string>;
 
     const branchIdList: string[] = branchIds ? branchIds.split(',').filter(Boolean) : [];
@@ -42,18 +44,54 @@ export async function list(req: Request, res: Response, next: NextFunction) {
     ) {
       let q = tenantDb('shift_authorizations')
         .whereIn('shift_authorizations.branch_id', allBranchIds)
-        .leftJoin('users', 'shift_authorizations.user_id', 'users.id')
         .leftJoin('employee_shifts', 'shift_authorizations.shift_id', 'employee_shifts.id')
         .leftJoin('branches', 'shift_authorizations.branch_id', 'branches.id')
         .select(
           'shift_authorizations.*',
-          tenantDb.raw("CONCAT(users.first_name, ' ', users.last_name) as employee_name"),
           'employee_shifts.duty_type',
           'employee_shifts.shift_start',
+          'employee_shifts.employee_name as shift_employee_name',
           'branches.name as branch_name',
         );
       if (status) q = q.where('shift_authorizations.status', status);
-      serviceCrewRequests = await q.orderBy('shift_authorizations.created_at', 'desc');
+      const authRows = await q.orderBy('shift_authorizations.created_at', 'desc');
+
+      const userIds = Array.from(
+        new Set(
+          authRows
+            .map((row: any) => String(row.user_id ?? '').trim())
+            .filter((value: string) => value.length > 0),
+        ),
+      );
+      let namesById: Record<string, string> = {};
+      if (userIds.length > 0) {
+        const users = await db.getMasterDb()('users')
+          .whereIn('id', userIds)
+          .select('id', 'first_name', 'last_name');
+        namesById = Object.fromEntries(
+          users.map((row: any) => [
+            row.id,
+            `${String(row.first_name ?? '').trim()} ${String(row.last_name ?? '').trim()}`.trim() || 'Unknown User',
+          ]),
+        );
+      }
+
+      const mappedAuthRows = authRows.map((row: any) => ({
+        ...row,
+        employee_name: namesById[row.user_id] || row.shift_employee_name || null,
+      }));
+
+      const shiftExchangeRows = await listShiftExchangeRequestsForAuthorization({
+        currentCompanyId,
+        branchIds: allBranchIds,
+        status,
+      });
+
+      serviceCrewRequests = [...mappedAuthRows, ...shiftExchangeRows]
+        .sort(
+          (a: any, b: any) =>
+            new Date(String(b.created_at)).getTime() - new Date(String(a.created_at)).getTime(),
+        );
     }
 
     res.json({ success: true, data: { managementRequests, serviceCrewRequests } });
@@ -85,16 +123,14 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
     // Notify creator
     if (authReq.user_id) {
       const label = requestTypeLabel(authReq.request_type);
-      const [notif] = await tenantDb('employee_notifications').insert({
-        user_id: authReq.user_id,
+      await createAndDispatchNotification({
+        tenantDb,
+        userId: authReq.user_id,
         title: `${label} Approved`,
         message: `Your ${label.toLowerCase()} has been approved.`,
         type: 'success',
-        link_url: '/account/authorization-requests',
-      }).returning('*');
-      try {
-        getIO().of('/notifications').to(`user:${authReq.user_id}`).emit('notification:new', notif);
-      } catch { /* socket unavailable */ }
+        linkUrl: '/account/authorization-requests',
+      });
     }
 
     res.json({ success: true, data: updated });
@@ -135,16 +171,14 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
     // Notify creator
     if (authReq.user_id) {
       const label = requestTypeLabel(authReq.request_type);
-      const [notif] = await tenantDb('employee_notifications').insert({
-        user_id: authReq.user_id,
+      await createAndDispatchNotification({
+        tenantDb,
+        userId: authReq.user_id,
         title: `${label} Rejected`,
         message: `Your ${label.toLowerCase()} has been rejected: ${reason.trim()}`,
         type: 'danger',
-        link_url: '/account/authorization-requests',
-      }).returning('*');
-      try {
-        getIO().of('/notifications').to(`user:${authReq.user_id}`).emit('notification:new', notif);
-      } catch { /* socket unavailable */ }
+        linkUrl: '/account/authorization-requests',
+      });
     }
 
     res.json({ success: true, data: updated });

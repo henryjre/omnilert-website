@@ -3,7 +3,10 @@ import * as employeeRequirementService from '../services/employeeRequirement.ser
 
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
-    const data = await employeeRequirementService.listServiceCrewRequirements(req.tenantDb!);
+    const data = await employeeRequirementService.listServiceCrewRequirements(
+      req.tenantDb!,
+      req.user!.companyId,
+    );
     res.json({ success: true, data });
   } catch (error) {
     next(error);
@@ -15,6 +18,7 @@ export async function getDetail(req: Request, res: Response, next: NextFunction)
     const data = await employeeRequirementService.getServiceCrewRequirementDetail(
       req.tenantDb!,
       req.params.userId as string,
+      req.user!.companyId,
     );
     res.json({ success: true, data });
   } catch (error) {

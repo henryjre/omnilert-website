@@ -8,6 +8,7 @@ import { useBranchStore } from '@/shared/store/branchStore';
 import { useAuthStore } from '@/features/auth/store/authSlice';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { api } from '@/shared/services/api.client';
+import { ShiftExchangeFlowModal } from '@/features/shift-exchange/components/ShiftExchangeFlowModal';
 import { PERMISSIONS } from '@omnilert/shared';
 import { Calendar, X, LogIn, LogOut, RefreshCw, Clock, AlertTriangle, CheckCircle, XCircle, Filter, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Square, ArrowUp, ArrowDown } from 'lucide-react';
 
@@ -375,14 +376,18 @@ function ShiftCard({
   shift,
   branchName,
   canEndShift,
+  canExchangeShift,
   onClick,
   onEndShift,
+  onExchangeShift,
 }: {
   shift: any;
   branchName?: string;
   canEndShift: boolean;
+  canExchangeShift: boolean;
   onClick: () => void;
   onEndShift: (id: string) => void;
+  onExchangeShift: (shift: any) => void;
 }) {
   const { prefix, name } = parseEmployeeName(shift.employee_name);
   const dutyColor = DUTY_COLORS[shift.duty_color] ?? '#e5e7eb';
@@ -481,15 +486,17 @@ function ShiftCard({
         </div>
 
         {/* Action buttons */}
-        {(shift.status === 'open' || (shift.status === 'active' && canEndShift)) && (
+        {(canExchangeShift || (shift.status === 'active' && canEndShift)) && (
           <div className="mt-auto border-t border-gray-100 pt-3 flex gap-2">
-            {shift.status === 'open' && (
+            {canExchangeShift && (
               <Button
                 variant="secondary"
                 size="sm"
-                disabled
                 className="flex-1"
-                onClick={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onExchangeShift(shift);
+                }}
               >
                 Exchange Shift
               </Button>
@@ -1086,6 +1093,8 @@ export function EmployeeShiftsPage() {
   const [loading, setLoading] = useState(true);
   const [selectedShift, setSelectedShift] = useState<any | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [exchangeShiftSource, setExchangeShiftSource] = useState<any | null>(null);
+  const [isSuspendedSelf, setIsSuspendedSelf] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('active');
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [draftFilters, setDraftFilters] = useState<Filters>(DEFAULT_FILTERS);
@@ -1104,6 +1113,16 @@ export function EmployeeShiftsPage() {
   const { hasPermission } = usePermission();
   const canApprove = hasPermission(PERMISSIONS.SHIFT_APPROVE_AUTHORIZATIONS);
   const canEndShift = hasPermission(PERMISSIONS.SHIFT_END_SHIFT);
+
+  useEffect(() => {
+    api
+      .get('/account/profile')
+      .then((res) => {
+        const status = String(res.data?.data?.workInfo?.status ?? '').toLowerCase();
+        setIsSuspendedSelf(status === 'suspended');
+      })
+      .catch(() => {});
+  }, []);
 
   const branchMap = Object.fromEntries(branchList.map((b) => [b.id, b.name]));
 
@@ -1497,8 +1516,15 @@ export function EmployeeShiftsPage() {
                   shift={shift}
                   branchName={branchMap[shift.branch_id]}
                   canEndShift={canEndShift}
+                  canExchangeShift={
+                    !isSuspendedSelf
+                    && shift.status === 'open'
+                    && shift.user_id
+                    && shift.user_id === currentUser?.id
+                  }
                   onClick={() => openDetail(shift.id)}
                   onEndShift={handleEndShift}
+                  onExchangeShift={setExchangeShiftSource}
                 />
               ))}
             </div>
@@ -1573,6 +1599,21 @@ export function EmployeeShiftsPage() {
           />
         ) : null}
       </div>
+
+      <ShiftExchangeFlowModal
+        isOpen={Boolean(exchangeShiftSource)}
+        fromShift={exchangeShiftSource ? {
+          id: exchangeShiftSource.id,
+          shift_start: exchangeShiftSource.shift_start,
+          shift_end: exchangeShiftSource.shift_end,
+          duty_type: exchangeShiftSource.duty_type,
+          branch_name: branchMap[exchangeShiftSource.branch_id] ?? null,
+        } : null}
+        onClose={() => setExchangeShiftSource(null)}
+        onCreated={() => {
+          fetchShifts();
+        }}
+      />
     </>
   );
 }

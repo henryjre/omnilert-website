@@ -8,6 +8,7 @@ import { api } from '@/shared/services/api.client';
 import { useAuthStore } from '@/features/auth/store/authSlice';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useSocket } from '@/shared/hooks/useSocket';
+import { ShiftExchangeFlowModal } from '@/features/shift-exchange/components/ShiftExchangeFlowModal';
 import { PERMISSIONS } from '@omnilert/shared';
 import { Calendar, LayoutGrid, X, LogIn, LogOut, RefreshCw, Clock, AlertTriangle, CheckCircle, XCircle, Square, Filter, ChevronDown, ChevronUp, ArrowUp, ArrowDown } from 'lucide-react';
 
@@ -645,13 +646,17 @@ function ShiftDetailPanel({
 function MyShiftCard({
   shift,
   branchName,
+  canExchangeShift,
   onClick,
   onEndShift,
+  onExchangeShift,
 }: {
   shift: any;
   branchName?: string;
+  canExchangeShift: boolean;
   onClick: () => void;
   onEndShift: (id: string) => void;
+  onExchangeShift: (shift: any) => void;
 }) {
   const { prefix, name } = parseEmployeeName(shift.employee_name);
   const dutyColor = DUTY_COLORS[shift.duty_color] ?? "#e5e7eb";
@@ -744,15 +749,17 @@ function MyShiftCard({
         </div>
 
         {/* Action buttons */}
-        {(shift.status === "open" || shift.status === "active") && (
+        {(canExchangeShift || shift.status === "active") && (
           <div className="mt-auto flex gap-2 border-t border-gray-100 pt-3">
-            {shift.status === "open" && (
+            {canExchangeShift && (
               <Button
                 variant="secondary"
                 size="sm"
-                disabled
                 className="flex-1"
-                onClick={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onExchangeShift(shift);
+                }}
               >
                 Exchange Shift
               </Button>
@@ -794,6 +801,8 @@ export function ScheduleTab() {
   const [shifts, setShifts] = useState<any[]>([]);
   const [scheduleBranches, setScheduleBranches] = useState<Array<{ id: string; name: string; is_active: boolean }>>([]);
   const [loading, setLoading] = useState(true);
+  const [isSuspendedSelf, setIsSuspendedSelf] = useState(false);
+  const [exchangeShiftSource, setExchangeShiftSource] = useState<any | null>(null);
   const [view, setView] = useState<'list' | 'calendar'>('list');
   const [activeTab, setActiveTab] = useState<TabType>('all');
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -818,6 +827,16 @@ export function ScheduleTab() {
   const currentUser = useAuthStore((s) => s.user);
   const { hasPermission } = usePermission();
   const canApprove = hasPermission(PERMISSIONS.SHIFT_APPROVE_AUTHORIZATIONS);
+
+  useEffect(() => {
+    api
+      .get('/account/profile')
+      .then((res) => {
+        const status = String(res.data?.data?.workInfo?.status ?? '').toLowerCase();
+        setIsSuspendedSelf(status === 'suspended');
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const media = window.matchMedia('(max-width: 639px)');
@@ -1219,8 +1238,15 @@ export function ScheduleTab() {
                   key={s.id}
                   shift={s}
                   branchName={s.branch_name ?? "Unknown Branch"}
+                  canExchangeShift={
+                    !isSuspendedSelf
+                    && s.status === 'open'
+                    && s.user_id
+                    && s.user_id === currentUser?.id
+                  }
                   onClick={() => openDetail(s.id)}
                   onEndShift={handleEndShift}
+                  onExchangeShift={setExchangeShiftSource}
                 />
               ))}
             </div>
@@ -1380,6 +1406,30 @@ export function ScheduleTab() {
         </>,
         document.body,
       )}
+
+      <ShiftExchangeFlowModal
+        isOpen={Boolean(exchangeShiftSource)}
+        fromShift={exchangeShiftSource ? {
+          id: exchangeShiftSource.id,
+          shift_start: exchangeShiftSource.shift_start,
+          shift_end: exchangeShiftSource.shift_end,
+          duty_type: exchangeShiftSource.duty_type,
+          branch_name: exchangeShiftSource.branch_name ?? null,
+        } : null}
+        onClose={() => setExchangeShiftSource(null)}
+        onCreated={async () => {
+          try {
+            const [scheduleRes, branchesRes] = await Promise.all([
+              api.get('/account/schedule'),
+              api.get('/account/schedule-branches'),
+            ]);
+            setShifts(scheduleRes.data.data || []);
+            setScheduleBranches(branchesRes.data.data || []);
+          } catch {
+            // no-op; next refresh/socket update will reconcile
+          }
+        }}
+      />
     </>
   );
 }

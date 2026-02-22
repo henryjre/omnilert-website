@@ -67,6 +67,25 @@ interface ProfileUser {
 interface ProfilePayload {
   user: ProfileUser;
   workInfo: {
+    company: { id: string; name: string } | null;
+    resident_branch: {
+      company_id: string;
+      company_name: string;
+      branch_id: string;
+      branch_name: string;
+    } | null;
+    home_resident_branch: {
+      company_id: string;
+      company_name: string;
+      branch_id: string;
+      branch_name: string;
+    } | null;
+    borrow_branches: Array<{
+      company_id: string;
+      company_name: string;
+      branch_id: string;
+      branch_name: string;
+    }>;
     department_id: string | null;
     department_name: string | null;
     position_title: string | null;
@@ -429,8 +448,17 @@ export function EmploymentTab() {
       const formData = new FormData();
       formData.append('document', file);
       const res = await api.post('/account/valid-id', formData);
-      setValidIdUrl(res.data.data.validIdUrl || null);
-      await fetchProfile();
+      const nextValidIdUrl = res.data.data.validIdUrl || null;
+      setValidIdUrl(nextValidIdUrl);
+      setProfile((prev) => (prev
+        ? {
+          ...prev,
+          user: {
+            ...prev.user,
+            valid_id_url: nextValidIdUrl,
+          },
+        }
+        : prev));
       await fetchRequirements();
       setSuccess('Valid ID uploaded successfully.');
     } catch (err: any) {
@@ -755,26 +783,6 @@ export function EmploymentTab() {
                 </div>
               </div>
 
-              <div className="space-y-1 border-t border-gray-100 pt-4">
-                <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                  <Key className="h-4 w-4 text-gray-400" />
-                  POS PIN Code
-                </label>
-                <div className="flex gap-2 sm:max-w-md">
-                  <Input type="text" value={pin} readOnly placeholder="No PIN code" className="flex-1 bg-gray-50" />
-                  {!pin && (
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      onClick={handleGetPin}
-                      disabled={fetchingPin}
-                    >
-                      {fetchingPin ? 'Getting...' : 'Get PIN'}
-                    </Button>
-                  )}
-                </div>
-              </div>
             </div>
           </div>
 
@@ -920,6 +928,62 @@ export function EmploymentTab() {
                   readOnly
                   className="bg-gray-50"
                 />
+              </div>
+              <div className="space-y-1 sm:col-span-2">
+                <label className="text-sm font-medium text-gray-700">Company</label>
+                <Input
+                  value={profile?.workInfo.company?.name || 'Not set'}
+                  readOnly
+                  className="bg-gray-50"
+                />
+              </div>
+              <div className="space-y-1 sm:col-span-2">
+                <label className="text-sm font-medium text-gray-700">Resident Branch</label>
+                <Input
+                  value={profile?.workInfo.resident_branch?.branch_name || 'N/A'}
+                  readOnly
+                  className="bg-gray-50"
+                />
+              </div>
+              {!profile?.workInfo.resident_branch && profile?.workInfo.home_resident_branch && (
+                <div className="space-y-1 sm:col-span-2">
+                  <label className="text-sm font-medium text-gray-700">Home Resident Branch</label>
+                  <Input
+                    value={`${profile.workInfo.home_resident_branch.branch_name} (${profile.workInfo.home_resident_branch.company_name})`}
+                    readOnly
+                    className="bg-gray-50"
+                  />
+                </div>
+              )}
+              <div className="space-y-1 sm:col-span-2">
+                <label className="text-sm font-medium text-gray-700">Borrow Branches</label>
+                <Input
+                  value={profile?.workInfo.borrow_branches?.length
+                    ? profile.workInfo.borrow_branches.map((branch) => branch.branch_name).join(', ')
+                    : 'None'}
+                  readOnly
+                  className="bg-gray-50"
+                />
+              </div>
+              <div className="space-y-1 sm:col-span-2">
+                <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                  <Key className="h-4 w-4 text-gray-400" />
+                  POS PIN Code
+                </label>
+                <div className="flex gap-2 sm:max-w-md">
+                  <Input type="text" value={pin} readOnly placeholder="No PIN code" className="flex-1 bg-gray-50" />
+                  {!pin && (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={handleGetPin}
+                      disabled={fetchingPin}
+                    >
+                      {fetchingPin ? 'Getting...' : 'Get PIN'}
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
           </div>

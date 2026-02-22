@@ -17,6 +17,7 @@ interface AuthState {
   user: AuthUser | null;
   accessToken: string | null;
   refreshToken: string | null;
+  companySlug: string | null;
   companyThemeColor: string | null;
   companyName: string | null;
   isAuthenticated: boolean;
@@ -25,6 +26,7 @@ interface AuthState {
     user: AuthUser,
     accessToken: string,
     refreshToken: string,
+    companySlug?: string | null,
     companyThemeColor?: string | null,
     companyName?: string | null,
   ) => void;
@@ -41,15 +43,17 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       accessToken: null,
       refreshToken: null,
+      companySlug: null,
       companyThemeColor: null,
       companyName: null,
       isAuthenticated: false,
 
-      setAuth: (user, accessToken, refreshToken, companyThemeColor, companyName) =>
+      setAuth: (user, accessToken, refreshToken, companySlug, companyThemeColor, companyName) =>
         set({
           user,
           accessToken,
           refreshToken,
+          companySlug: companySlug ?? null,
           companyThemeColor: companyThemeColor ?? null,
           companyName: companyName ?? null,
           isAuthenticated: true,
@@ -71,6 +75,7 @@ export const useAuthStore = create<AuthState>()(
           user: null,
           accessToken: null,
           refreshToken: null,
+          companySlug: null,
           companyThemeColor: null,
           companyName: null,
           isAuthenticated: false,
@@ -80,6 +85,7 @@ export const useAuthStore = create<AuthState>()(
       name: 'omnilert-auth',
       partialize: (state) => ({
         refreshToken: state.refreshToken,
+        companySlug: state.companySlug,
         user: state.user,
         companyThemeColor: state.companyThemeColor,
         companyName: state.companyName,

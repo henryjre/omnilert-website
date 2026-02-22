@@ -5,11 +5,33 @@ import { applyCompanyThemeFromHex, DEFAULT_THEME_COLOR } from '@/shared/utils/th
 export function useAuth() {
   const { user, isAuthenticated, setAuth, logout: storeLogout } = useAuthStore();
 
-  const login = async (email: string, password: string, companySlug: string) => {
+  const login = async (email: string, password: string, companySlug?: string) => {
     const res = await api.post('/auth/login', { email, password, companySlug });
-    const { user, accessToken, refreshToken, companyThemeColor, companyName } = res.data.data;
+    const {
+      user,
+      accessToken,
+      refreshToken,
+      companySlug: selectedCompanySlug,
+      companyThemeColor,
+      companyName,
+    } = res.data.data;
     const appliedTheme = applyCompanyThemeFromHex(companyThemeColor);
-    setAuth(user, accessToken, refreshToken, appliedTheme, companyName ?? null);
+    setAuth(user, accessToken, refreshToken, selectedCompanySlug ?? null, appliedTheme, companyName ?? null);
+    return user;
+  };
+
+  const switchCompany = async (companySlug: string) => {
+    const res = await api.post('/auth/switch-company', { companySlug });
+    const {
+      user,
+      accessToken,
+      refreshToken,
+      companySlug: selectedCompanySlug,
+      companyThemeColor,
+      companyName,
+    } = res.data.data;
+    const appliedTheme = applyCompanyThemeFromHex(companyThemeColor);
+    setAuth(user, accessToken, refreshToken, selectedCompanySlug ?? null, appliedTheme, companyName ?? null);
     return user;
   };
 
@@ -26,5 +48,5 @@ export function useAuth() {
     storeLogout();
   };
 
-  return { user, isAuthenticated, login, logout };
+  return { user, isAuthenticated, login, switchCompany, logout };
 }

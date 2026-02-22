@@ -3,33 +3,25 @@ import crypto from 'crypto';
 import { comparePassword, hashPassword } from '../utils/password.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
-import { syncUserProfileToOdoo, getCompanyPin, syncAvatarToOdoo } from '../services/odoo.service.js';
+import { getCompanyPin, syncAvatarToOdoo } from '../services/odoo.service.js';
 import { buildTenantStoragePrefix, uploadFile, deleteFolder } from '../services/storage.service.js';
 import { verifyRefreshToken } from '../utils/jwt.js';
+import * as globalUserManagementService from '../services/globalUserManagement.service.js';
+import { db } from '../config/database.js';
 
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
-    const users = await tenantDb('users')
-      .select('id', 'email', 'first_name', 'last_name', 'user_key', 'employee_number', 'avatar_url', 'is_active', 'last_login_at', 'created_at')
-      .orderBy('created_at', 'desc');
+    const users = await globalUserManagementService.listGlobalUsers();
+    res.json({ success: true, data: users });
+  } catch (err) {
+    next(err);
+  }
+}
 
-    // Attach roles and branches to each user
-    const usersWithDetails = await Promise.all(
-      users.map(async (user: { id: string }) => {
-        const roles = await tenantDb('user_roles')
-          .join('roles', 'user_roles.role_id', 'roles.id')
-          .where('user_roles.user_id', user.id)
-          .select('roles.id', 'roles.name', 'roles.color');
-        const branches = await tenantDb('user_branches')
-          .join('branches', 'user_branches.branch_id', 'branches.id')
-          .where('user_branches.user_id', user.id)
-          .select('branches.id', 'branches.name');
-        return { ...user, roles, branches };
-      }),
-    );
-
-    res.json({ success: true, data: usersWithDetails });
+export async function assignmentOptions(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await globalUserManagementService.getGlobalUserAssignmentOptions();
+    res.json({ success: true, data });
   } catch (err) {
     next(err);
   }
@@ -37,43 +29,25 @@ export async function list(req: Request, res: Response, next: NextFunction) {
 
 export async function create(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
-    const { email, password, firstName, lastName, userKey, employeeNumber, roleIds, branchIds } = req.body;
+    const result = await globalUserManagementService.createGlobalUser({
+      email: req.body.email,
+      password: req.body.password,
+      firstName: req.body.firstName,
+      lastName: req.body.lastName,
+      userKey: req.body.userKey,
+      employeeNumber: req.body.employeeNumber,
+      roleIds: req.body.roleIds,
+      companyAssignments: req.body.companyAssignments,
+    });
 
-    const passwordHash = await hashPassword(password);
-
-    const [user] = await tenantDb('users')
-      .insert({
-        email,
-        password_hash: passwordHash,
-        first_name: firstName,
-        last_name: lastName,
-        user_key: userKey,
-        employee_number: employeeNumber ?? null,
-      })
-      .returning('*');
-
-    // Assign roles
-    if (roleIds && roleIds.length > 0) {
-      const roleRows = roleIds.map((roleId: string) => ({
-        user_id: user.id,
-        role_id: roleId,
-        assigned_by: req.user!.sub,
-      }));
-      await tenantDb('user_roles').insert(roleRows);
-    }
-
-    // Assign branches
-    if (branchIds && branchIds.length > 0) {
-      const branchRows = branchIds.map((branchId: string, i: number) => ({
-        user_id: user.id,
-        branch_id: branchId,
-        is_primary: i === 0,
-      }));
-      await tenantDb('user_branches').insert(branchRows);
-    }
-
-    res.status(201).json({ success: true, data: user });
+    res.status(201).json({
+      success: true,
+      data: result.user,
+      message: result.provisioning.failures.length > 0
+        ? `User created with ${result.provisioning.failures.length} provisioning issue(s)`
+        : 'User created successfully',
+      provisioning: result.provisioning,
+    });
   } catch (err: any) {
     if (err?.code === '23505' && String(err?.detail ?? '').includes('user_key')) {
       next(new AppError(409, 'User key already exists'));
@@ -85,22 +59,16 @@ export async function create(req: Request, res: Response, next: NextFunction) {
 
 export async function update(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
     const { id } = req.params;
-
-    const updates: Record<string, unknown> = { updated_at: new Date() };
-    if (req.body.email !== undefined) updates.email = req.body.email;
-    if (req.body.firstName !== undefined) updates.first_name = req.body.firstName;
-    if (req.body.lastName !== undefined) updates.last_name = req.body.lastName;
-    if (req.body.userKey !== undefined) updates.user_key = req.body.userKey;
-    if (req.body.employeeNumber !== undefined) updates.employee_number = req.body.employeeNumber;
-    if (req.body.isActive !== undefined) {
-      updates.is_active = req.body.isActive;
-      updates.employment_status = req.body.isActive ? 'active' : 'inactive';
-    }
-
-    const [user] = await tenantDb('users').where({ id }).update(updates).returning('*');
-    if (!user) throw new AppError(404, 'User not found');
+    const user = await globalUserManagementService.updateGlobalUser({
+      userId: id as string,
+      email: req.body.email,
+      firstName: req.body.firstName,
+      lastName: req.body.lastName,
+      userKey: req.body.userKey,
+      employeeNumber: req.body.employeeNumber,
+      isActive: req.body.isActive,
+    });
 
     res.json({ success: true, data: user });
   } catch (err: any) {
@@ -114,15 +82,8 @@ export async function update(req: Request, res: Response, next: NextFunction) {
 
 export async function remove(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
     const { id } = req.params;
-
-    const [user] = await tenantDb('users')
-      .where({ id })
-      .update({ is_active: false, employment_status: 'inactive', updated_at: new Date() })
-      .returning('*');
-
-    if (!user) throw new AppError(404, 'User not found');
+    await globalUserManagementService.deactivateGlobalUser(id as string);
     res.json({ success: true, message: 'User deactivated' });
   } catch (err) {
     next(err);
@@ -131,12 +92,8 @@ export async function remove(req: Request, res: Response, next: NextFunction) {
 
 export async function destroy(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
     const { id } = req.params;
-
-    const count = await tenantDb('users').where({ id }).delete();
-    if (!count) throw new AppError(404, 'User not found');
-
+    await globalUserManagementService.deleteGlobalUser(id as string);
     res.json({ success: true, message: 'User permanently deleted' });
   } catch (err) {
     next(err);
@@ -145,20 +102,12 @@ export async function destroy(req: Request, res: Response, next: NextFunction) {
 
 export async function assignRoles(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
     const { id } = req.params;
     const { roleIds } = req.body;
-
-    await tenantDb('user_roles').where('user_id', id).delete();
-
-    if (roleIds && roleIds.length > 0) {
-      const rows = roleIds.map((roleId: string) => ({
-        user_id: id,
-        role_id: roleId,
-        assigned_by: req.user!.sub,
-      }));
-      await tenantDb('user_roles').insert(rows);
-    }
+    await globalUserManagementService.assignGlobalRoles({
+      userId: id as string,
+      roleIds: roleIds ?? [],
+    });
 
     res.json({ success: true, message: 'Roles updated' });
   } catch (err) {
@@ -168,22 +117,19 @@ export async function assignRoles(req: Request, res: Response, next: NextFunctio
 
 export async function assignBranches(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
     const { id } = req.params;
-    const { branchIds } = req.body;
+    const result = await globalUserManagementService.assignGlobalCompanyBranches({
+      userId: id as string,
+      companyAssignments: req.body.companyAssignments ?? [],
+    });
 
-    await tenantDb('user_branches').where('user_id', id).delete();
-
-    if (branchIds && branchIds.length > 0) {
-      const rows = branchIds.map((branchId: string, i: number) => ({
-        user_id: id,
-        branch_id: branchId,
-        is_primary: i === 0,
-      }));
-      await tenantDb('user_branches').insert(rows);
-    }
-
-    res.json({ success: true, message: 'Branches updated' });
+    res.json({
+      success: true,
+      message: result.failures.length > 0
+        ? `Assignments updated with ${result.failures.length} provisioning issue(s)`
+        : 'Assignments updated',
+      provisioning: result,
+    });
   } catch (err) {
     next(err);
   }
@@ -191,10 +137,10 @@ export async function assignBranches(req: Request, res: Response, next: NextFunc
 
 export async function getMe(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const masterDb = db.getMasterDb();
     const userId = req.user!.sub;
 
-    const user = await tenantDb('users')
+    const user = await masterDb('users')
       .where({ id: userId })
       .select(
         'id',
@@ -237,10 +183,10 @@ export async function updateMe(req: Request, res: Response, next: NextFunction) 
 
 export async function getPin(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const masterDb = db.getMasterDb();
     const userId = req.user!.sub;
 
-    const user = await tenantDb('users')
+    const user = await masterDb('users')
       .where({ id: userId })
       .select('id', 'pin')
       .first();
@@ -255,7 +201,7 @@ export async function getPin(req: Request, res: Response, next: NextFunction) {
 
 export async function changeMyPassword(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const masterDb = db.getMasterDb();
     const userId = req.user!.sub;
     const { currentPassword, newPassword, currentRefreshToken } = req.body;
 
@@ -263,7 +209,7 @@ export async function changeMyPassword(req: Request, res: Response, next: NextFu
       throw new AppError(400, 'New password must be different from current password');
     }
 
-    const user = await tenantDb('users')
+    const user = await masterDb('users')
       .where({ id: userId })
       .select('id', 'password_hash')
       .first();
@@ -284,7 +230,7 @@ export async function changeMyPassword(req: Request, res: Response, next: NextFu
 
     const currentTokenHash = crypto.createHash('sha256').update(currentRefreshToken).digest('hex');
 
-    await tenantDb.transaction(async (trx) => {
+    await masterDb.transaction(async (trx) => {
       await trx('users')
         .where({ id: userId })
         .update({ password_hash: passwordHash, updated_at: new Date() });
@@ -304,12 +250,12 @@ export async function changeMyPassword(req: Request, res: Response, next: NextFu
 
 export async function setPin(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const masterDb = db.getMasterDb();
     const userId = req.user!.sub;
     const { companyId } = req.body;
 
     // Get user to check if already has pin
-    const existingUser = await tenantDb('users')
+    const existingUser = await masterDb('users')
       .where({ id: userId })
       .select('id', 'pin', 'user_key')
       .first();
@@ -336,7 +282,7 @@ export async function setPin(req: Request, res: Response, next: NextFunction) {
     }
 
     // Save pin to user
-    await tenantDb('users')
+    await masterDb('users')
       .where({ id: userId })
       .update({ pin, updated_at: new Date() });
 
@@ -352,7 +298,7 @@ export async function setPin(req: Request, res: Response, next: NextFunction) {
  */
 export async function uploadAvatar(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const masterDb = db.getMasterDb();
     const userId = req.user!.sub;
     const companyStorageRoot = req.companyContext?.companyStorageRoot ?? '';
     const file = req.file as Express.Multer.File | undefined;
@@ -362,7 +308,7 @@ export async function uploadAvatar(req: Request, res: Response, next: NextFuncti
     }
 
     // Get current user to check for existing avatar
-    const currentUser = await tenantDb('users')
+    const currentUser = await masterDb('users')
       .where({ id: userId })
       .first('avatar_url', 'user_key', 'email');
     const currentAvatarUrl = currentUser?.avatar_url;
@@ -386,7 +332,7 @@ export async function uploadAvatar(req: Request, res: Response, next: NextFuncti
     }
 
     // Update user record with new avatar URL
-    await tenantDb('users')
+    await masterDb('users')
       .where({ id: userId })
       .update({ avatar_url: avatarUrl, updated_at: new Date() });
 

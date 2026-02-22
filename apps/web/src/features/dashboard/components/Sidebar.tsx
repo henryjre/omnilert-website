@@ -1,4 +1,5 @@
-import { NavLink } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useNavigate, NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
   User,
@@ -13,11 +14,14 @@ import {
   FileText,
   DollarSign,
   ClipboardCheck,
+  ChevronDown,
 } from 'lucide-react';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import { useAuthStore } from '@/features/auth/store/authSlice';
 import { usePosVerificationStore } from '@/shared/store/posVerificationStore';
+import { useBranchStore } from '@/shared/store/branchStore';
+import { api } from '@/shared/services/api.client';
 import { PERMISSIONS } from '@omnilert/shared';
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -37,20 +41,145 @@ interface SidebarProps {
   className?: string;
 }
 
+interface CompanyOption {
+  id: string;
+  name: string;
+  slug: string;
+  themeColor?: string | null;
+}
+
 export function Sidebar({ className = '' }: SidebarProps) {
   const { hasPermission, hasAnyPermission } = usePermission();
-  const { logout, user } = useAuth();
+  const { logout, switchCompany, user } = useAuth();
   const companyName = useAuthStore((s) => s.companyName);
+  const companySlug = useAuthStore((s) => s.companySlug);
+  const fetchBranches = useBranchStore((s) => s.fetchBranches);
+  const setSelectedBranchIds = useBranchStore((s) => s.setSelectedBranchIds);
+  const navigate = useNavigate();
   const isAdministrator = (user?.roles ?? []).some((role) => role.name === 'Administrator');
   const pendingVerificationCount = usePosVerificationStore((s) => s.pendingCount);
+  const [companies, setCompanies] = useState<CompanyOption[]>([]);
+  const [switchingCompany, setSwitchingCompany] = useState(false);
+  const [switchError, setSwitchError] = useState('');
+  const [companyMenuOpen, setCompanyMenuOpen] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    api.get('/auth/companies')
+      .then((res) => {
+        if (!mounted) return;
+        setCompanies((res.data.data || []) as CompanyOption[]);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setCompanies([]);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const handleCompanySwitch = async (nextSlug: string) => {
+    if (!nextSlug || switchingCompany) return;
+    if (companySlug === nextSlug) return;
+
+    setSwitchError('');
+    setSwitchingCompany(true);
+    try {
+      const switchedUser = await switchCompany(nextSlug);
+      await fetchBranches();
+      setSelectedBranchIds(switchedUser.branchIds ?? []);
+      setCompanyMenuOpen(false);
+      navigate('/dashboard');
+    } catch (err: any) {
+      setSwitchError(err.response?.data?.error || 'Failed to switch company');
+    } finally {
+      setSwitchingCompany(false);
+    }
+  };
+
+  const currentCompanySlug = companySlug ?? companies[0]?.slug ?? '';
+
+  useEffect(() => {
+    const onPointerDown = (event: MouseEvent) => {
+      if (!companyMenuOpen) return;
+      const target = event.target as Element | null;
+      if (!target) return;
+      if (!target.closest('[data-company-switcher]')) {
+        setCompanyMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [companyMenuOpen]);
 
   return (
     <aside className={`flex h-[100dvh] w-64 flex-col border-r border-gray-200 bg-white ${className}`}>
-      {/* Logo */}
-      <div className="flex h-16 items-center border-b border-gray-200 px-6">
-        <div className="leading-tight">
-          <h1 className="text-xl font-bold text-primary-600">Omnilert</h1>
-          {companyName && <p className="text-[11px] text-gray-500">{companyName}</p>}
+      {/* Logo + Company Switcher */}
+      <div className="relative border-b border-gray-200" data-company-switcher>
+        {companies.length > 1 ? (
+          <button
+            type="button"
+            onClick={() => {
+              setSwitchError('');
+              setCompanyMenuOpen((open) => !open);
+            }}
+            className="flex h-16 w-full items-center justify-between px-6 text-left transition-colors hover:bg-gray-50"
+          >
+            <div className="leading-tight">
+              <h1 className="text-xl font-bold text-primary-600">Omnilert</h1>
+              {companyName && <p className="text-[11px] text-gray-500">{companyName}</p>}
+            </div>
+            <ChevronDown
+              className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${
+                companyMenuOpen ? 'rotate-180' : ''
+              }`}
+            />
+          </button>
+        ) : (
+          <div className="flex h-16 items-center px-6">
+            <div className="leading-tight">
+              <h1 className="text-xl font-bold text-primary-600">Omnilert</h1>
+              {companyName && <p className="text-[11px] text-gray-500">{companyName}</p>}
+            </div>
+          </div>
+        )}
+
+        <div
+          className={`pointer-events-none absolute left-3 right-3 top-[calc(100%+0.5rem)] z-50 origin-top rounded-xl border border-gray-200 bg-white shadow-lg transition-all duration-200 ease-out ${
+            companies.length > 1 && companyMenuOpen
+              ? 'pointer-events-auto translate-y-0 scale-100 opacity-100'
+              : 'translate-y-1 scale-95 opacity-0'
+          }`}
+        >
+          <div className="max-h-72 space-y-1 overflow-y-auto p-2">
+            {companies.map((company) => {
+              const isCurrent = company.slug === currentCompanySlug;
+              return (
+                <button
+                  key={company.id}
+                  type="button"
+                  onClick={() => handleCompanySwitch(company.slug)}
+                  disabled={isCurrent || switchingCompany}
+                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+                    isCurrent
+                      ? 'cursor-default bg-gray-100 text-gray-500'
+                      : 'text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: company.themeColor || '#2563EB' }}
+                  />
+                  <span className="flex-1">{company.name}</span>
+                  {isCurrent && <span className="text-[11px] font-medium">Current</span>}
+                </button>
+              );
+            })}
+          </div>
+          {switchError && (
+            <p className="px-3 pb-2 text-[10px] text-red-600">{switchError}</p>
+          )}
         </div>
       </div>
 
@@ -205,7 +334,7 @@ export function Sidebar({ className = '' }: SidebarProps) {
         </div>
         <button
           onClick={logout}
-          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
+          className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
         >
           <LogOut className="h-4 w-4" />
           Sign Out

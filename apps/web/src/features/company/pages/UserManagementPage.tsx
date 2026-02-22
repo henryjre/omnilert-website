@@ -1,145 +1,157 @@
-import { useEffect, useRef, useState } from 'react';
-import axios from 'axios';
-import { Card, CardHeader, CardBody } from '@/shared/components/ui/Card';
+import { useEffect, useMemo, useState } from 'react';
+import { Card, CardBody, CardHeader } from '@/shared/components/ui/Card';
 import { Button } from '@/shared/components/ui/Button';
 import { Input } from '@/shared/components/ui/Input';
-import { Badge } from '@/shared/components/ui/Badge';
 import { Spinner } from '@/shared/components/ui/Spinner';
-import { usePermission } from '@/shared/hooks/usePermission';
 import { api } from '@/shared/services/api.client';
-import { PERMISSIONS } from '@omnilert/shared';
-import { Plus, Pencil, Save, X, Copy, Check, Archive, ArchiveRestore, Trash2, MoreVertical } from 'lucide-react';
+import { Plus, Save, X } from 'lucide-react';
 
-type UserFilter = 'all' | 'active' | 'archived';
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+type Role = {
+  id: string;
+  name: string;
+  color?: string | null;
+};
+
+type AssignmentOptionCompany = {
+  id: string;
+  name: string;
+  slug: string;
+  branches: Array<{ id: string; name: string; odoo_branch_id: string }>;
+};
+
+type UserItem = {
+  id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  user_key: string | null;
+  employee_number: number | null;
+  is_active: boolean;
+  last_login_at: string | null;
+  created_at: string;
+  roles: Array<{ id: string; name: string; color: string | null }>;
+  companies: Array<{ companyId: string; companyName: string; companySlug: string }>;
+  companyBranches: Array<{
+    companyId: string;
+    companyName: string;
+    branchId: string;
+    branchName: string;
+    assignmentType: string;
+  }>;
+};
+
+type CompanyAssignmentForm = {
+  companyId: string;
+  branchIds: string[];
+};
+
+type CreateForm = {
+  firstName: string;
+  lastName: string;
+  email: string;
+  password: string;
+  userKey: string;
+  employeeNumber: string;
+  roleIds: string[];
+  companyAssignments: CompanyAssignmentForm[];
+};
+
+const EMPTY_CREATE_FORM: CreateForm = {
+  firstName: '',
+  lastName: '',
+  email: '',
+  password: '',
+  userKey: '',
+  employeeNumber: '',
+  roleIds: [],
+  companyAssignments: [],
+};
+
+function groupBranchesByCompany(user: UserItem): CompanyAssignmentForm[] {
+  const map = new Map<string, string[]>();
+  for (const branch of user.companyBranches) {
+    const current = map.get(branch.companyId) ?? [];
+    current.push(branch.branchId);
+    map.set(branch.companyId, Array.from(new Set(current)));
+  }
+  return Array.from(map.entries()).map(([companyId, branchIds]) => ({ companyId, branchIds }));
+}
+
+function uniqueNames(items: string[]): string[] {
+  return Array.from(new Set(items.filter(Boolean)));
+}
+
+function pillsWithOverflow(
+  items: string[],
+  maxVisible: number,
+  color: 'slate' | 'indigo' | 'emerald' = 'slate',
+) {
+  const visible = items.slice(0, maxVisible);
+  const remaining = Math.max(0, items.length - maxVisible);
+
+  const colorClass =
+    color === 'indigo'
+      ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+      : color === 'emerald'
+        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+        : 'bg-slate-100 text-slate-700 border-slate-200';
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {visible.map((item) => (
+        <span
+          key={item}
+          className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${colorClass}`}
+          title={item}
+        >
+          {item}
+        </span>
+      ))}
+      {remaining > 0 && (
+        <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+          +{remaining} more
+        </span>
+      )}
+    </div>
+  );
+}
 
 export function UserManagementPage() {
-  const [users, setUsers] = useState<any[]>([]);
-  const [roles, setRoles] = useState<any[]>([]);
-  const [branches, setBranches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [filter, setFilter] = useState<UserFilter>('active');
-  const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-    firstName: '',
-    lastName: '',
-    userKey: '',
-    employeeNumber: '',
-    roleIds: [] as string[],
-    branchIds: [] as string[],
-  });
-  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [users, setUsers] = useState<UserItem[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [companies, setCompanies] = useState<AssignmentOptionCompany[]>([]);
+
+  const [showCreate, setShowCreate] = useState(false);
+  const [createForm, setCreateForm] = useState<CreateForm>(EMPTY_CREATE_FORM);
+
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [editRoleIds, setEditRoleIds] = useState<string[]>([]);
+  const [editCompanyAssignments, setEditCompanyAssignments] = useState<CompanyAssignmentForm[]>([]);
   const [editUserKey, setEditUserKey] = useState('');
   const [editEmployeeNumber, setEditEmployeeNumber] = useState('');
-  const [editRoleIds, setEditRoleIds] = useState<string[]>([]);
-  const [editBranchIds, setEditBranchIds] = useState<string[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [copiedUserId, setCopiedUserId] = useState<string | null>(null);
-  const [deleteConfirmUserId, setDeleteConfirmUserId] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
-  const [openMenuUserId, setOpenMenuUserId] = useState<string | null>(null);
 
-  // Multi-select state
-  const [selectMode, setSelectMode] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [bulkDeleting, setBulkDeleting] = useState(false);
-  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
-  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const { hasPermission } = usePermission();
-  const canManageUsers = hasPermission(PERMISSIONS.ADMIN_MANAGE_USERS);
-
-  const displayedUsers =
-    filter === 'all' ? users
-    : filter === 'active' ? users.filter((u) => u.is_active)
-    : users.filter((u) => !u.is_active);
-
-  // Bulk action availability
-  const selectedUsers = displayedUsers.filter((u) => selectedIds.has(u.id));
-  const selectedActive = selectedUsers.filter((u) => u.is_active);
-  const selectedArchived = selectedUsers.filter((u) => !u.is_active);
-  const canBulkDelete = selectedArchived.length > 0 && selectedActive.length === 0;
-
-  const exitSelectMode = () => {
-    setSelectMode(false);
-    setSelectedIds(new Set());
-  };
-
-  const toggleSelect = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  };
-
-  const selectAll = () => {
-    setSelectedIds(new Set(displayedUsers.map((u) => u.id)));
-  };
-
-  const handleLongPressStart = (userId: string) => {
-    longPressTimerRef.current = setTimeout(() => {
-      setSelectMode(true);
-      setSelectedIds(new Set([userId]));
-    }, 500);
-  };
-
-  const handleLongPressEnd = () => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-  };
-
-  const copyUserId = async (id: string) => {
-    const markCopied = () => {
-      setCopiedUserId(id);
-      setTimeout(() => setCopiedUserId(null), 2000);
-    };
-
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(id);
-        markCopied();
-        return;
-      }
-    } catch {
-      // Fall back to execCommand-based copy for non-secure contexts.
-    }
-
-    try {
-      const textarea = document.createElement('textarea');
-      textarea.value = id;
-      textarea.setAttribute('readonly', '');
-      textarea.style.position = 'fixed';
-      textarea.style.opacity = '0';
-      document.body.appendChild(textarea);
-      textarea.select();
-      const copied = document.execCommand('copy');
-      document.body.removeChild(textarea);
-      if (copied) {
-        markCopied();
-      }
-    } catch {
-      // No-op: keep UI stable even if copy is blocked by browser policy.
-    }
-  };
+  const selectedUser = useMemo(
+    () => users.find((user) => user.id === selectedUserId) ?? null,
+    [users, selectedUserId],
+  );
 
   const fetchData = async () => {
     setLoading(true);
+    setError('');
     try {
-      const [usersRes, rolesRes, branchesRes] = await Promise.all([
+      const [usersRes, optionsRes] = await Promise.all([
         api.get('/users'),
-        api.get('/roles'),
-        api.get('/branches'),
+        api.get('/users/assignment-options'),
       ]);
       setUsers(usersRes.data.data || []);
-      setRoles(rolesRes.data.data || []);
-      setBranches(branchesRes.data.data || []);
+      setRoles(optionsRes.data.data?.roles || []);
+      setCompanies(optionsRes.data.data?.companies || []);
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to load users');
     } finally {
       setLoading(false);
     }
@@ -150,710 +162,551 @@ export function UserManagementPage() {
   }, []);
 
   useEffect(() => {
-    if (!openMenuUserId) return;
-    const handleDocClick = () => setOpenMenuUserId(null);
-    document.addEventListener('click', handleDocClick);
-    return () => document.removeEventListener('click', handleDocClick);
-  }, [openMenuUserId]);
+    if (!success) return;
+    const timer = window.setTimeout(() => setSuccess(''), 3000);
+    return () => window.clearTimeout(timer);
+  }, [success]);
 
-  // Exit select mode on Escape
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') exitSelectMode(); };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, []);
+  const roleMap = useMemo(() => new Map(roles.map((role) => [role.id, role])), [roles]);
+  const companyMap = useMemo(() => new Map(companies.map((company) => [company.id, company])), [companies]);
 
-  const createUser = async () => {
-    const userKey = formData.userKey.trim();
-    if (!UUID_RE.test(userKey)) {
-      setCreateError('User Key must be a valid UUID.');
+  const toggleRole = (
+    current: string[],
+    set: (next: string[]) => void,
+    roleId: string,
+  ) => {
+    set(current.includes(roleId) ? current.filter((id) => id !== roleId) : [...current, roleId]);
+  };
+
+  const toggleCompany = (
+    current: CompanyAssignmentForm[],
+    set: (next: CompanyAssignmentForm[]) => void,
+    companyId: string,
+  ) => {
+    const exists = current.find((item) => item.companyId === companyId);
+    if (exists) {
+      set(current.filter((item) => item.companyId !== companyId));
       return;
     }
+    set([...current, { companyId, branchIds: [] }]);
+  };
 
-    try {
-      setCreateError(null);
-      await api.post('/users', {
-        ...formData,
-        userKey,
-        employeeNumber: formData.employeeNumber.trim() ? Number(formData.employeeNumber) : undefined,
-      });
-      setShowForm(false);
-      setFormData({ email: '', password: '', firstName: '', lastName: '', userKey: '', employeeNumber: '', roleIds: [], branchIds: [] });
-      fetchData();
-    } catch (err) {
-      if (axios.isAxiosError(err)) {
-        setCreateError(err.response?.data?.error || 'Failed to create user');
-      } else {
-        setCreateError('Failed to create user');
-      }
+  const toggleBranch = (
+    current: CompanyAssignmentForm[],
+    set: (next: CompanyAssignmentForm[]) => void,
+    companyId: string,
+    branchId: string,
+  ) => {
+    set(
+      current.map((item) => {
+        if (item.companyId !== companyId) return item;
+        return {
+          ...item,
+          branchIds: item.branchIds.includes(branchId)
+            ? item.branchIds.filter((id) => id !== branchId)
+            : [...item.branchIds, branchId],
+        };
+      }),
+    );
+  };
+
+  const validateAssignments = (assignments: CompanyAssignmentForm[]): string | null => {
+    if (assignments.length === 0) return 'Select at least one company assignment.';
+    const missingBranches = assignments.find((item) => item.branchIds.length === 0);
+    if (missingBranches) {
+      const companyName = companies.find((company) => company.id === missingBranches.companyId)?.name ?? 'selected company';
+      return `Select at least one branch for ${companyName}.`;
     }
+    return null;
   };
 
-  const archiveUser = async (id: string) => {
-    await api.delete(`/users/${id}`);
-    fetchData();
-  };
-
-  const unarchiveUser = async (id: string) => {
-    await api.put(`/users/${id}`, { isActive: true });
-    fetchData();
-  };
-
-  const deleteUser = async (id: string) => {
-    setDeleting(true);
-    try {
-      await api.delete(`/users/${id}/permanent`);
-      setDeleteConfirmUserId(null);
-      fetchData();
-    } finally {
-      setDeleting(false);
-    }
-  };
-
-  // Bulk actions
-  const bulkArchive = async () => {
-    await Promise.all(selectedActive.map((u) => api.delete(`/users/${u.id}`)));
-    exitSelectMode();
-    fetchData();
-  };
-
-  const bulkUnarchive = async () => {
-    await Promise.all(selectedArchived.map((u) => api.put(`/users/${u.id}`, { isActive: true })));
-    exitSelectMode();
-    fetchData();
-  };
-
-  const bulkDelete = async () => {
-    setBulkDeleting(true);
-    try {
-      await Promise.all(selectedArchived.map((u) => api.delete(`/users/${u.id}/permanent`)));
-      setBulkDeleteConfirm(false);
-      exitSelectMode();
-      fetchData();
-    } finally {
-      setBulkDeleting(false);
-    }
-  };
-
-  const toggleRole = (roleId: string) => {
-    setFormData((prev) => ({
-      ...prev,
-      roleIds: prev.roleIds.includes(roleId)
-        ? prev.roleIds.filter((id) => id !== roleId)
-        : [...prev.roleIds, roleId],
-    }));
-  };
-
-  const toggleBranch = (branchId: string) => {
-    setFormData((prev) => ({
-      ...prev,
-      branchIds: prev.branchIds.includes(branchId)
-        ? prev.branchIds.filter((id) => id !== branchId)
-        : [...prev.branchIds, branchId],
-    }));
-  };
-
-  const startEditing = (user: any) => {
-    setEditingUserId(user.id);
+  const openPanel = (user: UserItem) => {
+    setSelectedUserId(user.id);
+    setEditRoleIds(user.roles.map((role) => role.id));
+    setEditCompanyAssignments(groupBranchesByCompany(user));
     setEditUserKey(user.user_key || '');
     setEditEmployeeNumber(user.employee_number ? String(user.employee_number) : '');
-    setEditRoleIds(user.roles?.map((r: any) => r.id) || []);
-    setEditBranchIds(user.branches?.map((b: any) => b.id) || []);
+    setError('');
+    setSuccess('');
   };
 
-  const cancelEditing = () => {
-    setEditingUserId(null);
+  const closePanel = () => {
+    setSelectedUserId(null);
+    setEditRoleIds([]);
+    setEditCompanyAssignments([]);
     setEditUserKey('');
     setEditEmployeeNumber('');
-    setEditRoleIds([]);
-    setEditBranchIds([]);
   };
 
-  const saveEditing = async () => {
-    if (!editingUserId) return;
-    const trimmedUserKey = editUserKey.trim();
-    if (trimmedUserKey && !UUID_RE.test(trimmedUserKey)) {
-      setSaveError('User Key must be a valid UUID.');
+  const createUser = async () => {
+    setError('');
+    setSuccess('');
+    const assignmentError = validateAssignments(createForm.companyAssignments);
+    if (assignmentError) {
+      setError(assignmentError);
+      return;
+    }
+    if (createForm.roleIds.length === 0) {
+      setError('Select at least one role.');
       return;
     }
 
     setSaving(true);
     try {
-      setSaveError(null);
-      const updates: Promise<any>[] = [
-        api.put(`/users/${editingUserId}/roles`, { roleIds: editRoleIds }),
-        api.put(`/users/${editingUserId}/branches`, { branchIds: editBranchIds }),
-      ];
-      if (trimmedUserKey) {
-        updates.push(api.put(`/users/${editingUserId}`, { userKey: trimmedUserKey }));
-      }
-      if (editEmployeeNumber.trim()) {
-        updates.push(api.put(`/users/${editingUserId}`, { employeeNumber: Number(editEmployeeNumber) }));
-      }
-
-      await Promise.all(updates);
-      setEditingUserId(null);
-      fetchData();
-    } catch (err) {
-      if (axios.isAxiosError(err)) {
-        setSaveError(err.response?.data?.error || 'Failed to save user');
-      } else {
-        setSaveError('Failed to save user');
-      }
-      console.error('Failed to save:', err);
+      await api.post('/users', {
+        firstName: createForm.firstName.trim(),
+        lastName: createForm.lastName.trim(),
+        email: createForm.email.trim(),
+        password: createForm.password,
+        userKey: createForm.userKey.trim(),
+        employeeNumber: createForm.employeeNumber.trim() ? Number(createForm.employeeNumber) : undefined,
+        roleIds: createForm.roleIds,
+        companyAssignments: createForm.companyAssignments,
+      });
+      setCreateForm(EMPTY_CREATE_FORM);
+      setShowCreate(false);
+      setSuccess('User created.');
+      await fetchData();
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to create user');
     } finally {
       setSaving(false);
     }
   };
 
-  const toggleEditRole = (roleId: string) => {
-    setEditRoleIds((prev) =>
-      prev.includes(roleId) ? prev.filter((id) => id !== roleId) : [...prev, roleId],
-    );
+  const saveEdit = async () => {
+    if (!selectedUser) return;
+    setError('');
+    setSuccess('');
+    const assignmentError = validateAssignments(editCompanyAssignments);
+    if (assignmentError) {
+      setError(assignmentError);
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const updates: Promise<any>[] = [
+        api.put(`/users/${selectedUser.id}/roles`, { roleIds: editRoleIds }),
+        api.put(`/users/${selectedUser.id}/branches`, { companyAssignments: editCompanyAssignments }),
+      ];
+
+      const trimmedUserKey = editUserKey.trim();
+      const trimmedEmployeeNumber = editEmployeeNumber.trim();
+      if (trimmedUserKey || trimmedEmployeeNumber) {
+        updates.push(api.put(`/users/${selectedUser.id}`, {
+          userKey: trimmedUserKey || undefined,
+          employeeNumber: trimmedEmployeeNumber ? Number(trimmedEmployeeNumber) : undefined,
+        }));
+      }
+
+      await Promise.all(updates);
+      setSuccess('User updated.');
+      closePanel();
+      await fetchData();
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to update user');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const toggleEditBranch = (branchId: string) => {
-    setEditBranchIds((prev) =>
-      prev.includes(branchId) ? prev.filter((id) => id !== branchId) : [...prev, branchId],
-    );
+  const setUserActive = async (userId: string, isActive: boolean) => {
+    setSaving(true);
+    setError('');
+    setSuccess('');
+    try {
+      if (isActive) {
+        await api.put(`/users/${userId}`, { isActive: true });
+      } else {
+        await api.delete(`/users/${userId}`);
+      }
+      setSuccess(isActive ? 'User unarchived.' : 'User archived.');
+      if (selectedUserId === userId) closePanel();
+      await fetchData();
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to update user status');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  if (loading) {
-    return (
-      <div className="flex justify-center py-12">
-        <Spinner size="lg" />
-      </div>
-    );
-  }
+  const deleteUser = async (userId: string) => {
+    setSaving(true);
+    setError('');
+    setSuccess('');
+    try {
+      await api.delete(`/users/${userId}/permanent`);
+      setSuccess('User permanently deleted.');
+      if (selectedUserId === userId) closePanel();
+      await fetchData();
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to delete user');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
-        <Button onClick={() => setShowForm(!showForm)}>
-          <Plus className="mr-1 h-4 w-4" />
-          New User
-        </Button>
-      </div>
-
-      {showForm && (
-        <Card>
-          <CardHeader>
-            <h2 className="font-semibold">Create New User</h2>
-          </CardHeader>
-          <CardBody className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <Input
-                label="First Name"
-                value={formData.firstName}
-                onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
-              />
-              <Input
-                label="Last Name"
-                value={formData.lastName}
-                onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
-              />
-            </div>
-            <Input
-              label="Email"
-              type="email"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-            />
-            <Input
-              label="Password"
-              type="password"
-              value={formData.password}
-              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-            />
-            <Input
-              label="User Key"
-              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-              value={formData.userKey}
-              onChange={(e) => setFormData({ ...formData, userKey: e.target.value })}
-              required
-            />
-            <Input
-              label="Employee Number (optional)"
-              placeholder="e.g. 60"
-              value={formData.employeeNumber}
-              onChange={(e) => setFormData({ ...formData, employeeNumber: e.target.value })}
-            />
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Roles</label>
-              <div className="flex flex-wrap gap-2">
-                {roles.map((role) => (
-                  <button
-                    key={role.id}
-                    type="button"
-                    onClick={() => toggleRole(role.id)}
-                    className={`rounded-full px-3 py-1 text-sm font-medium transition-colors ${
-                      formData.roleIds.includes(role.id)
-                        ? 'text-white'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
-                    style={formData.roleIds.includes(role.id) ? { backgroundColor: role.color || '#3b82f6' } : {}}
-                  >
-                    {role.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Branches</label>
-              <div className="flex flex-wrap gap-2">
-                {branches.map((branch) => (
-                  <button
-                    key={branch.id}
-                    type="button"
-                    onClick={() => toggleBranch(branch.id)}
-                    className={`rounded-full px-3 py-1 text-sm font-medium transition-colors ${
-                      formData.branchIds.includes(branch.id)
-                        ? 'bg-primary-600 text-white'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
-                  >
-                    {branch.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <Button onClick={createUser} disabled={!formData.email || !formData.password || !formData.firstName || !formData.userKey}>
-                Create User
-              </Button>
-              <Button variant="ghost" onClick={() => setShowForm(false)}>
-                Cancel
-              </Button>
-            </div>
-            {createError && <p className="text-sm text-red-600">{createError}</p>}
-          </CardBody>
-        </Card>
-      )}
-
-      {/* Filter tabs */}
-      <div className="mx-auto flex w-full max-w-md items-center justify-center gap-1 rounded-lg bg-gray-100 p-1 sm:mx-0 sm:w-fit sm:max-w-none sm:justify-start">
-        {(['all', 'active', 'archived'] as UserFilter[]).map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`flex-1 rounded-md px-4 py-1.5 text-center text-sm font-medium capitalize transition-colors sm:flex-none ${
-              filter === f ? 'bg-primary-600 text-white shadow-sm' : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            {f}
-          </button>
-        ))}
-      </div>
-
-      {/* Bulk action bar */}
-      {selectMode && (
-        <div className="flex items-center gap-3 rounded-xl border border-primary-200 bg-primary-50 px-4 py-3">
-          <span className="text-sm font-medium text-primary-800">
-            {selectedIds.size} selected
-          </span>
-          <button
-            onClick={selectAll}
-            className="text-xs text-primary-600 hover:underline"
-          >
-            Select all ({displayedUsers.length})
-          </button>
-          <div className="ml-auto flex items-center gap-2">
-            {selectedActive.length > 0 && (
-              <Button size="sm" variant="secondary" onClick={bulkArchive}>
-                <Archive className="mr-1 h-3.5 w-3.5" />
-                Archive ({selectedActive.length})
-              </Button>
-            )}
-            {selectedArchived.length > 0 && selectedActive.length === 0 && (
-              <>
-                <Button size="sm" variant="secondary" onClick={bulkUnarchive}>
-                  <ArchiveRestore className="mr-1 h-3.5 w-3.5" />
-                  Unarchive ({selectedArchived.length})
-                </Button>
-                <Button size="sm" variant="danger" onClick={() => setBulkDeleteConfirm(true)}>
-                  <Trash2 className="mr-1 h-3.5 w-3.5" />
-                  Delete ({selectedArchived.length})
-                </Button>
-              </>
-            )}
-            <Button size="sm" variant="ghost" onClick={exitSelectMode}>
-              <X className="mr-1 h-3.5 w-3.5" />
-              Cancel
-            </Button>
-          </div>
+    <>
+      <div className="space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
+          <Button onClick={() => setShowCreate((prev) => !prev)}>
+            <Plus className="mr-1 h-4 w-4" />
+            New User
+          </Button>
         </div>
-      )}
 
-      {/* Users list */}
-      <div className="space-y-3">
-        {displayedUsers.length === 0 && (
-          <p className="text-sm text-gray-400 text-center py-8">
-            No {filter === 'all' ? '' : filter} users.
-          </p>
-        )}
-        {displayedUsers.map((user) => {
-          const isEditing = editingUserId === user.id;
-          const isSelected = selectedIds.has(user.id);
-          return (
-            <Card
-              key={user.id}
-              className={`cursor-pointer transition-colors ${isSelected ? 'ring-2 ring-primary-500 bg-primary-50' : 'hover:bg-gray-50'}`}
-            >
-              <CardBody>
-                <div
-                  className="flex items-center justify-between select-none"
-                  onMouseDown={selectMode ? undefined : () => handleLongPressStart(user.id)}
-                  onMouseUp={handleLongPressEnd}
-                  onMouseLeave={handleLongPressEnd}
-                  onTouchStart={selectMode ? undefined : () => handleLongPressStart(user.id)}
-                  onTouchEnd={handleLongPressEnd}
-                  onClick={selectMode ? () => toggleSelect(user.id) : undefined}
-                >
-                    <div className="flex items-center gap-3">
-                    {selectMode && (
-                      <div className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border-2 transition-colors ${
-                        isSelected ? 'border-primary-600 bg-primary-600' : 'border-gray-300 bg-white'
-                      }`}>
-                        {isSelected && <Check className="h-3 w-3 text-white" />}
-                      </div>
-                    )}
-                    {user.avatar_url ? (
-                      <img
-                        src={user.avatar_url}
-                        alt="Profile"
-                        className="h-10 w-10 rounded-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary-100 text-sm font-medium text-primary-700">
-                        {user.first_name?.[0]}
-                        {user.last_name?.[0]}
-                      </div>
-                    )}
-                    <div>
-                      <p className="font-medium text-gray-900">
-                        {user.first_name} {user.last_name}
-                      </p>
-                      <p className="text-sm text-gray-500">{user.email}</p>
-                      <p className="text-xs text-gray-400">User Key: {user.user_key || 'Not set'}</p>
-                      <p className="text-xs text-gray-400">Employee Number: {user.employee_number ?? 'Not set'}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {!isEditing && !selectMode && (
-                      <>
-                        <div className="hidden items-center gap-2 sm:flex">
-                          {user.roles?.map((role: any) => (
-                            <span
-                              key={role.id}
-                              className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium text-white"
-                              style={{ backgroundColor: role.color || '#6b7280' }}
-                            >
-                              {role.name}
-                            </span>
-                          ))}
-                          {user.branches?.map((branch: any) => (
-                            <span
-                              key={branch.id}
-                              className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-600"
-                            >
-                              {branch.name}
-                            </span>
-                          ))}
-                          <Badge variant={user.is_active ? 'success' : 'default'}>
-                            {user.is_active ? 'Active' : 'Archived'}
-                          </Badge>
-                          {canManageUsers && (
-                            <>
-                              <button
-                                onClick={() => copyUserId(user.id)}
-                                title={`Copy user ID: ${user.id}`}
-                                className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-                              >
-                                {copiedUserId === user.id
-                                  ? <Check className="h-4 w-4 text-green-500" />
-                                  : <Copy className="h-4 w-4" />
-                                }
-                              </button>
-                              {user.is_active ? (
-                                <button
-                                  onClick={() => archiveUser(user.id)}
-                                  title="Archive user"
-                                  className="rounded-lg p-1.5 text-gray-400 hover:bg-amber-50 hover:text-amber-600"
-                                >
-                                  <Archive className="h-4 w-4" />
-                                </button>
-                              ) : (
-                                <>
-                                  <button
-                                    onClick={() => unarchiveUser(user.id)}
-                                    title="Unarchive user"
-                                    className="rounded-lg p-1.5 text-gray-400 hover:bg-green-50 hover:text-green-600"
-                                  >
-                                    <ArchiveRestore className="h-4 w-4" />
-                                  </button>
-                                  <button
-                                    onClick={() => setDeleteConfirmUserId(user.id)}
-                                    title="Delete permanently"
-                                    className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </button>
-                                </>
-                              )}
-                            </>
-                          )}
-                          {hasPermission(PERMISSIONS.ADMIN_MANAGE_ROLES) && (
-                            <button
-                              onClick={() => startEditing(user)}
-                              className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </button>
-                          )}
-                        </div>
+        {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>}
+        {success && <div className="rounded-lg bg-green-50 p-3 text-sm text-green-700">{success}</div>}
 
-                        <div className="flex items-center gap-2 sm:hidden">
-                          <Badge variant={user.is_active ? 'success' : 'default'}>
-                            {user.is_active ? 'Active' : 'Archived'}
-                          </Badge>
-                          {(canManageUsers || hasPermission(PERMISSIONS.ADMIN_MANAGE_ROLES)) && (
-                            <div className="relative">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setOpenMenuUserId((prev) => (prev === user.id ? null : user.id));
-                                }}
-                                className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-                                aria-label="Open user actions"
-                              >
-                                <MoreVertical className="h-4 w-4" />
-                              </button>
-                              {openMenuUserId === user.id && (
-                                <div
-                                  className="absolute right-0 z-10 mt-1 w-40 rounded-lg border border-gray-200 bg-white p-1 shadow-lg"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  {canManageUsers && (
-                                    <button
-                                      onClick={() => {
-                                        setOpenMenuUserId(null);
-                                        copyUserId(user.id);
-                                      }}
-                                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-                                    >
-                                      <Copy className="h-4 w-4" />
-                                      Copy User ID
-                                    </button>
-                                  )}
-                                  {hasPermission(PERMISSIONS.ADMIN_MANAGE_ROLES) && (
-                                    <button
-                                      onClick={() => {
-                                        setOpenMenuUserId(null);
-                                        startEditing(user);
-                                      }}
-                                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-                                    >
-                                      <Pencil className="h-4 w-4" />
-                                      Edit
-                                    </button>
-                                  )}
-                                  {canManageUsers && user.is_active && (
-                                    <button
-                                      onClick={() => {
-                                        setOpenMenuUserId(null);
-                                        archiveUser(user.id);
-                                      }}
-                                      className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-amber-700 hover:bg-amber-50"
-                                    >
-                                      <Archive className="h-4 w-4" />
-                                      Archive
-                                    </button>
-                                  )}
-                                  {canManageUsers && !user.is_active && (
-                                    <>
-                                      <button
-                                        onClick={() => {
-                                          setOpenMenuUserId(null);
-                                          unarchiveUser(user.id);
-                                        }}
-                                        className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-green-700 hover:bg-green-50"
-                                      >
-                                        <ArchiveRestore className="h-4 w-4" />
-                                        Unarchive
-                                      </button>
-                                      <button
-                                        onClick={() => {
-                                          setOpenMenuUserId(null);
-                                          setDeleteConfirmUserId(user.id);
-                                        }}
-                                        className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm text-red-700 hover:bg-red-50"
-                                      >
-                                        <Trash2 className="h-4 w-4" />
-                                        Delete
-                                      </button>
-                                    </>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </>
-                    )}
-                    {!isEditing && selectMode && (
-                      <Badge variant={user.is_active ? 'success' : 'default'}>
-                        {user.is_active ? 'Active' : 'Archived'}
-                      </Badge>
-                    )}
-                  </div>
+        {showCreate && (
+          <Card>
+            <CardHeader>
+              <h2 className="font-semibold">Create Global User</h2>
+            </CardHeader>
+            <CardBody className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <Input
+                  label="First Name"
+                  value={createForm.firstName}
+                  onChange={(e) => setCreateForm((prev) => ({ ...prev, firstName: e.target.value }))}
+                />
+                <Input
+                  label="Last Name"
+                  value={createForm.lastName}
+                  onChange={(e) => setCreateForm((prev) => ({ ...prev, lastName: e.target.value }))}
+                />
+              </div>
+              <Input
+                label="Email"
+                type="email"
+                value={createForm.email}
+                onChange={(e) => setCreateForm((prev) => ({ ...prev, email: e.target.value }))}
+              />
+              <Input
+                label="Password"
+                type="password"
+                value={createForm.password}
+                onChange={(e) => setCreateForm((prev) => ({ ...prev, password: e.target.value }))}
+              />
+              <Input
+                label="User Key"
+                value={createForm.userKey}
+                onChange={(e) => setCreateForm((prev) => ({ ...prev, userKey: e.target.value }))}
+                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+              />
+              <Input
+                label="Employee Number (optional)"
+                value={createForm.employeeNumber}
+                onChange={(e) => setCreateForm((prev) => ({ ...prev, employeeNumber: e.target.value }))}
+                placeholder="e.g. 60"
+              />
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Roles</label>
+                <div className="flex flex-wrap gap-2">
+                  {roles.map((role) => (
+                    <button
+                      key={role.id}
+                      type="button"
+                      onClick={() => toggleRole(createForm.roleIds, (next) => setCreateForm((prev) => ({ ...prev, roleIds: next })), role.id)}
+                      className={`rounded-full px-3 py-1 text-sm font-medium transition-colors ${
+                        createForm.roleIds.includes(role.id)
+                          ? 'text-white'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                      style={createForm.roleIds.includes(role.id) ? { backgroundColor: role.color || '#3b82f6' } : {}}
+                    >
+                      {role.name}
+                    </button>
+                  ))}
                 </div>
+              </div>
 
-                {!isEditing && !selectMode && (
-                  <div className="mt-3 border-t border-gray-100 pt-3 sm:hidden">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {user.roles?.length ? (
-                        user.roles.map((role: any) => (
-                          <span
-                            key={role.id}
-                            className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium text-white"
-                            style={{ backgroundColor: role.color || '#6b7280' }}
-                          >
-                            {role.name}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-xs text-gray-400">No roles assigned</span>
-                      )}
-                    </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      {user.branches?.length ? (
-                        user.branches.map((branch: any) => (
-                          <span
-                            key={branch.id}
-                            className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-600"
-                          >
-                            {branch.name}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-xs text-gray-400">No branches assigned</span>
-                      )}
-                    </div>
-                  </div>
-                )}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">Company Access and Odoo Employee Branch Targets</label>
+                <div className="space-y-3">
+                  {companies.map((company) => {
+                    const selected = createForm.companyAssignments.find((item) => item.companyId === company.id);
+                    return (
+                      <div key={company.id} className="rounded-lg border border-gray-200 p-3">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            toggleCompany(
+                              createForm.companyAssignments,
+                              (next) => setCreateForm((prev) => ({ ...prev, companyAssignments: next })),
+                              company.id,
+                            )
+                          }
+                          className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                            selected ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          {company.name}
+                        </button>
 
-                {isEditing && (
-                  <div className="mt-4 space-y-3 border-t border-gray-100 pt-4">
-                    <Input
-                      label="User Key"
-                      value={editUserKey}
-                      onChange={(e) => setEditUserKey(e.target.value)}
-                    />
-                    <Input
-                      label="Employee Number"
-                      value={editEmployeeNumber}
-                      onChange={(e) => setEditEmployeeNumber(e.target.value)}
-                      placeholder="e.g. 60"
-                    />
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-gray-700">Roles</label>
-                      <div className="flex flex-wrap gap-2">
-                        {roles.map((role) => (
-                          <button
-                            key={role.id}
-                            type="button"
-                            onClick={() => toggleEditRole(role.id)}
-                            className={`rounded-full px-3 py-1 text-sm font-medium transition-colors ${
-                              editRoleIds.includes(role.id)
-                                ? 'text-white'
-                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                            }`}
-                            style={editRoleIds.includes(role.id) ? { backgroundColor: role.color || '#3b82f6' } : {}}
-                          >
-                            {role.name}
-                          </button>
-                        ))}
+                        {selected && (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {company.branches.map((branch) => (
+                              <button
+                                key={branch.id}
+                                type="button"
+                                onClick={() =>
+                                  toggleBranch(
+                                    createForm.companyAssignments,
+                                    (next) => setCreateForm((prev) => ({ ...prev, companyAssignments: next })),
+                                    company.id,
+                                    branch.id,
+                                  )
+                                }
+                                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                                  selected.branchIds.includes(branch.id)
+                                    ? 'bg-emerald-600 text-white'
+                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                }`}
+                              >
+                                {branch.name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-sm font-medium text-gray-700">Branches</label>
-                      <div className="flex flex-wrap gap-2">
-                        {branches.map((branch) => (
-                          <button
-                            key={branch.id}
-                            type="button"
-                            onClick={() => toggleEditBranch(branch.id)}
-                            className={`rounded-full px-3 py-1 text-sm font-medium transition-colors ${
-                              editBranchIds.includes(branch.id)
-                                ? 'bg-primary-600 text-white'
-                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                            }`}
-                          >
-                            {branch.name}
-                          </button>
-                        ))}
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <Button onClick={createUser} disabled={saving}>
+                  {saving ? 'Creating...' : 'Create User'}
+                </Button>
+                <Button variant="ghost" onClick={() => setShowCreate(false)} disabled={saving}>
+                  Cancel
+                </Button>
+              </div>
+            </CardBody>
+          </Card>
+        )}
+
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <Spinner size="lg" />
+          </div>
+        ) : users.length === 0 ? (
+          <Card>
+            <CardBody>
+              <p className="py-8 text-center text-gray-500">No users found.</p>
+            </CardBody>
+          </Card>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {users.map((user) => {
+              const companyNames = uniqueNames(user.companies.map((company) => company.companyName));
+              const branchNames = uniqueNames(user.companyBranches.map((branch) => branch.branchName));
+
+              return (
+                <button
+                  key={user.id}
+                  type="button"
+                  onClick={() => openPanel(user)}
+                  className="w-full text-left"
+                >
+                  <Card className={`h-full transition-shadow hover:shadow-md ${
+                    selectedUserId === user.id ? 'border-primary-300 ring-1 ring-primary-200' : 'border-gray-200'
+                  }`}
+                  >
+                    <CardBody className="space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold text-gray-900">
+                            {user.first_name} {user.last_name}
+                          </p>
+                          <p className="truncate text-sm text-gray-600">{user.email}</p>
+                        </div>
+                        <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                          user.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-200 text-gray-700'
+                        }`}
+                        >
+                          {user.is_active ? 'Active' : 'Archived'}
+                        </span>
                       </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button onClick={saveEditing} disabled={saving} size="sm">
-                        <Save className="mr-1 h-4 w-4" />
-                        {saving ? 'Saving...' : 'Save'}
-                      </Button>
-                      <Button variant="ghost" onClick={cancelEditing} size="sm">
-                        <X className="mr-1 h-4 w-4" />
-                        Cancel
-                      </Button>
-                    </div>
-                    {saveError && <p className="text-sm text-red-600">{saveError}</p>}
-                  </div>
-                )}
-              </CardBody>
-            </Card>
-          );
-        })}
+
+                      <div>
+                        <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Roles</p>
+                        {user.roles.length > 0
+                          ? pillsWithOverflow(user.roles.map((role) => role.name), 4, 'slate')
+                          : <p className="text-xs text-gray-500">No roles</p>}
+                      </div>
+
+                      <div>
+                        <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Companies</p>
+                        {companyNames.length > 0
+                          ? pillsWithOverflow(companyNames, 3, 'indigo')
+                          : <p className="text-xs text-gray-500">No company access</p>}
+                      </div>
+
+                      <div>
+                        <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Odoo Branches</p>
+                        {branchNames.length > 0
+                          ? pillsWithOverflow(branchNames, 4, 'emerald')
+                          : <p className="text-xs text-gray-500">No branch snapshot</p>}
+                      </div>
+
+                      <div className="border-t border-gray-100 pt-2 text-xs text-gray-500">
+                        Last Login: {user.last_login_at ? new Date(user.last_login_at).toLocaleString() : 'Never'}
+                      </div>
+                    </CardBody>
+                  </Card>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {/* Single delete confirmation modal */}
-      {deleteConfirmUserId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
-            <h3 className="text-base font-semibold text-gray-900">Delete User Permanently</h3>
-            <p className="mt-2 text-sm text-gray-500">
-              This user will be <strong>permanently deleted</strong> and cannot be recovered. Are you sure you want to proceed?
-            </p>
-            <div className="mt-5 flex justify-end gap-3">
-              <Button variant="secondary" onClick={() => setDeleteConfirmUserId(null)} disabled={deleting}>
-                Cancel
-              </Button>
-              <Button variant="danger" onClick={() => deleteUser(deleteConfirmUserId)} disabled={deleting}>
-                {deleting ? 'Deleting...' : 'Delete Permanently'}
-              </Button>
-            </div>
-          </div>
-        </div>
+      {selectedUser && (
+        <div className="fixed inset-0 z-40 bg-black/30" onClick={closePanel} />
       )}
 
-      {/* Bulk delete confirmation modal */}
-      {bulkDeleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
-            <h3 className="text-base font-semibold text-gray-900">Delete {selectedArchived.length} Users Permanently</h3>
-            <p className="mt-2 text-sm text-gray-500">
-              These <strong>{selectedArchived.length} users</strong> will be <strong>permanently deleted</strong> and cannot be recovered. Are you sure?
-            </p>
-            <div className="mt-5 flex justify-end gap-3">
-              <Button variant="secondary" onClick={() => setBulkDeleteConfirm(false)} disabled={bulkDeleting}>
-                Cancel
-              </Button>
-              <Button variant="danger" onClick={bulkDelete} disabled={bulkDeleting}>
-                {bulkDeleting ? 'Deleting...' : `Delete ${selectedArchived.length} Users`}
-              </Button>
+      <div
+        className={`fixed inset-y-0 right-0 z-50 w-full max-w-[620px] transform bg-white shadow-2xl transition-transform duration-300 ${
+          selectedUser ? 'translate-x-0' : 'translate-x-full'
+        }`}
+      >
+        {!selectedUser ? null : (
+          <div className="flex h-full flex-col">
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">
+                  {selectedUser.first_name} {selectedUser.last_name}
+                </h2>
+                <p className="text-sm text-gray-600">{selectedUser.email}</p>
+              </div>
+              <button
+                type="button"
+                onClick={closePanel}
+                className="rounded-md p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 space-y-5 overflow-y-auto p-5">
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Current Companies</p>
+                {pillsWithOverflow(uniqueNames(selectedUser.companies.map((company) => company.companyName)), 8, 'indigo')}
+                <p className="mb-1 mt-3 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Current Odoo Branches</p>
+                {pillsWithOverflow(uniqueNames(selectedUser.companyBranches.map((branch) => branch.branchName)), 10, 'emerald')}
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Input
+                  label="User Key"
+                  value={editUserKey}
+                  onChange={(e) => setEditUserKey(e.target.value)}
+                />
+                <Input
+                  label="Employee Number"
+                  value={editEmployeeNumber}
+                  onChange={(e) => setEditEmployeeNumber(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Roles</label>
+                <div className="flex flex-wrap gap-2">
+                  {roles.map((role) => (
+                    <button
+                      key={role.id}
+                      type="button"
+                      onClick={() => toggleRole(editRoleIds, setEditRoleIds, role.id)}
+                      className={`rounded-full px-3 py-1 text-sm font-medium transition-colors ${
+                        editRoleIds.includes(role.id)
+                          ? 'text-white'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                      style={editRoleIds.includes(role.id) ? { backgroundColor: role.color || '#3b82f6' } : {}}
+                    >
+                      {role.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-medium text-gray-700">Company Access and Odoo Employee Branch Targets</label>
+                <div className="space-y-3">
+                  {companies.map((company) => {
+                    const selected = editCompanyAssignments.find((item) => item.companyId === company.id);
+                    return (
+                      <div key={company.id} className="rounded-lg border border-gray-200 bg-white p-3">
+                        <button
+                          type="button"
+                          onClick={() => toggleCompany(editCompanyAssignments, setEditCompanyAssignments, company.id)}
+                          className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                            selected ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          {company.name}
+                        </button>
+                        {selected && (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {company.branches.map((branch) => (
+                              <button
+                                key={branch.id}
+                                type="button"
+                                onClick={() => toggleBranch(editCompanyAssignments, setEditCompanyAssignments, company.id, branch.id)}
+                                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                                  selected.branchIds.includes(branch.id)
+                                    ? 'bg-emerald-600 text-white'
+                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                }`}
+                              >
+                                {branch.name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-gray-200 p-5">
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Button onClick={saveEdit} disabled={saving}>
+                  <Save className="mr-1 h-4 w-4" />
+                  {saving ? 'Saving...' : 'Save Changes'}
+                </Button>
+                {selectedUser.is_active ? (
+                  <Button variant="danger" onClick={() => setUserActive(selectedUser.id, false)} disabled={saving}>
+                    Archive
+                  </Button>
+                ) : (
+                  <Button variant="secondary" onClick={() => setUserActive(selectedUser.id, true)} disabled={saving}>
+                    Unarchive
+                  </Button>
+                )}
+                {!selectedUser.is_active && (
+                  <Button
+                    variant="danger"
+                    onClick={() => deleteUser(selectedUser.id)}
+                    disabled={saving}
+                    className="sm:col-span-2"
+                  >
+                    Permanently Delete
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </>
   );
 }

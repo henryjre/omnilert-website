@@ -34,6 +34,12 @@ router.post(
   employeeVerificationController.rejectRegistration,
 );
 
+router.get(
+  '/registration/assignment-options',
+  requirePermission(PERMISSIONS.REGISTRATION_APPROVE),
+  employeeVerificationController.listRegistrationAssignmentOptions,
+);
+
 router.post(
   '/personal-information/:id/approve',
   requirePermission(PERMISSIONS.PERSONAL_INFORMATION_APPROVE),

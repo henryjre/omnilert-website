@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { getIO } from '../config/socket.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
+import { db } from '../config/database.js';
 
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
@@ -113,7 +114,7 @@ export async function get(req: Request, res: Response, next: NextFunction) {
     ];
     const users =
       userIds.length > 0
-        ? await tenantDb('users').whereIn('id', userIds).select('id', 'first_name', 'last_name')
+        ? await db.getMasterDb()('users').whereIn('id', userIds).select('id', 'first_name', 'last_name')
         : [];
     const userMap = new Map(
       users.map((u: { id: string; first_name: string; last_name: string }) => [

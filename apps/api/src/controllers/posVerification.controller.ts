@@ -5,10 +5,12 @@ import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import { updatePosSessionOpeningPcf, updatePosSessionClosingPcf } from '../services/odoo.service.js';
 import { buildTenantStoragePrefix, uploadFile } from '../services/storage.service.js';
+import { createAndDispatchNotification } from '../services/notification.service.js';
+import { db } from '../config/database.js';
 
-async function resolveUserName(db: Knex, userId: string | null | undefined): Promise<string | null> {
+async function resolveUserName(_db: Knex, userId: string | null | undefined): Promise<string | null> {
   if (!userId) return null;
-  const user = await db('users').where({ id: userId }).select('first_name', 'last_name').first();
+  const user = await db.getMasterDb()('users').where({ id: userId }).select('first_name', 'last_name').first();
   return user ? `${user.first_name} ${user.last_name}` : null;
 }
 
@@ -71,7 +73,7 @@ export async function list(req: Request, res: Response, next: NextFunction) {
     ];
     const customerNames: Record<string, string> = {};
     if (customerUserIds.length > 0) {
-      const customerUsers = await tenantDb('users')
+      const customerUsers = await db.getMasterDb()('users')
         .whereIn('id', customerUserIds)
         .select('id', 'first_name', 'last_name');
       for (const u of customerUsers) {
@@ -191,11 +193,7 @@ export async function confirm(req: Request, res: Response, next: NextFunction) {
       verification.verification_type === 'register_cash_in'
     ) {
       const isAssignedCashier = verification.cashier_user_id && user.sub === verification.cashier_user_id;
-      const roleNames: string[] = await tenantDb('user_roles')
-        .join('roles', 'roles.id', 'user_roles.role_id')
-        .where('user_roles.user_id', user.sub)
-        .pluck('roles.name');
-      const isAdmin = roleNames.includes('Administrator');
+      const isAdmin = Array.isArray((user as any).roles) && (user as any).roles.includes('Administrator');
       const noCashierAssigned = !verification.cashier_user_id;
       const isInBranch = (user.branchIds as string[]).includes(verification.branch_id);
       if (!isAssignedCashier && !isAdmin && !(noCashierAssigned && isInBranch)) {
@@ -237,22 +235,14 @@ export async function confirm(req: Request, res: Response, next: NextFunction) {
 
       // Notify the customer
       if (verification.customer_user_id) {
-        const [notif] = await tenantDb('employee_notifications')
-          .insert({
-            user_id: verification.customer_user_id,
-            title: 'Token Pay Order Requires Your Verification',
-            message: `A Token Pay Order (${verification.title}) requires your verification. Please review and confirm or reject.`,
-            type: 'warning',
-            link_url: `/account?tokenPayVerificationId=${id}`,
-          })
-          .returning('*');
-
-        try {
-          const io = getIO();
-          io.of('/notifications').to(`user:${verification.customer_user_id}`).emit('notification:new', notif);
-        } catch {
-          logger.warn('Socket.IO not available for customer notification');
-        }
+        await createAndDispatchNotification({
+          tenantDb,
+          userId: verification.customer_user_id,
+          title: 'Token Pay Order Requires Your Verification',
+          message: `A Token Pay Order (${verification.title}) requires your verification. Please review and confirm or reject.`,
+          type: 'warning',
+          linkUrl: `/account?tokenPayVerificationId=${id}`,
+        });
       }
 
       return res.json({ success: true, data: { ...updated, images } });
@@ -368,11 +358,7 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
       verification.verification_type === 'register_cash_in'
     ) {
       const isAssignedCashier = verification.cashier_user_id && user.sub === verification.cashier_user_id;
-      const roleNames: string[] = await tenantDb('user_roles')
-        .join('roles', 'roles.id', 'user_roles.role_id')
-        .where('user_roles.user_id', user.sub)
-        .pluck('roles.name');
-      const isAdmin = roleNames.includes('Administrator');
+      const isAdmin = Array.isArray((user as any).roles) && (user as any).roles.includes('Administrator');
       const noCashierAssigned = !verification.cashier_user_id;
       const isInBranch = (user.branchIds as string[]).includes(verification.branch_id);
       if (!isAssignedCashier && !isAdmin && !(noCashierAssigned && isInBranch)) {
@@ -497,21 +483,14 @@ export async function customerVerify(req: Request, res: Response, next: NextFunc
 
     // Notify the cashier
     if (verification.cashier_user_id) {
-      const [notif] = await tenantDb('employee_notifications')
-        .insert({
-          user_id: verification.cashier_user_id,
-          title: 'Token Pay Order Verified',
-          message: `The customer verified the Token Pay Order (${verification.title}).`,
-          type: 'success',
-          link_url: '/pos-verification',
-        })
-        .returning('*');
-      try {
-        const io = getIO();
-        io.of('/notifications').to(`user:${verification.cashier_user_id}`).emit('notification:new', notif);
-      } catch {
-        logger.warn('Socket.IO not available for cashier notification');
-      }
+      await createAndDispatchNotification({
+        tenantDb,
+        userId: verification.cashier_user_id,
+        title: 'Token Pay Order Verified',
+        message: `The customer verified the Token Pay Order (${verification.title}).`,
+        type: 'success',
+        linkUrl: '/pos-verification',
+      });
     }
 
     res.json({ success: true, data: { ...updated, images } });
@@ -561,21 +540,14 @@ export async function customerReject(req: Request, res: Response, next: NextFunc
       const rejectionMsg = reason
         ? `The customer rejected the Token Pay Order (${verification.title}). Reason: ${reason}`
         : `The customer rejected the Token Pay Order (${verification.title}).`;
-      const [notif] = await tenantDb('employee_notifications')
-        .insert({
-          user_id: verification.cashier_user_id,
-          title: 'Token Pay Order Rejected by Customer',
-          message: rejectionMsg,
-          type: 'danger',
-          link_url: '/pos-verification',
-        })
-        .returning('*');
-      try {
-        const io = getIO();
-        io.of('/notifications').to(`user:${verification.cashier_user_id}`).emit('notification:new', notif);
-      } catch {
-        logger.warn('Socket.IO not available for cashier notification');
-      }
+      await createAndDispatchNotification({
+        tenantDb,
+        userId: verification.cashier_user_id,
+        title: 'Token Pay Order Rejected by Customer',
+        message: rejectionMsg,
+        type: 'danger',
+        linkUrl: '/pos-verification',
+      });
     }
 
     res.json({ success: true, data: { ...updated, images } });

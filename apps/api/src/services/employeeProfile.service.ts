@@ -1,7 +1,9 @@
 import type { Knex } from 'knex';
 import { AppError } from '../middleware/errorHandler.js';
+import { db } from '../config/database.js';
+import { loadUserWorkScope } from './globalUser.service.js';
 
-type EmploymentStatus = 'active' | 'resigned' | 'inactive';
+type EmploymentStatus = 'active' | 'resigned' | 'inactive' | 'suspended';
 
 function toEffectiveStartDate(dateStarted: unknown, createdAt: unknown): Date | null {
   const raw = dateStarted ?? createdAt;
@@ -27,13 +29,101 @@ function toDateOnly(value: unknown): string | null {
 }
 
 function normalizeEmploymentStatus(raw: unknown, isActive: unknown): EmploymentStatus {
-  if (raw === 'active' || raw === 'resigned' || raw === 'inactive') return raw;
+  if (raw === 'active' || raw === 'resigned' || raw === 'inactive' || raw === 'suspended') return raw;
   return isActive ? 'active' : 'inactive';
+}
+
+type BranchRef = {
+  company_id: string;
+  company_name: string;
+  branch_id: string;
+  branch_name: string;
+};
+
+type UserBranchSummary = {
+  companies: Array<{ company_id: string; company_name: string; company_theme_color: string | null }>;
+  resident_branch: BranchRef | null;
+  borrow_branches: BranchRef[];
+  branch_options: BranchRef[];
+};
+
+async function loadUserBranchSummaryMap(
+  masterDb: Knex,
+  userIds: string[],
+): Promise<Record<string, UserBranchSummary>> {
+  const uniqueUserIds = Array.from(new Set(userIds.filter(Boolean)));
+  if (uniqueUserIds.length === 0) return {};
+
+  const [companyRows, branchRows] = await Promise.all([
+    masterDb('user_company_access as uca')
+      .join('companies as companies', 'uca.company_id', 'companies.id')
+      .whereIn('uca.user_id', uniqueUserIds)
+      .andWhere('uca.is_active', true)
+      .select(
+        'uca.user_id',
+        'companies.id as company_id',
+        'companies.name as company_name',
+        'companies.theme_color as company_theme_color',
+      )
+      .orderBy('companies.name', 'asc'),
+    masterDb('user_company_branches as ucb')
+      .join('companies as companies', 'ucb.company_id', 'companies.id')
+      .whereIn('ucb.user_id', uniqueUserIds)
+      .select(
+        'ucb.user_id',
+        'ucb.company_id',
+        'companies.name as company_name',
+        'ucb.branch_id',
+        'ucb.branch_name',
+        'ucb.assignment_type',
+      )
+      .orderBy('companies.name', 'asc')
+      .orderBy('ucb.branch_name', 'asc'),
+  ]);
+
+  const out: Record<string, UserBranchSummary> = {};
+  for (const userId of uniqueUserIds) {
+    out[userId] = {
+      companies: [],
+      resident_branch: null,
+      borrow_branches: [],
+      branch_options: [],
+    };
+  }
+
+  for (const row of companyRows as any[]) {
+    const userId = row.user_id as string;
+    if (!out[userId]) continue;
+    out[userId].companies.push({
+      company_id: row.company_id as string,
+      company_name: row.company_name as string,
+      company_theme_color: (row.company_theme_color as string | null) ?? null,
+    });
+  }
+
+  for (const row of branchRows as any[]) {
+    const userId = row.user_id as string;
+    if (!out[userId]) continue;
+    const ref: BranchRef = {
+      company_id: row.company_id as string,
+      company_name: row.company_name as string,
+      branch_id: row.branch_id as string,
+      branch_name: row.branch_name as string,
+    };
+    out[userId].branch_options.push(ref);
+    if (row.assignment_type === 'resident') {
+      out[userId].resident_branch = ref;
+    } else {
+      out[userId].borrow_branches.push(ref);
+    }
+  }
+
+  return out;
 }
 
 export async function listEmployeeProfiles(input: {
   tenantDb: Knex;
-  status: 'all' | 'active' | 'resigned' | 'inactive';
+  status: 'all' | 'active' | 'resigned' | 'inactive' | 'suspended';
   page: number;
   pageSize: number;
   search?: string;
@@ -43,12 +133,19 @@ export async function listEmployeeProfiles(input: {
   sortDirection?: 'asc' | 'desc';
   excludedEmails?: string[];
 }) {
+  const masterDb = db.getMasterDb();
   const excludedEmails = (input.excludedEmails ?? [])
     .map((email) => String(email).trim().toLowerCase())
     .filter((email) => email.length > 0);
 
-  const baseQuery = input.tenantDb('users as users')
-    .leftJoin('departments as departments', 'users.department_id', 'departments.id')
+  const baseQuery = masterDb('users as users')
+    .whereExists((builder) => {
+      builder
+        .select(masterDb.raw('1'))
+        .from('user_company_access as uca')
+        .whereRaw('uca.user_id = users.id')
+        .andWhere('uca.is_active', true);
+    })
     .select(
       'users.id',
       'users.first_name',
@@ -62,7 +159,7 @@ export async function listEmployeeProfiles(input: {
       'users.is_active',
       'users.date_started',
       'users.created_at',
-      'departments.name as department_name',
+      'users.department_id',
     );
 
   if (excludedEmails.length > 0) {
@@ -80,7 +177,7 @@ export async function listEmployeeProfiles(input: {
   if (input.roleIds && input.roleIds.length > 0) {
     baseQuery.whereExists((builder) => {
       builder
-        .select(input.tenantDb.raw('1'))
+        .select(masterDb.raw('1'))
         .from('user_roles as ur')
         .whereRaw('ur.user_id = users.id')
         .whereIn('ur.role_id', input.roleIds as string[]);
@@ -123,6 +220,16 @@ export async function listEmployeeProfiles(input: {
     .offset(offset)
     .limit(input.pageSize);
 
+  const userIds = rows.map((row: any) => row.id as string);
+  const branchSummaryByUserId = await loadUserBranchSummaryMap(masterDb, userIds);
+  const departmentIds = Array.from(new Set(rows
+    .map((row: any) => row.department_id as string | null)
+    .filter(Boolean) as string[]));
+  const departments = departmentIds.length > 0
+    ? await input.tenantDb('departments').whereIn('id', departmentIds).select('id', 'name')
+    : [];
+  const departmentNameById = new Map(departments.map((d: any) => [d.id as string, d.name as string]));
+
   const items = rows.map((row: any) => {
     const dateStartedEffective = toDateOnly(row.date_started ?? row.created_at);
     const employmentStatus = normalizeEmploymentStatus(row.employment_status, row.is_active);
@@ -134,7 +241,10 @@ export async function listEmployeeProfiles(input: {
       mobile_number: (row.mobile_number as string | null) ?? null,
       pin: (row.pin as string | null) ?? null,
       avatar_url: (row.avatar_url as string | null) ?? null,
-      department_name: (row.department_name as string | null) ?? null,
+      companies: branchSummaryByUserId[row.id as string]?.companies ?? [],
+      resident_branch: branchSummaryByUserId[row.id as string]?.resident_branch ?? null,
+      borrow_branches: branchSummaryByUserId[row.id as string]?.borrow_branches ?? [],
+      department_name: row.department_id ? (departmentNameById.get(row.department_id as string) ?? null) : null,
       position_title: (row.position_title as string | null) ?? null,
       employment_status: employmentStatus,
       is_active: employmentStatus === 'active',
@@ -159,13 +269,20 @@ export async function getEmployeeProfileDetail(
   userId: string,
   excludedEmails?: string[],
 ) {
+  const masterDb = db.getMasterDb();
   const normalizedExcludedEmails = (excludedEmails ?? [])
     .map((email) => String(email).trim().toLowerCase())
     .filter((email) => email.length > 0);
 
-  const user = await tenantDb('users as users')
-    .leftJoin('departments as departments', 'users.department_id', 'departments.id')
+  const user = await masterDb('users as users')
     .where('users.id', userId)
+    .whereExists((builder) => {
+      builder
+        .select(masterDb.raw('1'))
+        .from('user_company_access as uca')
+        .whereRaw('uca.user_id = users.id')
+        .andWhere('uca.is_active', true);
+    })
     .modify((queryBuilder) => {
       if (normalizedExcludedEmails.length > 0) {
         queryBuilder.whereNotIn('users.email', normalizedExcludedEmails);
@@ -200,7 +317,6 @@ export async function getEmployeeProfileDetail(
       'users.position_title',
       'users.date_started',
       'users.created_at',
-      'departments.name as department_name',
     )
     .first();
 
@@ -208,7 +324,7 @@ export async function getEmployeeProfileDetail(
     throw new AppError(404, 'Employee not found');
   }
 
-  const roles = await tenantDb('user_roles')
+  const roles = await masterDb('user_roles')
     .join('roles', 'user_roles.role_id', 'roles.id')
     .where('user_roles.user_id', userId)
     .select('roles.id', 'roles.name', 'roles.color')
@@ -217,10 +333,30 @@ export async function getEmployeeProfileDetail(
   const departmentOptions = await tenantDb('departments')
     .select('id', 'name')
     .orderBy('name', 'asc');
+  const department = user.department_id
+    ? await tenantDb('departments').where({ id: user.department_id }).first('name')
+    : null;
 
   const dateStartedEffective = toDateOnly(user.date_started ?? user.created_at);
   const daysOfEmployment = computeDaysOfEmployment(user.date_started, user.created_at);
   const employmentStatus = normalizeEmploymentStatus(user.employment_status, user.is_active);
+  const [branchSummaryByUserId, company] = await Promise.all([
+    loadUserBranchSummaryMap(masterDb, [userId]),
+    masterDb('user_company_access as uca')
+      .join('companies as companies', 'uca.company_id', 'companies.id')
+      .where('uca.user_id', userId)
+      .andWhere('uca.is_active', true)
+      .select('companies.id', 'companies.name')
+      .orderBy('companies.name', 'asc')
+      .first(),
+  ]);
+  const branchSummary = branchSummaryByUserId[userId] ?? {
+    companies: [],
+    resident_branch: null,
+    borrow_branches: [],
+    branch_options: [],
+  };
+  const fallbackWorkScope = await loadUserWorkScope(masterDb, userId, String(company?.id ?? ''));
 
   return {
     id: user.id as string,
@@ -247,8 +383,16 @@ export async function getEmployeeProfileDetail(
       emergency_relationship: (user.emergency_relationship as string | null) ?? null,
     },
     work_information: {
+      company: company
+        ? { id: String(company.id), name: String(company.name) }
+        : fallbackWorkScope.company,
+      companies: branchSummary.companies,
+      resident_branch: branchSummary.resident_branch ?? fallbackWorkScope.home_resident_branch,
+      home_resident_branch: fallbackWorkScope.home_resident_branch,
+      borrow_branches: branchSummary.borrow_branches,
+      branch_options: branchSummary.branch_options,
       department_id: (user.department_id as string | null) ?? null,
-      department_name: (user.department_name as string | null) ?? null,
+      department_name: (department?.name as string | null) ?? null,
       position_title: (user.position_title as string | null) ?? null,
       status: employmentStatus,
       date_started: dateStartedEffective,
@@ -278,14 +422,16 @@ export async function updateEmployeeWorkInformation(input: {
   positionTitle: string | null;
   employmentStatus?: EmploymentStatus;
   isActive?: boolean;
+  residentBranch?: { companyId: string; branchId: string } | null;
   dateStarted: string | null;
   excludedEmails?: string[];
 }) {
+  const masterDb = db.getMasterDb();
   const normalizedExcludedEmails = (input.excludedEmails ?? [])
     .map((email) => String(email).trim().toLowerCase())
     .filter((email) => email.length > 0);
 
-  const existingUser = await input.tenantDb('users')
+  const existingUser = await masterDb('users')
     .where({ id: input.userId })
     .first('id', 'email');
   if (!existingUser) {
@@ -310,26 +456,66 @@ export async function updateEmployeeWorkInformation(input: {
     throw new AppError(400, 'employmentStatus or isActive is required');
   }
 
-  await input.tenantDb('users')
-    .where({ id: input.userId })
-    .update({
-      department_id: input.departmentId,
-      position_title: input.positionTitle,
-      employment_status: employmentStatus,
-      is_active: employmentStatus === 'active',
-      date_started: input.dateStarted,
-      updated_at: new Date(),
-    });
+  if (!input.residentBranch) {
+    throw new AppError(400, 'residentBranch is required');
+  }
 
-  return getEmployeeProfileDetail(input.tenantDb, input.userId, normalizedExcludedEmails);
+  const residentRow = await masterDb('user_company_branches')
+    .where({
+      user_id: input.userId,
+      company_id: input.residentBranch.companyId,
+      branch_id: input.residentBranch.branchId,
+    })
+    .first('id');
+  if (!residentRow) {
+    throw new AppError(400, 'Selected resident branch is not assigned to this user');
+  }
+
+  await masterDb.transaction(async (trx) => {
+    await trx('users')
+      .where({ id: input.userId })
+      .update({
+        department_id: input.departmentId,
+        position_title: input.positionTitle,
+        employment_status: employmentStatus,
+        is_active: employmentStatus === 'active',
+        date_started: input.dateStarted,
+        updated_at: new Date(),
+      });
+
+    await trx('user_company_branches')
+      .where({ user_id: input.userId })
+      .update({
+        assignment_type: 'borrow',
+        updated_at: new Date(),
+      });
+
+    await trx('user_company_branches')
+      .where({
+        user_id: input.userId,
+        company_id: input.residentBranch!.companyId,
+        branch_id: input.residentBranch!.branchId,
+      })
+      .update({
+        assignment_type: 'resident',
+        updated_at: new Date(),
+      });
+  });
+
+  return getEmployeeProfileDetail(
+    input.tenantDb,
+    input.userId,
+    normalizedExcludedEmails,
+  );
 }
 
 export async function getEmployeeProfileFilterOptions(tenantDb: Knex) {
+  const masterDb = db.getMasterDb();
   const [departments, roles] = await Promise.all([
     tenantDb('departments')
       .select('id', 'name')
       .orderBy('name', 'asc'),
-    tenantDb('roles')
+    masterDb('roles')
       .select('id', 'name')
       .orderBy('priority', 'desc')
       .orderBy('name', 'asc'),

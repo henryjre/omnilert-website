@@ -20,6 +20,24 @@ type VerificationData = {
   bankInformation: any[];
 };
 
+type AssignmentOptionBranch = {
+  id: string;
+  name: string;
+  odoo_branch_id: string;
+};
+
+type AssignmentOptionCompany = {
+  id: string;
+  name: string;
+  slug: string;
+  branches: AssignmentOptionBranch[];
+};
+
+type RegistrationAssignmentOptions = {
+  roles: Array<{ id: string; name: string; color?: string | null }>;
+  companies: AssignmentOptionCompany[];
+};
+
 type SelectedItem = {
   type: VerificationType;
   data: any;
@@ -264,8 +282,10 @@ export function EmployeeVerificationsPage() {
     employmentRequirements: [],
     bankInformation: [],
   });
-  const [roles, setRoles] = useState<any[]>([]);
-  const [branches, setBranches] = useState<any[]>([]);
+  const [assignmentOptions, setAssignmentOptions] = useState<RegistrationAssignmentOptions>({
+    roles: [],
+    companies: [],
+  });
   const [selectedItem, setSelectedItem] = useState<SelectedItem | null>(null);
   const [panelRejectMode, setPanelRejectMode] = useState(false);
   const [panelRejectReason, setPanelRejectReason] = useState('');
@@ -275,7 +295,10 @@ export function EmployeeVerificationsPage() {
   const [approvalInProgressId, setApprovalInProgressId] = useState<string | null>(null);
 
   const [approveRoleIds, setApproveRoleIds] = useState<string[]>([]);
-  const [approveBranchIds, setApproveBranchIds] = useState<string[]>([]);
+  const [approveCompanyIds, setApproveCompanyIds] = useState<string[]>([]);
+  const [approveBranchIdsByCompany, setApproveBranchIdsByCompany] = useState<Record<string, string[]>>({});
+  const [approveResidentCompanyId, setApproveResidentCompanyId] = useState('');
+  const [approveResidentBranchId, setApproveResidentBranchId] = useState('');
   const [personalInfoEdits, setPersonalInfoEdits] = useState({
     firstName: '',
     lastName: '',
@@ -361,10 +384,11 @@ export function EmployeeVerificationsPage() {
     }
     setError('');
     try {
-      const [verificationsRes, rolesRes, branchesRes] = await Promise.all([
+      const [verificationsRes, optionsRes] = await Promise.all([
         api.get('/employee-verifications'),
-        api.get('/roles'),
-        api.get('/branches'),
+        canApproveRegistration
+          ? api.get('/employee-verifications/registration/assignment-options')
+          : Promise.resolve({ data: { data: { roles: [], companies: [] } } }),
       ]);
 
       setData(
@@ -375,8 +399,12 @@ export function EmployeeVerificationsPage() {
           bankInformation: [],
         },
       );
-      setRoles(rolesRes.data.data || []);
-      setBranches((branchesRes.data.data || []).filter((branch: any) => branch.is_active));
+      setAssignmentOptions(
+        optionsRes.data.data || {
+          roles: [],
+          companies: [],
+        },
+      );
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to load employee verifications');
     } finally {
@@ -384,7 +412,7 @@ export function EmployeeVerificationsPage() {
         setLoading(false);
       }
     }
-  }, []);
+  }, [canApproveRegistration]);
 
   useEffect(() => {
     fetchData();
@@ -435,7 +463,10 @@ export function EmployeeVerificationsPage() {
 
     if (type === 'registration') {
       setApproveRoleIds([]);
-      setApproveBranchIds([]);
+      setApproveCompanyIds([]);
+      setApproveBranchIdsByCompany({});
+      setApproveResidentCompanyId('');
+      setApproveResidentBranchId('');
     }
 
     if (type === 'personalInformation') {
@@ -515,6 +546,48 @@ export function EmployeeVerificationsPage() {
     setList(list.includes(id) ? list.filter((item) => item !== id) : [...list, id]);
   };
 
+  const toggleCompanySelection = (companyId: string) => {
+    setApproveCompanyIds((prev) => {
+      const isSelected = prev.includes(companyId);
+      if (isSelected) {
+        setApproveBranchIdsByCompany((prevBranches) => {
+          const next = { ...prevBranches };
+          delete next[companyId];
+          return next;
+        });
+        if (approveResidentCompanyId === companyId) {
+          setApproveResidentCompanyId('');
+          setApproveResidentBranchId('');
+        }
+        return prev.filter((id) => id !== companyId);
+      }
+      return [...prev, companyId];
+    });
+  };
+
+  const toggleCompanyBranchSelection = (companyId: string, branchId: string) => {
+    setApproveBranchIdsByCompany((prev) => {
+      const existing = prev[companyId] ?? [];
+      const nextForCompany = existing.includes(branchId)
+        ? existing.filter((id) => id !== branchId)
+        : [...existing, branchId];
+
+      const next = { ...prev, [companyId]: nextForCompany };
+      if (nextForCompany.length === 0) {
+        delete next[companyId];
+      }
+      if (
+        approveResidentCompanyId === companyId
+        && approveResidentBranchId
+        && !nextForCompany.includes(approveResidentBranchId)
+      ) {
+        setApproveResidentCompanyId('');
+        setApproveResidentBranchId('');
+      }
+      return next;
+    });
+  };
+
   const approveSelected = async () => {
     if (!selectedItem) return;
 
@@ -537,9 +610,48 @@ export function EmployeeVerificationsPage() {
           setSaving(false);
           return;
         }
+
+        if (approveCompanyIds.length === 0) {
+          setPanelError('Select at least one company.');
+          setSaving(false);
+          return;
+        }
+
+        const companyAssignments = approveCompanyIds.map((companyId) => ({
+          companyId,
+          branchIds: approveBranchIdsByCompany[companyId] ?? [],
+        }));
+
+        const invalidCompany = companyAssignments.find((assignment) => assignment.branchIds.length === 0);
+        if (invalidCompany) {
+          const companyName = assignmentOptions.companies.find((item) => item.id === invalidCompany.companyId)?.name
+            ?? 'selected company';
+          setPanelError(`Select at least one branch for ${companyName}.`);
+          setSaving(false);
+          return;
+        }
+
+        if (!approveResidentCompanyId || !approveResidentBranchId) {
+          setPanelError('Select a resident branch.');
+          setSaving(false);
+          return;
+        }
+
+        const residentBranchIsSelected = (approveBranchIdsByCompany[approveResidentCompanyId] ?? [])
+          .includes(approveResidentBranchId);
+        if (!residentBranchIsSelected) {
+          setPanelError('Resident branch must be part of selected branches.');
+          setSaving(false);
+          return;
+        }
+
         await api.post(`/employee-verifications/registration/${selectedItem.data.id}/approve`, {
           roleIds: approveRoleIds,
-          branchIds: approveBranchIds,
+          companyAssignments,
+          residentBranch: {
+            companyId: approveResidentCompanyId,
+            branchId: approveResidentBranchId,
+          },
         });
       } else if (selectedItem.type === 'personalInformation') {
         const payload: Record<string, unknown> = {};
@@ -822,7 +934,7 @@ export function EmployeeVerificationsPage() {
                           Roles (required)
                         </label>
                         <div className="flex flex-wrap gap-2">
-                          {roles.map((role) => (
+                          {assignmentOptions.roles.map((role) => (
                             <button
                               key={role.id}
                               type="button"
@@ -847,27 +959,77 @@ export function EmployeeVerificationsPage() {
                       </div>
 
                       <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
-                        <label className="block text-sm font-medium text-gray-700">
-                          Branches <span className="font-normal text-gray-500">(optional, leave empty for all active)</span>
-                        </label>
-                        <div className="flex flex-wrap gap-2">
-                          {branches.map((branch) => (
-                            <button
-                              key={branch.id}
-                              type="button"
-                              onClick={() =>
-                                toggleSelection(approveBranchIds, setApproveBranchIds, branch.id)
-                              }
-                              className={`rounded-full px-3 py-1 text-sm font-medium transition-colors ${
-                                approveBranchIds.includes(branch.id)
-                                  ? 'bg-primary-600 text-white'
-                                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                              }`}
-                            >
-                              {branch.name}
-                            </button>
-                          ))}
+                        <label className="block text-sm font-medium text-gray-700">Companies and Branches (required)</label>
+                        <div className="space-y-3">
+                          {assignmentOptions.companies.map((company) => {
+                            const selected = approveCompanyIds.includes(company.id);
+                            const selectedBranchIds = approveBranchIdsByCompany[company.id] ?? [];
+                            return (
+                              <div key={company.id} className="rounded border border-gray-200 bg-white p-2">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleCompanySelection(company.id)}
+                                  className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                                    selected ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                  }`}
+                                >
+                                  {company.name}
+                                </button>
+                                {selected && (
+                                  <div className="mt-2 flex flex-wrap gap-2">
+                                    {company.branches.map((branch) => (
+                                      <button
+                                        key={branch.id}
+                                        type="button"
+                                        onClick={() => toggleCompanyBranchSelection(company.id, branch.id)}
+                                        className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                                          selectedBranchIds.includes(branch.id)
+                                            ? 'bg-emerald-600 text-white'
+                                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                        }`}
+                                      >
+                                        {branch.name}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
+                      </div>
+
+                      <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                        <label className="block text-sm font-medium text-gray-700">Resident Branch (required)</label>
+                        <select
+                          value={approveResidentBranchId ? `${approveResidentCompanyId}:${approveResidentBranchId}` : ''}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            if (!value) {
+                              setApproveResidentCompanyId('');
+                              setApproveResidentBranchId('');
+                              return;
+                            }
+                            const [companyId, branchId] = value.split(':');
+                            setApproveResidentCompanyId(companyId || '');
+                            setApproveResidentBranchId(branchId || '');
+                          }}
+                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                        >
+                          <option value="">Select resident branch</option>
+                          {approveCompanyIds.flatMap((companyId) => {
+                            const company = assignmentOptions.companies.find((item) => item.id === companyId);
+                            if (!company) return [];
+                            const selectedBranchIds = approveBranchIdsByCompany[companyId] ?? [];
+                            return company.branches
+                              .filter((branch) => selectedBranchIds.includes(branch.id))
+                              .map((branch) => (
+                                <option key={`${company.id}-${branch.id}`} value={`${company.id}:${branch.id}`}>
+                                  {company.name} - {branch.name}
+                                </option>
+                              ));
+                          })}
+                        </select>
                       </div>
 
                       {(approvalLogs.length > 0 || approvalInProgressId === selectedItem.data.id) && (

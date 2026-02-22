@@ -12,6 +12,27 @@ export async function login(req: Request, res: Response, next: NextFunction) {
   }
 }
 
+export async function listCompanies(req: Request, res: Response, next: NextFunction) {
+  try {
+    const userId = req.user!.sub;
+    const result = await authService.listLoginCompanies(userId);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function switchCompany(req: Request, res: Response, next: NextFunction) {
+  try {
+    const userId = req.user!.sub;
+    const { companySlug } = req.body;
+    const result = await authService.switchCompany(userId, companySlug);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function refresh(req: Request, res: Response, next: NextFunction) {
   try {
     const { refreshToken } = req.body;
@@ -38,9 +59,8 @@ export async function me(req: Request, res: Response) {
 
 export async function registerRequest(req: Request, res: Response, next: NextFunction) {
   try {
-    const { companySlug, firstName, lastName, email, password } = req.body;
+    const { firstName, lastName, email, password } = req.body;
     await registrationService.createRegistrationRequest({
-      companySlug,
       firstName,
       lastName,
       email,

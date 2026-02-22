@@ -139,7 +139,7 @@ async function createTenantTables(tenantDb: ReturnType<typeof db.getMasterDb>): 
   await tenantDb.raw(`
     ALTER TABLE users
     ADD CONSTRAINT users_employment_status_check
-    CHECK (employment_status IN ('active', 'resigned', 'inactive'))
+    CHECK (employment_status IN ('active', 'resigned', 'inactive', 'suspended'))
   `).catch(() => {
     // Ignore if constraint already exists (provisioning rerun safety).
   });
@@ -397,7 +397,8 @@ async function createTenantTables(tenantDb: ReturnType<typeof db.getMasterDb>): 
   // Employee Notifications
   await tenantDb.schema.createTable('employee_notifications', (table) => {
     table.uuid('id').primary().defaultTo(tenantDb.raw('gen_random_uuid()'));
-    table.uuid('user_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
+    // Global user IDs are stored in master DB, so tenant notifications cannot FK to tenant users.
+    table.uuid('user_id').notNullable();
     table.string('title', 255).notNullable();
     table.text('message').notNullable();
     table.string('type', 50).notNullable().defaultTo('info');

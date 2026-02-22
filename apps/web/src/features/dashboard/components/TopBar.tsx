@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, MapPin, CheckCheck, Menu, X } from 'lucide-react';
+import { Bell, CheckCheck, Menu, X } from 'lucide-react';
 import axios from 'axios';
 import { BranchSelector } from '@/shared/components/BranchSelector';
 import { useAuthStore } from '@/features/auth/store/authSlice';
@@ -21,6 +21,12 @@ function timeAgo(dateStr: string): string {
   if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
   return `${days}d ago`;
+}
+
+function getShiftExchangeId(linkUrl: string | null | undefined): string | null {
+  if (!linkUrl) return null;
+  const match = linkUrl.match(/[?&]shiftExchangeId=([0-9a-f-]{36})/i);
+  return match?.[1] ?? null;
 }
 
 const TYPE_DOT: Record<string, string> = {
@@ -69,11 +75,6 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
 
   useEffect(() => {
     fetchBranches().then(() => {
-      const userHasAssignedBranches = user?.branchIds && user.branchIds.length > 0;
-      const canToggle = hasPermission(PERMISSIONS.ADMIN_TOGGLE_BRANCH) || !userHasAssignedBranches;
-      if (!canToggle && user?.branchIds) {
-        setSelectedBranchIds(user.branchIds);
-      }
       void syncSelectedBranchFromActiveShift();
     });
   }, []);
@@ -125,12 +126,6 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
       }
 
       await fetchBranches();
-
-      const canToggleBranches =
-        hasPermission(PERMISSIONS.ADMIN_TOGGLE_BRANCH) || nextBranchIds.length === 0;
-      if (!canToggleBranches) {
-        setSelectedBranchIds(nextBranchIds);
-      }
 
       await syncSelectedBranchFromActiveShift();
     });
@@ -200,7 +195,11 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
       decrement();
     }
     setOpen(false);
-    navigate('/account/notifications', { state: { highlightNotificationId: n.id } });
+    const shiftExchangeId = getShiftExchangeId(n.link_url);
+    const target = shiftExchangeId
+      ? `/account/notifications?shiftExchangeId=${shiftExchangeId}`
+      : '/account/notifications';
+    navigate(target, { state: { highlightNotificationId: n.id } });
   };
 
   const handleMarkAllRead = async () => {
@@ -209,19 +208,10 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
     reset();
   };
 
-  const userHasAssignedBranches = user?.branchIds && user.branchIds.length > 0;
-  const canToggle = hasPermission(PERMISSIONS.ADMIN_TOGGLE_BRANCH) || !userHasAssignedBranches;
-
-  const assignedBranchLabel = !canToggle && user?.branchIds
-    ? user.branchIds
-        .map((id) => branches.find((b) => b.id === id)?.name)
-        .filter(Boolean)
-        .join(', ') || null
-    : null;
   const unreadNotifications = notifications.filter((n) => !n.is_read);
 
   return (
-    <header className="flex h-16 items-center justify-between border-b border-gray-200 bg-white px-3 sm:px-6">
+    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-gray-200 bg-white px-3 sm:px-6">
       <div className="flex items-center lg:hidden">
         <button
           type="button"
@@ -234,14 +224,7 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
       </div>
 
       <div className="ml-auto flex items-center gap-4">
-        {assignedBranchLabel ? (
-          <div className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-sm font-medium text-gray-600">
-            <MapPin className="h-3.5 w-3.5 text-gray-400" />
-            {assignedBranchLabel}
-          </div>
-        ) : (
-          <BranchSelector />
-        )}
+        <BranchSelector />
 
         {/* Notification bell */}
         <div className="relative" ref={dropdownRef}>

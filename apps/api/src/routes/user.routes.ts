@@ -6,6 +6,7 @@ import { requirePermission } from '../middleware/rbac.js';
 import {
   PERMISSIONS,
   assignRolesSchema,
+  assignUserCompanyAssignmentsSchema,
   createUserSchema,
   updateUserSchema,
   changeMyPasswordSchema,
@@ -36,6 +37,7 @@ router.post('/me/pin', userController.setPin);
 router.post('/me/avatar', avatarUpload.single('avatar'), userController.uploadAvatar);
 
 router.get('/', requirePermission(PERMISSIONS.ADMIN_MANAGE_USERS), userController.list);
+router.get('/assignment-options', requirePermission(PERMISSIONS.ADMIN_MANAGE_USERS), userController.assignmentOptions);
 router.post(
   '/',
   requirePermission(PERMISSIONS.ADMIN_MANAGE_USERS),
@@ -57,6 +59,11 @@ router.put(
   validateBody(assignRolesSchema),
   userController.assignRoles,
 );
-router.put('/:id/branches', requirePermission(PERMISSIONS.ADMIN_MANAGE_USERS), userController.assignBranches);
+router.put(
+  '/:id/branches',
+  requirePermission(PERMISSIONS.ADMIN_MANAGE_USERS),
+  validateBody(assignUserCompanyAssignmentsSchema),
+  userController.assignBranches,
+);
 
 export default router;

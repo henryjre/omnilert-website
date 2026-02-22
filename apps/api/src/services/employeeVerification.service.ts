@@ -2,6 +2,9 @@ import type { Knex } from 'knex';
 import { AppError } from '../middleware/errorHandler.js';
 import { createPartnerBankAndAssignEmployees, syncUserProfileToOdoo } from './odoo.service.js';
 import { getIO } from '../config/socket.js';
+import { createAndDispatchNotification } from './notification.service.js';
+import { listRegistrationRequests } from './registration.service.js';
+import { db } from '../config/database.js';
 
 type NotificationType = 'info' | 'success' | 'danger' | 'warning';
 
@@ -57,106 +60,131 @@ async function notifyUser(
   type: NotificationType,
   linkUrl: string,
 ): Promise<void> {
-  const [notif] = await tenantDb('employee_notifications')
-    .insert({
-      user_id: userId,
-      title,
-      message,
-      type,
-      link_url: linkUrl,
-    })
-    .returning('*');
-
-  try {
-    getIO().of('/notifications').to(`user:${userId}`).emit('notification:new', notif);
-  } catch {
-    // socket can be unavailable during tests/bootstrapping
-  }
+  await createAndDispatchNotification({
+    tenantDb,
+    userId,
+    title,
+    message,
+    type,
+    linkUrl,
+  });
 }
 
 export async function listEmployeeVerifications(tenantDb: Knex) {
+  const masterDb = db.getMasterDb();
   const [registration, personalInformation, employmentRequirements, bankInformation] = await Promise.all([
-    tenantDb('registration_requests')
-      .leftJoin('users as reviewers', 'registration_requests.reviewed_by', 'reviewers.id')
-      .select(
-        'registration_requests.*',
-        tenantDb.raw("CONCAT(reviewers.first_name, ' ', reviewers.last_name) as reviewed_by_name"),
-      )
-      .orderBy('registration_requests.requested_at', 'desc'),
+    listRegistrationRequests(),
     tenantDb('personal_information_verifications')
-      .join('users', 'personal_information_verifications.user_id', 'users.id')
-      .leftJoin('users as reviewers', 'personal_information_verifications.reviewed_by', 'reviewers.id')
-      .select(
-        'personal_information_verifications.*',
-        'users.first_name',
-        'users.last_name',
-        'users.email',
-        'users.mobile_number',
-        'users.legal_name',
-        'users.birthday',
-        'users.gender',
-        'users.address',
-        'users.sss_number',
-        'users.tin_number',
-        'users.pagibig_number',
-        'users.philhealth_number',
-        'users.marital_status',
-        'users.emergency_contact',
-        'users.emergency_phone',
-        'users.emergency_relationship',
-        tenantDb.raw("CONCAT(reviewers.first_name, ' ', reviewers.last_name) as reviewed_by_name"),
-      )
+      .select('personal_information_verifications.*')
       .orderBy('personal_information_verifications.created_at', 'desc'),
     tenantDb('employment_requirement_submissions')
-      .join('users', 'employment_requirement_submissions.user_id', 'users.id')
       .join(
         'employment_requirement_types',
         'employment_requirement_submissions.requirement_code',
         'employment_requirement_types.code',
       )
-      .leftJoin('users as reviewers', 'employment_requirement_submissions.reviewed_by', 'reviewers.id')
       .select(
         'employment_requirement_submissions.*',
         'employment_requirement_types.label as requirement_label',
-        'users.first_name',
-        'users.last_name',
-        'users.email',
-        tenantDb.raw("CONCAT(reviewers.first_name, ' ', reviewers.last_name) as reviewed_by_name"),
       )
       .orderBy('employment_requirement_submissions.created_at', 'desc'),
     tenantDb('bank_information_verifications')
-      .join('users', 'bank_information_verifications.user_id', 'users.id')
-      .leftJoin('users as reviewers', 'bank_information_verifications.reviewed_by', 'reviewers.id')
       .select(
         'bank_information_verifications.*',
-        'users.first_name',
-        'users.last_name',
-        'users.email',
-        tenantDb.raw("CONCAT(reviewers.first_name, ' ', reviewers.last_name) as reviewed_by_name"),
       )
       .orderBy('bank_information_verifications.created_at', 'desc'),
   ]);
+
+  const allUserIds = [
+    ...new Set([
+      ...personalInformation.flatMap((row: any) => [row.user_id, row.reviewed_by]),
+      ...employmentRequirements.flatMap((row: any) => [row.user_id, row.reviewed_by]),
+      ...bankInformation.flatMap((row: any) => [row.user_id, row.reviewed_by]),
+    ].filter(Boolean) as string[]),
+  ];
+  const users = allUserIds.length > 0
+    ? await masterDb('users')
+      .whereIn('id', allUserIds)
+      .select(
+        'id',
+        'first_name',
+        'last_name',
+        'email',
+        'mobile_number',
+        'legal_name',
+        'birthday',
+        'gender',
+        'address',
+        'sss_number',
+        'tin_number',
+        'pagibig_number',
+        'philhealth_number',
+        'marital_status',
+        'emergency_contact',
+        'emergency_phone',
+        'emergency_relationship',
+      )
+    : [];
+  const userMap = new Map(users.map((u: any) => [u.id as string, u]));
 
   return {
     registration,
     personalInformation: personalInformation.map((row: any) => ({
       ...row,
+      first_name: userMap.get(row.user_id as string)?.first_name ?? null,
+      last_name: userMap.get(row.user_id as string)?.last_name ?? null,
+      email: userMap.get(row.user_id as string)?.email ?? null,
+      mobile_number: userMap.get(row.user_id as string)?.mobile_number ?? null,
+      legal_name: userMap.get(row.user_id as string)?.legal_name ?? null,
+      birthday: userMap.get(row.user_id as string)?.birthday ?? null,
+      gender: userMap.get(row.user_id as string)?.gender ?? null,
+      address: userMap.get(row.user_id as string)?.address ?? null,
+      sss_number: userMap.get(row.user_id as string)?.sss_number ?? null,
+      tin_number: userMap.get(row.user_id as string)?.tin_number ?? null,
+      pagibig_number: userMap.get(row.user_id as string)?.pagibig_number ?? null,
+      philhealth_number: userMap.get(row.user_id as string)?.philhealth_number ?? null,
+      marital_status: userMap.get(row.user_id as string)?.marital_status ?? null,
+      emergency_contact: userMap.get(row.user_id as string)?.emergency_contact ?? null,
+      emergency_phone: userMap.get(row.user_id as string)?.emergency_phone ?? null,
+      emergency_relationship: userMap.get(row.user_id as string)?.emergency_relationship ?? null,
+      reviewed_by_name: row.reviewed_by
+        ? (() => {
+          const reviewer = userMap.get(row.reviewed_by as string);
+          return reviewer ? `${reviewer.first_name} ${reviewer.last_name}` : null;
+        })()
+        : null,
       requested_changes: parseJsonField<Record<string, unknown>>(row.requested_changes, {}),
       approved_changes: parseJsonField<Record<string, unknown> | null>(row.approved_changes, null),
     })),
-    employmentRequirements: employmentRequirements,
-    bankInformation,
+    employmentRequirements: employmentRequirements.map((row: any) => ({
+      ...row,
+      first_name: userMap.get(row.user_id as string)?.first_name ?? null,
+      last_name: userMap.get(row.user_id as string)?.last_name ?? null,
+      email: userMap.get(row.user_id as string)?.email ?? null,
+      reviewed_by_name: row.reviewed_by
+        ? (() => {
+          const reviewer = userMap.get(row.reviewed_by as string);
+          return reviewer ? `${reviewer.first_name} ${reviewer.last_name}` : null;
+        })()
+        : null,
+    })),
+    bankInformation: bankInformation.map((row: any) => ({
+      ...row,
+      first_name: userMap.get(row.user_id as string)?.first_name ?? null,
+      last_name: userMap.get(row.user_id as string)?.last_name ?? null,
+      email: userMap.get(row.user_id as string)?.email ?? null,
+      reviewed_by_name: row.reviewed_by
+        ? (() => {
+          const reviewer = userMap.get(row.reviewed_by as string);
+          return reviewer ? `${reviewer.first_name} ${reviewer.last_name}` : null;
+        })()
+        : null,
+    })),
   };
 }
 
-export async function listRegistrationVerifications(tenantDb: Knex) {
-  return tenantDb('registration_requests')
-    .leftJoin('users as reviewers', 'registration_requests.reviewed_by', 'reviewers.id')
-    .select(
-      'registration_requests.*',
-      tenantDb.raw("CONCAT(reviewers.first_name, ' ', reviewers.last_name) as reviewed_by_name"),
-    )
-    .orderBy('registration_requests.requested_at', 'desc');
+export async function listRegistrationVerifications() {
+  return listRegistrationRequests();
 }
 
 export async function approvePersonalInformationVerification(input: {
@@ -183,6 +211,7 @@ export async function approvePersonalInformationVerification(input: {
     emergencyRelationship?: string;
   };
 }) {
+  const masterDb = db.getMasterDb();
   const verification = await input.tenantDb('personal_information_verifications')
     .where({ id: input.verificationId })
     .first();
@@ -213,7 +242,7 @@ export async function approvePersonalInformationVerification(input: {
     emergencyRelationship: input.edits.emergencyRelationship ?? requested.emergencyRelationship,
   } as const;
 
-  const user = await input.tenantDb('users')
+  const user = await masterDb('users')
     .where({ id: verification.user_id })
     .select(
       'id',
@@ -262,7 +291,6 @@ export async function approvePersonalInformationVerification(input: {
   }
 
   await input.tenantDb.transaction(async (trx) => {
-    await trx('users').where({ id: user.id }).update(updates);
     await trx('personal_information_verifications')
       .where({ id: input.verificationId })
       .update({
@@ -273,6 +301,7 @@ export async function approvePersonalInformationVerification(input: {
         updated_at: new Date(),
       });
   });
+  await masterDb('users').where({ id: user.id }).update(updates);
 
   const activeBranches = await input.tenantDb('branches')
     .where({ is_active: true })
@@ -389,7 +418,7 @@ export async function approveEmploymentRequirementSubmission(input: {
 
     // Shared canonical valid ID sync from requirement submission.
     if (submission.requirement_code === 'government_issued_id') {
-      await trx('users')
+      await db.getMasterDb()('users')
         .where({ id: submission.user_id })
         .update({
           valid_id_url: submission.document_url,
@@ -478,6 +507,7 @@ export async function approveBankInformationVerification(input: {
   verificationId: string;
   reviewerId: string;
 }) {
+  const masterDb = db.getMasterDb();
   const verification = await input.tenantDb('bank_information_verifications')
     .where({ id: input.verificationId })
     .first();
@@ -488,7 +518,7 @@ export async function approveBankInformationVerification(input: {
     throw new AppError(400, 'Verification is already resolved');
   }
 
-  const user = await input.tenantDb('users')
+  const user = await masterDb('users')
     .where({ id: verification.user_id })
     .select('id', 'user_key', 'email')
     .first();
@@ -504,14 +534,6 @@ export async function approveBankInformationVerification(input: {
   });
 
   await input.tenantDb.transaction(async (trx) => {
-    await trx('users')
-      .where({ id: user.id })
-      .update({
-        bank_id: Number(verification.bank_id),
-        bank_account_number: String(verification.account_number),
-        updated_at: new Date(),
-      });
-
     await trx('bank_information_verifications')
       .where({ id: input.verificationId })
       .update({
@@ -522,6 +544,13 @@ export async function approveBankInformationVerification(input: {
         updated_at: new Date(),
       });
   });
+  await masterDb('users')
+    .where({ id: user.id })
+    .update({
+      bank_id: Number(verification.bank_id),
+      bank_account_number: String(verification.account_number),
+      updated_at: new Date(),
+    });
 
   await notifyUser(
     input.tenantDb,

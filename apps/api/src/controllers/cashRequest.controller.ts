@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { AppError } from '../middleware/errorHandler.js';
-import { getIO } from '../config/socket.js';
+import { createAndDispatchNotification } from '../services/notification.service.js';
 
 /**
  * GET /cash-requests
@@ -53,16 +53,14 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
 
     if (cashReq.user_id) {
       const label = requestTypeLabel(cashReq.request_type);
-      const [notif] = await tenantDb('employee_notifications').insert({
-        user_id: cashReq.user_id,
+      await createAndDispatchNotification({
+        tenantDb,
+        userId: cashReq.user_id,
         title: `${label} Approved`,
         message: `Your ${label.toLowerCase()} has been approved.`,
         type: 'success',
-        link_url: '/account/cash-requests',
-      }).returning('*');
-      try {
-        getIO().of('/notifications').to(`user:${cashReq.user_id}`).emit('notification:new', notif);
-      } catch { /* socket unavailable */ }
+        linkUrl: '/account/cash-requests',
+      });
     }
 
     res.json({ success: true, data: updated });
@@ -101,16 +99,14 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
 
     if (cashReq.user_id) {
       const label = requestTypeLabel(cashReq.request_type);
-      const [notif] = await tenantDb('employee_notifications').insert({
-        user_id: cashReq.user_id,
+      await createAndDispatchNotification({
+        tenantDb,
+        userId: cashReq.user_id,
         title: `${label} Rejected`,
         message: `Your ${label.toLowerCase()} has been rejected: ${reason.trim()}`,
         type: 'danger',
-        link_url: '/account/cash-requests',
-      }).returning('*');
-      try {
-        getIO().of('/notifications').to(`user:${cashReq.user_id}`).emit('notification:new', notif);
-      } catch { /* socket unavailable */ }
+        linkUrl: '/account/cash-requests',
+      });
     }
 
     res.json({ success: true, data: updated });
@@ -140,16 +136,14 @@ export async function disburse(req: Request, res: Response, next: NextFunction) 
 
     if (cashReq.user_id) {
       const label = requestTypeLabel(cashReq.request_type);
-      const [notif] = await tenantDb('employee_notifications').insert({
-        user_id: cashReq.user_id,
+      await createAndDispatchNotification({
+        tenantDb,
+        userId: cashReq.user_id,
         title: `${label} Disbursed`,
         message: `Your ${label.toLowerCase()} has been disbursed.`,
         type: 'success',
-        link_url: '/account/cash-requests',
-      }).returning('*');
-      try {
-        getIO().of('/notifications').to(`user:${cashReq.user_id}`).emit('notification:new', notif);
-      } catch { /* socket unavailable */ }
+        linkUrl: '/account/cash-requests',
+      });
     }
 
     res.json({ success: true, data: updated });

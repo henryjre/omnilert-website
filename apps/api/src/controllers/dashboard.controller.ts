@@ -6,9 +6,9 @@ import { getEmployeeByWebsiteUserKey, getEmployeePayslipData, createViewOnlyPays
 
 export async function getPerformanceIndex(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const masterDb = db.getMasterDb();
     const userId = req.user!.sub;
-    const currentUser = await tenantDb('users').where({ id: userId }).select('user_key').first();
+    const currentUser = await masterDb('users').where({ id: userId }).select('user_key').first();
     const userKey = currentUser?.user_key as string | undefined;
 
     if (!userKey) {
@@ -52,7 +52,7 @@ export async function getPerformanceIndex(req: Request, res: Response, next: Nex
 
 export async function getPayslip(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const masterDb = db.getMasterDb();
     // Get companyId (Odoo company ID) from query params
     const companyIdParam = req.query.companyId as string | undefined;
     
@@ -75,7 +75,7 @@ export async function getPayslip(req: Request, res: Response, next: NextFunction
 
     // Get the user key from tenant user record
     const userId = req.user!.sub;
-    const currentUser = await tenantDb('users').where({ id: userId }).select('user_key').first();
+    const currentUser = await masterDb('users').where({ id: userId }).select('user_key').first();
     const userKey = currentUser?.user_key as string | undefined;
 
     if (!userKey) {

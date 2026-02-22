@@ -1,10 +1,10 @@
 import { z } from 'zod';
 
 const uuid = z.string().uuid();
-const employmentStatusSchema = z.enum(['active', 'resigned', 'inactive']);
+const employmentStatusSchema = z.enum(['active', 'resigned', 'inactive', 'suspended']);
 
 export const employeeProfilesListQuerySchema = z.object({
-  status: z.enum(['all', 'active', 'resigned', 'inactive']).optional().default('all'),
+  status: z.enum(['all', 'active', 'resigned', 'inactive', 'suspended']).optional().default('all'),
   page: z.coerce.number().int().min(1).optional().default(1),
   pageSize: z.coerce.number().int().min(1).max(100).optional().default(12),
   search: z.string().trim().optional(),
@@ -19,6 +19,10 @@ export const updateEmployeeWorkInformationSchema = z.object({
   positionTitle: z.string().trim().max(255).nullable(),
   employmentStatus: employmentStatusSchema.optional(),
   isActive: z.boolean().optional(),
+  residentBranch: z.object({
+    companyId: uuid,
+    branchId: uuid,
+  }).nullable().optional(),
   dateStarted: z
     .string()
     .trim()

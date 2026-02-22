@@ -111,6 +111,11 @@ router.get(
 router.get('/notifications/count', accountController.getNotificationCount);
 router.put('/notifications/read-all', accountController.markAllNotificationsRead);
 router.put('/notifications/:id/read', accountController.markNotificationRead);
+router.get('/push/config', accountController.getPushConfig);
+router.get('/push/preferences', accountController.getPushPreferences);
+router.patch('/push/preferences', accountController.updatePushPreferences);
+router.post('/push/subscriptions', accountController.upsertPushSubscription);
+router.delete('/push/subscriptions', accountController.removePushSubscription);
 
 // Token pay verification — customer fetches their own verification details
 router.get('/token-pay/:id', accountController.getTokenPayVerification);

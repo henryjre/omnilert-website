@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
-import { X } from 'lucide-react';
+import { ChevronLeft } from 'lucide-react';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 
@@ -54,15 +54,14 @@ export function DashboardLayout() {
             mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
-          <button
-            type="button"
-            onClick={() => setMobileSidebarOpen(false)}
-            className="absolute right-3 top-3 z-10 rounded-lg bg-white/90 p-2 text-gray-500 shadow-sm ring-1 ring-gray-200 hover:bg-gray-100 hover:text-gray-800"
-            aria-label="Close navigation drawer"
-          >
-            <X className="h-5 w-5" />
-          </button>
           <Sidebar className="h-full w-full border-r-0" />
+          <span
+            className={`pointer-events-none absolute top-1/2 -right-10 z-10 -translate-y-1/2 rounded-full bg-white/90 p-1.5 text-gray-600 shadow-sm ring-1 ring-gray-200 transition-opacity ${
+              mobileSidebarOpen ? 'opacity-100' : 'opacity-0'
+            }`}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </span>
         </div>
       </div>
 

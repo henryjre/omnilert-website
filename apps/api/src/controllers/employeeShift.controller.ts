@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { AppError } from '../middleware/errorHandler.js';
 import { getIO } from '../config/socket.js';
+import { db } from '../config/database.js';
 
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
@@ -86,7 +87,7 @@ export async function get(req: Request, res: Response, next: NextFunction) {
       .filter(Boolean) as string[];
     const resolvers: Record<string, string> = {};
     if (resolvedByIds.length > 0) {
-      const users = await tenantDb('users').whereIn('id', resolvedByIds).select('id', 'first_name', 'last_name');
+      const users = await db.getMasterDb()('users').whereIn('id', resolvedByIds).select('id', 'first_name', 'last_name');
       for (const u of users) resolvers[u.id] = `${u.first_name} ${u.last_name}`;
     }
     const authorizationsWithResolver = authorizations.map((a: Record<string, unknown>) => ({
