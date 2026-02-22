@@ -302,6 +302,39 @@ async function loadDesignationSets(masterDb: Knex, userIds: string[]): Promise<{
   return { accessSet, branchSet };
 }
 
+async function enrichDesignationSetsFromTenantUserBranches(input: {
+  masterDb: Knex;
+  designation: { accessSet: Set<string>; branchSet: Set<string> };
+  userIds: string[];
+  companyIds: string[];
+  tenantCache: Map<string, TenantContext>;
+}) {
+  const uniqueUserIds = Array.from(new Set(input.userIds.filter(Boolean)));
+  const uniqueCompanyIds = Array.from(new Set(input.companyIds.filter(Boolean)));
+  if (uniqueUserIds.length === 0 || uniqueCompanyIds.length === 0) return;
+
+  for (const companyId of uniqueCompanyIds) {
+    try {
+      const context = await getTenantContextByCompanyId(input.masterDb, companyId, input.tenantCache);
+      const rows = await context.tenantDb('user_branches')
+        .whereIn('user_id', uniqueUserIds)
+        .select('user_id', 'branch_id');
+      for (const row of rows as Array<{ user_id: string; branch_id: string }>) {
+        if (!row.user_id || !row.branch_id) continue;
+        input.designation.branchSet.add(`${row.user_id}:${companyId}:${row.branch_id}`);
+      }
+    } catch (error) {
+      logger.warn(
+        {
+          companyId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to load tenant user_branches for shift-exchange designation fallback',
+      );
+    }
+  }
+}
+
 function isDesignatedToCompanyBranch(
   designation: { accessSet: Set<string>; branchSet: Set<string> },
   userId: string,
@@ -581,6 +614,13 @@ export async function listShiftExchangeOptions(input: {
   const targetUserIds = Array.from(new Set(candidateRows.map((row) => row.user_id)));
   const usersById = await loadUsersByIds(masterDb, [input.requesterUserId, ...targetUserIds]);
   const designation = await loadDesignationSets(masterDb, [input.requesterUserId, ...targetUserIds]);
+  await enrichDesignationSetsFromTenantUserBranches({
+    masterDb,
+    designation,
+    userIds: [input.requesterUserId, ...targetUserIds],
+    companyIds: [requesterCtx.company.id, ...candidateRows.map((row) => row.company_id)],
+    tenantCache,
+  });
 
   const options: ShiftOption[] = [];
   for (const option of candidateRows) {
@@ -589,19 +629,23 @@ export async function listShiftExchangeOptions(input: {
     if (isSuspended(targetUser)) continue;
     if (targetUser.id === input.requesterUserId) continue;
 
-    const requesterCanWorkTarget = isDesignatedToCompanyBranch(
-      designation,
-      input.requesterUserId,
-      option.company_id,
-      option.branch_id,
-    );
-    const targetCanWorkRequester = isDesignatedToCompanyBranch(
-      designation,
-      option.user_id,
-      requesterCtx.company.id,
-      fromShift.branch_id,
-    );
-    if (!requesterCanWorkTarget || !targetCanWorkRequester) continue;
+    // For same-company exchanges, allow eligible open shifts without cross-branch designation gating.
+    // For inter-company exchanges, require both employees to be designated in the destination company/branch.
+    if (option.company_id !== requesterCtx.company.id) {
+      const requesterCanWorkTarget = isDesignatedToCompanyBranch(
+        designation,
+        input.requesterUserId,
+        option.company_id,
+        option.branch_id,
+      );
+      const targetCanWorkRequester = isDesignatedToCompanyBranch(
+        designation,
+        option.user_id,
+        requesterCtx.company.id,
+        fromShift.branch_id,
+      );
+      if (!requesterCanWorkTarget || !targetCanWorkRequester) continue;
+    }
 
     if (await hasPendingRequestForShift(masterDb, option.company_id, option.shift_id)) continue;
     options.push(option);

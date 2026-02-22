@@ -615,7 +615,10 @@ Employee Schedule page:
 - Mobile filter toggle header groups icon/label/badge together on the left, with chevron on the right.
 - Exchange Shift is enabled for owner-open shifts when the signed-in user is not suspended.
   - Clicking Exchange Shift opens a two-step modal:
-    - Step 1: eligible open shifts (same-company and inter-company, filtered by designation + suspension rules)
+    - Step 1: eligible open shifts (same-company and inter-company, filtered by suspension + pending-request rules)
+      - same-company: not gated by cross-branch designation
+      - inter-company: requires bilateral destination designation checks using master `user_company_branches`
+        with tenant `user_branches` fallback enrichment
     - Step 2: Confirm/Cancel prompt targeting the selected employee.
 
 Employee Profiles page:
