@@ -667,6 +667,11 @@ User Management page:
   - per-company branch targets used for Odoo employee provisioning.
 - User Management Odoo provisioning reuses an existing 4-digit employee PIN for the same `x_website_key` when present;
   only generates a new PIN when no existing employee PIN is found.
+- User Management create flow now attempts best-effort bank auto-fill from Odoo:
+  - reads first employee-linked `bank_account_id` from `hr.employee` by `x_website_key`
+  - resolves `res.partner.bank` (`bank_id`, `acc_number`)
+  - writes master `users.bank_id` and `users.bank_account_number` when valid
+  - never blocks user creation if Odoo lookup fails.
 - Company and branch summaries are displayed as pills with overflow compaction (`+N more`) when counts exceed display limits.
 - Branch target selection in User Management is not used as JWT branch authorization scope.
 

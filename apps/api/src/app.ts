@@ -6,8 +6,23 @@ import { env } from './config/env.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import routes from './routes/index.js';
 
+function parseTrustProxySetting(value: string | undefined): boolean | number | string {
+  const raw = (value ?? '').trim();
+  if (!raw) return false;
+
+  const lowered = raw.toLowerCase();
+  if (lowered === 'true') return true;
+  if (lowered === 'false') return false;
+  if (/^\d+$/.test(raw)) return Number(raw);
+
+  // Allow Express named values like "loopback", "linklocal", "uniquelocal" or CSV.
+  return raw;
+}
+
 export function createApp() {
   const app = express();
+
+  app.set('trust proxy', parseTrustProxySetting(env.TRUST_PROXY));
 
   // Security
   app.use(helmet());

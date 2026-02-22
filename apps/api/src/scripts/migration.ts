@@ -136,7 +136,7 @@ async function migrateTenantsDb() {
           table.uuid('id').primary().defaultTo(tenantDb.raw('gen_random_uuid()'));
           table.integer('odoo_shift_id').notNullable();
           table.uuid('branch_id').notNullable().references('id').inTable('branches');
-          table.uuid('user_id').nullable().references('id').inTable('users');
+          table.uuid('user_id').nullable();
           table.string('employee_name', 255).notNullable();
           table.string('employee_avatar_url', 500);
           table.string('duty_type', 100).notNullable();
@@ -165,6 +165,13 @@ async function migrateTenantsDb() {
           console.log('  - pending_approvals column already exists');
         }
       }
+
+      // Global user IDs are master-scoped; tenant employee_shifts.user_id must not FK to tenant users.
+      await tenantDb.raw(`
+        ALTER TABLE employee_shifts
+        DROP CONSTRAINT IF EXISTS employee_shifts_user_id_foreign
+      `);
+      console.log('  + ensured employee_shifts.user_id has no tenant-users FK');
 
       // Create shift_logs table if missing
       const hasShiftLogsTable = await tenantDb.schema.hasTable('shift_logs');

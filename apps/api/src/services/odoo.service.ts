@@ -1469,6 +1469,72 @@ export async function createPartnerBankAndAssignEmployees(input: {
   return { partnerId, partnerBankId, employeeIds };
 }
 
+export async function getEmployeeLinkedBankInfoByWebsiteUserKey(
+  websiteUserKey: string,
+): Promise<{ bankId: number; accountNumber: string } | null> {
+  const employees = (await callOdooKw(
+    'hr.employee',
+    'search_read',
+    [],
+    {
+      domain: [['x_website_key', '=', websiteUserKey]],
+      fields: ['id', 'bank_account_id'],
+      order: 'id asc',
+      limit: 1000,
+    },
+  )) as Array<{ id: number; bank_account_id?: [number, string] | false }>;
+
+  const employeeWithBank = employees.find((employee) =>
+    Array.isArray(employee.bank_account_id)
+    && Number(employee.bank_account_id[0]) > 0,
+  );
+
+  if (!employeeWithBank || !Array.isArray(employeeWithBank.bank_account_id)) {
+    return null;
+  }
+
+  const partnerBankId = Number(employeeWithBank.bank_account_id[0]);
+  const partnerBankRows = (await callOdooKw(
+    'res.partner.bank',
+    'read',
+    [[partnerBankId]],
+    {
+      fields: ['id', 'bank_id', 'acc_number'],
+    },
+  )) as Array<{ id: number; bank_id?: [number, string] | false; acc_number?: string | null }>;
+
+  if (!partnerBankRows || partnerBankRows.length === 0) {
+    logger.warn(
+      { websiteUserKey, partnerBankId },
+      'Odoo partner bank record not found for employee bank linkage',
+    );
+    return null;
+  }
+
+  const bankRow = partnerBankRows[0];
+  const bankId = Array.isArray(bankRow.bank_id) ? Number(bankRow.bank_id[0]) : NaN;
+  const accountNumber = String(bankRow.acc_number ?? '').trim();
+  if (!Number.isFinite(bankId) || bankId <= 0 || !accountNumber) {
+    logger.warn(
+      {
+        websiteUserKey,
+        partnerBankId,
+        hasBankId: Number.isFinite(bankId) && bankId > 0,
+        hasAccountNumber: Boolean(accountNumber),
+      },
+      'Odoo employee-linked bank record is incomplete; skipping auto-fill',
+    );
+    return null;
+  }
+
+  logger.info(
+    { websiteUserKey, partnerBankId, bankId },
+    'Resolved employee-linked bank info from Odoo',
+  );
+
+  return { bankId, accountNumber };
+}
+
 /**
  * Gets the PIN code from Odoo hr.employee
  * @param websiteUserKey - The Omnilert user ID (UUID)

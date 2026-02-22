@@ -3,11 +3,13 @@ import type { Knex } from 'knex';
 import { db } from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { hashPassword } from '../utils/password.js';
+import { logger } from '../utils/logger.js';
 import {
   callOdooKw,
   createOrUpdateEmployeeForRegistration,
   formatBranchEmployeeCode,
   formatEmployeeDisplayName,
+  getEmployeeLinkedBankInfoByWebsiteUserKey,
   getEmployeeByWebsiteUserKey,
   unifyPartnerContactsByEmail,
 } from './odoo.service.js';
@@ -437,6 +439,33 @@ export async function createGlobalUser(input: {
     assignments,
     successfulBranches: provisioning.successfulBranches,
   });
+
+  const createdUserKey = String(created.user_key ?? '').trim();
+  if (createdUserKey) {
+    try {
+      const existingBankInfo = await getEmployeeLinkedBankInfoByWebsiteUserKey(createdUserKey);
+      if (existingBankInfo) {
+        await masterDb('users')
+          .where({ id: created.id })
+          .update({
+            bank_id: existingBankInfo.bankId,
+            bank_account_number: existingBankInfo.accountNumber,
+            updated_at: new Date(),
+          });
+        (created as any).bank_id = existingBankInfo.bankId;
+        (created as any).bank_account_number = existingBankInfo.accountNumber;
+      }
+    } catch (error) {
+      logger.warn(
+        {
+          userId: created.id,
+          userKey: createdUserKey,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to auto-fill bank information from Odoo during global user creation',
+      );
+    }
+  }
 
   return {
     user: created,

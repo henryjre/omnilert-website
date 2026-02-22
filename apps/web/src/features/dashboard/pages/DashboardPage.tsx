@@ -23,7 +23,7 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">{getGreeting()}, {user?.firstName || "User"}</h1>
+      <h1 className="text-2xl font-bold text-gray-900">{getGreeting()}, {user?.firstName || "User"}!</h1>
 
       {hasPermission(PERMISSIONS.DASHBOARD_VIEW_PERFORMANCE_INDEX) && <PerformanceIndex />}
       {hasPermission(PERMISSIONS.DASHBOARD_VIEW_PAYSLIP) && <PayslipDetails />}

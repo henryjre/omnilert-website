@@ -7,6 +7,7 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(3001),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   CLIENT_URL: z.string().default('http://localhost:5173'),
+  TRUST_PROXY: z.string().optional(),
 
   MASTER_DB_HOST: z.string().default('localhost'),
   MASTER_DB_PORT: z.coerce.number().default(5432),

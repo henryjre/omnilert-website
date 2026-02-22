@@ -290,7 +290,8 @@ async function createTenantTables(tenantDb: ReturnType<typeof db.getMasterDb>): 
     table.uuid('id').primary().defaultTo(tenantDb.raw('gen_random_uuid()'));
     table.integer('odoo_shift_id').notNullable();
     table.uuid('branch_id').notNullable().references('id').inTable('branches');
-    table.uuid('user_id').nullable().references('id').inTable('users');
+    // Global user IDs come from master DB, so tenant shifts cannot FK to tenant users.
+    table.uuid('user_id').nullable();
     table.string('employee_name', 255).notNullable();
     table.string('employee_avatar_url', 500);
     table.string('duty_type', 100).notNullable();
