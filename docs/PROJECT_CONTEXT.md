@@ -1,6 +1,6 @@
 # Omnilert Project Context
 
-Last updated: 2026-02-22
+Last updated: 2026-02-27
 
 This document is for AI and engineer handoff. It captures the current implementation state of this repository from code-confirmed behavior.
 
@@ -171,8 +171,11 @@ Tenant migrations (`apps/api/src/migrations/tenant`):
 - `011_drop_employee_notifications_user_fk.ts`
 - `012_add_suspended_employment_status.ts`
 - `013_drop_employee_shifts_user_fk.ts` (drops tenant FK on `employee_shifts.user_id` for global-user UUID compatibility)
+- `014_drop_cash_requests_user_fks.ts` (drops tenant FKs on `cash_requests.user_id|reviewed_by|disbursed_by`)
+- `015_drop_authorization_requests_user_fks.ts` (drops tenant FKs on `authorization_requests.user_id|reviewed_by`)
+- `016_drop_more_global_user_fks.ts` (drops tenant FKs on global-user-backed fields in `shift_authorizations`, `registration_requests`, and verification tables)
 - Compatibility `.js` shim files exist for legacy entries recorded in `knex_migrations`
-  (currently `001` to `012`) to prevent Knex "migration directory is corrupt" errors on older tenants.
+  (currently `001` to `013`) to prevent Knex "migration directory is corrupt" errors on older tenants.
 
 Operational scripts (`apps/api/src/scripts`):
 - `migrate-tenants.ts`
@@ -372,7 +375,9 @@ Employee Profiles endpoints (`/employee-profiles`):
   - Supports advanced filters: `departmentId`, `roleIdsCsv` (ANY match), `sortBy`, `sortDirection`
 - `GET /employee-profiles/filter-options`
 - `GET /employee-profiles/:userId`
-- `PATCH /employee-profiles/:userId/work-information` (`employmentStatus` preferred; `isActive` compatibility accepted)
+- `PATCH /employee-profiles/:userId/work-information`
+  - `employmentStatus` preferred; `isActive` compatibility accepted
+  - supports optional `companyAssignments` to sync branch assignments before resident-branch update
 
 Shift Exchange endpoints (`/shift-exchanges`):
 - `GET /shift-exchanges/options?fromShiftId=<uuid>`
@@ -468,9 +473,16 @@ Personal information verification:
   - tenant DB only (not synced to Odoo): SSS, TIN, Pag-IBIG, PhilHealth, marital status, emergency relationship
 
 Avatar sync:
-- Avatar upload updates website user avatar and asynchronously syncs Odoo `image_1920` on:
+- `/users/me/avatar` upload updates website user avatar and asynchronously syncs Odoo `image_1920` on:
   - canonical `res.partner`
   - linked `hr.employee` records
+- User Management / Employee Profiles branch provisioning now also performs non-blocking website -> Odoo avatar sync
+  (same canonical partner + linked employees target) when `users.avatar_url` exists.
+- User Management create flow now performs fill-if-empty Odoo -> website avatar import:
+  - reads canonical `res.partner.image_1920`
+  - uploads to tenant-rooted `Profile Pictures/<userId>`
+  - updates master `users.avatar_url`
+  - continues with warning if import fails.
 
 Employment requirements:
 - Fixed requirement catalog is seeded in tenant DB.
@@ -562,7 +574,20 @@ Router and navigation (`apps/web/src/app/router.tsx`, `Sidebar.tsx`):
 - Management label is `Employee Verifications`.
 - Primary route: `/employee-verifications`.
 - Compatibility alias route: `/registration-requests` redirects to `/employee-verifications`.
-- Service Crew section includes `Employee Requirements` route/page.
+- Account routing is flattened:
+  - `/account` redirects to `/account/schedule`
+  - account pages are standalone routes (no `AccountPage` tab wrapper)
+  - `/account/employment` redirects to `/account/profile`.
+- Sidebar navigation redesign:
+  - `My Account` is now a category with direct links:
+    `Schedule`, `Authorization Requests`, `Cash Requests`, `Notifications`, `Profile`, `Settings`
+  - `Management` keeps direct links for `Authorization Requests` and `Employee Verifications`
+  - adds collapsible `Human Resources` group:
+    `Employee Profiles`, `Employee Schedule`, `Employee Requirements`
+  - adds collapsible `Accounting and Finance` group:
+    `Cash Requests`
+  - removes `Service Crew` section
+  - HR/Finance groups auto-expand when child routes are active.
 - Dashboard topbar is sticky on mobile (`<= 767px`) and stays fixed at the top while content scrolls.
 - Branch designation is no longer auto-applied from user branch assignment updates; designation changes are driven by active shift/check-in flow.
 - Sidebar top company header is an interactive button (with right-side chevron) for users with multiple accessible companies.
@@ -649,6 +674,11 @@ Employee Profiles page:
   - resident company selector
   - resident branch selector (filtered by selected resident company)
   - save updates global `user_company_branches.assignment_type` to enforce exactly one resident branch and set other assigned branches to borrow.
+- Work Information edit now supports branch assignment management directly in Employee Profiles:
+  - lazy-loads assignment options on entering edit mode
+  - supports per-company branch toggles (same assignment behavior as User Management)
+  - includes optional confirmation modal when net-new branches are added (Odoo employee provisioning impact)
+  - sends `companyAssignments` in work-information update payload when edited.
 
 My Account Schedule + Notifications + Authorization Requests:
 - My Account Schedule now enables owner-open shift exchange with the same two-step flow used in Employee Schedule.
@@ -673,10 +703,16 @@ User Management page:
 - User Management Odoo provisioning reuses an existing 4-digit employee PIN for the same `x_website_key` when present;
   only generates a new PIN when no existing employee PIN is found.
 - User Management create flow now attempts best-effort bank auto-fill from Odoo:
-  - reads first employee-linked `bank_account_id` from `hr.employee` by `x_website_key`
-  - resolves `res.partner.bank` (`bank_id`, `acc_number`)
+  - resolves canonical partner by `x_website_key` (fallback email)
+  - prefers existing `hr.employee.bank_account_id` when valid
+  - otherwise resolves latest `res.partner.bank` by `write_date`
+  - attaches missing `bank_account_id` to linked employees via `work_contact_id`
   - writes master `users.bank_id` and `users.bank_account_number` when valid
   - never blocks user creation if Odoo lookup fails.
+- User Management and branch-assignment provisioning are partner-first:
+  - `x_website_key` is treated as partner identity source, with employee `x_website_key` as legacy fallback
+  - branch employee creation/upsert binds to partner via `work_contact_id` where available
+  - PIN reuse remains shared across linked employees.
 - Company and branch summaries are displayed as pills with overflow compaction (`+N more`) when counts exceed display limits.
 - Branch target selection in User Management is not used as JWT branch authorization scope.
 

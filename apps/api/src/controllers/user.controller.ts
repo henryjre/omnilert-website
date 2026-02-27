@@ -38,6 +38,7 @@ export async function create(req: Request, res: Response, next: NextFunction) {
       employeeNumber: req.body.employeeNumber,
       roleIds: req.body.roleIds,
       companyAssignments: req.body.companyAssignments,
+      avatarStorageRoot: req.companyContext?.companyStorageRoot ?? null,
     });
 
     res.status(201).json({

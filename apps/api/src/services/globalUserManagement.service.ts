@@ -11,11 +11,14 @@ import {
   getEmployeeIdentitySnapshot,
   getEmployeeLinkedBankInfoByWebsiteUserKey,
   getEmployeeByWebsiteUserKey,
+  getPartnerAvatarBase64ByIdentity,
+  syncAvatarToOdoo,
   syncUserProfileToOdoo,
   unifyPartnerContactsByEmail,
 } from './odoo.service.js';
 import { normalizeEmail } from './globalUser.service.js';
 import { seedApprovedBankVerification } from './employeeVerification.service.js';
+import { buildTenantStoragePrefix, uploadFile } from './storage.service.js';
 
 type CompanyAssignmentInput = {
   companyId: string;
@@ -33,6 +36,46 @@ type ResolvedAssignment = {
 
 function randomPin(): string {
   return String(Math.floor(1000 + Math.random() * 9000));
+}
+
+function inferImageMimeAndExt(buffer: Buffer): { mime: string; ext: string } {
+  if (buffer.length >= 8
+    && buffer[0] === 0x89
+    && buffer[1] === 0x50
+    && buffer[2] === 0x4e
+    && buffer[3] === 0x47
+    && buffer[4] === 0x0d
+    && buffer[5] === 0x0a
+    && buffer[6] === 0x1a
+    && buffer[7] === 0x0a) {
+    return { mime: 'image/png', ext: 'png' };
+  }
+
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return { mime: 'image/jpeg', ext: 'jpg' };
+  }
+
+  if (buffer.length >= 12
+    && buffer[0] === 0x52
+    && buffer[1] === 0x49
+    && buffer[2] === 0x46
+    && buffer[3] === 0x46
+    && buffer[8] === 0x57
+    && buffer[9] === 0x45
+    && buffer[10] === 0x42
+    && buffer[11] === 0x50) {
+    return { mime: 'image/webp', ext: 'webp' };
+  }
+
+  if (buffer.length >= 6
+    && buffer[0] === 0x47
+    && buffer[1] === 0x49
+    && buffer[2] === 0x46
+    && buffer[3] === 0x38) {
+    return { mime: 'image/gif', ext: 'gif' };
+  }
+
+  return { mime: 'image/jpeg', ext: 'jpg' };
 }
 
 async function resolveCompanyAssignments(
@@ -130,6 +173,7 @@ async function syncOdooEmployeesForAssignments(input: {
     lastName: string;
     userKey: string;
     employeeNumber: number;
+    avatarUrl?: string | null;
   };
   assignments: ResolvedAssignment[];
 }): Promise<{
@@ -215,6 +259,39 @@ async function syncOdooEmployeesForAssignments(input: {
         },
         'Failed to unify Odoo partner contacts by email during global user provisioning; continuing',
       );
+    }
+
+    if (input.user.avatarUrl) {
+      try {
+        await syncAvatarToOdoo({
+          websiteUserKey: input.user.userKey,
+          email: input.user.email,
+          avatarUrl: input.user.avatarUrl,
+        });
+      } catch (error: any) {
+        const firstSuccess = successes[0];
+        const assignment = input.assignments.find((item) => item.companyId === firstSuccess.companyId);
+        failures.push({
+          companyId: firstSuccess.companyId,
+          companyName: assignment?.companyName ?? 'Unknown company',
+          branchId: firstSuccess.branchId,
+          branchName: firstSuccess.branchName,
+          error: `Avatar sync skipped: ${error?.message ?? 'Unknown Odoo error'}`,
+        });
+        logger.warn(
+          {
+            step: 'avatar_push_to_odoo',
+            userId: input.user.id,
+            email: input.user.email,
+            websiteKey: input.user.userKey,
+            companyId: firstSuccess.companyId,
+            branchId: firstSuccess.branchId,
+            mainCompanyId,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          'Failed to sync website avatar to Odoo during employee provisioning; continuing',
+        );
+      }
     }
   }
 
@@ -391,6 +468,7 @@ export async function createGlobalUser(input: {
   employeeNumber?: number;
   roleIds?: string[];
   companyAssignments: CompanyAssignmentInput[];
+  avatarStorageRoot?: string | null;
 }) {
   const masterDb = db.getMasterDb();
   const email = normalizeEmail(input.email);
@@ -443,6 +521,7 @@ export async function createGlobalUser(input: {
       lastName: input.lastName.trim(),
       userKey: created.user_key as string,
       employeeNumber,
+      avatarUrl: (created.avatar_url as string | null) ?? null,
     },
     assignments,
   });
@@ -453,6 +532,79 @@ export async function createGlobalUser(input: {
     assignments,
     successfulBranches: provisioning.successfulBranches,
   });
+
+  if (!(created.avatar_url as string | null)) {
+    try {
+      const partnerAvatarBase64 = await getPartnerAvatarBase64ByIdentity({
+        websiteUserKey: String(created.user_key ?? '').trim() || null,
+        email,
+      });
+
+      if (partnerAvatarBase64 && input.avatarStorageRoot) {
+        const cleanedBase64 = partnerAvatarBase64.includes(',')
+          ? String(partnerAvatarBase64.split(',').pop() ?? '').trim()
+          : String(partnerAvatarBase64).trim();
+
+        if (cleanedBase64) {
+          const avatarBuffer = Buffer.from(cleanedBase64, 'base64');
+          if (avatarBuffer.length > 0) {
+            const { mime, ext } = inferImageMimeAndExt(avatarBuffer);
+            const folder = buildTenantStoragePrefix(
+              input.avatarStorageRoot,
+              'Profile Pictures',
+              String(created.id),
+            );
+            const uploadedUrl = await uploadFile(
+              avatarBuffer,
+              `odoo-avatar.${ext}`,
+              mime,
+              folder,
+            );
+
+            if (!uploadedUrl) {
+              throw new Error('Failed to upload imported partner avatar');
+            }
+
+            await masterDb('users')
+              .where({ id: created.id })
+              .update({
+                avatar_url: uploadedUrl,
+                updated_at: new Date(),
+              });
+            (created as any).avatar_url = uploadedUrl;
+          }
+        }
+      }
+    } catch (error: any) {
+      const firstSuccess = provisioning.successfulBranches[0];
+      const firstAssignment = assignments[0];
+      const firstBranch = firstAssignment?.branches[0];
+      const companyId = firstSuccess?.companyId ?? firstAssignment?.companyId ?? 'unknown-company';
+      const companyName = assignments.find((item) => item.companyId === companyId)?.companyName ?? 'Unknown company';
+      const branchId = firstSuccess?.branchId ?? firstBranch?.id ?? 'unknown-branch';
+      const branchName = firstSuccess?.branchName ?? firstBranch?.name ?? 'Unknown branch';
+
+      provisioning.failures.push({
+        companyId,
+        companyName,
+        branchId,
+        branchName,
+        error: `Partner avatar import skipped: ${error?.message ?? 'Unknown avatar import error'}`,
+      });
+      logger.warn(
+        {
+          step: 'avatar_import_from_partner',
+          userId: created.id,
+          email,
+          websiteKey: created.user_key,
+          companyId,
+          branchId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to import Odoo partner avatar into website user during global user creation; continuing',
+      );
+    }
+  }
 
   const createdUserKey = String(created.user_key ?? '').trim();
   if (createdUserKey) {
@@ -561,6 +713,7 @@ export async function assignGlobalCompanyBranches(input: {
       'user_key',
       'employee_number',
       'mobile_number',
+      'avatar_url',
       'legal_name',
       'birthday',
       'gender',
@@ -591,6 +744,7 @@ export async function assignGlobalCompanyBranches(input: {
       lastName: String(user.last_name),
       userKey: String(user.user_key),
       employeeNumber,
+      avatarUrl: (user.avatar_url as string | null) ?? null,
     },
     assignments,
   });

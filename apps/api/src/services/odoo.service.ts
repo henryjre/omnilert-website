@@ -1286,6 +1286,49 @@ async function fetchImageAsBase64(url: string): Promise<string> {
   return buffer.toString('base64');
 }
 
+export async function getPartnerAvatarBase64ByIdentity(input: {
+  websiteUserKey: string | null;
+  email: string | null;
+}): Promise<string | null> {
+  try {
+    const partner = await resolveCanonicalPartnerByIdentity({
+      websiteUserKey: input.websiteUserKey,
+      email: input.email,
+    });
+
+    if (!partner) {
+      return null;
+    }
+
+    const rows = (await callOdooKw(
+      'res.partner',
+      'read',
+      [[partner.id]],
+      {
+        fields: ['id', 'image_1920'],
+      },
+    )) as Array<{ id: number; image_1920?: string | false | null }>;
+
+    if (!rows || rows.length === 0) {
+      return null;
+    }
+
+    const imageBase64 = String(rows[0].image_1920 ?? '').trim();
+    return imageBase64 || null;
+  } catch (err) {
+    logger.warn(
+      {
+        step: 'avatar_import_from_partner',
+        websiteUserKey: input.websiteUserKey,
+        email: input.email,
+        error: err instanceof Error ? err.message : String(err),
+      },
+      'Failed to read partner avatar from Odoo; continuing',
+    );
+    return null;
+  }
+}
+
 export async function syncAvatarToOdoo(input: {
   websiteUserKey: string | null;
   email: string | null;
