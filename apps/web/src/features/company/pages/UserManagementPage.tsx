@@ -19,8 +19,6 @@ type AssignmentOptionCompany = {
   branches: Array<{ id: string; name: string; odoo_branch_id: string }>;
 };
 
-type StatusFilter = 'all' | 'active' | 'archived';
-
 type UserItem = {
   id: string;
   email: string;
@@ -130,9 +128,6 @@ export function UserManagementPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [createForm, setCreateForm] = useState<CreateForm>(EMPTY_CREATE_FORM);
 
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
-  const [deleteConfirmUserId, setDeleteConfirmUserId] = useState<string | null>(null);
-
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [editRoleIds, setEditRoleIds] = useState<string[]>([]);
   const [editCompanyAssignments, setEditCompanyAssignments] = useState<CompanyAssignmentForm[]>([]);
@@ -174,12 +169,6 @@ export function UserManagementPage() {
 
   const roleMap = useMemo(() => new Map(roles.map((role) => [role.id, role])), [roles]);
   const companyMap = useMemo(() => new Map(companies.map((company) => [company.id, company])), [companies]);
-
-  const filteredUsers = useMemo(() => {
-    if (statusFilter === 'active') return users.filter((u) => u.is_active);
-    if (statusFilter === 'archived') return users.filter((u) => !u.is_active);
-    return users;
-  }, [users, statusFilter]);
 
   const toggleRole = (
     current: string[],
@@ -343,7 +332,6 @@ export function UserManagementPage() {
   };
 
   const deleteUser = async (userId: string) => {
-    setDeleteConfirmUserId(null);
     setSaving(true);
     setError('');
     setSuccess('');
@@ -503,28 +491,11 @@ export function UserManagementPage() {
           </Card>
         )}
 
-        <div className="flex gap-1 rounded-lg bg-gray-100 p-1 w-fit">
-          {(['all', 'active', 'archived'] as StatusFilter[]).map((item) => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => setStatusFilter(item)}
-              className={`rounded-md px-4 py-1.5 text-sm font-medium capitalize transition-colors ${
-                statusFilter === item
-                  ? 'bg-primary-600 text-white shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {item}
-            </button>
-          ))}
-        </div>
-
         {loading ? (
           <div className="flex justify-center py-12">
             <Spinner size="lg" />
           </div>
-        ) : filteredUsers.length === 0 ? (
+        ) : users.length === 0 ? (
           <Card>
             <CardBody>
               <p className="py-8 text-center text-gray-500">No users found.</p>
@@ -532,7 +503,7 @@ export function UserManagementPage() {
           </Card>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {filteredUsers.map((user) => {
+            {users.map((user) => {
               const companyNames = uniqueNames(user.companies.map((company) => company.companyName));
               const branchNames = uniqueNames(user.companyBranches.map((branch) => branch.branchName));
 
@@ -724,7 +695,7 @@ export function UserManagementPage() {
                 {!selectedUser.is_active && (
                   <Button
                     variant="danger"
-                    onClick={() => setDeleteConfirmUserId(selectedUser.id)}
+                    onClick={() => deleteUser(selectedUser.id)}
                     disabled={saving}
                     className="sm:col-span-2"
                   >
@@ -736,42 +707,6 @@ export function UserManagementPage() {
           </div>
         )}
       </div>
-
-      {deleteConfirmUserId && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-xl bg-white shadow-xl">
-            <div className="border-b border-gray-200 px-5 py-4">
-              <p className="font-semibold text-gray-900">Permanently Delete User</p>
-            </div>
-            <div className="px-5 py-4">
-              <p className="text-sm text-gray-700">
-                This action is irreversible. The user's account will be permanently removed.
-                Are you sure you want to continue?
-              </p>
-            </div>
-            <div className="flex gap-3 border-t border-gray-200 px-5 py-4">
-              <Button
-                type="button"
-                className="flex-1"
-                variant="danger"
-                disabled={saving}
-                onClick={() => deleteUser(deleteConfirmUserId)}
-              >
-                Yes, Permanently Delete
-              </Button>
-              <Button
-                type="button"
-                className="flex-1"
-                variant="secondary"
-                disabled={saving}
-                onClick={() => setDeleteConfirmUserId(null)}
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }

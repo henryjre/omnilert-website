@@ -14,7 +14,6 @@ import {
   unifyPartnerContactsByEmail,
 } from './odoo.service.js';
 import { normalizeEmail } from './globalUser.service.js';
-import { seedApprovedBankVerification } from './employeeVerification.service.js';
 
 type CompanyAssignmentInput = {
   companyId: string;
@@ -455,13 +454,6 @@ export async function createGlobalUser(input: {
           });
         (created as any).bank_id = existingBankInfo.bankId;
         (created as any).bank_account_number = existingBankInfo.accountNumber;
-
-        await seedApprovedBankVerification({
-          userId: created.id as string,
-          bankId: existingBankInfo.bankId,
-          accountNumber: existingBankInfo.accountNumber,
-          companyDbNames: assignments.map((a) => a.companyDbName),
-        });
       }
     } catch (error) {
       logger.warn(
