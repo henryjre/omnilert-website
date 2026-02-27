@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   Clock3,
   ExternalLink,
+  IdCard,
   Key,
   Upload,
   X,
@@ -573,7 +574,13 @@ export function EmploymentTab() {
   const pendingMessage = 'You have submitted a pending verification for this information.';
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <IdCard className="h-6 w-6 text-primary-600" />
+        <h1 className="text-2xl font-bold text-gray-900">Profile</h1>
+      </div>
+
+      <div className="space-y-4">
       <Card>
         <CardHeader>
           <h2 className="text-lg font-semibold text-gray-900">Employee Information</h2>
@@ -1205,6 +1212,7 @@ export function EmploymentTab() {
           void fetchProfile();
         }}
       />
+      </div>
     </div>
   );
 }

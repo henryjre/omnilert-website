@@ -138,6 +138,17 @@ type FilterOptionsPayload = {
   roles: Array<{ id: string; name: string }>;
 };
 
+type AssignmentOptionCompany = {
+  id: string;
+  name: string;
+  branches: Array<{ id: string; name: string; odoo_branch_id: string }>;
+};
+
+type CompanyAssignmentForm = {
+  companyId: string;
+  branchIds: string[];
+};
+
 const BANK_LABEL: Record<number, string> = {
   2: 'Metrobank',
   3: 'Gcash',
@@ -364,6 +375,10 @@ export function EmployeeProfilesPage() {
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const openTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [workEditMode, setWorkEditMode] = useState(false);
+  const [assignmentOptions, setAssignmentOptions] = useState<AssignmentOptionCompany[]>([]);
+  const [assignmentOptionsLoading, setAssignmentOptionsLoading] = useState(false);
+  const [editCompanyAssignments, setEditCompanyAssignments] = useState<CompanyAssignmentForm[]>([]);
+  const [showOdooConfirm, setShowOdooConfirm] = useState(false);
   const [workForm, setWorkForm] = useState<WorkFormState>({
     departmentId: '',
     positionTitle: '',
@@ -713,6 +728,21 @@ export function EmployeeProfilesPage() {
 
   const saveWorkInformation = async () => {
     if (!detail) return;
+    if (editCompanyAssignments.length === 0) {
+      setWorkUpdateError('Select at least one company assignment.');
+      return;
+    }
+    const missingBranches = editCompanyAssignments.find((item) => item.branchIds.length === 0);
+    if (missingBranches) {
+      const companyName = assignmentOptions.find((company) => company.id === missingBranches.companyId)?.name ?? 'selected company';
+      setWorkUpdateError(`Select at least one branch for ${companyName}.`);
+      return;
+    }
+    const residentCompany = editCompanyAssignments.find((item) => item.companyId === workForm.residentCompanyId);
+    if (!workForm.residentCompanyId || !workForm.residentBranchId || !residentCompany?.branchIds.includes(workForm.residentBranchId)) {
+      setWorkUpdateError('Select a resident branch from the assigned branches.');
+      return;
+    }
     setSavingWork(true);
     setError('');
     setWorkUpdateSuccess('');
@@ -729,11 +759,21 @@ export function EmployeeProfilesPage() {
             branchId: workForm.residentBranchId,
           }
           : null,
+        companyAssignments: editCompanyAssignments.length > 0 ? editCompanyAssignments : undefined,
         dateStarted: workForm.dateStarted || null,
       });
       const payload = res.data.data as EmployeeDetail;
       detailCacheRef.current[payload.id] = payload;
       applyDetailToState(payload);
+      const assignmentsMap = new Map<string, string[]>();
+      for (const branch of payload.work_information.branch_options) {
+        const current = assignmentsMap.get(branch.company_id) ?? [];
+        current.push(branch.branch_id);
+        assignmentsMap.set(branch.company_id, Array.from(new Set(current)));
+      }
+      setEditCompanyAssignments(
+        Array.from(assignmentsMap.entries()).map(([companyId, branchIds]) => ({ companyId, branchIds })),
+      );
       setItems((prev) => prev.map((item) => {
         if (item.id !== payload.id) return item;
         return {
@@ -756,6 +796,7 @@ export function EmployeeProfilesPage() {
       }));
       setWorkUpdateSuccess('Work information updated.');
       setWorkEditMode(false);
+      setShowOdooConfirm(false);
       void fetchDetail(payload.id, { silentError: true });
       await fetchList({ silent: true });
     } catch (err: any) {
@@ -764,6 +805,158 @@ export function EmployeeProfilesPage() {
       setSavingWork(false);
     }
   };
+
+  const cancelWorkEdit = useCallback(() => {
+    if (!detail) return;
+    const assignmentMap = new Map<string, string[]>();
+    for (const branch of detail.work_information.branch_options) {
+      const current = assignmentMap.get(branch.company_id) ?? [];
+      current.push(branch.branch_id);
+      assignmentMap.set(branch.company_id, Array.from(new Set(current)));
+    }
+    setEditCompanyAssignments(
+      Array.from(assignmentMap.entries()).map(([companyId, branchIds]) => ({ companyId, branchIds })),
+    );
+    setWorkEditMode(false);
+    setShowOdooConfirm(false);
+    setWorkForm({
+      departmentId: detail.work_information.department_id ?? '',
+      positionTitle: detail.work_information.position_title ?? '',
+      employmentStatus: normalizeEmploymentStatus(detail.work_information.status, false),
+      residentCompanyId: detail.work_information.resident_branch?.company_id
+        ?? detail.work_information.branch_options[0]?.company_id
+        ?? '',
+      residentBranchId: detail.work_information.resident_branch?.branch_id
+        ?? detail.work_information.branch_options[0]?.branch_id
+        ?? '',
+      dateStarted: toDateInput(detail.work_information.date_started),
+    });
+  }, [detail]);
+
+  const companyMap = useMemo(
+    () => new Map(assignmentOptions.map((company) => [company.id, company])),
+    [assignmentOptions],
+  );
+
+  const residentCompanyOptions = useMemo(
+    () => editCompanyAssignments
+      .map((assignment) => {
+        const company = companyMap.get(assignment.companyId);
+        return company ? { id: company.id, name: company.name } : null;
+      })
+      .filter((company): company is { id: string; name: string } => Boolean(company)),
+    [companyMap, editCompanyAssignments],
+  );
+
+  const residentBranchOptions = useMemo(() => {
+    if (!workForm.residentCompanyId) return [];
+    const selectedCompany = editCompanyAssignments.find((item) => item.companyId === workForm.residentCompanyId);
+    if (!selectedCompany) return [];
+    const branchMap = new Map(
+      (companyMap.get(workForm.residentCompanyId)?.branches ?? []).map((branch) => [branch.id, branch.name]),
+    );
+    return selectedCompany.branchIds
+      .map((branchId) => {
+        const name = branchMap.get(branchId);
+        return name ? { id: branchId, name } : null;
+      })
+      .filter((branch): branch is { id: string; name: string } => Boolean(branch));
+  }, [companyMap, editCompanyAssignments, workForm.residentCompanyId]);
+
+  const setResidentFromAssignments = useCallback((nextAssignments: CompanyAssignmentForm[]) => {
+    const residentCompany = nextAssignments.find((item) => item.companyId === workForm.residentCompanyId);
+    if (residentCompany && residentCompany.branchIds.includes(workForm.residentBranchId)) {
+      return;
+    }
+    if (residentCompany && residentCompany.branchIds.length > 0) {
+      setWorkForm((prev) => ({ ...prev, residentBranchId: residentCompany.branchIds[0] }));
+      return;
+    }
+    const firstCompany = nextAssignments.find((item) => item.branchIds.length > 0);
+    setWorkForm((prev) => ({
+      ...prev,
+      residentCompanyId: firstCompany?.companyId ?? '',
+      residentBranchId: firstCompany?.branchIds[0] ?? '',
+    }));
+  }, [workForm.residentBranchId, workForm.residentCompanyId]);
+
+  const toggleCompany = useCallback((companyId: string) => {
+    setEditCompanyAssignments((current) => {
+      const exists = current.find((item) => item.companyId === companyId);
+      const next = exists
+        ? current.filter((item) => item.companyId !== companyId)
+        : [...current, { companyId, branchIds: [] }];
+      setResidentFromAssignments(next);
+      return next;
+    });
+  }, [setResidentFromAssignments]);
+
+  const toggleBranch = useCallback((companyId: string, branchId: string) => {
+    setEditCompanyAssignments((current) => {
+      const next = current.map((item) => {
+        if (item.companyId !== companyId) return item;
+        return {
+          ...item,
+          branchIds: item.branchIds.includes(branchId)
+            ? item.branchIds.filter((id) => id !== branchId)
+            : [...item.branchIds, branchId],
+        };
+      });
+      setResidentFromAssignments(next);
+      return next;
+    });
+  }, [setResidentFromAssignments]);
+
+  const enterWorkEditMode = useCallback(async () => {
+    if (!detail || assignmentOptionsLoading) return;
+    setWorkUpdateError('');
+    setAssignmentOptionsLoading(true);
+    try {
+      if (assignmentOptions.length === 0) {
+        const optionsRes = await api.get('/users/assignment-options');
+        setAssignmentOptions(optionsRes.data.data?.companies || []);
+      }
+      const assignmentMap = new Map<string, string[]>();
+      for (const branch of detail.work_information.branch_options) {
+        const current = assignmentMap.get(branch.company_id) ?? [];
+        current.push(branch.branch_id);
+        assignmentMap.set(branch.company_id, Array.from(new Set(current)));
+      }
+      const initialAssignments = Array.from(assignmentMap.entries()).map(([companyId, branchIds]) => ({ companyId, branchIds }));
+      setEditCompanyAssignments(initialAssignments);
+      const initialResidentCompanyId = detail.work_information.resident_branch?.company_id
+        ?? initialAssignments[0]?.companyId
+        ?? '';
+      const selectedCompany = initialAssignments.find((item) => item.companyId === initialResidentCompanyId);
+      setWorkForm((prev) => ({
+        ...prev,
+        residentCompanyId: initialResidentCompanyId,
+        residentBranchId: detail.work_information.resident_branch?.branch_id
+          ?? selectedCompany?.branchIds[0]
+          ?? '',
+      }));
+      setWorkEditMode(true);
+    } catch (err: any) {
+      setWorkUpdateError(err.response?.data?.error || 'Failed to load assignment options');
+    } finally {
+      setAssignmentOptionsLoading(false);
+    }
+  }, [assignmentOptions.length, assignmentOptionsLoading, detail]);
+
+  const handleSaveWorkInformation = useCallback(() => {
+    if (!detail) return;
+    const currentBranchIds = new Set(
+      detail.work_information.branch_options.map((branch) => branch.branch_id),
+    );
+    const hasNewBranches = editCompanyAssignments.some((assignment) =>
+      assignment.branchIds.some((branchId) => !currentBranchIds.has(branchId)),
+    );
+    if (hasNewBranches) {
+      setShowOdooConfirm(true);
+      return;
+    }
+    void saveWorkInformation();
+  }, [detail, editCompanyAssignments]);
 
   if (loading) {
     return (
@@ -1056,6 +1249,46 @@ export function EmployeeProfilesPage() {
         )}
       </div>
 
+      {showOdooConfirm && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white shadow-xl">
+            <div className="border-b border-gray-200 px-5 py-4">
+              <p className="font-semibold text-gray-900">Confirm Branch Assignment</p>
+            </div>
+            <div className="px-5 py-4">
+              <p className="text-sm text-gray-700">
+                This employee will be assigned to new branch(es). An Odoo employee account will be
+                created for any branch where one does not already exist, using the same PIN code.
+                Do you want to continue?
+              </p>
+            </div>
+            <div className="flex gap-3 border-t border-gray-200 px-5 py-4">
+              <Button
+                type="button"
+                className="flex-1"
+                variant="standard"
+                disabled={savingWork}
+                onClick={() => {
+                  setShowOdooConfirm(false);
+                  void saveWorkInformation();
+                }}
+              >
+                Yes, Save Changes
+              </Button>
+              <Button
+                type="button"
+                className="flex-1"
+                variant="secondary"
+                disabled={savingWork}
+                onClick={() => setShowOdooConfirm(false)}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {selectedUserId && (
         <div
           className="fixed inset-0 z-40 bg-black/30"
@@ -1185,7 +1418,9 @@ export function EmployeeProfilesPage() {
                           <Button
                             size="sm"
                             variant="secondary"
-                            onClick={() => setWorkEditMode(true)}
+                            onClick={() => {
+                              void enterWorkEditMode();
+                            }}
                           >
                             Edit Work Information
                           </Button>
@@ -1316,29 +1551,23 @@ export function EmployeeProfilesPage() {
                               value={workForm.residentCompanyId}
                               onChange={(e) => {
                                 const companyId = e.target.value;
-                                const firstBranch = detail.work_information.branch_options.find(
-                                  (branch) => branch.company_id === companyId,
-                                );
+                                const selectedCompany = editCompanyAssignments.find((item) => item.companyId === companyId);
                                 setWorkForm((prev) => ({
                                   ...prev,
                                   residentCompanyId: companyId,
-                                  residentBranchId: firstBranch?.branch_id ?? '',
+                                  residentBranchId: selectedCompany?.branchIds[0] ?? '',
                                 }));
                               }}
                               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
                             >
-                              {Array.from(
-                                new Map(
-                                  detail.work_information.branch_options.map((branch) => [
-                                    branch.company_id,
-                                    branch.company_name,
-                                  ]),
-                                ).entries(),
-                              ).map(([companyId, companyName]) => (
-                                <option key={companyId} value={companyId}>
-                                  {companyName}
+                              {residentCompanyOptions.map((company) => (
+                                <option key={company.id} value={company.id}>
+                                  {company.name}
                                 </option>
                               ))}
+                              {residentCompanyOptions.length === 0 && (
+                                <option value="">No assigned companies</option>
+                              )}
                             </select>
                           </div>
                           <div>
@@ -1348,36 +1577,69 @@ export function EmployeeProfilesPage() {
                               onChange={(e) => setWorkForm((prev) => ({ ...prev, residentBranchId: e.target.value }))}
                               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
                             >
-                              {detail.work_information.branch_options
-                                .filter((branch) => branch.company_id === workForm.residentCompanyId)
-                                .map((branch) => (
-                                  <option key={branch.branch_id} value={branch.branch_id}>
-                                    {branch.branch_name}
-                                  </option>
-                                ))}
+                              {residentBranchOptions.map((branch) => (
+                                <option key={branch.id} value={branch.id}>
+                                  {branch.name}
+                                </option>
+                              ))}
+                              {residentBranchOptions.length === 0 && (
+                                <option value="">No assigned branches</option>
+                              )}
                             </select>
                           </div>
+                          <div>
+                            <label className="mb-1 block text-sm font-medium text-gray-700">
+                              Company Access and Odoo Employee Branch Targets
+                            </label>
+                            <div className="space-y-2">
+                              {assignmentOptions.map((company) => {
+                                const selected = editCompanyAssignments.find((item) => item.companyId === company.id);
+                                return (
+                                  <div key={company.id} className="rounded-lg border border-gray-200 p-3">
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleCompany(company.id)}
+                                      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                                        selected ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                      }`}
+                                    >
+                                      {company.name}
+                                    </button>
+                                    {selected && (
+                                      <div className="mt-2 flex flex-wrap gap-2">
+                                        {company.branches.map((branch) => (
+                                          <button
+                                            key={branch.id}
+                                            type="button"
+                                            onClick={() => toggleBranch(company.id, branch.id)}
+                                            className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                                              selected.branchIds.includes(branch.id)
+                                                ? 'bg-emerald-600 text-white'
+                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                            }`}
+                                          >
+                                            {branch.name}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                              {assignmentOptionsLoading && (
+                                <div className="rounded bg-blue-50 px-3 py-2 text-xs text-blue-700">
+                                  Loading assignment options...
+                                </div>
+                              )}
+                            </div>
+                          </div>
                           <div className="flex gap-2">
-                            <Button variant="success" onClick={saveWorkInformation} disabled={savingWork}>
+                            <Button variant="success" onClick={handleSaveWorkInformation} disabled={savingWork}>
                               {savingWork ? 'Saving...' : 'Save'}
                             </Button>
                             <Button
                               variant="secondary"
-                              onClick={() => {
-                                setWorkEditMode(false);
-                                setWorkForm({
-                                  departmentId: detail.work_information.department_id ?? '',
-                                  positionTitle: detail.work_information.position_title ?? '',
-                                  employmentStatus: normalizeEmploymentStatus(detail.work_information.status, false),
-                                  residentCompanyId: detail.work_information.resident_branch?.company_id
-                                    ?? detail.work_information.branch_options[0]?.company_id
-                                    ?? '',
-                                  residentBranchId: detail.work_information.resident_branch?.branch_id
-                                    ?? detail.work_information.branch_options[0]?.branch_id
-                                    ?? '',
-                                  dateStarted: toDateInput(detail.work_information.date_started),
-                                });
-                              }}
+                              onClick={cancelWorkEdit}
                               disabled={savingWork}
                             >
                               Cancel

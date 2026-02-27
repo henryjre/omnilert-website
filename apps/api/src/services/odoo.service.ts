@@ -46,31 +46,170 @@ export function getCurrentSemiMonthRange(cutoff?: number): { date_from: string; 
  * @param companyId - The Odoo company ID
  * @returns Employee record or null
  */
+type OdooPartnerRow = { id: number };
+type OdooEmployeeIdentityRow = {
+  id: number;
+  name?: string;
+  pin?: string | null;
+  company_id?: [number, string] | false;
+  bank_account_id?: [number, string] | false;
+  work_contact_id?: [number, string] | false;
+  x_website_key?: string | null;
+};
+
+async function resolveCanonicalPartnerByIdentity(input: {
+  websiteUserKey?: string | null;
+  email?: string | null;
+}): Promise<OdooPartnerRow | null> {
+  if (input.websiteUserKey) {
+    const byKey = (await callOdooKw(
+      "res.partner",
+      "search_read",
+      [],
+      {
+        domain: [["x_website_key", "=", input.websiteUserKey], ["active", "=", true]],
+        fields: ["id"],
+        order: "id asc",
+        limit: 1,
+      }
+    )) as OdooPartnerRow[];
+    if (byKey.length > 0) {
+      return byKey[0];
+    }
+  }
+
+  if (input.email) {
+    const byEmail = (await callOdooKw(
+      "res.partner",
+      "search_read",
+      [],
+      {
+        domain: [["email", "=", input.email], ["active", "=", true]],
+        fields: ["id"],
+        order: "id asc",
+        limit: 1,
+      }
+    )) as OdooPartnerRow[];
+    if (byEmail.length > 0) {
+      return byEmail[0];
+    }
+  }
+
+  return null;
+}
+
+async function listEmployeesLinkedToPartner(
+  partnerId: number,
+  companyId?: number,
+): Promise<OdooEmployeeIdentityRow[]> {
+  const domain: unknown[] = [["work_contact_id", "=", partnerId]];
+  if (Number.isInteger(companyId)) {
+    domain.push(["company_id", "=", companyId]);
+  }
+
+  return (await callOdooKw(
+    "hr.employee",
+    "search_read",
+    [],
+    {
+      domain,
+      fields: ["id", "name", "pin", "company_id", "bank_account_id", "work_contact_id", "x_website_key"],
+      order: "id asc",
+      limit: 1000,
+    },
+  )) as OdooEmployeeIdentityRow[];
+}
+
+async function listLegacyEmployeesByWebsiteKey(
+  websiteUserKey: string,
+  companyId?: number,
+): Promise<OdooEmployeeIdentityRow[]> {
+  const domain: unknown[] = [["x_website_key", "=", websiteUserKey]];
+  if (Number.isInteger(companyId)) {
+    domain.push(["company_id", "=", companyId]);
+  }
+
+  return (await callOdooKw(
+    "hr.employee",
+    "search_read",
+    [],
+    {
+      domain,
+      fields: ["id", "name", "pin", "company_id", "bank_account_id", "work_contact_id", "x_website_key"],
+      order: "id asc",
+      limit: 1000,
+    },
+  )) as OdooEmployeeIdentityRow[];
+}
+
+function dedupeEmployeeRows(rows: OdooEmployeeIdentityRow[]): OdooEmployeeIdentityRow[] {
+  const seen = new Set<number>();
+  const deduped: OdooEmployeeIdentityRow[] = [];
+  for (const row of rows) {
+    if (seen.has(row.id)) continue;
+    seen.add(row.id);
+    deduped.push(row);
+  }
+  return deduped;
+}
+
+async function listEmployeesForIdentity(input: {
+  websiteUserKey: string;
+  email?: string | null;
+  companyId?: number;
+}): Promise<{ partnerId: number | null; employees: OdooEmployeeIdentityRow[] }> {
+  const partner = await resolveCanonicalPartnerByIdentity({
+    websiteUserKey: input.websiteUserKey,
+    email: input.email ?? null,
+  });
+
+  const partnerEmployees = partner
+    ? await listEmployeesLinkedToPartner(partner.id, input.companyId)
+    : [];
+  const legacyEmployees = await listLegacyEmployeesByWebsiteKey(input.websiteUserKey, input.companyId);
+
+  return {
+    partnerId: partner?.id ?? null,
+    employees: dedupeEmployeeRows([...partnerEmployees, ...legacyEmployees]),
+  };
+}
+
+export async function getEmployeeIdentitySnapshot(input: {
+  websiteUserKey: string;
+  email?: string | null;
+}): Promise<{ employeeCount: number; existingPin: string | null }> {
+  const { employees } = await listEmployeesForIdentity({
+    websiteUserKey: input.websiteUserKey,
+    email: input.email ?? null,
+  });
+
+  const existingPin = employees
+    .map((employee) => String(employee.pin ?? "").trim())
+    .find((pin) => /^\d{4}$/.test(pin)) ?? null;
+
+  return {
+    employeeCount: employees.length,
+    existingPin,
+  };
+}
+
 export async function getEmployeeByWebsiteUserKey(
   websiteUserKey: string,
   companyId: number
 ): Promise<{ id: number; name: string } | null> {
   try {
-    const result = (await callOdooKw(
-      "hr.employee",
-      "search_read",
-      [],
-      {
-        domain: [
-          ["x_website_key", "=", websiteUserKey],
-          ["company_id", "=", companyId],
-        ],
-        fields: ["id", "name", "x_website_key", "company_id"],
-        limit: 1,
-      }
-    )) as Array<{ id: number; name: string; x_website_key: string; company_id: [number, string] }>;
+    const { employees } = await listEmployeesForIdentity({
+      websiteUserKey,
+      companyId,
+    });
+    const result = employees.slice(0, 1);
 
     if (!result || result.length === 0) {
       logger.warn(`No employee found for website user ID: ${websiteUserKey}, company: ${companyId}`);
       return null;
     }
 
-    return { id: result[0].id, name: result[0].name };
+    return { id: result[0].id, name: result[0].name ?? "" };
   } catch (err) {
     logger.error(`Failed to get employee by website user ID ${websiteUserKey}: ${err}`);
     throw err;
@@ -997,21 +1136,19 @@ export async function createOrUpdateEmployeeForRegistration(input: {
     },
     'Preparing Odoo employee upsert',
   );
-  const existing = (await callOdooKw(
-    'hr.employee',
-    'search_read',
-    [],
-    {
-      domain: [
-        ['x_website_key', '=', input.websiteKey],
-        ['company_id', '=', input.companyId],
-      ],
-      fields: ['id'],
-      limit: 1,
-    },
-  )) as Array<{ id: number }>;
+  const partner = await resolveCanonicalPartnerByIdentity({
+    websiteUserKey: input.websiteKey,
+    email: input.workEmail,
+  });
 
-  const payload = {
+  let existing = partner
+    ? await listEmployeesLinkedToPartner(partner.id, input.companyId)
+    : [];
+  if (existing.length === 0) {
+    existing = await listLegacyEmployeesByWebsiteKey(input.websiteKey, input.companyId);
+  }
+
+  const payload: Record<string, unknown> = {
     name: input.name,
     work_email: input.workEmail,
     pin: input.pin,
@@ -1019,6 +1156,9 @@ export async function createOrUpdateEmployeeForRegistration(input: {
     x_website_key: input.websiteKey,
     company_id: input.companyId,
   };
+  if (partner) {
+    payload.work_contact_id = partner.id;
+  }
 
   if (existing.length > 0) {
     logger.info(
@@ -1027,6 +1167,7 @@ export async function createOrUpdateEmployeeForRegistration(input: {
         employeeId: existing[0].id,
         companyId: input.companyId,
         barcode: input.barcode,
+        partnerId: partner?.id ?? null,
       },
       'Updating existing Odoo employee',
     );
@@ -1039,6 +1180,7 @@ export async function createOrUpdateEmployeeForRegistration(input: {
       phase: 'registration-approve',
       companyId: input.companyId,
       barcode: input.barcode,
+      partnerId: partner?.id ?? null,
     },
     'Creating new Odoo employee',
   );
@@ -1410,39 +1552,15 @@ export async function createPartnerBankAndAssignEmployees(input: {
   bankId: number;
   accountNumber: string;
 }): Promise<{ partnerId: number; partnerBankId: number; employeeIds: number[] }> {
-  let partnerRows: Array<{ id: number }> = [];
-
-  if (input.websiteUserKey) {
-    partnerRows = (await callOdooKw(
-      'res.partner',
-      'search_read',
-      [],
-      {
-        domain: [['x_website_key', '=', input.websiteUserKey]],
-        fields: ['id'],
-        limit: 1,
-      },
-    )) as Array<{ id: number }>;
-  }
-
-  if (partnerRows.length === 0 && input.email) {
-    partnerRows = (await callOdooKw(
-      'res.partner',
-      'search_read',
-      [],
-      {
-        domain: [['email', '=', input.email]],
-        fields: ['id'],
-        limit: 1,
-      },
-    )) as Array<{ id: number }>;
-  }
-
-  if (partnerRows.length === 0) {
+  const partner = await resolveCanonicalPartnerByIdentity({
+    websiteUserKey: input.websiteUserKey,
+    email: input.email,
+  });
+  if (!partner) {
     throw new Error('No res.partner found for bank information sync');
   }
 
-  const partnerId = partnerRows[0].id;
+  const partnerId = partner.id;
   const partnerBankId = (await callOdooKw('res.partner.bank', 'create', [{
     bank_id: input.bankId,
     acc_number: input.accountNumber,
@@ -1450,16 +1568,11 @@ export async function createPartnerBankAndAssignEmployees(input: {
     allow_out_payment: true,
   }])) as number;
 
-  const employeeRows = (await callOdooKw(
-    'hr.employee',
-    'search_read',
-    [],
-    {
-      domain: [['work_contact_id', '=', partnerId]],
-      fields: ['id'],
-      limit: 1000,
-    },
-  )) as Array<{ id: number }>;
+  const partnerEmployees = await listEmployeesLinkedToPartner(partnerId);
+  const legacyEmployees = input.websiteUserKey
+    ? await listLegacyEmployeesByWebsiteKey(input.websiteUserKey)
+    : [];
+  const employeeRows = dedupeEmployeeRows([...partnerEmployees, ...legacyEmployees]);
 
   const employeeIds = employeeRows.map((row) => row.id);
   if (employeeIds.length > 0) {
@@ -1469,31 +1582,11 @@ export async function createPartnerBankAndAssignEmployees(input: {
   return { partnerId, partnerBankId, employeeIds };
 }
 
-export async function getEmployeeLinkedBankInfoByWebsiteUserKey(
-  websiteUserKey: string,
-): Promise<{ bankId: number; accountNumber: string } | null> {
-  const employees = (await callOdooKw(
-    'hr.employee',
-    'search_read',
-    [],
-    {
-      domain: [['x_website_key', '=', websiteUserKey]],
-      fields: ['id', 'bank_account_id'],
-      order: 'id asc',
-      limit: 1000,
-    },
-  )) as Array<{ id: number; bank_account_id?: [number, string] | false }>;
-
-  const employeeWithBank = employees.find((employee) =>
-    Array.isArray(employee.bank_account_id)
-    && Number(employee.bank_account_id[0]) > 0,
-  );
-
-  if (!employeeWithBank || !Array.isArray(employeeWithBank.bank_account_id)) {
-    return null;
-  }
-
-  const partnerBankId = Number(employeeWithBank.bank_account_id[0]);
+async function readPartnerBankRecord(partnerBankId: number): Promise<{
+  id: number;
+  bankId: number;
+  accountNumber: string;
+} | null> {
   const partnerBankRows = (await callOdooKw(
     'res.partner.bank',
     'read',
@@ -1504,10 +1597,6 @@ export async function getEmployeeLinkedBankInfoByWebsiteUserKey(
   )) as Array<{ id: number; bank_id?: [number, string] | false; acc_number?: string | null }>;
 
   if (!partnerBankRows || partnerBankRows.length === 0) {
-    logger.warn(
-      { websiteUserKey, partnerBankId },
-      'Odoo partner bank record not found for employee bank linkage',
-    );
     return null;
   }
 
@@ -1515,24 +1604,108 @@ export async function getEmployeeLinkedBankInfoByWebsiteUserKey(
   const bankId = Array.isArray(bankRow.bank_id) ? Number(bankRow.bank_id[0]) : NaN;
   const accountNumber = String(bankRow.acc_number ?? '').trim();
   if (!Number.isFinite(bankId) || bankId <= 0 || !accountNumber) {
-    logger.warn(
+    return null;
+  }
+
+  return {
+    id: bankRow.id,
+    bankId,
+    accountNumber,
+  };
+}
+
+export async function getEmployeeLinkedBankInfoByWebsiteUserKey(
+  websiteUserKey: string,
+  email: string | null = null,
+): Promise<{ bankId: number; accountNumber: string } | null> {
+  const { partnerId, employees } = await listEmployeesForIdentity({
+    websiteUserKey,
+    email,
+  });
+
+  let selectedBank: { id: number; bankId: number; accountNumber: string } | null = null;
+  for (const employee of employees) {
+    if (!Array.isArray(employee.bank_account_id) || Number(employee.bank_account_id[0]) <= 0) {
+      continue;
+    }
+    const resolved = await readPartnerBankRecord(Number(employee.bank_account_id[0]));
+    if (resolved) {
+      selectedBank = resolved;
+      break;
+    }
+  }
+
+  if (!selectedBank && partnerId) {
+    const partnerBanks = (await callOdooKw(
+      'res.partner.bank',
+      'search_read',
+      [],
       {
-        websiteUserKey,
-        partnerBankId,
-        hasBankId: Number.isFinite(bankId) && bankId > 0,
-        hasAccountNumber: Boolean(accountNumber),
+        domain: [['partner_id', '=', partnerId]],
+        fields: ['id', 'bank_id', 'acc_number', 'write_date'],
+        order: 'write_date desc, id desc',
+        limit: 1,
       },
-      'Odoo employee-linked bank record is incomplete; skipping auto-fill',
+    )) as Array<{ id: number; bank_id?: [number, string] | false; acc_number?: string | null }>;
+
+    if (partnerBanks.length > 0) {
+      const candidate = partnerBanks[0];
+      const bankId = Array.isArray(candidate.bank_id) ? Number(candidate.bank_id[0]) : NaN;
+      const accountNumber = String(candidate.acc_number ?? '').trim();
+      if (Number.isFinite(bankId) && bankId > 0 && accountNumber) {
+        selectedBank = {
+          id: candidate.id,
+          bankId,
+          accountNumber,
+        };
+      }
+    }
+  }
+
+  if (!selectedBank) {
+    logger.warn(
+      { websiteUserKey, email, partnerId, employeeCount: employees.length },
+      'Resolved partner/employee identity but no bank record was found for auto-fill',
     );
     return null;
   }
 
+  const employeesMissingBank = employees
+    .filter((employee) =>
+      !Array.isArray(employee.bank_account_id) || Number(employee.bank_account_id[0]) <= 0,
+    )
+    .map((employee) => employee.id);
+
+  if (employeesMissingBank.length > 0) {
+    try {
+      await callOdooKw('hr.employee', 'write', [employeesMissingBank, { bank_account_id: selectedBank.id }]);
+    } catch (error) {
+      logger.warn(
+        {
+          websiteUserKey,
+          email,
+          partnerId,
+          partnerBankId: selectedBank.id,
+          employeeIds: employeesMissingBank,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Resolved bank record but failed to attach bank_account_id to some linked employees',
+      );
+    }
+  }
+
   logger.info(
-    { websiteUserKey, partnerBankId, bankId },
+    {
+      websiteUserKey,
+      email,
+      partnerId,
+      partnerBankId: selectedBank.id,
+      bankId: selectedBank.bankId,
+    },
     'Resolved employee-linked bank info from Odoo',
   );
 
-  return { bankId, accountNumber };
+  return { bankId: selectedBank.bankId, accountNumber: selectedBank.accountNumber };
 }
 
 /**
@@ -1543,16 +1716,11 @@ export async function getEmployeeLinkedBankInfoByWebsiteUserKey(
  */
 export async function getCompanyPin(websiteUserKey: string, companyId: number): Promise<string | null> {
   try {
-    const result = (await callOdooKw(
-      "hr.employee",
-      "search_read",
-      [],
-      {
-        domain: [["x_website_key", "=", websiteUserKey], ["company_id", "=", companyId]],
-        fields: ["pin"],
-        limit: 1,
-      }
-    )) as Array<{ pin?: string | null }>;
+    const { employees } = await listEmployeesForIdentity({
+      websiteUserKey,
+      companyId,
+    });
+    const result = employees.slice(0, 1);
 
     if (!result || result.length === 0) {
       logger.warn(`No employee found for website user: ${websiteUserKey}, company: ${companyId}`);
@@ -1616,24 +1784,30 @@ export async function getResourceIdByWebsiteUserKeyAndCompanyId(
   companyId: number,
 ): Promise<number | null> {
   try {
+    const identityEmployees = (await listEmployeesForIdentity({
+      websiteUserKey,
+      companyId,
+    })).employees;
+    if (identityEmployees.length === 0) {
+      logger.warn(`No hr.employee found for website key ${websiteUserKey} in company ${companyId}`);
+      return null;
+    }
+
     const employees = (await callOdooKw(
       'hr.employee',
       'search_read',
       [],
       {
         domain: [
-          ['x_website_key', '=', websiteUserKey],
-          ['company_id', '=', companyId],
+          ['id', 'in', identityEmployees.map((employee) => employee.id)],
         ],
         fields: ['id', 'resource_id'],
+        order: 'id asc',
         limit: 1,
       },
     )) as Array<{ id: number; resource_id?: [number, string] | false }>;
 
-    if (!employees || employees.length === 0) {
-      logger.warn(`No hr.employee found for website key ${websiteUserKey} in company ${companyId}`);
-      return null;
-    }
+    if (!employees || employees.length === 0) return null;
 
     const resourceField = employees[0].resource_id;
     if (!Array.isArray(resourceField) || !resourceField[0]) {

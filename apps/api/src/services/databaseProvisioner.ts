@@ -330,7 +330,8 @@ async function createTenantTables(tenantDb: ReturnType<typeof db.getMasterDb>): 
     table.uuid('shift_id').notNullable().references('id').inTable('employee_shifts');
     table.uuid('shift_log_id').notNullable().references('id').inTable('shift_logs');
     table.uuid('branch_id').notNullable().references('id').inTable('branches');
-    table.uuid('user_id').nullable().references('id').inTable('users');
+    // Global user IDs are master-scoped, so tenant shift_authorizations cannot FK to tenant users.
+    table.uuid('user_id').nullable();
     table.string('auth_type', 50).notNullable(); // 'early_check_in' | 'tardiness' | 'early_check_out' | 'late_check_out'
     table.integer('diff_minutes').notNullable();
     table.boolean('needs_employee_reason').notNullable().defaultTo(false);
@@ -338,7 +339,7 @@ async function createTenantTables(tenantDb: ReturnType<typeof db.getMasterDb>): 
     table.text('employee_reason').nullable();
     table.text('rejection_reason').nullable();
     table.string('overtime_type', 50).nullable();
-    table.uuid('resolved_by').nullable().references('id').inTable('users');
+    table.uuid('resolved_by').nullable();
     table.timestamp('resolved_at').nullable();
     table.timestamp('created_at').notNullable().defaultTo(tenantDb.fn.now());
   });
@@ -346,7 +347,8 @@ async function createTenantTables(tenantDb: ReturnType<typeof db.getMasterDb>): 
   // Authorization Requests
   await tenantDb.schema.createTable('authorization_requests', (table) => {
     table.uuid('id').primary().defaultTo(tenantDb.raw('gen_random_uuid()'));
-    table.uuid('user_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
+    // Global user IDs are stored in master DB, so tenant authorization_requests cannot FK to tenant users.
+    table.uuid('user_id').notNullable();
     table.uuid('branch_id').notNullable().references('id').inTable('branches');
     table.string('request_type', 50).notNullable();
     table.string('level', 20).notNullable().defaultTo('management'); // 'management' | 'service_crew'
@@ -359,7 +361,7 @@ async function createTenantTables(tenantDb: ReturnType<typeof db.getMasterDb>): 
     table.string('created_by_name', 255).nullable();
     table.string('status', 20).notNullable().defaultTo('pending');
     table.text('rejection_reason').nullable();
-    table.uuid('reviewed_by').references('id').inTable('users');
+    table.uuid('reviewed_by').nullable();
     table.timestamp('reviewed_at');
     table.timestamp('created_at').notNullable().defaultTo(tenantDb.fn.now());
     table.timestamp('updated_at').notNullable().defaultTo(tenantDb.fn.now());
@@ -368,7 +370,8 @@ async function createTenantTables(tenantDb: ReturnType<typeof db.getMasterDb>): 
   // Cash Requests
   await tenantDb.schema.createTable('cash_requests', (table) => {
     table.uuid('id').primary().defaultTo(tenantDb.raw('gen_random_uuid()'));
-    table.uuid('user_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
+    // Global user IDs are stored in master DB, so tenant cash_requests cannot FK to tenant users.
+    table.uuid('user_id').notNullable();
     table.uuid('branch_id').notNullable().references('id').inTable('branches');
     table.string('request_type', 100).nullable();
     table.string('reference', 255).nullable();
@@ -381,7 +384,7 @@ async function createTenantTables(tenantDb: ReturnType<typeof db.getMasterDb>): 
     table.string('status', 20).notNullable().defaultTo('pending');
     table.text('rejection_reason').nullable();
     table.string('created_by_name', 255).nullable();
-    table.uuid('reviewed_by').references('id').inTable('users');
+    table.uuid('reviewed_by').nullable();
     table.timestamp('reviewed_at');
     table.timestamp('created_at').notNullable().defaultTo(tenantDb.fn.now());
     table.timestamp('updated_at').notNullable().defaultTo(tenantDb.fn.now());
@@ -390,7 +393,7 @@ async function createTenantTables(tenantDb: ReturnType<typeof db.getMasterDb>): 
   // Add disbursed columns to cash_requests (migration for existing DBs)
   if (!(await tenantDb.schema.hasColumn('cash_requests', 'disbursed_by'))) {
     await tenantDb.schema.alterTable('cash_requests', (table) => {
-      table.uuid('disbursed_by').nullable().references('id').inTable('users');
+      table.uuid('disbursed_by').nullable();
       table.timestamp('disbursed_at').nullable();
     });
   }
@@ -417,7 +420,8 @@ async function createTenantTables(tenantDb: ReturnType<typeof db.getMasterDb>): 
     table.text('encrypted_password').notNullable();
     table.string('status', 20).notNullable().defaultTo('pending');
     table.timestamp('requested_at').notNullable().defaultTo(tenantDb.fn.now());
-    table.uuid('reviewed_by').nullable().references('id').inTable('users');
+    // Reviewed by stores global user IDs from master DB.
+    table.uuid('reviewed_by').nullable();
     table.timestamp('reviewed_at').nullable();
     table.text('rejection_reason').nullable();
     table.jsonb('approved_role_ids').nullable();
@@ -435,12 +439,13 @@ async function createTenantTables(tenantDb: ReturnType<typeof db.getMasterDb>): 
   // Personal Information Verifications
   await tenantDb.schema.createTable('personal_information_verifications', (table) => {
     table.uuid('id').primary().defaultTo(tenantDb.raw('gen_random_uuid()'));
-    table.uuid('user_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
+    // Global user IDs are master-scoped, so tenant verifications cannot FK to tenant users.
+    table.uuid('user_id').notNullable();
     table.string('status', 20).notNullable().defaultTo('pending');
     table.jsonb('requested_changes').notNullable();
     table.jsonb('approved_changes').nullable();
     table.string('valid_id_url', 500).notNullable();
-    table.uuid('reviewed_by').nullable().references('id').inTable('users');
+    table.uuid('reviewed_by').nullable();
     table.timestamp('reviewed_at').nullable();
     table.text('rejection_reason').nullable();
     table.timestamp('created_at').notNullable().defaultTo(tenantDb.fn.now());
@@ -466,7 +471,8 @@ async function createTenantTables(tenantDb: ReturnType<typeof db.getMasterDb>): 
   // Employment requirement submissions
   await tenantDb.schema.createTable('employment_requirement_submissions', (table) => {
     table.uuid('id').primary().defaultTo(tenantDb.raw('gen_random_uuid()'));
-    table.uuid('user_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
+    // Global user IDs are master-scoped, so tenant requirement submissions cannot FK to tenant users.
+    table.uuid('user_id').notNullable();
     table
       .string('requirement_code', 100)
       .notNullable()
@@ -475,7 +481,7 @@ async function createTenantTables(tenantDb: ReturnType<typeof db.getMasterDb>): 
       .onDelete('CASCADE');
     table.string('document_url', 500).notNullable();
     table.string('status', 20).notNullable().defaultTo('pending');
-    table.uuid('reviewed_by').nullable().references('id').inTable('users');
+    table.uuid('reviewed_by').nullable();
     table.timestamp('reviewed_at').nullable();
     table.text('rejection_reason').nullable();
     table.timestamp('created_at').notNullable().defaultTo(tenantDb.fn.now());
@@ -491,11 +497,12 @@ async function createTenantTables(tenantDb: ReturnType<typeof db.getMasterDb>): 
   // Bank information verifications
   await tenantDb.schema.createTable('bank_information_verifications', (table) => {
     table.uuid('id').primary().defaultTo(tenantDb.raw('gen_random_uuid()'));
-    table.uuid('user_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
+    // Global user IDs are master-scoped, so tenant bank verifications cannot FK to tenant users.
+    table.uuid('user_id').notNullable();
     table.integer('bank_id').notNullable();
     table.string('account_number', 255).notNullable();
     table.string('status', 20).notNullable().defaultTo('pending');
-    table.uuid('reviewed_by').nullable().references('id').inTable('users');
+    table.uuid('reviewed_by').nullable();
     table.timestamp('reviewed_at').nullable();
     table.text('rejection_reason').nullable();
     table.integer('odoo_partner_bank_id').nullable();

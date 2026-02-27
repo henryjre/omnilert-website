@@ -19,6 +19,10 @@ export const updateEmployeeWorkInformationSchema = z.object({
   positionTitle: z.string().trim().max(255).nullable(),
   employmentStatus: employmentStatusSchema.optional(),
   isActive: z.boolean().optional(),
+  companyAssignments: z.array(z.object({
+    companyId: uuid,
+    branchIds: z.array(uuid).min(1),
+  })).optional(),
   residentBranch: z.object({
     companyId: uuid,
     branchId: uuid,

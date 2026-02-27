@@ -42,11 +42,11 @@ export async function up(knex: Knex): Promise<void> {
   if (!(await knex.schema.hasTable(BANK_VERIFICATIONS_TABLE))) {
     await knex.schema.createTable(BANK_VERIFICATIONS_TABLE, (table) => {
       table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
-      table.uuid('user_id').notNullable().references('id').inTable(USERS_TABLE).onDelete('CASCADE');
+      table.uuid('user_id').notNullable();
       table.integer('bank_id').notNullable();
       table.string('account_number', 255).notNullable();
       table.string('status', 20).notNullable().defaultTo('pending');
-      table.uuid('reviewed_by').nullable().references('id').inTable(USERS_TABLE);
+      table.uuid('reviewed_by').nullable();
       table.timestamp('reviewed_at').nullable();
       table.text('rejection_reason').nullable();
       table.integer('odoo_partner_bank_id').nullable();
@@ -131,4 +131,3 @@ export async function down(knex: Knex): Promise<void> {
     });
   }
 }
-

@@ -228,7 +228,12 @@ export function EmployeeNotificationsTab() {
   const pagedNotifications = notifications.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
-    <>
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <Bell className="h-6 w-6 text-primary-600" />
+        <h1 className="text-2xl font-bold text-gray-900">Notifications</h1>
+      </div>
+
       <div className="space-y-3">
         {pagedNotifications.map((n) => {
           const tokenPayId = getTokenPayVerificationId(n.link_url);
@@ -550,6 +555,6 @@ export function EmployeeNotificationsTab() {
           });
         }}
       />
-    </>
+    </div>
   );
 }

@@ -5,7 +5,6 @@ import { AdminRoleGuard } from '@/features/auth/components/AdminRoleGuard';
 import { DashboardLayout } from '@/features/dashboard/components/DashboardLayout';
 import { LoginPage } from '@/features/auth/pages/LoginPage';
 import { DashboardPage } from '@/features/dashboard/pages/DashboardPage';
-import { AccountPage } from '@/features/account/pages/AccountPage';
 import { ScheduleTab } from '@/features/account/components/ScheduleTab';
 import { AuthorizationRequestsTab } from '@/features/account/components/AuthorizationRequestsTab';
 import { CashRequestsTab } from '@/features/account/components/CashRequestsTab';
@@ -53,20 +52,43 @@ export const router = createBrowserRouter([
           },
           {
             path: 'account',
-            element: <AccountPage />,
-            children: [
-              {
-                index: true,
-                element: <Navigate to="/account/schedule" replace />,
-              },
-              { path: 'schedule', element: <ScheduleTab /> },
-              { path: 'authorization-requests', element: <AuthorizationRequestsTab /> },
-              { path: 'cash-requests', element: <CashRequestsTab /> },
-              { path: 'notifications', element: <EmployeeNotificationsTab /> },
-              { path: 'settings', element: <SettingsTab /> },
-              { path: 'profile', element: <EmploymentTab /> },
-              { path: 'employment', element: <Navigate to="/account/profile" replace /> },
-            ],
+            element: <Navigate to="/account/schedule" replace />,
+          },
+          {
+            path: 'account/schedule',
+            element: <ScheduleTab />,
+          },
+          {
+            path: 'account/authorization-requests',
+            element: (
+              <PermissionGuard permission={PERMISSIONS.ACCOUNT_VIEW_AUTH_REQUESTS}>
+                <AuthorizationRequestsTab />
+              </PermissionGuard>
+            ),
+          },
+          {
+            path: 'account/cash-requests',
+            element: (
+              <PermissionGuard permission={PERMISSIONS.ACCOUNT_VIEW_CASH_REQUESTS}>
+                <CashRequestsTab />
+              </PermissionGuard>
+            ),
+          },
+          {
+            path: 'account/notifications',
+            element: <EmployeeNotificationsTab />,
+          },
+          {
+            path: 'account/settings',
+            element: <SettingsTab />,
+          },
+          {
+            path: 'account/profile',
+            element: <EmploymentTab />,
+          },
+          {
+            path: 'account/employment',
+            element: <Navigate to="/account/profile" replace />,
           },
           {
             path: 'pos-verification',
@@ -137,7 +159,7 @@ export const router = createBrowserRouter([
           {
             path: 'employee-requirements',
             element: (
-              <PermissionGuard permission={PERMISSIONS.SHIFT_VIEW_ALL}>
+              <PermissionGuard permission={PERMISSIONS.EMPLOYEE_REQUIREMENTS_APPROVE}>
                 <EmployeeRequirementsPage />
               </PermissionGuard>
             ),

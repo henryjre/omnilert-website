@@ -1,6 +1,7 @@
 import type { Knex } from 'knex';
 import { AppError } from '../middleware/errorHandler.js';
 import { db } from '../config/database.js';
+import { assignGlobalCompanyBranches } from './globalUserManagement.service.js';
 import { loadUserWorkScope } from './globalUser.service.js';
 
 type EmploymentStatus = 'active' | 'resigned' | 'inactive' | 'suspended';
@@ -422,6 +423,7 @@ export async function updateEmployeeWorkInformation(input: {
   positionTitle: string | null;
   employmentStatus?: EmploymentStatus;
   isActive?: boolean;
+  companyAssignments?: Array<{ companyId: string; branchIds: string[] }>;
   residentBranch?: { companyId: string; branchId: string } | null;
   dateStarted: string | null;
   excludedEmails?: string[];
@@ -460,15 +462,19 @@ export async function updateEmployeeWorkInformation(input: {
     throw new AppError(400, 'residentBranch is required');
   }
 
-  const residentRow = await masterDb('user_company_branches')
-    .where({
-      user_id: input.userId,
-      company_id: input.residentBranch.companyId,
-      branch_id: input.residentBranch.branchId,
-    })
-    .first('id');
-  if (!residentRow) {
-    throw new AppError(400, 'Selected resident branch is not assigned to this user');
+  if (input.companyAssignments && input.companyAssignments.length > 0) {
+    const selectedCompany = input.companyAssignments.find(
+      (assignment) => assignment.companyId === input.residentBranch!.companyId,
+    );
+    const residentIncluded = selectedCompany?.branchIds.includes(input.residentBranch.branchId) ?? false;
+    if (!residentIncluded) {
+      throw new AppError(400, 'Selected resident branch must be included in company assignments');
+    }
+
+    await assignGlobalCompanyBranches({
+      userId: input.userId,
+      companyAssignments: input.companyAssignments,
+    });
   }
 
   await masterDb.transaction(async (trx) => {

@@ -24,7 +24,7 @@ export async function up(knex: Knex): Promise<void> {
       table.text('encrypted_password').notNullable();
       table.string('status', 20).notNullable().defaultTo('pending');
       table.timestamp('requested_at').notNullable().defaultTo(knex.fn.now());
-      table.uuid('reviewed_by').nullable().references('id').inTable('users');
+      table.uuid('reviewed_by').nullable();
       table.timestamp('reviewed_at').nullable();
       table.text('rejection_reason').nullable();
       table.jsonb('approved_role_ids').nullable();

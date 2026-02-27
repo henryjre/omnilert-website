@@ -10,6 +10,7 @@ import {
   createOrUpdateEmployeeForRegistration,
   formatBranchEmployeeCode,
   formatEmployeeDisplayName,
+  getEmployeeIdentitySnapshot,
   unifyPartnerContactsByEmail,
 } from './odoo.service.js';
 import { sendRegistrationApprovedEmail } from './mail.service.js';
@@ -474,24 +475,16 @@ export async function approveRegistrationRequest(input: {
   }
   const maxOdooEmployeeNumber = Math.max(0, ...Object.values(maxByCompanyCode));
 
-  const existingEmployeesForWebsiteKey = (await callOdooKw(
-    'hr.employee',
-    'search_read',
-    [],
-    {
-      domain: [['x_website_key', '=', websiteKey]],
-      fields: ['id', 'pin'],
-      limit: 1000,
-    },
-  )) as Array<{ id: number; pin?: string | null }>;
+  const identitySnapshot = await getEmployeeIdentitySnapshot({
+    websiteUserKey: websiteKey,
+    email: normalizedEmail,
+  });
 
-  if (existingEmployeesForWebsiteKey.length === 0 && employeeNumber <= maxOdooEmployeeNumber) {
+  if (identitySnapshot.employeeCount === 0 && employeeNumber <= maxOdooEmployeeNumber) {
     employeeNumber = maxOdooEmployeeNumber + 1;
   }
 
-  const existingPin = existingEmployeesForWebsiteKey
-    .map((employee) => String(employee.pin ?? '').trim())
-    .find((pin) => /^\d{4}$/.test(pin));
+  const existingPin = identitySnapshot.existingPin;
   const sharedPin = existingPin || randomPin();
 
   emitRegistrationApprovalProgress({
@@ -633,14 +626,33 @@ export async function approveRegistrationRequest(input: {
     step: 'merge',
     message: 'Merging partner contacts and applying global contact settings...',
   });
-  await unifyPartnerContactsByEmail({
-    email: normalizedEmail,
-    mainCompanyId: residentBranch.odooBranchId,
-    websiteKey,
-    employeeNumber,
-    firstName: String(request.first_name ?? ''),
-    lastName: String(request.last_name ?? ''),
-  });
+  try {
+    await unifyPartnerContactsByEmail({
+      email: normalizedEmail,
+      mainCompanyId: residentBranch.odooBranchId,
+      websiteKey,
+      employeeNumber,
+      firstName: String(request.first_name ?? ''),
+      lastName: String(request.last_name ?? ''),
+    });
+  } catch (error) {
+    logger.warn(
+      {
+        email: normalizedEmail,
+        websiteKey,
+        mainCompanyId: residentBranch.odooBranchId,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      'Failed to unify Odoo partner contacts by email during registration approval; continuing',
+    );
+    emitRegistrationApprovalProgress({
+      companyId: input.reviewerCompanyId,
+      verificationId: input.requestId,
+      reviewerId: input.reviewerId,
+      step: 'merge',
+      message: 'Partner contact merge was skipped due to Odoo-side rule constraints; continuing approval.',
+    });
+  }
 
   emitRegistrationApprovalProgress({
     companyId: input.reviewerCompanyId,

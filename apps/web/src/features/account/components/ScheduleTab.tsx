@@ -1072,7 +1072,12 @@ export function ScheduleTab() {
   }
 
   return (
-    <>
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <Calendar className="h-6 w-6 text-primary-600" />
+        <h1 className="text-2xl font-bold text-gray-900">Schedule</h1>
+      </div>
+
       <div className="space-y-4">
         <div className="flex flex-col items-center gap-3">
           <div className="flex flex-wrap items-center justify-center gap-2">
@@ -1430,6 +1435,6 @@ export function ScheduleTab() {
           }
         }}
       />
-    </>
+    </div>
   );
 }

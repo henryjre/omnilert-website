@@ -216,7 +216,12 @@ export function AuthorizationRequestsTab() {
   }
 
   return (
-    <>
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <FileText className="h-6 w-6 text-primary-600" />
+        <h1 className="text-2xl font-bold text-gray-900">Authorization Requests</h1>
+      </div>
+
       {showModal && (
         <NewRequestModal
           defaultBranchId={defaultBranchId}
@@ -309,6 +314,6 @@ export function AuthorizationRequestsTab() {
           </div>
         )}
       </div>
-    </>
+    </div>
   );
 }

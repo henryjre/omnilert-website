@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { useNavigate, NavLink } from 'react-router-dom';
+import { type ReactNode, useEffect, useState } from 'react';
+import { useNavigate, NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   User,
@@ -15,6 +15,9 @@ import {
   DollarSign,
   ClipboardCheck,
   ChevronDown,
+  Bell,
+  IdCard,
+  Settings,
 } from 'lucide-react';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useAuth } from '@/features/auth/hooks/useAuth';
@@ -48,6 +51,39 @@ interface CompanyOption {
   themeColor?: string | null;
 }
 
+const HR_PATHS = ['/employee-profiles', '/employee-schedule', '/employee-requirements'];
+const FINANCE_PATHS = ['/cash-requests'];
+
+function SubCategory({
+  label,
+  expanded,
+  onToggle,
+  children,
+}: {
+  label: string;
+  expanded: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
+      >
+        <span>{label}</span>
+        <ChevronDown className={`h-4 w-4 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+      </button>
+      {expanded && (
+        <div className="ml-3 mt-0.5 space-y-0.5 border-l border-gray-200 pl-3">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Sidebar({ className = '' }: SidebarProps) {
   const { hasPermission, hasAnyPermission } = usePermission();
   const { logout, switchCompany, user } = useAuth();
@@ -56,12 +92,19 @@ export function Sidebar({ className = '' }: SidebarProps) {
   const fetchBranches = useBranchStore((s) => s.fetchBranches);
   const setSelectedBranchIds = useBranchStore((s) => s.setSelectedBranchIds);
   const navigate = useNavigate();
+  const location = useLocation();
   const isAdministrator = (user?.roles ?? []).some((role) => role.name === 'Administrator');
   const pendingVerificationCount = usePosVerificationStore((s) => s.pendingCount);
   const [companies, setCompanies] = useState<CompanyOption[]>([]);
   const [switchingCompany, setSwitchingCompany] = useState(false);
   const [switchError, setSwitchError] = useState('');
   const [companyMenuOpen, setCompanyMenuOpen] = useState(false);
+  const [hrExpanded, setHrExpanded] = useState(() =>
+    HR_PATHS.some((path) => location.pathname.startsWith(path)),
+  );
+  const [financeExpanded, setFinanceExpanded] = useState(() =>
+    FINANCE_PATHS.some((path) => location.pathname.startsWith(path)),
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -112,6 +155,15 @@ export function Sidebar({ className = '' }: SidebarProps) {
     document.addEventListener('mousedown', onPointerDown);
     return () => document.removeEventListener('mousedown', onPointerDown);
   }, [companyMenuOpen]);
+
+  useEffect(() => {
+    if (HR_PATHS.some((path) => location.pathname.startsWith(path))) {
+      setHrExpanded(true);
+    }
+    if (FINANCE_PATHS.some((path) => location.pathname.startsWith(path))) {
+      setFinanceExpanded(true);
+    }
+  }, [location.pathname]);
 
   return (
     <aside className={`flex h-[100dvh] w-64 flex-col border-r border-gray-200 bg-white ${className}`}>
@@ -192,9 +244,35 @@ export function Sidebar({ className = '' }: SidebarProps) {
           </NavLink>
         )}
 
-        <NavLink to="/account" end={false} className={linkClass}>
-          <User className="h-5 w-5" />
-          My Account
+        <div className="my-2 border-t border-gray-200" />
+        {categoryLabel('My Account')}
+        <NavLink to="/account/schedule" className={linkClass}>
+          <Calendar className="h-5 w-5" />
+          Schedule
+        </NavLink>
+        {hasPermission(PERMISSIONS.ACCOUNT_VIEW_AUTH_REQUESTS) && (
+          <NavLink to="/account/authorization-requests" className={linkClass}>
+            <FileText className="h-5 w-5" />
+            Authorization Requests
+          </NavLink>
+        )}
+        {hasPermission(PERMISSIONS.ACCOUNT_VIEW_CASH_REQUESTS) && (
+          <NavLink to="/account/cash-requests" className={linkClass}>
+            <DollarSign className="h-5 w-5" />
+            Cash Requests
+          </NavLink>
+        )}
+        <NavLink to="/account/notifications" className={linkClass}>
+          <Bell className="h-5 w-5" />
+          Notifications
+        </NavLink>
+        <NavLink to="/account/profile" className={linkClass}>
+          <IdCard className="h-5 w-5" />
+          Profile
+        </NavLink>
+        <NavLink to="/account/settings" className={linkClass}>
+          <Settings className="h-5 w-5" />
+          Settings
         </NavLink>
 
         {/* Management */}
@@ -205,6 +283,8 @@ export function Sidebar({ className = '' }: SidebarProps) {
           PERMISSIONS.CASH_REQUEST_VIEW_ALL,
           PERMISSIONS.EMPLOYEE_VERIFICATION_VIEW,
           PERMISSIONS.EMPLOYEE_VIEW_ALL_PROFILES,
+          PERMISSIONS.SHIFT_VIEW_ALL,
+          PERMISSIONS.EMPLOYEE_REQUIREMENTS_APPROVE,
         ) && (
           <>
             <div className="my-2 border-t border-gray-200" />
@@ -219,40 +299,54 @@ export function Sidebar({ className = '' }: SidebarProps) {
                 Authorization Requests
               </NavLink>
             )}
-            {hasPermission(PERMISSIONS.CASH_REQUEST_VIEW_ALL) && (
-              <NavLink to="/cash-requests" className={linkClass}>
-                <DollarSign className="h-5 w-5" />
-                Cash Requests
-              </NavLink>
-            )}
             {hasPermission(PERMISSIONS.EMPLOYEE_VERIFICATION_VIEW) && (
               <NavLink to="/employee-verifications" className={linkClass}>
                 <Users className="h-5 w-5" />
                 Employee Verifications
               </NavLink>
             )}
-            {hasPermission(PERMISSIONS.EMPLOYEE_VIEW_ALL_PROFILES) && (
-              <NavLink to="/employee-profiles" className={linkClass}>
-                <User className="h-5 w-5" />
-                Employee Profiles
-              </NavLink>
-            )}
-          </>
-        )}
 
-        {/* Service Crew */}
-        {hasPermission(PERMISSIONS.SHIFT_VIEW_ALL) && (
-          <>
-            <div className="my-2 border-t border-gray-200" />
-            {categoryLabel('Service Crew')}
-            <NavLink to="/employee-schedule" className={linkClass}>
-              <Calendar className="h-5 w-5" />
-              Employee Schedule
-            </NavLink>
-            <NavLink to="/employee-requirements" className={linkClass}>
-              <ClipboardCheck className="h-5 w-5" />
-              Employee Requirements
-            </NavLink>
+            {(hasPermission(PERMISSIONS.EMPLOYEE_VIEW_ALL_PROFILES)
+              || hasPermission(PERMISSIONS.SHIFT_VIEW_ALL)
+              || hasPermission(PERMISSIONS.EMPLOYEE_REQUIREMENTS_APPROVE)) && (
+              <SubCategory
+                label="Human Resources"
+                expanded={hrExpanded}
+                onToggle={() => setHrExpanded((value) => !value)}
+              >
+                {hasPermission(PERMISSIONS.EMPLOYEE_VIEW_ALL_PROFILES) && (
+                  <NavLink to="/employee-profiles" className={linkClass}>
+                    <User className="h-5 w-5" />
+                    Employee Profiles
+                  </NavLink>
+                )}
+                {hasPermission(PERMISSIONS.SHIFT_VIEW_ALL) && (
+                  <NavLink to="/employee-schedule" className={linkClass}>
+                    <Calendar className="h-5 w-5" />
+                    Employee Schedule
+                  </NavLink>
+                )}
+                {hasPermission(PERMISSIONS.EMPLOYEE_REQUIREMENTS_APPROVE) && (
+                  <NavLink to="/employee-requirements" className={linkClass}>
+                    <ClipboardCheck className="h-5 w-5" />
+                    Employee Requirements
+                  </NavLink>
+                )}
+              </SubCategory>
+            )}
+
+            {hasPermission(PERMISSIONS.CASH_REQUEST_VIEW_ALL) && (
+              <SubCategory
+                label="Accounting and Finance"
+                expanded={financeExpanded}
+                onToggle={() => setFinanceExpanded((value) => !value)}
+              >
+                <NavLink to="/cash-requests" className={linkClass}>
+                  <DollarSign className="h-5 w-5" />
+                  Cash Requests
+                </NavLink>
+              </SubCategory>
+            )}
           </>
         )}
 

@@ -253,7 +253,12 @@ export function CashRequestsTab() {
   }
 
   return (
-    <>
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <DollarSign className="h-6 w-6 text-primary-600" />
+        <h1 className="text-2xl font-bold text-gray-900">Cash Requests</h1>
+      </div>
+
       {showModal && (
         <NewRequestModal
           onClose={() => setShowModal(false)}
@@ -362,6 +367,6 @@ export function CashRequestsTab() {
         isOpen={imageModalOpen}
         onClose={() => setImageModalOpen(false)}
       />
-    </>
+    </div>
   );
 }

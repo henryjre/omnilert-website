@@ -202,14 +202,14 @@ async function migrateTenantsDb() {
           table.uuid('shift_id').notNullable().references('id').inTable('employee_shifts');
           table.uuid('shift_log_id').notNullable().references('id').inTable('shift_logs');
           table.uuid('branch_id').notNullable().references('id').inTable('branches');
-          table.uuid('user_id').nullable().references('id').inTable('users');
+          table.uuid('user_id').nullable();
           table.string('auth_type', 50).notNullable();
           table.integer('diff_minutes').notNullable();
           table.boolean('needs_employee_reason').notNullable().defaultTo(false);
           table.string('status', 20).notNullable().defaultTo('pending');
           table.text('employee_reason').nullable();
           table.text('rejection_reason').nullable();
-          table.uuid('resolved_by').nullable().references('id').inTable('users');
+          table.uuid('resolved_by').nullable();
           table.timestamp('resolved_at').nullable();
           table.timestamp('created_at').notNullable().defaultTo(tenantDb.fn.now());
         });
@@ -223,7 +223,7 @@ async function migrateTenantsDb() {
       if (!hasNotificationsTable) {
         await tenantDb.schema.createTable('employee_notifications', (table) => {
           table.uuid('id').primary().defaultTo(tenantDb.raw('gen_random_uuid()'));
-          table.uuid('user_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
+          table.uuid('user_id').notNullable();
           table.string('title', 255).notNullable();
           table.text('message').notNullable();
           table.string('type', 50).notNullable().defaultTo('info');
@@ -310,7 +310,7 @@ async function migrateTenantsDb() {
         { col: 'attachment_url', add: (t) => t.string('attachment_url', 500).nullable() },
         { col: 'rejection_reason', add: (t) => t.text('rejection_reason').nullable() },
         { col: 'created_by_name', add: (t) => t.string('created_by_name', 255).nullable() },
-        { col: 'disbursed_by', add: (t) => t.uuid('disbursed_by').nullable().references('id').inTable('users') },
+        { col: 'disbursed_by', add: (t) => t.uuid('disbursed_by').nullable() },
         { col: 'disbursed_at', add: (t) => t.timestamp('disbursed_at').nullable() },
       ];
       for (const { col, add } of crColumns) {

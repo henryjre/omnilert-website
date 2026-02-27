@@ -4,7 +4,7 @@ import { Button } from '@/shared/components/ui/Button';
 import { Input } from '@/shared/components/ui/Input';
 import { api } from '@/shared/services/api.client';
 import { useAuthStore } from '@/features/auth/store/authSlice';
-import { AlertCircle, CheckCircle2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Settings as SettingsIcon } from 'lucide-react';
 import {
   getExistingPushSubscription,
   isPushSupported,
@@ -227,7 +227,13 @@ export function SettingsTab() {
   }
 
   return (
-    <Card>
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <SettingsIcon className="h-6 w-6 text-primary-600" />
+        <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
+      </div>
+
+      <Card>
       <CardBody className="space-y-6">
         {successMessage && (
           <div className="flex items-center gap-2 rounded-lg bg-green-50 p-3 text-sm text-green-700">
@@ -393,5 +399,6 @@ export function SettingsTab() {
         )}
       </CardBody>
     </Card>
+    </div>
   );
 }

@@ -51,12 +51,12 @@ export async function up(knex: Knex): Promise<void> {
   if (!(await knex.schema.hasTable(PERSONAL_INFO_TABLE))) {
     await knex.schema.createTable(PERSONAL_INFO_TABLE, (table) => {
       table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
-      table.uuid('user_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
+      table.uuid('user_id').notNullable();
       table.string('status', 20).notNullable().defaultTo('pending');
       table.jsonb('requested_changes').notNullable();
       table.jsonb('approved_changes').nullable();
       table.string('valid_id_url', 500).notNullable();
-      table.uuid('reviewed_by').nullable().references('id').inTable('users');
+      table.uuid('reviewed_by').nullable();
       table.timestamp('reviewed_at').nullable();
       table.text('rejection_reason').nullable();
       table.timestamp('created_at').notNullable().defaultTo(knex.fn.now());
@@ -84,7 +84,7 @@ export async function up(knex: Knex): Promise<void> {
   if (!(await knex.schema.hasTable(REQUIREMENT_SUBMISSIONS_TABLE))) {
     await knex.schema.createTable(REQUIREMENT_SUBMISSIONS_TABLE, (table) => {
       table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
-      table.uuid('user_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
+      table.uuid('user_id').notNullable();
       table
         .string('requirement_code', 100)
         .notNullable()
@@ -93,7 +93,7 @@ export async function up(knex: Knex): Promise<void> {
         .onDelete('CASCADE');
       table.string('document_url', 500).notNullable();
       table.string('status', 20).notNullable().defaultTo('pending');
-      table.uuid('reviewed_by').nullable().references('id').inTable('users');
+      table.uuid('reviewed_by').nullable();
       table.timestamp('reviewed_at').nullable();
       table.text('rejection_reason').nullable();
       table.timestamp('created_at').notNullable().defaultTo(knex.fn.now());

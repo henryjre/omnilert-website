@@ -93,6 +93,7 @@ export async function updateWorkInformation(req: Request, res: Response, next: N
       positionTitle: req.body.positionTitle,
       employmentStatus: req.body.employmentStatus,
       isActive: req.body.isActive,
+      companyAssignments: req.body.companyAssignments,
       residentBranch: req.body.residentBranch,
       dateStarted: req.body.dateStarted,
       excludedEmails,

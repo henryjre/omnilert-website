@@ -5,12 +5,13 @@ import { AppError } from '../middleware/errorHandler.js';
 import { hashPassword } from '../utils/password.js';
 import { logger } from '../utils/logger.js';
 import {
-  callOdooKw,
   createOrUpdateEmployeeForRegistration,
   formatBranchEmployeeCode,
   formatEmployeeDisplayName,
+  getEmployeeIdentitySnapshot,
   getEmployeeLinkedBankInfoByWebsiteUserKey,
   getEmployeeByWebsiteUserKey,
+  syncUserProfileToOdoo,
   unifyPartnerContactsByEmail,
 } from './odoo.service.js';
 import { normalizeEmail } from './globalUser.service.js';
@@ -135,20 +136,11 @@ async function syncOdooEmployeesForAssignments(input: {
   successfulBranches: Array<{ companyId: string; branchId: string; branchName: string; odooBranchId: number }>;
   failures: Array<{ companyId: string; companyName: string; branchId: string; branchName: string; error: string }>;
 }> {
-  const existingEmployeesForWebsiteKey = (await callOdooKw(
-    'hr.employee',
-    'search_read',
-    [],
-    {
-      domain: [['x_website_key', '=', input.user.userKey]],
-      fields: ['id', 'pin'],
-      limit: 1000,
-    },
-  )) as Array<{ id: number; pin?: string | null }>;
-
-  const existingPin = existingEmployeesForWebsiteKey
-    .map((employee) => String(employee.pin ?? '').trim())
-    .find((pin) => /^\d{4}$/.test(pin));
+  const identitySnapshot = await getEmployeeIdentitySnapshot({
+    websiteUserKey: input.user.userKey,
+    email: input.user.email,
+  });
+  const existingPin = identitySnapshot.existingPin;
   const sharedPin = existingPin || randomPin();
   const successes: Array<{ companyId: string; branchId: string; branchName: string; odooBranchId: number }> = [];
   const failures: Array<{ companyId: string; companyName: string; branchId: string; branchName: string; error: string }> = [];
@@ -195,14 +187,35 @@ async function syncOdooEmployeesForAssignments(input: {
 
   if (successes.length > 0) {
     const mainCompanyId = successes[0].odooBranchId;
-    await unifyPartnerContactsByEmail({
-      email: input.user.email,
-      mainCompanyId,
-      websiteKey: input.user.userKey,
-      employeeNumber: input.user.employeeNumber,
-      firstName: input.user.firstName,
-      lastName: input.user.lastName,
-    });
+    try {
+      await unifyPartnerContactsByEmail({
+        email: input.user.email,
+        mainCompanyId,
+        websiteKey: input.user.userKey,
+        employeeNumber: input.user.employeeNumber,
+        firstName: input.user.firstName,
+        lastName: input.user.lastName,
+      });
+    } catch (error: any) {
+      const firstSuccess = successes[0];
+      const assignment = input.assignments.find((item) => item.companyId === firstSuccess.companyId);
+      failures.push({
+        companyId: firstSuccess.companyId,
+        companyName: assignment?.companyName ?? 'Unknown company',
+        branchId: firstSuccess.branchId,
+        branchName: firstSuccess.branchName,
+        error: `Partner unification skipped: ${error?.message ?? 'Unknown Odoo error'}`,
+      });
+      logger.warn(
+        {
+          email: input.user.email,
+          websiteKey: input.user.userKey,
+          mainCompanyId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to unify Odoo partner contacts by email during global user provisioning; continuing',
+      );
+    }
   }
 
   return {
@@ -444,7 +457,7 @@ export async function createGlobalUser(input: {
   const createdUserKey = String(created.user_key ?? '').trim();
   if (createdUserKey) {
     try {
-      const existingBankInfo = await getEmployeeLinkedBankInfoByWebsiteUserKey(createdUserKey);
+      const existingBankInfo = await getEmployeeLinkedBankInfoByWebsiteUserKey(createdUserKey, email);
       if (existingBankInfo) {
         await masterDb('users')
           .where({ id: created.id })
@@ -540,7 +553,21 @@ export async function assignGlobalCompanyBranches(input: {
   const masterDb = db.getMasterDb();
   const user = await masterDb('users')
     .where({ id: input.userId })
-    .first('id', 'email', 'first_name', 'last_name', 'user_key', 'employee_number');
+    .first(
+      'id',
+      'email',
+      'first_name',
+      'last_name',
+      'user_key',
+      'employee_number',
+      'mobile_number',
+      'legal_name',
+      'birthday',
+      'gender',
+      'address',
+      'emergency_contact',
+      'emergency_phone',
+    );
   if (!user) throw new AppError(404, 'User not found');
   if (!user.user_key) throw new AppError(400, 'User key is required before assigning company branches');
 
@@ -574,6 +601,50 @@ export async function assignGlobalCompanyBranches(input: {
     assignments,
     successfulBranches: provisioning.successfulBranches,
   });
+
+  if (provisioning.successfulBranches.length > 0) {
+    const mainCompanyId = provisioning.successfulBranches[0].odooBranchId;
+    try {
+      await syncUserProfileToOdoo(String(user.user_key), {
+        email: String(user.email),
+        mobileNumber: String(user.mobile_number ?? ''),
+        legalName: String(user.legal_name ?? ''),
+        birthday: user.birthday ? String(user.birthday) : null,
+        gender: user.gender ? String(user.gender) : null,
+        address: user.address !== undefined ? String(user.address ?? '') : undefined,
+        emergencyContact: user.emergency_contact !== undefined
+          ? String(user.emergency_contact ?? '')
+          : undefined,
+        emergencyPhone: user.emergency_phone !== undefined
+          ? String(user.emergency_phone ?? '')
+          : undefined,
+        firstName: String(user.first_name),
+        lastName: String(user.last_name),
+        employeeNumber,
+        mainCompanyId,
+      });
+    } catch (error: any) {
+      const firstSuccess = provisioning.successfulBranches[0];
+      const assignment = assignments.find((item) => item.companyId === firstSuccess.companyId);
+      provisioning.failures.push({
+        companyId: firstSuccess.companyId,
+        companyName: assignment?.companyName ?? 'Unknown company',
+        branchId: firstSuccess.branchId,
+        branchName: firstSuccess.branchName,
+        error: `Profile sync skipped: ${error?.message ?? 'Unknown Odoo error'}`,
+      });
+      logger.warn(
+        {
+          userId: input.userId,
+          email: user.email,
+          websiteKey: user.user_key,
+          mainCompanyId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to sync user profile to Odoo during company/branch assignment; continuing',
+      );
+    }
+  }
 
   return provisioning;
 }
