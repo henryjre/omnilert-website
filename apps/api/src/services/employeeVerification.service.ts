@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { Knex } from 'knex';
 import { AppError } from '../middleware/errorHandler.js';
 import { createPartnerBankAndAssignEmployees, syncUserProfileToOdoo } from './odoo.service.js';
@@ -5,6 +6,7 @@ import { getIO } from '../config/socket.js';
 import { createAndDispatchNotification } from './notification.service.js';
 import { listRegistrationRequests } from './registration.service.js';
 import { db } from '../config/database.js';
+import { logger } from '../utils/logger.js';
 
 type NotificationType = 'info' | 'success' | 'danger' | 'warning';
 
@@ -613,4 +615,57 @@ export async function rejectBankInformationVerification(input: {
     action: 'rejected',
     userId: verification.user_id as string,
   });
+}
+
+export async function seedApprovedBankVerification(input: {
+  userId: string;
+  bankId: number;
+  accountNumber: string;
+  companyDbNames: string[];
+}): Promise<void> {
+  for (const dbName of input.companyDbNames) {
+    try {
+      const tenantDb = await db.getTenantDb(dbName);
+
+      const existing = await tenantDb('bank_information_verifications')
+        .where({ user_id: input.userId, status: 'approved' })
+        .first('id');
+
+      if (existing) {
+        logger.info(
+          { userId: input.userId, dbName },
+          'Skipping bank verification seed: approved record already exists',
+        );
+        continue;
+      }
+
+      await tenantDb('bank_information_verifications').insert({
+        id: randomUUID(),
+        user_id: input.userId,
+        bank_id: input.bankId,
+        account_number: input.accountNumber,
+        status: 'approved',
+        reviewed_by: null,
+        reviewed_at: new Date(),
+        rejection_reason: null,
+        odoo_partner_bank_id: null,
+        created_at: new Date(),
+        updated_at: new Date(),
+      });
+
+      logger.info(
+        { userId: input.userId, dbName, bankId: input.bankId },
+        'Seeded approved bank verification record for new global user',
+      );
+    } catch (error) {
+      logger.warn(
+        {
+          userId: input.userId,
+          dbName,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to seed approved bank verification record in tenant DB during global user creation',
+      );
+    }
+  }
 }
