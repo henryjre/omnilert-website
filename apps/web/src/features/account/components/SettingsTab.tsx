@@ -4,17 +4,19 @@ import { Button } from '@/shared/components/ui/Button';
 import { Input } from '@/shared/components/ui/Input';
 import { api } from '@/shared/services/api.client';
 import { useAuthStore } from '@/features/auth/store/authSlice';
-import { AlertCircle, CheckCircle2, Settings as SettingsIcon } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Settings as SettingsIcon, Sun, Moon, Monitor } from 'lucide-react';
 import {
   getExistingPushSubscription,
   isPushSupported,
   requestNotificationPermission,
   subscribeToPush,
 } from '@/shared/services/push.client';
+import { useThemeMode } from '@/shared/hooks/useThemeMode';
 
 const SETTINGS_ACTION_BUTTON_WIDTH = 'w-52 justify-center';
 
 export function SettingsTab() {
+  const { mode: themeMode, setMode: setThemeMode } = useThemeMode();
   const refreshToken = useAuthStore((s) => s.refreshToken);
   const updateUser = useAuthStore((s) => s.updateUser);
   const [loading, setLoading] = useState(true);
@@ -232,6 +234,38 @@ export function SettingsTab() {
         <SettingsIcon className="h-6 w-6 text-primary-600" />
         <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
       </div>
+
+      <Card>
+        <CardBody className="space-y-4">
+          <h3 className="text-sm font-semibold text-gray-900">Appearance</h3>
+          <p className="text-xs text-gray-500">
+            Choose how Omnilert looks on this device. System follows your OS setting.
+          </p>
+          <div className="flex w-fit gap-1 rounded-lg border border-gray-200 bg-gray-50 p-1">
+            {(
+              [
+                { value: 'system', label: 'System', Icon: Monitor },
+                { value: 'light', label: 'Light', Icon: Sun },
+                { value: 'dark', label: 'Dark', Icon: Moon },
+              ] as const
+            ).map(({ value, label, Icon }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setThemeMode(value)}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  themeMode === value
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                {label}
+              </button>
+            ))}
+          </div>
+        </CardBody>
+      </Card>
 
       <Card>
       <CardBody className="space-y-6">

@@ -12,6 +12,9 @@ import { useAuthStore } from '@/features/auth/store/authSlice';
 const PRESET_COLORS = ['#2563EB', '#16A34A', '#DC2626', '#EA580C', '#7C3AED', '#0D9488'];
 const COMPANY_CODE_RE = /^[A-Z0-9]{2,10}$/;
 
+const PRESET_COLORS_CREATE = ['#2563EB', '#16A34A', '#DC2626', '#EA580C', '#7C3AED', '#0D9488'];
+const COMPANY_CODE_RE_CREATE = /^[A-Z0-9]{2,10}$/;
+
 interface CompanyResponse {
   id: string;
   name: string;
@@ -40,6 +43,20 @@ export function CompanyPage() {
   const [confirmCompanyName, setConfirmCompanyName] = useState('');
   const [superAdminEmail, setSuperAdminEmail] = useState('');
   const [superAdminPassword, setSuperAdminPassword] = useState('');
+
+  const [createForm, setCreateForm] = useState({
+    name: '',
+    companyCode: '',
+    odooApiKey: '',
+    themeColor: '#2563EB',
+  });
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState('');
+  const [createSuccess, setCreateSuccess] = useState('');
+  const [createConfirmOpen, setCreateConfirmOpen] = useState(false);
+  const [createConfirmEmail, setCreateConfirmEmail] = useState('');
+  const [createConfirmPassword, setCreateConfirmPassword] = useState('');
+  const [createConfirmError, setCreateConfirmError] = useState('');
 
   useEffect(() => {
     api.get('/super/companies/current')
@@ -146,6 +163,99 @@ export function CompanyPage() {
     }
   };
 
+  const handleCreate = () => {
+    setCreateError('');
+    setCreateSuccess('');
+
+    if (!createForm.name.trim()) {
+      setCreateError('Company name is required.');
+      return;
+    }
+    if (!COMPANY_CODE_RE_CREATE.test(createForm.companyCode)) {
+      setCreateError('Company code must be 2–10 uppercase letters or numbers (e.g. FBW, OMNI01).');
+      return;
+    }
+    if (!isValidHexColor(createForm.themeColor)) {
+      setCreateError('Theme color must be a valid 6-digit hex color (e.g. #2563EB).');
+      return;
+    }
+
+    setCreateConfirmError('');
+    setCreateConfirmEmail('');
+    setCreateConfirmPassword('');
+    setCreateConfirmOpen(true);
+  };
+
+  const closeCreateConfirmModal = () => {
+    if (creating) return;
+    setCreateConfirmOpen(false);
+    setCreateConfirmError('');
+    setCreateConfirmEmail('');
+    setCreateConfirmPassword('');
+  };
+
+  const handleCreateConfirm = async () => {
+    setCreateConfirmError('');
+
+    if (!createConfirmEmail.trim() || !createConfirmPassword) {
+      setCreateConfirmError('Super admin credentials are required.');
+      return;
+    }
+
+    setCreating(true);
+    try {
+      // Step 1: authenticate super admin
+      const authRes = await fetch('/api/v1/super/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: createConfirmEmail.trim(),
+          password: createConfirmPassword,
+        }),
+      });
+      const authData = await authRes.json();
+      if (!authRes.ok || !authData.data?.accessToken) {
+        setCreateConfirmError(authData.error || 'Invalid super admin credentials.');
+        return;
+      }
+
+      // Step 2: create company
+      const createRes = await fetch('/api/v1/super/companies', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authData.data.accessToken}`,
+        },
+        body: JSON.stringify({
+          name: createForm.name.trim(),
+          companyCode: createForm.companyCode,
+          odooApiKey: createForm.odooApiKey.trim() || undefined,
+          themeColor: createForm.themeColor,
+        }),
+      });
+      const createData = await createRes.json();
+      if (!createRes.ok) {
+        setCreateConfirmError(createData.error || 'Failed to create company.');
+        return;
+      }
+
+      setCreateSuccess(`Company "${createForm.name.trim()}" created successfully.`);
+      setCreateForm({
+        name: '',
+        companyCode: '',
+        odooApiKey: '',
+        themeColor: '#2563EB',
+      });
+      setCreateConfirmOpen(false);
+      setCreateConfirmEmail('');
+      setCreateConfirmPassword('');
+    } catch {
+      setCreateConfirmError('An unexpected error occurred. Please try again.');
+    } finally {
+      setCreating(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center py-12">
@@ -200,26 +310,22 @@ export function CompanyPage() {
                 />
               ))}
             </div>
-            <Input
-              id="theme-color"
-              label="Custom Hex"
-              value={themeColor}
-              onChange={(e) => setThemeColor(e.target.value)}
-              placeholder="#2563EB"
-            />
-            <div className="flex items-center gap-3 rounded-lg border border-gray-200 p-3">
-              <span className="text-sm text-gray-600">Preview</span>
-              <span className="h-6 w-6 rounded-full border border-gray-300" style={{ backgroundColor: themeColor }} />
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => {
-                  const applied = applyCompanyThemeFromHex(themeColor);
-                  setThemeColor(applied);
-                }}
-              >
-                Apply Preview
-              </Button>
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                value={isValidHexColor(themeColor) ? themeColor : '#2563EB'}
+                onChange={(e) => setThemeColor(e.target.value.toUpperCase())}
+                className="h-9 w-9 cursor-pointer rounded border border-gray-300 bg-white p-0.5"
+                title="Pick a color"
+              />
+              <input
+                type="text"
+                value={themeColor}
+                onChange={(e) => setThemeColor(e.target.value.toUpperCase())}
+                placeholder="#2563EB"
+                maxLength={7}
+                className="w-28 rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              />
             </div>
           </div>
 
@@ -229,6 +335,95 @@ export function CompanyPage() {
           <div className="flex justify-end">
             <Button variant="success" onClick={handleSave} disabled={saving}>
               {saving ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </div>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <h2 className="font-semibold text-gray-900">Create New Company</h2>
+        </CardHeader>
+        <CardBody className="space-y-4">
+          {createError && (
+            <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{createError}</div>
+          )}
+          {createSuccess && (
+            <div className="rounded-lg bg-green-50 p-3 text-sm text-green-700">{createSuccess}</div>
+          )}
+
+          <Input
+            label="Company Name"
+            value={createForm.name}
+            onChange={(e) => setCreateForm((prev) => ({ ...prev, name: e.target.value }))}
+            placeholder="e.g. Famous Belgian Waffles"
+          />
+
+          <Input
+            label="Company Code"
+            value={createForm.companyCode}
+            onChange={(e) =>
+              setCreateForm((prev) => ({ ...prev, companyCode: e.target.value.toUpperCase() }))
+            }
+            placeholder="2–10 uppercase letters/numbers (e.g. FBW)"
+            maxLength={10}
+          />
+
+          <Input
+            label="Odoo API Key (optional)"
+            value={createForm.odooApiKey}
+            onChange={(e) => setCreateForm((prev) => ({ ...prev, odooApiKey: e.target.value }))}
+            placeholder="Paste your Odoo API key"
+          />
+
+          <div>
+            <label className="mb-2 block text-sm font-medium text-gray-700">
+              Theme Color <span className="text-gray-400">(optional)</span>
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {PRESET_COLORS_CREATE.map((color) => (
+                <button
+                  key={color}
+                  type="button"
+                  onClick={() =>
+                    setCreateForm((prev) => ({ ...prev, themeColor: color }))
+                  }
+                  className={`h-8 w-8 rounded-full border-2 transition-all ${
+                    createForm.themeColor === color
+                      ? 'border-gray-900 scale-110'
+                      : 'border-transparent hover:scale-105'
+                  }`}
+                  style={{ backgroundColor: color }}
+                  title={color}
+                />
+              ))}
+            </div>
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                type="color"
+                value={isValidHexColor(createForm.themeColor) ? createForm.themeColor : '#2563EB'}
+                onChange={(e) =>
+                  setCreateForm((prev) => ({ ...prev, themeColor: e.target.value.toUpperCase() }))
+                }
+                className="h-9 w-9 cursor-pointer rounded border border-gray-300 bg-white p-0.5"
+                title="Pick a color"
+              />
+              <input
+                type="text"
+                value={createForm.themeColor}
+                onChange={(e) =>
+                  setCreateForm((prev) => ({ ...prev, themeColor: e.target.value.toUpperCase() }))
+                }
+                placeholder="#2563EB"
+                maxLength={7}
+                className="w-28 rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-center sm:justify-end">
+            <Button onClick={handleCreate} disabled={creating}>
+              {creating ? 'Creating...' : 'Create Company'}
             </Button>
           </div>
         </CardBody>
@@ -262,6 +457,50 @@ export function CompanyPage() {
           </div>
         </CardBody>
       </Card>
+
+      {createConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-gray-900">Confirm Company Creation</h3>
+            <p className="mt-2 text-sm text-gray-600">
+              Super Admin credentials are required to create a new company.
+            </p>
+
+            <div className="mt-5 space-y-4">
+              <Input
+                label="Super Admin Email"
+                type="email"
+                value={createConfirmEmail}
+                onChange={(e) => setCreateConfirmEmail(e.target.value)}
+                placeholder="you@example.com"
+              />
+              <Input
+                label="Super Admin Password"
+                type="password"
+                value={createConfirmPassword}
+                onChange={(e) => setCreateConfirmPassword(e.target.value)}
+                placeholder="Enter password"
+              />
+              {createConfirmError ? (
+                <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{createConfirmError}</div>
+              ) : null}
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <Button type="button" variant="secondary" onClick={closeCreateConfirmModal} disabled={creating}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={handleCreateConfirm}
+                disabled={creating || !createConfirmEmail.trim() || !createConfirmPassword}
+              >
+                {creating ? 'Creating...' : 'Create Company'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {deleteModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

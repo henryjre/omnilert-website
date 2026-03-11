@@ -105,6 +105,22 @@ function buildPrimaryScale(hex: string): Record<(typeof STOPS)[number], string> 
   return scale;
 }
 
+export const THEME_MODE_STORAGE_KEY = 'omnilert-theme-mode';
+
+export type ThemeMode = 'system' | 'light' | 'dark';
+
+export function applyThemeMode(mode: ThemeMode): void {
+  const root = document.documentElement;
+  if (mode === 'dark') {
+    root.classList.add('dark');
+  } else if (mode === 'light') {
+    root.classList.remove('dark');
+  } else {
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    prefersDark ? root.classList.add('dark') : root.classList.remove('dark');
+  }
+}
+
 export function applyCompanyThemeFromHex(input?: string | null): string {
   const hex = input && isValidHexColor(input) ? input.toUpperCase() : DEFAULT_THEME_COLOR;
   const root = document.documentElement;

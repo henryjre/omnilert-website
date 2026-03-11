@@ -239,6 +239,7 @@ export async function createCompanyForSuperAdmin(
   superAdminId: string,
   odooApiKey?: string,
   companyCode?: string,
+  themeColor?: string,
 ) {
   const masterDb = db.getMasterDb();
   const slug = slugify(name);
@@ -262,13 +263,18 @@ export async function createCompanyForSuperAdmin(
     throw new AppError(400, 'Company code must be 2-10 uppercase letters/numbers');
   }
 
+  const normalizedThemeColor = themeColor ? themeColor.trim() : null;
+  if (normalizedThemeColor && !HEX_COLOR_RE.test(normalizedThemeColor)) {
+    throw new AppError(400, 'Theme color must be a valid 6-digit hex color (e.g. #2563EB)');
+  }
+
   const [company] = await masterDb('companies')
     .insert({
       name,
       slug,
       db_name: dbName,
       odoo_api_key: odooApiKey || null,
-      theme_color: DEFAULT_THEME_COLOR,
+      theme_color: normalizedThemeColor ?? DEFAULT_THEME_COLOR,
       company_code: normalizedCompanyCode,
     })
     .returning('*');

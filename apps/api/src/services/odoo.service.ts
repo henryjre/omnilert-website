@@ -1124,6 +1124,7 @@ export async function createOrUpdateEmployeeForRegistration(input: {
   pin: string;
   barcode: string;
   websiteKey: string;
+  isResident: boolean;
 }): Promise<number> {
   logger.info(
     {
@@ -1155,6 +1156,7 @@ export async function createOrUpdateEmployeeForRegistration(input: {
     barcode: input.barcode,
     x_website_key: input.websiteKey,
     company_id: input.companyId,
+    category_ids: [[4, input.isResident ? 2 : 1]],
   };
   if (partner) {
     payload.work_contact_id = partner.id;

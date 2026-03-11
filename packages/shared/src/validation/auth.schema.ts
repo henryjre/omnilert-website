@@ -33,6 +33,7 @@ export const approveRegistrationRequestSchema = z.object({
     companyId: z.string().uuid('Invalid resident companyId'),
     branchId: z.string().uuid('Invalid resident branchId'),
   }),
+  employeeNumber: z.number().int().positive().optional(),
 });
 
 export const rejectRegistrationRequestSchema = z.object({

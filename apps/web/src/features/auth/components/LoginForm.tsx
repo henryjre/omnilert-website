@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { Button } from '@/shared/components/ui/Button';
@@ -28,6 +28,7 @@ export function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [companyName, setCompanyName] = useState('');
+  const [companyCode, setCompanyCode] = useState('');
   const [odooApiKey, setOdooApiKey] = useState('');
   const [superAdminEmail, setSuperAdminEmail] = useState('');
   const [superAdminPassword, setSuperAdminPassword] = useState('');
@@ -38,7 +39,24 @@ export function LoginForm() {
   const [error, setError] = useState('');
   const [registerSuccess, setRegisterSuccess] = useState('');
   const [loading, setLoading] = useState(false);
+  const [hasCompanies, setHasCompanies] = useState<boolean | null>(null);
   const { login } = useAuth();
+
+  useEffect(() => {
+    fetch('/api/v1/super/companies')
+      .then((r) => r.json())
+      .then((data) => {
+        const exists = Array.isArray(data.data) && data.data.length > 0;
+        setHasCompanies(exists);
+        if (exists) {
+          setMode((prev) => (prev === 'create-company' ? 'signin' : prev));
+        }
+      })
+      .catch(() => {
+        // On network error, don't hide the tab — default to showing it
+        setHasCompanies(false);
+      });
+  }, []);
   const navigate = useNavigate();
 
   const handleSignIn = async (e: React.FormEvent) => {
@@ -73,6 +91,7 @@ export function LoginForm() {
         '/api/v1/super/companies',
         {
           name: companyName,
+          companyCode: companyCode.trim().toUpperCase() || undefined,
           odooApiKey: odooApiKey || undefined,
         },
         {
@@ -140,7 +159,7 @@ export function LoginForm() {
         </div>
 
         <div className="rounded-xl border border-gray-200 bg-white p-8 shadow-sm">
-          <div className="mb-4 grid grid-cols-3 rounded-lg bg-gray-100 p-1">
+          <div className={`mb-4 grid ${hasCompanies ? 'grid-cols-2' : 'grid-cols-3'} rounded-lg bg-gray-100 p-1`}>
             <button
               type="button"
               onClick={() => {
@@ -167,19 +186,21 @@ export function LoginForm() {
             >
               Register
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMode('create-company');
-                setError('');
-                setRegisterSuccess('');
-              }}
-              className={`rounded-md px-2 py-1.5 text-sm font-medium transition-colors ${
-                mode === 'create-company' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600'
-              }`}
-            >
-              Create Company
-            </button>
+            {!hasCompanies && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('create-company');
+                  setError('');
+                  setRegisterSuccess('');
+                }}
+                className={`rounded-md px-2 py-1.5 text-sm font-medium transition-colors ${
+                  mode === 'create-company' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600'
+                }`}
+              >
+                Create Company
+              </button>
+            )}
           </div>
 
           {mode === 'signin' ? (
@@ -266,7 +287,7 @@ export function LoginForm() {
                 {loading ? 'Submitting request...' : 'Submit Registration Request'}
               </Button>
             </form>
-          ) : (
+          ) : mode === 'create-company' && !hasCompanies ? (
             <form onSubmit={handleCreateCompany} className="space-y-4">
               <Input
                 id="companyName"
@@ -276,6 +297,16 @@ export function LoginForm() {
                 value={companyName}
                 onChange={(e) => setCompanyName(e.target.value)}
                 required
+              />
+
+              <Input
+                id="companyCode"
+                label="Company Code (Optional)"
+                type="text"
+                placeholder="e.g. FBW, OMNI01"
+                value={companyCode}
+                onChange={(e) => setCompanyCode(e.target.value.toUpperCase())}
+                maxLength={10}
               />
 
               <Input
@@ -319,7 +350,7 @@ export function LoginForm() {
                 {loading ? 'Creating company...' : 'Create Company'}
               </Button>
             </form>
-          )}
+          ) : null}
         </div>
       </div>
     </div>

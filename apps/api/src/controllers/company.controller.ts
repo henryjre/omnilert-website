@@ -56,8 +56,8 @@ export async function createBySuperAdmin(req: Request, res: Response, next: Next
       throw new AppError(401, 'Unauthorized');
     }
 
-    const { name, odooApiKey, companyCode } = req.body;
-    const company = await companyService.createCompanyForSuperAdmin(name, superAdminId, odooApiKey, companyCode);
+    const { name, odooApiKey, companyCode, themeColor } = req.body;
+    const company = await companyService.createCompanyForSuperAdmin(name, superAdminId, odooApiKey, companyCode, themeColor);
     logger.info(
       { superAdminId, companyId: company.id, companySlug: company.slug },
       'Company created by super admin',

@@ -1,6 +1,6 @@
 # Omnilert Project Context
 
-Last updated: 2026-02-27
+Last updated: 2026-03-11
 
 This document is for AI and engineer handoff. It captures the current implementation state of this repository from code-confirmed behavior.
 
@@ -205,7 +205,7 @@ Admin
 Dashboard
 - `dashboard.view`
 - `dashboard.view_performance_index`
-- `dashboard.view_payslip`
+- `dashboard.view_payslip` — gates the Payslip page at `/account/payslip` (My Account sidebar); no longer rendered on the Dashboard page
 
 POS Verification
 - `pos_verification.view`
@@ -580,7 +580,7 @@ Router and navigation (`apps/web/src/app/router.tsx`, `Sidebar.tsx`):
   - `/account/employment` redirects to `/account/profile`.
 - Sidebar navigation redesign:
   - `My Account` is now a category with direct links:
-    `Schedule`, `Authorization Requests`, `Cash Requests`, `Notifications`, `Profile`, `Settings`
+    `Schedule`, `Payslip` (permission-gated: `dashboard.view_payslip`), `Authorization Requests`, `Cash Requests`, `Notifications`, `Profile`, `Settings`
   - `Management` keeps direct links for `Authorization Requests` and `Employee Verifications`
   - adds collapsible `Human Resources` group:
     `Employee Profiles`, `Employee Schedule`, `Employee Requirements`
@@ -630,7 +630,9 @@ My Account Profile tab and Employee Requirements page:
 - Valid ID upload updates only valid-ID state and requirements state; it does not rehydrate profile form fields,
   so in-progress Profile input is preserved until a hard browser refresh/page reload.
 - Pending verification helper text for Personal and Bank sections is rendered directly below each disabled submit button.
-- Settings tab includes a single global Device Notifications on/off control, browser permission prompt, and push subscription lifecycle calls to `/account/push/*`.
+- Settings tab includes:
+  - Appearance section: System / Light / Dark mode segmented control (defaults to Light when no preference is stored, persisted to `localStorage` key `omnilert-theme-mode`, purely client-side).
+  - Device Notifications on/off control, browser permission prompt, and push subscription lifecycle calls to `/account/push/*`.
 - Profile, valid-ID upload, employment requirement valid-ID reuse, and settings user reads/writes are resolved against master `users` (not tenant `users`), preventing `User not found` for global-user UUID sessions.
 
 Employee Schedule page:
@@ -708,7 +710,12 @@ User Management page:
   - otherwise resolves latest `res.partner.bank` by `write_date`
   - attaches missing `bank_account_id` to linked employees via `work_contact_id`
   - writes master `users.bank_id` and `users.bank_account_number` when valid
-  - never blocks user creation if Odoo lookup fails.
+  - additionally seeds an approved `bank_information_verifications` record in each assigned company's tenant DB
+    so the employee's Bank Information section in My Account shows as already verified on first login
+  - never blocks user creation if Odoo lookup or tenant DB seeding fails.
+- User Management page includes:
+  - status filter tabs (All, Active, Archived) above the card grid for quick filtering by `is_active`
+  - two-step permanent delete: clicking "Permanently Delete" opens a confirmation modal before the API call is made.
 - User Management and branch-assignment provisioning are partner-first:
   - `x_website_key` is treated as partner identity source, with employee `x_website_key` as legacy fallback
   - branch employee creation/upsert binds to partner via `work_contact_id` where available

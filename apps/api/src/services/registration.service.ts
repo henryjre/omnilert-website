@@ -407,6 +407,7 @@ export async function approveRegistrationRequest(input: {
   roleIds: string[];
   companyAssignments: CompanyAssignmentInput[];
   residentBranch: ResidentBranchInput;
+  employeeNumber?: number;
 }): Promise<{ requestId: string; userId: string }> {
   const masterDb = db.getMasterDb();
 
@@ -548,6 +549,13 @@ export async function approveRegistrationRequest(input: {
     employeeNumber += 1;
   }
 
+  if (input.employeeNumber != null) {
+    if (!(await isEmployeeNumberAvailable(input.employeeNumber))) {
+      throw new AppError(400, `Employee number ${input.employeeNumber} is already taken by another employee.`);
+    }
+    employeeNumber = input.employeeNumber;
+  }
+
   if (employeeNumber !== identity.employeeNumber) {
     await masterDb('employee_identities')
       .where({ id: identity.identityId })
@@ -570,6 +578,7 @@ export async function approveRegistrationRequest(input: {
     for (const branch of assignment.branches) {
       const branchCode = formatBranchEmployeeCode(branch.odooBranchId, employeeNumber);
       const barcode = `${assignment.companyCode}${branchCode}`;
+      const isResident = assignment.id === residentAssignment.id && branch.id === resident.branchId;
       await createOrUpdateEmployeeForRegistration({
         companyId: branch.odooBranchId,
         name: formatEmployeeDisplayName(
@@ -582,6 +591,7 @@ export async function approveRegistrationRequest(input: {
         pin: sharedPin,
         barcode,
         websiteKey,
+        isResident,
       });
       processedBranches += 1;
       emitRegistrationApprovalProgress({
@@ -617,6 +627,7 @@ export async function approveRegistrationRequest(input: {
     pin: sharedPin,
     barcode: defaultCompanyBarcode,
     websiteKey,
+    isResident: DEFAULT_REGISTRATION_COMPANY_ID === residentBranch.odooBranchId,
   });
 
   emitRegistrationApprovalProgress({

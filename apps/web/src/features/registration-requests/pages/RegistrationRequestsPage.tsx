@@ -56,6 +56,7 @@ export function RegistrationRequestsPage() {
   const [approveBranchIdsByCompany, setApproveBranchIdsByCompany] = useState<Record<string, string[]>>({});
   const [approveResidentCompanyId, setApproveResidentCompanyId] = useState('');
   const [approveResidentBranchId, setApproveResidentBranchId] = useState('');
+  const [approveEmployeeNumber, setApproveEmployeeNumber] = useState('');
   const [rejectReason, setRejectReason] = useState('');
   const [mode, setMode] = useState<'approve' | 'reject' | null>(null);
 
@@ -110,6 +111,7 @@ export function RegistrationRequestsPage() {
     setApproveBranchIdsByCompany({});
     setApproveResidentCompanyId('');
     setApproveResidentBranchId('');
+    setApproveEmployeeNumber('');
     setMode('approve');
     setError('');
     setSuccess('');
@@ -131,6 +133,7 @@ export function RegistrationRequestsPage() {
     setApproveBranchIdsByCompany({});
     setApproveResidentCompanyId('');
     setApproveResidentBranchId('');
+    setApproveEmployeeNumber('');
     setRejectReason('');
   };
 
@@ -223,6 +226,9 @@ export function RegistrationRequestsPage() {
           companyId: approveResidentCompanyId,
           branchId: approveResidentBranchId,
         },
+        ...(approveEmployeeNumber.trim()
+          ? { employeeNumber: parseInt(approveEmployeeNumber, 10) }
+          : {}),
       });
       setSuccess('Registration request approved.');
       closeModal();
@@ -344,11 +350,11 @@ export function RegistrationRequestsPage() {
 
       {selectedRequest && mode === 'approve' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <Card className="w-full max-w-2xl">
+          <Card className="flex w-full max-w-2xl flex-col max-h-[90vh]">
             <CardHeader>
               <h2 className="font-semibold text-gray-900">Approve Registration</h2>
             </CardHeader>
-            <CardBody className="space-y-4">
+            <CardBody className="space-y-4 overflow-y-auto">
               <p className="text-sm text-gray-600">
                 {selectedRequest.first_name} {selectedRequest.last_name} ({selectedRequest.email})
               </p>
@@ -447,6 +453,20 @@ export function RegistrationRequestsPage() {
                   })}
                 </select>
                 </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">
+                  Employee Number <span className="text-gray-400">(optional — auto-assigned if blank)</span>
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  value={approveEmployeeNumber}
+                  onChange={(e) => setApproveEmployeeNumber(e.target.value)}
+                  placeholder="e.g. 4"
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                />
+              </div>
 
               <div className="flex justify-end gap-2">
                 <Button variant="ghost" onClick={closeModal} disabled={saving}>Cancel</Button>

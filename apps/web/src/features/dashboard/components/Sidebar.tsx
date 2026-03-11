@@ -18,6 +18,7 @@ import {
   Bell,
   IdCard,
   Settings,
+  Receipt,
 } from 'lucide-react';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useAuth } from '@/features/auth/hooks/useAuth';
@@ -250,6 +251,12 @@ export function Sidebar({ className = '' }: SidebarProps) {
           <Calendar className="h-5 w-5" />
           Schedule
         </NavLink>
+        {hasPermission(PERMISSIONS.DASHBOARD_VIEW_PAYSLIP) && (
+          <NavLink to="/account/payslip" className={linkClass}>
+            <Receipt className="h-5 w-5" />
+            Payslip
+          </NavLink>
+        )}
         {hasPermission(PERMISSIONS.ACCOUNT_VIEW_AUTH_REQUESTS) && (
           <NavLink to="/account/authorization-requests" className={linkClass}>
             <FileText className="h-5 w-5" />

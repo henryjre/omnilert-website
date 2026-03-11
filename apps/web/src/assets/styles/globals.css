@@ -21,3 +21,56 @@
     @apply text-gray-900 antialiased;
   }
 }
+
+@layer base {
+  /* Dark mode global surface overrides — applied when <html class="dark"> is set */
+  .dark body {
+    @apply bg-[#0f172a] text-slate-100;
+  }
+
+  /* Sidebar + TopBar */
+  .dark aside,
+  .dark header {
+    background-color: #1e293b;
+    border-color: #334155;
+  }
+
+  /* Card surfaces */
+  .dark .bg-white { background-color: #1e293b; }
+  .dark .bg-gray-50  { background-color: #0f172a; }
+  .dark .bg-gray-100 { background-color: #1e293b; }
+  .dark .bg-gray-200 { background-color: #334155; }
+
+  /* Borders */
+  .dark .border-gray-100 { border-color: #334155; }
+  .dark .border-gray-200 { border-color: #334155; }
+  .dark .border-gray-300 { border-color: #475569; }
+
+  /* Text */
+  .dark .text-gray-900 { color: #f1f5f9; }
+  .dark .text-gray-700 { color: #cbd5e1; }
+  .dark .text-gray-600 { color: #94a3b8; }
+  .dark .text-gray-500 { color: #64748b; }
+
+  /* Hover surfaces */
+  .dark .hover\:bg-gray-50:hover  { background-color: #334155; }
+  .dark .hover\:bg-gray-100:hover { background-color: #334155; }
+
+  /* Inputs */
+  .dark input,
+  .dark textarea,
+  .dark select {
+    background-color: #0f172a;
+    border-color: #475569;
+    color: #f1f5f9;
+  }
+
+  /* Skeleton pulse */
+  .dark .bg-gray-200.animate-pulse { background-color: #334155; }
+
+  /* Modals (fixed overlay bg-white) */
+  .dark .fixed .bg-white { background-color: #1e293b; }
+
+  /* Segmented control active pill */
+  .dark .bg-white.shadow-sm { background-color: #334155; }
+}

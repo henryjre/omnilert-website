@@ -10,6 +10,7 @@ import { AuthorizationRequestsTab } from '@/features/account/components/Authoriz
 import { CashRequestsTab } from '@/features/account/components/CashRequestsTab';
 import { EmployeeNotificationsTab } from '@/features/account/components/EmployeeNotificationsTab';
 import { SettingsTab } from '@/features/account/components/SettingsTab';
+import { PayslipPage } from '@/features/account/pages/PayslipPage';
 import { EmploymentTab } from '@/features/account/components/EmploymentTab';
 import { PosVerificationPage } from '@/features/pos-verification/pages/PosVerificationPage';
 import { PosSessionPage } from '@/features/pos-session/pages/PosSessionPage';
@@ -57,6 +58,14 @@ export const router = createBrowserRouter([
           {
             path: 'account/schedule',
             element: <ScheduleTab />,
+          },
+          {
+            path: 'account/payslip',
+            element: (
+              <PermissionGuard permission={PERMISSIONS.DASHBOARD_VIEW_PAYSLIP}>
+                <PayslipPage />
+              </PermissionGuard>
+            ),
           },
           {
             path: 'account/authorization-requests',

@@ -28,6 +28,7 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
       roleIds: req.body.roleIds,
       companyAssignments: req.body.companyAssignments,
       residentBranch: req.body.residentBranch,
+      employeeNumber: req.body.employeeNumber,
     });
     res.json({ success: true, data: result });
   } catch (error) {
