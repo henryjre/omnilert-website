@@ -11,6 +11,7 @@ import {
   odooISPEPurchaseOrderPayloadSchema,
   odooRegisterCashPayloadSchema,
   odooPosSessionClosePayloadSchema,
+  odooPosOrderPayloadSchema,
 } from '@omnilert/shared';
 import { validateBody } from '../middleware/validateRequest.js';
 import * as webhookController from '../controllers/webhook.controller.js';
@@ -76,6 +77,12 @@ router.post(
   '/odoo/register-cash',
   validateBody(odooRegisterCashPayloadSchema),
   webhookController.registerCash,
+);
+
+router.post(
+  '/odoo/pos-order',
+  validateBody(odooPosOrderPayloadSchema),
+  webhookController.posOrder,
 );
 
 router.post(

@@ -4,6 +4,7 @@ import { initializeSocket } from './config/socket.js';
 import { env } from './config/env.js';
 import { db } from './config/database.js';
 import { initAttendanceQueue, stopAttendanceQueue } from './services/attendanceQueue.service.js';
+import { initComplianceCron, stopComplianceCron } from './services/complianceCron.service.js';
 import { verifyMailConnection } from './services/mail.service.js';
 import { logger } from './utils/logger.js';
 import fs from 'fs';
@@ -30,6 +31,12 @@ async function shutdown(signal: string): Promise<void> {
     logger.error({ err: error }, 'Failed to stop attendance queue');
   }
 
+  try {
+    await stopComplianceCron();
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to stop compliance cron');
+  }
+
   await new Promise<void>((resolve) => {
     server.close(() => resolve());
   });
@@ -46,6 +53,7 @@ async function bootstrap(): Promise<void> {
   initializeSocket(server);
 
   await initAttendanceQueue();
+  await initComplianceCron();
   await verifyMailConnection();
 
   server.listen(env.PORT, () => {

@@ -24,7 +24,6 @@ pnpm-debug.log*
 
 # Editor and workspace metadata
 .cursor/
-.claude/
 .vscode/
 .idea/
 *.swp

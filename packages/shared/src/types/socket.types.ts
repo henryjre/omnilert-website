@@ -1,4 +1,5 @@
 import type { PosVerification, PosSession } from './pos.types';
+import type { StoreAudit } from './storeAudit.types';
 
 export interface ServerToClientEvents {
   'pos-verification:new': (data: PosVerification) => void;
@@ -68,6 +69,14 @@ export interface ServerToClientEvents {
     message: string;
     createdAt: string;
   }) => void;
+
+  'store-audit:new': (data: StoreAudit) => void;
+  'store-audit:claimed': (data: {
+    id: string;
+    auditor_user_id: string;
+    auditor_name: string | null;
+  }) => void;
+  'store-audit:completed': (data: { id: string }) => void;
 }
 
 export interface ClientToServerEvents {

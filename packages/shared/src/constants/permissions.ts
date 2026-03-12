@@ -55,6 +55,10 @@ export const PERMISSIONS = {
   PERSONAL_INFORMATION_APPROVE: 'personal_information.approve',
   EMPLOYEE_REQUIREMENTS_APPROVE: 'employee_requirements.approve',
   BANK_INFORMATION_APPROVE: 'bank_information.approve',
+
+  // Store Audit
+  STORE_AUDIT_VIEW: 'store_audit.view',
+  STORE_AUDIT_PROCESS: 'store_audit.process',
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -148,6 +152,13 @@ export const PERMISSION_CATEGORIES: Record<string, { label: string; permissions:
         PERMISSIONS.PERSONAL_INFORMATION_APPROVE,
         PERMISSIONS.EMPLOYEE_REQUIREMENTS_APPROVE,
         PERMISSIONS.BANK_INFORMATION_APPROVE,
+      ],
+    },
+    store_audit: {
+      label: 'Store Audits',
+      permissions: [
+        PERMISSIONS.STORE_AUDIT_VIEW,
+        PERMISSIONS.STORE_AUDIT_PROCESS,
       ],
     },
   };

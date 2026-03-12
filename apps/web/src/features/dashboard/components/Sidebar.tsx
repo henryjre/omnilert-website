@@ -19,6 +19,7 @@ import {
   IdCard,
   Settings,
   Receipt,
+  ClipboardList,
 } from 'lucide-react';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useAuth } from '@/features/auth/hooks/useAuth';
@@ -54,6 +55,7 @@ interface CompanyOption {
 
 const HR_PATHS = ['/employee-profiles', '/employee-schedule', '/employee-requirements'];
 const FINANCE_PATHS = ['/cash-requests'];
+const AUDIT_PATHS = ['/store-audits'];
 
 function SubCategory({
   label,
@@ -105,6 +107,9 @@ export function Sidebar({ className = '' }: SidebarProps) {
   );
   const [financeExpanded, setFinanceExpanded] = useState(() =>
     FINANCE_PATHS.some((path) => location.pathname.startsWith(path)),
+  );
+  const [auditExpanded, setAuditExpanded] = useState(() =>
+    AUDIT_PATHS.some((path) => location.pathname.startsWith(path)),
   );
 
   useEffect(() => {
@@ -163,6 +168,9 @@ export function Sidebar({ className = '' }: SidebarProps) {
     }
     if (FINANCE_PATHS.some((path) => location.pathname.startsWith(path))) {
       setFinanceExpanded(true);
+    }
+    if (AUDIT_PATHS.some((path) => location.pathname.startsWith(path))) {
+      setAuditExpanded(true);
     }
   }, [location.pathname]);
 
@@ -292,6 +300,7 @@ export function Sidebar({ className = '' }: SidebarProps) {
           PERMISSIONS.EMPLOYEE_VIEW_ALL_PROFILES,
           PERMISSIONS.SHIFT_VIEW_ALL,
           PERMISSIONS.EMPLOYEE_REQUIREMENTS_APPROVE,
+          PERMISSIONS.STORE_AUDIT_VIEW,
         ) && (
           <>
             <div className="my-2 border-t border-gray-200" />
@@ -311,6 +320,19 @@ export function Sidebar({ className = '' }: SidebarProps) {
                 <Users className="h-5 w-5" />
                 Employee Verifications
               </NavLink>
+            )}
+
+            {hasPermission(PERMISSIONS.STORE_AUDIT_VIEW) && (
+              <SubCategory
+                label="Internal Audit"
+                expanded={auditExpanded}
+                onToggle={() => setAuditExpanded((value) => !value)}
+              >
+                <NavLink to="/store-audits" className={linkClass}>
+                  <ClipboardList className="h-5 w-5" />
+                  Store Audits
+                </NavLink>
+              </SubCategory>
             )}
 
             {(hasPermission(PERMISSIONS.EMPLOYEE_VIEW_ALL_PROFILES)

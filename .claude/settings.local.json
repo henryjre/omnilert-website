@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc:*)",
+      "Bash(npx tsx:*)",
+      "Bash(dir:*)",
+      "Bash(pnpm --filter @omnilert/web exec tsc --noEmit)",
+      "Bash(pnpm -r exec pwd)"
+    ]
+  }
+}

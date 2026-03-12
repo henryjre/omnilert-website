@@ -1753,6 +1753,74 @@ export async function getEmployeeLinkedBankInfoByWebsiteUserKey(
   return { bankId: selectedBank.bankId, accountNumber: selectedBank.accountNumber };
 }
 
+export interface ActiveAttendanceRecord {
+  id: number;
+  employee_id: number;
+  employee_name: string;
+  employee_avatar: string | null;
+  company_id: number;
+  check_in: string;
+  raw: Record<string, unknown>;
+}
+
+export async function getActiveAttendances(): Promise<ActiveAttendanceRecord[]> {
+  const rows = (await callOdooKw(
+    'hr.attendance',
+    'search_read',
+    [],
+    {
+      domain: [
+        ['check_out', '=', false],
+        ['company_id', '!=', 1],
+      ],
+      fields: ['id', 'employee_id', 'company_id', 'check_in'],
+      order: 'check_in desc',
+      limit: 5000,
+    },
+  )) as Array<{
+    id: number;
+    employee_id?: [number, string] | false;
+    company_id?: [number, string] | false;
+    check_in?: string;
+    [key: string]: unknown;
+  }>;
+
+  const result: ActiveAttendanceRecord[] = [];
+  for (const row of rows) {
+    if (!Array.isArray(row.employee_id) || !Array.isArray(row.company_id) || !row.check_in) {
+      continue;
+    }
+    result.push({
+      id: row.id,
+      employee_id: Number(row.employee_id[0]),
+      employee_name: String(row.employee_id[1] ?? ''),
+      employee_avatar: null,
+      company_id: Number(row.company_id[0]),
+      check_in: String(row.check_in),
+      raw: row,
+    });
+  }
+
+  return result;
+}
+
+export async function getEmployeeWebsiteKeyByEmployeeId(employeeId: number): Promise<string | null> {
+  const rows = (await callOdooKw(
+    'hr.employee',
+    'search_read',
+    [],
+    {
+      domain: [['id', '=', employeeId]],
+      fields: ['id', 'x_website_key'],
+      limit: 1,
+    },
+  )) as Array<{ id: number; x_website_key?: string | null }>;
+
+  if (!rows.length) return null;
+  const key = String(rows[0].x_website_key ?? '').trim();
+  return key || null;
+}
+
 /**
  * Gets the PIN code from Odoo hr.employee
  * @param websiteUserKey - The Omnilert user ID (UUID)
@@ -1866,4 +1934,3 @@ export async function getResourceIdByWebsiteUserKeyAndCompanyId(
     throw err;
   }
 }
-

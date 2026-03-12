@@ -126,3 +126,24 @@ export async function posSessionClose(req: Request, res: Response, next: NextFun
     next(err);
   }
 }
+
+export async function posOrder(req: Request, res: Response, next: NextFunction) {
+  try {
+    const payload = req.body;
+
+    if (!payload.x_website_key) {
+      res.status(200).json({ success: true });
+      return;
+    }
+
+    if (Math.random() > 0.1) {
+      res.status(200).json({ success: true });
+      return;
+    }
+
+    await webhookService.createCssAudit(payload);
+    res.status(201).json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+}

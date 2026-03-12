@@ -5,6 +5,7 @@ export type * from './types/company.types.js';
 export type * from './types/pos.types.js';
 export type * from './types/role.types.js';
 export type * from './types/socket.types.js';
+export type * from './types/storeAudit.types.js';
 export type * from './types/user.types.js';
 export type * from './types/webhook.types.js';
 
@@ -119,6 +120,7 @@ export {
   odooTokenPayOrderPayloadSchema,
   odooISPEPurchaseOrderPayloadSchema,
   odooRegisterCashPayloadSchema,
+  odooPosOrderPayloadSchema,
   odooPosSessionClosePayloadSchema,
   confirmRejectSchema,
   breakdownItemSchema,
@@ -133,6 +135,7 @@ export type {
   OdooTokenPayOrderPayloadInput,
   OdooISPEPurchaseOrderPayloadInput,
   OdooRegisterCashPayloadInput,
+  OdooPosOrderPayloadInput,
   OdooPosSessionClosePayloadInput,
   ConfirmRejectInput,
   BreakdownItemInput,

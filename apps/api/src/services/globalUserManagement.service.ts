@@ -208,6 +208,7 @@ async function syncOdooEmployeesForAssignments(input: {
             pin: sharedPin,
             barcode,
             websiteKey: input.user.userKey,
+            isResident: false,
           });
         }
 

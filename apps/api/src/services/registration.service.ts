@@ -578,7 +578,8 @@ export async function approveRegistrationRequest(input: {
     for (const branch of assignment.branches) {
       const branchCode = formatBranchEmployeeCode(branch.odooBranchId, employeeNumber);
       const barcode = `${assignment.companyCode}${branchCode}`;
-      const isResident = assignment.id === residentAssignment.id && branch.id === resident.branchId;
+      const isResident = assignment.companyId === residentAssignment.companyId
+        && branch.id === resident.branchId;
       await createOrUpdateEmployeeForRegistration({
         companyId: branch.odooBranchId,
         name: formatEmployeeDisplayName(
