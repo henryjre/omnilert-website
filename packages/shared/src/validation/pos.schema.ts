@@ -175,6 +175,31 @@ export const odooRegisterCashPayloadSchema = z.object({
   payment_ref: z.string(),
 });
 
+export const odooPosOrderPayloadSchema = z.object({
+  _action: z.string().optional(),
+  _id: z.number().optional(),
+  _model: z.string().optional(),
+  id: z.number().optional(),
+  company_id: z.number(),
+  pos_reference: z.string().min(1),
+  date_order: z.string().min(1),
+  cashier: z.string().min(1),
+  amount_total: z.number(),
+  x_session_name: z.string().optional(),
+  x_company_name: z.string().optional(),
+  x_website_key: z.string().uuid().optional(),
+  x_order_lines: z.array(z.object({
+    product_name: z.string().min(1),
+    qty: z.number(),
+    price_unit: z.number(),
+  })),
+  x_payments: z.array(z.object({
+    id: z.number().optional(),
+    name: z.string().min(1),
+    amount: z.number(),
+  })).optional(),
+});
+
 const odooOrderLineSchema = z.object({
   order_id: z.number().optional(),
   product_id: z.number().optional(),
@@ -224,6 +249,7 @@ export type OdooNonCashOrderPayloadInput = z.infer<typeof odooNonCashOrderPayloa
 export type OdooTokenPayOrderPayloadInput = z.infer<typeof odooTokenPayOrderPayloadSchema>;
 export type OdooISPEPurchaseOrderPayloadInput = z.infer<typeof odooISPEPurchaseOrderPayloadSchema>;
 export type OdooRegisterCashPayloadInput = z.infer<typeof odooRegisterCashPayloadSchema>;
+export type OdooPosOrderPayloadInput = z.infer<typeof odooPosOrderPayloadSchema>;
 export type ConfirmRejectInput = z.infer<typeof confirmRejectSchema>;
 export type BreakdownItemInput = z.infer<typeof breakdownItemSchema>;
 export type SubmitBreakdownInput = z.infer<typeof submitBreakdownSchema>;

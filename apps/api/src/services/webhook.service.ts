@@ -1306,3 +1306,82 @@ export async function processPosSessionClose(
   return session;
 }
 
+export function computeCssReward(amountTotal: number): number {
+  const [min, max] = amountTotal < 150
+    ? [7, 10]
+    : amountTotal < 400
+      ? [10, 15]
+      : amountTotal < 800
+        ? [15, 25]
+        : [25, 30];
+  return Math.round((Math.random() * (max - min) + min) * 100) / 100;
+}
+
+export async function createCssAudit(payload: {
+  id?: number;
+  company_id: number;
+  pos_reference: string;
+  date_order: string;
+  cashier: string;
+  amount_total: number;
+  x_session_name?: string;
+  x_company_name?: string;
+  x_website_key?: string;
+  x_order_lines: Array<{
+    product_name: string;
+    qty: number;
+    price_unit: number;
+  }>;
+  x_payments?: Array<{
+    id?: number;
+    name: string;
+    amount: number;
+  }>;
+}): Promise<void> {
+  const company = await resolveCompanyByOdooBranchId(payload.company_id);
+  const tenantDb = await db.getTenantDb(company.db_name);
+
+  const branch = await tenantDb('branches')
+    .where({ odoo_branch_id: String(payload.company_id) })
+    .first('id');
+
+  if (!branch) {
+    throw new AppError(404, `Branch not found for company_id: ${payload.company_id}`);
+  }
+
+  const record = {
+    type: 'customer_service',
+    status: 'pending',
+    branch_id: branch.id,
+    monetary_reward: computeCssReward(payload.amount_total),
+    css_odoo_order_id: payload.id ?? null,
+    css_pos_reference: payload.pos_reference,
+    css_session_name: payload.x_session_name ?? null,
+    css_company_name: payload.x_company_name ?? null,
+    css_cashier_name: payload.cashier,
+    css_cashier_user_key: payload.x_website_key ?? null,
+    css_date_order: payload.date_order ? new Date(`${payload.date_order.replace(' ', 'T')}Z`) : null,
+    css_amount_total: payload.amount_total,
+    css_order_lines: JSON.stringify(payload.x_order_lines ?? []),
+    css_payments: JSON.stringify(payload.x_payments ?? []),
+    created_at: new Date(),
+    updated_at: new Date(),
+  };
+
+  let audit: any;
+  try {
+    [audit] = await tenantDb('store_audits').insert(record).returning('*');
+  } catch (error: any) {
+    if (error?.code === '23505') {
+      return;
+    }
+    throw error;
+  }
+
+  try {
+    getIO().of('/store-audits').to(`company:${company.id}`).emit('store-audit:new', audit);
+  } catch {
+    logger.warn('Socket.IO not available for store audit emit');
+  }
+}
+

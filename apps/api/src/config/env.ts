@@ -39,6 +39,10 @@ const envSchema = z.object({
   ODOO_USERNAME: z.string().email(),
   ODOO_PASSWORD: z.string().min(1),
 
+  OPENAI_API_KEY: z.string(),
+  OPENAI_ORGANIZATION_ID: z.string(),
+  OPENAI_PROJECT_ID: z.string(),
+
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().optional(),
   SMTP_USER: z.string().optional(),

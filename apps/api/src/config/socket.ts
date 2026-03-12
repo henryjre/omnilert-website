@@ -141,6 +141,31 @@ export function initializeSocket(
     logger.debug(`Employee Verifications: ${socket.data.user?.sub} connected`);
   });
 
+  // Store Audits namespace
+  const storeAuditsNs = io.of('/store-audits');
+  storeAuditsNs.use((socket, next) => {
+    const token = socket.handshake.auth.token as string | undefined;
+    if (!token) return next(new Error('Authentication required'));
+    try {
+      const payload = verifyAccessToken(token);
+      if (!payload.permissions.includes('store_audit.view')) {
+        return next(new Error('Insufficient permissions'));
+      }
+      socket.data.user = payload;
+      next();
+    } catch {
+      next(new Error('Invalid token'));
+    }
+  });
+
+  storeAuditsNs.on('connection', (socket) => {
+    const companyId = socket.data.user?.companyId;
+    if (companyId) {
+      socket.join(`company:${companyId}`);
+    }
+    logger.debug(`Store Audits: ${socket.data.user?.sub} connected`);
+  });
+
   // Employee Requirements namespace
   const employeeRequirementsNs = io.of('/employee-requirements');
   employeeRequirementsNs.use((socket, next) => {
