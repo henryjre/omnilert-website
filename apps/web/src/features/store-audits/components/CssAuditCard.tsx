@@ -31,7 +31,6 @@ export function CssAuditCard({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const amount = Number(audit.css_amount_total ?? 0);
   const reward = Number(audit.monetary_reward ?? 0);
 
   return (
@@ -49,11 +48,9 @@ export function CssAuditCard({
       <p className="mt-1 text-xs text-gray-600">{audit.css_cashier_name || 'Unknown cashier'}</p>
       <p className="mt-1 text-xs text-gray-500">{formatDateTime(audit.css_date_order)}</p>
       <div className="mt-2 flex items-center justify-between text-xs text-gray-700">
+        <span>Auditor: {audit.auditor_name ?? '—'}</span>
         <span>
-          Total: {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(amount)}
-        </span>
-        <span>
-          Reward: {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(reward)}
+          Rate: {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(reward)}
         </span>
       </div>
     </button>

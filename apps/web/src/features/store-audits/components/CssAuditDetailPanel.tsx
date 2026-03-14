@@ -100,15 +100,9 @@ export function CssAuditDetailPanel({
           <span className="font-medium text-gray-900">{formatDateTime(audit.css_date_order)}</span>
           <span className="text-gray-500">Cashier</span>
           <span className="font-medium text-gray-900">{audit.css_cashier_name || '—'}</span>
-          {audit.auditor_name && (
-            <>
-              <span className="text-gray-500">Auditor</span>
-              <span className="font-medium text-gray-900">{audit.auditor_name}</span>
-            </>
-          )}
-          <span className="text-gray-500">Reward</span>
+          <span className="text-gray-500">Amount Total</span>
           <span className="font-medium text-gray-900">
-            {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(audit.monetary_reward ?? 0))}
+            {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(audit.css_amount_total ?? 0))}
           </span>
         </div>
 
@@ -158,6 +152,16 @@ export function CssAuditDetailPanel({
 
         {audit.status === 'completed' && (
           <div className="space-y-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Auditor</p>
+              <p className="text-sm text-gray-900">{audit.auditor_name || '—'}</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Rate</p>
+              <p className="text-sm text-gray-900">
+                {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(audit.monetary_reward ?? 0))}
+              </p>
+            </div>
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Star Rating</p>
               <p className="text-sm text-gray-900">{audit.css_star_rating ?? '—'} / 5</p>

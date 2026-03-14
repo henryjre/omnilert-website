@@ -27,6 +27,7 @@ pnpm-debug.log*
 .vscode/
 .idea/
 *.swp
+.worktrees/
 
 # OS files
 .DS_Store

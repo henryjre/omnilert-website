@@ -94,16 +94,6 @@ export function ComplianceAuditDetailPanel({
           <span className="font-medium text-gray-900">{audit.branch_name || '—'}</span>
           <span className="text-gray-500">Check-in</span>
           <span className="font-medium text-gray-900">{formatDateTime(audit.comp_check_in_time)}</span>
-          {audit.auditor_name && (
-            <>
-              <span className="text-gray-500">Auditor</span>
-              <span className="font-medium text-gray-900">{audit.auditor_name}</span>
-            </>
-          )}
-          <span className="text-gray-500">Reward</span>
-          <span className="font-medium text-gray-900">
-            {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(audit.monetary_reward ?? 0))}
-          </span>
         </div>
 
         {(audit.status === 'processing' || audit.status === 'completed') && (
@@ -118,6 +108,21 @@ export function ComplianceAuditDetailPanel({
                 />
               </div>
             ))}
+          </div>
+        )}
+
+        {audit.status === 'completed' && (
+          <div className="space-y-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Auditor</p>
+              <p className="text-sm text-gray-900">{audit.auditor_name || '—'}</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Rate</p>
+              <p className="text-sm text-gray-900">
+                {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(audit.monetary_reward ?? 0))}
+              </p>
+            </div>
           </div>
         )}
       </div>

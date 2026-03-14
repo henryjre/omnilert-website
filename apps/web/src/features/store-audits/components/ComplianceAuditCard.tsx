@@ -46,10 +46,13 @@ export function ComplianceAuditCard({
         <Badge variant={statusVariant(audit.status)}>{audit.status}</Badge>
       </div>
       <p className="mt-1 text-xs text-gray-600">Check-in: {formatDateTime(audit.comp_check_in_time)}</p>
+      {audit.auditor_name && (
+        <p className="mt-1 text-xs text-gray-500">Auditor: {audit.auditor_name}</p>
+      )}
       <div className="mt-2 flex items-center justify-between text-xs text-gray-700">
         <span>Employee ID: {audit.comp_odoo_employee_id ?? '—'}</span>
         <span>
-          Reward: {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(reward)}
+          Rate: {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(reward)}
         </span>
       </div>
     </button>
