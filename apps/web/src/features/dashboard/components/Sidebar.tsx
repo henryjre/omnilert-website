@@ -20,6 +20,7 @@ import {
   Settings,
   Receipt,
   ClipboardList,
+  FileWarning,
 } from 'lucide-react';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useAuth } from '@/features/auth/hooks/useAuth';
@@ -301,6 +302,7 @@ export function Sidebar({ className = '' }: SidebarProps) {
           PERMISSIONS.SHIFT_VIEW_ALL,
           PERMISSIONS.EMPLOYEE_REQUIREMENTS_APPROVE,
           PERMISSIONS.STORE_AUDIT_VIEW,
+          PERMISSIONS.CASE_REPORT_VIEW,
         ) && (
           <>
             <div className="my-2 border-t border-gray-200" />
@@ -319,6 +321,12 @@ export function Sidebar({ className = '' }: SidebarProps) {
               <NavLink to="/employee-verifications" className={linkClass}>
                 <Users className="h-5 w-5" />
                 Employee Verifications
+              </NavLink>
+            )}
+            {hasPermission(PERMISSIONS.CASE_REPORT_VIEW) && (
+              <NavLink to="/case-reports" className={linkClass}>
+                <FileWarning className="h-5 w-5" />
+                Case Reports
               </NavLink>
             )}
 
@@ -466,3 +474,4 @@ export function Sidebar({ className = '' }: SidebarProps) {
     </aside>
   );
 }
+

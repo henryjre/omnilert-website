@@ -59,6 +59,12 @@ export const PERMISSIONS = {
   // Store Audit
   STORE_AUDIT_VIEW: 'store_audit.view',
   STORE_AUDIT_PROCESS: 'store_audit.process',
+
+  // Case Reports
+  CASE_REPORT_VIEW: 'case_report.view',
+  CASE_REPORT_CREATE: 'case_report.create',
+  CASE_REPORT_CLOSE: 'case_report.close',
+  CASE_REPORT_MANAGE: 'case_report.manage',
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -159,6 +165,15 @@ export const PERMISSION_CATEGORIES: Record<string, { label: string; permissions:
       permissions: [
         PERMISSIONS.STORE_AUDIT_VIEW,
         PERMISSIONS.STORE_AUDIT_PROCESS,
+      ],
+    },
+    case_report: {
+      label: 'Case Reports',
+      permissions: [
+        PERMISSIONS.CASE_REPORT_VIEW,
+        PERMISSIONS.CASE_REPORT_CREATE,
+        PERMISSIONS.CASE_REPORT_CLOSE,
+        PERMISSIONS.CASE_REPORT_MANAGE,
       ],
     },
   };
