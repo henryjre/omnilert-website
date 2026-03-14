@@ -1,4 +1,5 @@
 import type { PosVerification, PosSession } from './pos.types';
+import type { CaseAttachment, CaseMessage } from './caseReport.types';
 import type { StoreAudit } from './storeAudit.types';
 
 export interface ServerToClientEvents {
@@ -77,6 +78,32 @@ export interface ServerToClientEvents {
     auditor_name: string | null;
   }) => void;
   'store-audit:completed': (data: { id: string }) => void;
+
+  'case-report:created': (data: {
+    id: string;
+    caseNumber: number;
+    title: string;
+    status: 'open' | 'closed';
+    createdBy: string;
+  }) => void;
+  'case-report:updated': (data: {
+    id: string;
+    caseNumber: number;
+    field: string;
+  }) => void;
+  'case-report:message': (data: {
+    caseId: string;
+    message: CaseMessage;
+  }) => void;
+  'case-report:reaction': (data: {
+    caseId: string;
+    messageId: string;
+    reactions: Array<{ emoji: string; users: { id: string; name: string }[] }>;
+  }) => void;
+  'case-report:attachment': (data: {
+    caseId: string;
+    attachment: CaseAttachment;
+  }) => void;
 }
 
 export interface ClientToServerEvents {

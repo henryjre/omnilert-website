@@ -166,6 +166,31 @@ export function initializeSocket(
     logger.debug(`Store Audits: ${socket.data.user?.sub} connected`);
   });
 
+  // Case Reports namespace
+  const caseReportsNs = io.of('/case-reports');
+  caseReportsNs.use((socket, next) => {
+    const token = socket.handshake.auth.token as string | undefined;
+    if (!token) return next(new Error('Authentication required'));
+    try {
+      const payload = verifyAccessToken(token);
+      if (!payload.permissions.includes('case_report.view')) {
+        return next(new Error('Insufficient permissions'));
+      }
+      socket.data.user = payload;
+      next();
+    } catch {
+      next(new Error('Invalid token'));
+    }
+  });
+
+  caseReportsNs.on('connection', (socket) => {
+    const companyId = socket.data.user?.companyId;
+    if (companyId) {
+      socket.join(`company:${companyId}`);
+    }
+    logger.debug(`Case Reports: ${socket.data.user?.sub} connected`);
+  });
+
   // Employee Requirements namespace
   const employeeRequirementsNs = io.of('/employee-requirements');
   employeeRequirementsNs.use((socket, next) => {

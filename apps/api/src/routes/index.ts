@@ -20,6 +20,7 @@ import departmentRoutes from './department.routes.js';
 import employeeProfileRoutes from './employeeProfile.routes.js';
 import shiftExchangeRoutes from './shiftExchange.routes.js';
 import storeAuditRoutes from './storeAudit.routes.js';
+import caseReportRoutes from './caseReport.routes.js';
 import { authenticate } from '../middleware/auth.js';
 import { resolveCompany } from '../middleware/companyResolver.js';
 import { requirePermission } from '../middleware/rbac.js';
@@ -58,6 +59,7 @@ router.use('/departments', departmentRoutes);
 router.use('/employee-profiles', employeeProfileRoutes);
 router.use('/shift-exchanges', shiftExchangeRoutes);
 router.use('/store-audits', storeAuditRoutes);
+router.use('/case-reports', caseReportRoutes);
 router.use('/account', accountRoutes);
 router.use('/dashboard', dashboardRoutes);
 

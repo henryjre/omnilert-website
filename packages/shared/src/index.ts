@@ -1,6 +1,7 @@
 // Types
 export type * from './types/api.types.js';
 export type * from './types/branch.types.js';
+export type * from './types/caseReport.types.js';
 export type * from './types/company.types.js';
 export type * from './types/pos.types.js';
 export type * from './types/role.types.js';
