@@ -288,13 +288,11 @@ async function buildCaseMessageTree(tenantDb: Knex, caseId: string): Promise<Cas
     });
   }
 
+  // All messages are returned flat sorted by created_at.
+  // parent_message_id is kept on each message so the frontend can render
+  // a quoted reply block — replies are not nested in a tree.
   for (const row of messageRows) {
-    const current = items.get(row.id)!;
-    if (row.parent_message_id && items.has(row.parent_message_id)) {
-      items.get(row.parent_message_id)!.replies!.push(current);
-    } else {
-      roots.push(current);
-    }
+    roots.push(items.get(row.id)!);
   }
 
   return roots;
