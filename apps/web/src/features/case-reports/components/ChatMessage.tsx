@@ -506,26 +506,27 @@ export function ChatMessage({
           </div>
         )}
 
-        {/* Mobile drawer */}
-        <MessageDrawer
-          isOpen={drawerOpen}
-          message={message}
-          currentUserId={currentUserId}
-          canManage={canManage}
-          chatLocked={chatLocked}
-          userHasReacted={(emoji) =>
-            message.reactions.some(
-              (r) => r.emoji === emoji && r.users.some((u) => u.id === currentUserId),
-            )
-          }
-          onReact={(emoji) => onReact(message.id, emoji)}
-          onReply={() => onReply(message)}
-          onCopyText={() => { void navigator.clipboard.writeText(message.content); }}
-          onEdit={() => { setEditContent(message.content); setIsEditing(true); }}
-          onDelete={handleDelete}
-          onClose={() => setDrawerOpen(false)}
-        />
       </div>
+
+      {/* Mobile drawer — outside the transform div so fixed positioning works correctly */}
+      <MessageDrawer
+        isOpen={drawerOpen}
+        message={message}
+        currentUserId={currentUserId}
+        canManage={canManage}
+        chatLocked={chatLocked}
+        userHasReacted={(emoji) =>
+          message.reactions.some(
+            (r) => r.emoji === emoji && r.users.some((u) => u.id === currentUserId),
+          )
+        }
+        onReact={(emoji) => onReact(message.id, emoji)}
+        onReply={() => onReply(message)}
+        onCopyText={() => { void navigator.clipboard.writeText(message.content); }}
+        onEdit={() => { setEditContent(message.content); setIsEditing(true); }}
+        onDelete={handleDelete}
+        onClose={() => setDrawerOpen(false)}
+      />
     </div>
   );
 }

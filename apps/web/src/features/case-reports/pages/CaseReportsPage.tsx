@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import type { CaseMessage, CaseReport } from '@omnilert/shared';
 import { PERMISSIONS } from '@omnilert/shared';
 import { useAuth } from '@/features/auth/hooks/useAuth';
-import { FileWarning, Filter } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, FileWarning, Filter, Plus } from 'lucide-react';
 import { Badge } from '@/shared/components/ui/Badge';
 import { Button } from '@/shared/components/ui/Button';
 import { DateRangePicker } from '@/shared/components/ui/DateRangePicker';
