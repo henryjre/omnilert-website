@@ -84,19 +84,9 @@ export function CaseReportDetailPanel({
               Case {String(report.case_number).padStart(4, '0')} � Created by {report.created_by_name ?? 'Unknown'} on {formatDate(report.created_at)}
             </p>
           </div>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setDetailsVisible((v) => !v)}
-              className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-              title={detailsVisible ? 'Hide details' : 'Show details'}
-            >
-              {detailsVisible ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
-            </button>
-            <button type="button" onClick={onClosePanel} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
-              <X className="h-5 w-5" />
-            </button>
-          </div>
+          <button type="button" onClick={onClosePanel} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+            <X className="h-5 w-5" />
+          </button>
         </div>
 
         <div className="grid min-h-0 flex-1 grid-rows-[auto_1fr]">
@@ -187,6 +177,21 @@ export function CaseReportDetailPanel({
           </div>
 
           <div className="min-h-0 border-t border-gray-200 px-4 py-3 sm:px-6 sm:py-5">
+            {/* Toggle bar */}
+            <div className="mb-2 flex justify-center">
+              <button
+                type="button"
+                onClick={() => setDetailsVisible((v) => !v)}
+                className="flex items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-0.5 text-xs text-gray-400 shadow-sm hover:bg-gray-50 hover:text-gray-600"
+                title={detailsVisible ? 'Hide details' : 'Show details'}
+              >
+                {detailsVisible ? (
+                  <><ChevronUp className="h-3.5 w-3.5" /> Hide details</>
+                ) : (
+                  <><ChevronDown className="h-3.5 w-3.5" /> Show details</>
+                )}
+              </button>
+            </div>
             <ChatSection
               messages={messages}
               currentUserId={currentUserId}
