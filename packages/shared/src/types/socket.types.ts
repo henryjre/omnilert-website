@@ -104,6 +104,8 @@ export interface ServerToClientEvents {
     caseId: string;
     attachment: CaseAttachment;
   }) => void;
+  'case-report:message:edited': (data: { caseId: string; message: CaseMessage }) => void;
+  'case-report:message:deleted': (data: { caseId: string; messageId: string }) => void;
 }
 
 export interface ClientToServerEvents {
