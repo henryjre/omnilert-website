@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { motion, useAnimationControls } from 'framer-motion';
+import { motion, useAnimationControls, useMotionValue, animate } from 'framer-motion';
 import type { CaseMessage } from '@omnilert/shared';
 import { Download, Reply } from 'lucide-react';
 import { EmojiPicker } from './EmojiPicker';
@@ -105,8 +105,8 @@ export function ChatMessage({
 
   // ── Swipe-to-reply state ──────────────────────────────────────────────────
 
-  const [swipeDeltaX, setSwipeDeltaX] = useState(0);
-  const [isSwipeReleasing, setIsSwipeReleasing] = useState(false);
+  const swipeX = useMotionValue(0);
+  const [swipeProgress, setSwipeProgress] = useState(0); // 0–1 for reply icon opacity
   const touchStartRef = useRef<{ x: number; y: number; locked: 'h' | 'v' | null } | null>(null);
 
   // ── Long press handlers ───────────────────────────────────────────────────
@@ -158,11 +158,7 @@ export function ChatMessage({
     const deltaY = touch.clientY - start.y;
 
     if (start.locked === null && Math.abs(deltaX) + Math.abs(deltaY) > 10) {
-      if (Math.abs(deltaX) >= Math.abs(deltaY)) {
-        start.locked = 'h';
-      } else {
-        start.locked = 'v';
-      }
+      start.locked = Math.abs(deltaX) >= Math.abs(deltaY) ? 'h' : 'v';
       touchStartRef.current = { ...start };
     }
 
@@ -170,27 +166,20 @@ export function ChatMessage({
 
     if (start.locked === 'h' && deltaX < 0) {
       e.preventDefault();
-      setSwipeDeltaX(Math.max(deltaX, -80));
+      const clamped = Math.max(deltaX, -80);
+      swipeX.set(clamped);
+      setSwipeProgress(Math.min(1, Math.abs(clamped) / 60));
       // Cancel long-press when swiping
-      if (highlightTimer.current) {
-        clearTimeout(highlightTimer.current);
-        highlightTimer.current = null;
-      }
-      if (longPressTimer.current) {
-        clearTimeout(longPressTimer.current);
-        longPressTimer.current = null;
-      }
+      if (highlightTimer.current) { clearTimeout(highlightTimer.current); highlightTimer.current = null; }
+      if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
       setIsLongPressing(false);
     }
   }
 
   function handleTouchEnd() {
-    if (swipeDeltaX < -60) {
-      onReply(message);
-    }
-    setIsSwipeReleasing(true);
-    setSwipeDeltaX(0);
-    setTimeout(() => setIsSwipeReleasing(false), 200);
+    if (swipeX.get() < -60) onReply(message);
+    setSwipeProgress(0);
+    void animate(swipeX, 0, { type: 'spring', stiffness: 400, damping: 30 });
     touchStartRef.current = null;
   }
 
@@ -276,7 +265,7 @@ export function ChatMessage({
       {/* Reply icon revealed by swipe */}
       <div
         className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400"
-        style={{ opacity: Math.min(1, Math.abs(swipeDeltaX) / 60) }}
+        style={{ opacity: swipeProgress }}
       >
         <Reply className="h-5 w-5" />
       </div>
@@ -286,11 +275,8 @@ export function ChatMessage({
         animate={isReplyTarget ? { backgroundColor: '#eff6ff' } : pressControls}
         initial={{ scale: 1, backgroundColor: '#ffffff' }}
         transition={{ duration: 0.2 }}
+        style={{ x: swipeX }}
         className="group relative flex gap-3 rounded-xl py-1 sm:hover:bg-gray-50"
-        style={{
-          transform: `translateX(${swipeDeltaX}px) translateZ(0)`,
-          transition: isSwipeReleasing ? 'transform 0.2s ease-out' : undefined,
-        }}
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
