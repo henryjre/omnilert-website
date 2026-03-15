@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { CaseMessage, CaseReport } from '@omnilert/shared';
 import { PERMISSIONS } from '@omnilert/shared';
+import { useAuth } from '@/features/auth/hooks/useAuth';
 import { FileWarning, Filter } from 'lucide-react';
 import { Badge } from '@/shared/components/ui/Badge';
 import { Button } from '@/shared/components/ui/Button';
@@ -12,6 +13,8 @@ import { useSocket } from '@/shared/hooks/useSocket';
 import {
   closeCase,
   createCaseReport,
+  deleteCaseMessage,
+  editCaseMessage,
   getCaseReport,
   getMentionables,
   leaveCaseDiscussion,
@@ -40,6 +43,7 @@ type StatusTab = 'all' | 'open' | 'closed';
 export function CaseReportsPage() {
   const socket = useSocket('/case-reports');
   const { hasPermission } = usePermission();
+  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -232,6 +236,7 @@ export function CaseReportsPage() {
         <CaseReportDetailPanel
           report={selectedReport}
           messages={messages}
+          currentUserId={user?.id ?? ''}
           users={users}
           roles={roles}
           canManage={canManage}
@@ -280,6 +285,16 @@ export function CaseReportsPage() {
           onReactMessage={async (messageId, emoji) => {
             if (!selectedCaseId) return;
             await toggleCaseReaction(selectedCaseId, messageId, emoji);
+            await fetchDetail(selectedCaseId);
+          }}
+          onEditMessage={async (messageId, newContent) => {
+            if (!selectedCaseId) return;
+            await editCaseMessage(selectedCaseId, messageId, newContent);
+            await fetchDetail(selectedCaseId);
+          }}
+          onDeleteMessage={async (messageId) => {
+            if (!selectedCaseId) return;
+            await deleteCaseMessage(selectedCaseId, messageId);
             await fetchDetail(selectedCaseId);
           }}
         />

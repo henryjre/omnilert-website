@@ -10,6 +10,7 @@ import { TextInputModal } from './TextInputModal';
 interface CaseReportDetailPanelProps {
   report: CaseReportDetail | null;
   messages: CaseMessage[];
+  currentUserId: string;
   users: MentionableUser[];
   roles: MentionableRole[];
   canManage: boolean;
@@ -28,6 +29,8 @@ interface CaseReportDetailPanelProps {
     files: File[];
   }) => Promise<void>;
   onReactMessage: (messageId: string, emoji: string) => Promise<void>;
+  onEditMessage: (messageId: string, newContent: string) => Promise<void>;
+  onDeleteMessage: (messageId: string) => Promise<void>;
 }
 
 function formatDate(value: string | null) {
@@ -38,6 +41,7 @@ function formatDate(value: string | null) {
 export function CaseReportDetailPanel({
   report,
   messages,
+  currentUserId,
   users,
   roles,
   canManage,
@@ -50,6 +54,8 @@ export function CaseReportDetailPanel({
   onUploadAttachment,
   onSendMessage,
   onReactMessage,
+  onEditMessage,
+  onDeleteMessage,
 }: CaseReportDetailPanelProps) {
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const [editingField, setEditingField] = useState<'corrective_action' | 'resolution' | null>(null);
@@ -74,7 +80,7 @@ export function CaseReportDetailPanel({
               </Badge>
             </div>
             <p className="mt-1 text-sm text-gray-500">
-              Case {String(report.case_number).padStart(4, '0')} • Created by {report.created_by_name ?? 'Unknown'} on {formatDate(report.created_at)}
+              Case {String(report.case_number).padStart(4, '0')} ï¿½ Created by {report.created_by_name ?? 'Unknown'} on {formatDate(report.created_at)}
             </p>
           </div>
           <button type="button" onClick={onClosePanel} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
@@ -172,11 +178,15 @@ export function CaseReportDetailPanel({
           <div className="min-h-0 border-t border-gray-200 px-6 py-5">
             <ChatSection
               messages={messages}
-              disabled={chatLocked}
+              currentUserId={currentUserId}
+              canManage={canManage}
+              chatLocked={chatLocked}
               users={users}
               roles={roles}
               onSend={onSendMessage}
               onReact={onReactMessage}
+              onEdit={onEditMessage}
+              onDelete={onDeleteMessage}
             />
           </div>
         </div>
