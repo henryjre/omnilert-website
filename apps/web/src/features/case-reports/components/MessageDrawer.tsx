@@ -89,7 +89,7 @@ export function MessageDrawer({
         </div>
 
         {/* Action list */}
-        <div className="divide-y divide-gray-100 pb-safe">
+        <div className="divide-y divide-gray-100 pb-[env(safe-area-inset-bottom)]">
           {!chatLocked && (
             <button type="button" className={itemClass} onClick={() => handleAction(onReply)}>
               Reply

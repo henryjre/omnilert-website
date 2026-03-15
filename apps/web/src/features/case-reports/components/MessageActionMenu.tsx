@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 
 interface MessageActionMenuProps {
   isOwnMessage: boolean;
@@ -10,6 +11,8 @@ interface MessageActionMenuProps {
   onEdit: () => void;
   onDelete: () => void;
   onClose: () => void;
+  triggerRect?: DOMRect | null;
+  portalMode?: boolean;
 }
 
 export function MessageActionMenu({
@@ -22,6 +25,8 @@ export function MessageActionMenu({
   onEdit,
   onDelete,
   onClose,
+  triggerRect,
+  portalMode,
 }: MessageActionMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -40,7 +45,42 @@ export function MessageActionMenu({
   const dangerClass =
     'w-full px-3 py-1.5 text-left text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors';
 
-  return (
+  const menuContent = portalMode ? (
+    <div
+      ref={ref}
+      className="min-w-[160px] rounded-xl border border-gray-200 bg-white p-1 shadow-lg"
+      style={{
+        position: 'fixed',
+        top: triggerRect ? triggerRect.bottom + 4 : 0,
+        left: triggerRect ? Math.max(8, triggerRect.right - 160) : 0,
+        zIndex: 60,
+      }}
+    >
+      {!chatLocked && (
+        <button type="button" className={itemClass} onClick={() => { onReply(); onClose(); }}>
+          Reply
+        </button>
+      )}
+      <button type="button" className={itemClass} onClick={() => { onCopyText(); onClose(); }}>
+        Copy Text
+      </button>
+      {!chatLocked && (
+        <button type="button" className={itemClass} onClick={() => { onAddReaction(); onClose(); }}>
+          Add Reaction
+        </button>
+      )}
+      {isOwnMessage && !chatLocked && (
+        <button type="button" className={itemClass} onClick={() => { onEdit(); onClose(); }}>
+          Edit Message
+        </button>
+      )}
+      {(isOwnMessage || canManage) && (
+        <button type="button" className={dangerClass} onClick={() => { onDelete(); onClose(); }}>
+          Delete Message
+        </button>
+      )}
+    </div>
+  ) : (
     <div
       ref={ref}
       className="absolute right-0 top-6 z-50 min-w-[160px] rounded-xl border border-gray-200 bg-white p-1 shadow-lg"
@@ -70,4 +110,10 @@ export function MessageActionMenu({
       )}
     </div>
   );
+
+  if (portalMode) {
+    return createPortal(menuContent, document.body);
+  }
+
+  return menuContent;
 }
