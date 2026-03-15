@@ -58,6 +58,7 @@ interface ChatMessageProps {
   onReact: (messageId: string, emoji: string) => void;
   onEdit: (messageId: string, newContent: string) => Promise<void>;
   onDelete: (messageId: string) => Promise<void>;
+  isReplyTarget?: boolean;
   onScrollToMessage: (messageId: string) => void;
   users?: MentionableUser[];
   roles?: MentionableRole[];
@@ -76,6 +77,7 @@ export function ChatMessage({
   onReact,
   onEdit,
   onDelete,
+  isReplyTarget,
   onScrollToMessage,
   users,
   roles,
@@ -281,8 +283,9 @@ export function ChatMessage({
 
       {/* Swiping message content */}
       <motion.div
-        animate={pressControls}
+        animate={isReplyTarget ? { backgroundColor: '#eff6ff' } : pressControls}
         initial={{ scale: 1, backgroundColor: '#ffffff' }}
+        transition={{ duration: 0.2 }}
         className="group relative flex gap-3 rounded-xl py-1 sm:hover:bg-gray-50"
         style={{
           transform: `translateX(${swipeDeltaX}px) translateZ(0)`,
