@@ -102,6 +102,8 @@ export function CaseReportsPage() {
       setSelectedReport(detail);
       setMessages(nextMessages);
       await markCaseRead(caseId);
+      // Clear the unread badge immediately in the local list
+      setReports((prev) => prev.map((r) => r.id === caseId ? { ...r, unread_count: 0 } : r));
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to load case detail');
     }
