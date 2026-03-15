@@ -9,7 +9,7 @@ import type { ThemeMode } from './shared/utils/theme';
 const persistedTheme = useAuthStore.getState().companyThemeColor ?? DEFAULT_THEME_COLOR;
 applyCompanyThemeFromHex(persistedTheme);
 
-const storedMode = (localStorage.getItem(THEME_MODE_STORAGE_KEY) as ThemeMode | null) ?? 'system';
+const storedMode = (localStorage.getItem(THEME_MODE_STORAGE_KEY) as ThemeMode | null) ?? 'light';
 applyThemeMode(storedMode);
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
