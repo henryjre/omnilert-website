@@ -8,7 +8,7 @@ interface ChatMessageProps {
   onReact: (messageId: string, emoji: string) => void;
 }
 
-const QUICK_REACTIONS = ['??', '??', '??'];
+const QUICK_REACTIONS = ['👍', '❤️', '😂'];
 
 function formatDate(value: string) {
   return new Date(value).toLocaleString();
