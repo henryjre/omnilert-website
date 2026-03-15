@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { motion, useAnimationControls, useMotionValue, animate } from 'framer-motion';
+import { motion, useMotionValue, animate } from 'framer-motion';
 import type { CaseMessage } from '@omnilert/shared';
 import { Download, Reply } from 'lucide-react';
 import { EmojiPicker } from './EmojiPicker';
@@ -101,7 +101,6 @@ export function ChatMessage({
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isLongPressing, setIsLongPressing] = useState(false);
-  const pressControls = useAnimationControls();
 
   // ── Swipe-to-reply state ──────────────────────────────────────────────────
 
@@ -113,16 +112,10 @@ export function ChatMessage({
 
   function handlePointerDown(e: React.PointerEvent) {
     if (e.pointerType !== 'touch') return;
-    // Start subtle scale-up at 150ms as visual feedback
-    highlightTimer.current = setTimeout(() => {
-      setIsLongPressing(true);
-      void pressControls.start({ scale: 1.03, backgroundColor: '#f3f4f6', transition: { duration: 0.2 } });
-    }, 150);
-    // Open drawer and bounce back at 500ms
+    highlightTimer.current = setTimeout(() => setIsLongPressing(true), 150);
     longPressTimer.current = setTimeout(() => {
       setDrawerOpen(true);
       setIsLongPressing(false);
-      void pressControls.start({ scale: 1, backgroundColor: '#ffffff', transition: { type: 'spring', stiffness: 400, damping: 20 } });
     }, 500);
   }
 
@@ -130,14 +123,12 @@ export function ChatMessage({
     if (highlightTimer.current) { clearTimeout(highlightTimer.current); highlightTimer.current = null; }
     if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
     setIsLongPressing(false);
-    void pressControls.start({ scale: 1, backgroundColor: '#ffffff', transition: { duration: 0.15 } });
   }
 
   function handlePointerCancel() {
     if (highlightTimer.current) { clearTimeout(highlightTimer.current); highlightTimer.current = null; }
     if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
     setIsLongPressing(false);
-    void pressControls.start({ scale: 1, backgroundColor: '#ffffff', transition: { duration: 0.15 } });
   }
 
   // ── Touch / swipe handlers ────────────────────────────────────────────────
@@ -272,9 +263,15 @@ export function ChatMessage({
 
       {/* Swiping message content */}
       <motion.div
-        animate={isReplyTarget ? { backgroundColor: '#eff6ff' } : pressControls}
+        animate={
+          isReplyTarget
+            ? { scale: 1, backgroundColor: '#fde68a' }
+            : isLongPressing
+              ? { scale: 1.03, backgroundColor: '#f3f4f6' }
+              : { scale: 1, backgroundColor: '#ffffff' }
+        }
         initial={{ scale: 1, backgroundColor: '#ffffff' }}
-        transition={{ duration: 0.2 }}
+        transition={isLongPressing ? { duration: 0.2 } : { type: 'spring', stiffness: 400, damping: 25 }}
         style={{ x: swipeX }}
         className="group relative flex gap-3 rounded-xl py-1 sm:hover:bg-gray-50"
         onPointerDown={handlePointerDown}
