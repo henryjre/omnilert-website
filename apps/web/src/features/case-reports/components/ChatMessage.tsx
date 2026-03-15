@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { motion, useAnimationControls } from 'framer-motion';
 import type { CaseMessage } from '@omnilert/shared';
 import { Download, Reply } from 'lucide-react';
 import { EmojiPicker } from './EmojiPicker';
@@ -98,6 +99,7 @@ export function ChatMessage({
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isLongPressing, setIsLongPressing] = useState(false);
+  const pressControls = useAnimationControls();
 
   // ── Swipe-to-reply state ──────────────────────────────────────────────────
 
@@ -109,35 +111,31 @@ export function ChatMessage({
 
   function handlePointerDown(e: React.PointerEvent) {
     if (e.pointerType !== 'touch') return;
-    highlightTimer.current = setTimeout(() => setIsLongPressing(true), 150);
+    // Start subtle scale-up at 150ms as visual feedback
+    highlightTimer.current = setTimeout(() => {
+      setIsLongPressing(true);
+      void pressControls.start({ scale: 1.03, backgroundColor: '#f3f4f6', transition: { duration: 0.2 } });
+    }, 150);
+    // Open drawer and bounce back at 500ms
     longPressTimer.current = setTimeout(() => {
       setDrawerOpen(true);
       setIsLongPressing(false);
+      void pressControls.start({ scale: 1, backgroundColor: '#ffffff', transition: { type: 'spring', stiffness: 400, damping: 20 } });
     }, 500);
   }
 
   function handlePointerUp() {
-    if (highlightTimer.current) {
-      clearTimeout(highlightTimer.current);
-      highlightTimer.current = null;
-    }
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
+    if (highlightTimer.current) { clearTimeout(highlightTimer.current); highlightTimer.current = null; }
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
     setIsLongPressing(false);
+    void pressControls.start({ scale: 1, backgroundColor: '#ffffff', transition: { duration: 0.15 } });
   }
 
   function handlePointerCancel() {
-    if (highlightTimer.current) {
-      clearTimeout(highlightTimer.current);
-      highlightTimer.current = null;
-    }
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
+    if (highlightTimer.current) { clearTimeout(highlightTimer.current); highlightTimer.current = null; }
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
     setIsLongPressing(false);
+    void pressControls.start({ scale: 1, backgroundColor: '#ffffff', transition: { duration: 0.15 } });
   }
 
   // ── Touch / swipe handlers ────────────────────────────────────────────────
@@ -282,15 +280,13 @@ export function ChatMessage({
       </div>
 
       {/* Swiping message content */}
-      <div
-        className={`group relative flex gap-3 bg-white py-1 ${isLongPressing ? 'scale-[1.02] rounded-xl bg-gray-100' : ''}`}
+      <motion.div
+        animate={pressControls}
+        initial={{ scale: 1, backgroundColor: '#ffffff' }}
+        className="group relative flex gap-3 rounded-xl py-1 sm:hover:bg-gray-50"
         style={{
-          transform: `translateX(${swipeDeltaX}px)`,
-          transition: isSwipeReleasing
-            ? 'transform 0.2s ease-out, background-color 0.2s, transform 0.2s'
-            : isLongPressing
-              ? 'background-color 0.2s, transform 0.2s'
-              : 'background-color 0.2s',
+          transform: `translateX(${swipeDeltaX}px) translateZ(0)`,
+          transition: isSwipeReleasing ? 'transform 0.2s ease-out' : undefined,
         }}
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
@@ -442,9 +438,9 @@ export function ChatMessage({
           )}
         </div>
 
-        {/* Desktop: smiley + ⋯ button (shown on group hover, hidden on touch/mobile) */}
+        {/* Desktop: smiley + ⋯ button — hover only, never on mobile */}
         {!chatLocked && (
-          <div className="absolute right-0 top-1 hidden items-center gap-1 group-hover:flex sm:flex">
+          <div className="absolute right-0 top-1 hidden items-center gap-1 sm:group-hover:flex">
             <div className="relative">
               <button
                 ref={emojiTriggerRef}
@@ -503,7 +499,7 @@ export function ChatMessage({
           </div>
         )}
 
-      </div>
+      </motion.div>
 
       {/* Mobile drawer — outside the transform div so fixed positioning works correctly */}
       <MessageDrawer
