@@ -760,7 +760,10 @@ export async function sendMessage(input: {
   files: Express.Multer.File[];
 }): Promise<CaseMessage> {
   const report = await assertCanMutateCase(input.tenantDb, input.caseId, input.permissions);
-  const content = ensureNonEmpty(input.content, 'Message content');
+  if (!input.content?.trim() && input.files.length === 0) {
+    throw new AppError(400, 'Message must have content or at least one attachment');
+  }
+  const content = input.content?.trim() ?? '';
   if (input.files.some((file) => !isAllowedMessageAttachment(file.mimetype))) {
     throw new AppError(400, 'Unsupported attachment type');
   }
