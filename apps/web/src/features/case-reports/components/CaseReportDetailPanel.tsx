@@ -176,7 +176,7 @@ export function CaseReportDetailPanel({
             </div>
           </div>
 
-          <div className="min-h-0 border-t border-gray-200 px-4 py-3 sm:px-6 sm:py-5">
+          <div className="flex min-h-0 flex-col border-t border-gray-200 px-4 py-3 sm:px-6 sm:py-5">
             {/* Toggle bar */}
             <div className="mb-2 flex justify-center">
               <button
@@ -193,6 +193,7 @@ export function CaseReportDetailPanel({
               </button>
             </div>
             <ChatSection
+              className="flex-1 min-h-0"
               messages={messages}
               currentUserId={currentUserId}
               canManage={canManage}

@@ -8,6 +8,7 @@ import { ChatMessage } from './ChatMessage';
 import { ImagePreviewModal } from './ImagePreviewModal';
 
 interface ChatSectionProps {
+  className?: string;
   messages: CaseMessage[];
   currentUserId: string;
   canManage: boolean;
@@ -27,6 +28,7 @@ interface ChatSectionProps {
 }
 
 export function ChatSection({
+  className,
   messages,
   currentUserId,
   canManage,
@@ -58,7 +60,7 @@ export function ChatSection({
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className={`flex h-full flex-col${className ? ` ${className}` : ''}`}>
       <div className="flex-1 space-y-1 overflow-y-auto pr-1">
         {messages.map((message) => (
           <ChatMessage
