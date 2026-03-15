@@ -84,7 +84,13 @@ export function CaseReportDetailPanel({
               </Badge>
             </div>
             <p className="mt-1 text-sm text-gray-500">
-              Case {String(report.case_number).padStart(4, '0')} � Created by {report.created_by_name ?? 'Unknown'} on {formatDate(report.created_at)}
+              <span className="font-medium">Case {String(report.case_number).padStart(4, '0')}</span>
+              <span className="mx-1 text-gray-300">·</span>
+              <span className="hidden sm:inline">Created by </span>
+              <span>{report.created_by_name ?? 'Unknown'}</span>
+              <span className="mx-1 text-gray-300 sm:hidden"> · </span>
+              <span className="hidden sm:inline"> on {formatDate(report.created_at)}</span>
+              <span className="block text-xs text-gray-400 sm:hidden">{formatDate(report.created_at)}</span>
             </p>
           </div>
           <button type="button" onClick={onClosePanel} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
