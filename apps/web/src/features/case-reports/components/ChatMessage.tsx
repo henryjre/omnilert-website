@@ -42,14 +42,7 @@ function formatTimestamp(value: string): string {
 // ── Tree search ───────────────────────────────────────────────────────────────
 
 function findInTree(messages: CaseMessage[], id: string): CaseMessage | undefined {
-  for (const msg of messages) {
-    if (msg.id === id) return msg;
-    if (msg.replies) {
-      const found = findInTree(msg.replies, id);
-      if (found) return found;
-    }
-  }
-  return undefined;
+  return messages.find((msg) => msg.id === id);
 }
 
 // ── Props ─────────────────────────────────────────────────────────────────────
