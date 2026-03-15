@@ -5,6 +5,7 @@ import { Button } from '@/shared/components/ui/Button';
 import type { MentionableRole, MentionableUser } from '../services/caseReport.api';
 import { MentionPicker } from './MentionPicker';
 import { ChatMessage } from './ChatMessage';
+import { ImagePreviewModal } from './ImagePreviewModal';
 
 interface ChatSectionProps {
   messages: CaseMessage[];
@@ -47,6 +48,7 @@ export function ChatSection({
   const [mentionQuery, setMentionQuery] = useState('');
   const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([]);
   const [mentionedRoleIds, setMentionedRoleIds] = useState<string[]>([]);
+  const [previewImage, setPreviewImage] = useState<{ url: string; fileName: string } | null>(null);
 
   function handleScrollToMessage(messageId: string) {
     const el = document.querySelector(`[data-message-id="${messageId}"]`);
@@ -66,17 +68,20 @@ export function ChatSection({
             canManage={canManage}
             chatLocked={chatLocked}
             allMessages={messages}
+            users={users}
+            roles={roles}
             onReply={setReplyTo}
             onReact={(messageId, emoji) => void onReact(messageId, emoji)}
             onEdit={onEdit}
             onDelete={onDelete}
             onScrollToMessage={handleScrollToMessage}
+            onPreviewImage={(url, fileName) => setPreviewImage({ url, fileName })}
           />
         ))}
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="relative mt-4 border-t border-gray-200 pt-4">
+      <div className="relative mt-4 border-t border-gray-200 pb-[env(safe-area-inset-bottom)] pt-4">
         <MentionPicker
           isOpen={mentionOpen}
           query={mentionQuery}
@@ -111,7 +116,7 @@ export function ChatSection({
           </div>
         )}
 
-        <div className="flex items-end gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
           <textarea
             value={content}
             onChange={(event) => {
@@ -123,12 +128,12 @@ export function ChatSection({
                 setMentionOpen(true);
               }
             }}
-            rows={3}
+            rows={2}
             disabled={chatLocked}
-            className="min-h-[96px] flex-1 rounded-2xl border border-gray-300 px-3 py-3 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 disabled:bg-gray-50"
+            className="min-h-[48px] flex-1 rounded-2xl border border-gray-300 px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 disabled:bg-gray-50 sm:min-h-[96px] sm:py-3"
             placeholder={chatLocked ? 'Chat is locked for this case' : 'Write a message...'}
           />
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-row gap-2 self-end sm:flex-col">
             <Button variant="secondary" onClick={() => setMentionOpen((current) => !current)} disabled={chatLocked}>
               <AtSign className="h-4 w-4" />
             </Button>
@@ -152,7 +157,7 @@ export function ChatSection({
                 setMentionedUserIds([]);
                 setMentionedRoleIds([]);
               }}
-              disabled={chatLocked || !content.trim()}
+              disabled={chatLocked || (!content.trim() && files.length === 0)}
             >
               <Send className="h-4 w-4" />
             </Button>
@@ -166,6 +171,12 @@ export function ChatSection({
           onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
         />
       </div>
+
+      <ImagePreviewModal
+        imageUrl={previewImage?.url ?? null}
+        fileName={previewImage?.fileName}
+        onClose={() => setPreviewImage(null)}
+      />
     </div>
   );
 }
