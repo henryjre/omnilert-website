@@ -51,6 +51,10 @@ const reactionSchema = z.object({
   emoji: z.string().trim().min(1).max(20),
 });
 
+const editMessageSchema = z.object({
+  content: z.string().trim().min(1),
+});
+
 const router = Router();
 
 router.use(authenticate, resolveCompany);
@@ -91,6 +95,17 @@ router.post(
   requirePermission(PERMISSIONS.CASE_REPORT_VIEW),
   validateBody(reactionSchema),
   caseReportController.toggleReaction,
+);
+router.patch(
+  '/:id/messages/:messageId',
+  requirePermission(PERMISSIONS.CASE_REPORT_VIEW),
+  validateBody(editMessageSchema),
+  caseReportController.editMessage,
+);
+router.delete(
+  '/:id/messages/:messageId',
+  requirePermission(PERMISSIONS.CASE_REPORT_VIEW),
+  caseReportController.deleteMessage,
 );
 router.post('/:id/leave', requirePermission(PERMISSIONS.CASE_REPORT_VIEW), caseReportController.leave);
 router.post('/:id/mute', requirePermission(PERMISSIONS.CASE_REPORT_VIEW), caseReportController.mute);

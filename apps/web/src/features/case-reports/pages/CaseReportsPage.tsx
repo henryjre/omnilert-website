@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { CaseMessage, CaseReport } from '@omnilert/shared';
 import { PERMISSIONS } from '@omnilert/shared';
-import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, FileWarning, Filter, Plus } from 'lucide-react';
+import { useAuth } from '@/features/auth/hooks/useAuth';
+import { FileWarning, Filter } from 'lucide-react';
+import { Badge } from '@/shared/components/ui/Badge';
 import { Button } from '@/shared/components/ui/Button';
 import { DateRangePicker } from '@/shared/components/ui/DateRangePicker';
 import { Card, CardBody } from '@/shared/components/ui/Card';
@@ -12,6 +14,8 @@ import { useSocket } from '@/shared/hooks/useSocket';
 import {
   closeCase,
   createCaseReport,
+  deleteCaseMessage,
+  editCaseMessage,
   getCaseReport,
   getMentionables,
   leaveCaseDiscussion,
@@ -47,6 +51,7 @@ const STATUS_TABS: { key: StatusTab; label: string }[] = [
 export function CaseReportsPage() {
   const socket = useSocket('/case-reports');
   const { hasPermission } = usePermission();
+  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -396,6 +401,7 @@ export function CaseReportsPage() {
         <CaseReportDetailPanel
           report={selectedReport}
           messages={messages}
+          currentUserId={user?.id ?? ''}
           users={users}
           roles={roles}
           canManage={canManage}
@@ -444,6 +450,16 @@ export function CaseReportsPage() {
           onReactMessage={async (messageId, emoji) => {
             if (!selectedCaseId) return;
             await toggleCaseReaction(selectedCaseId, messageId, emoji);
+            await fetchDetail(selectedCaseId);
+          }}
+          onEditMessage={async (messageId, newContent) => {
+            if (!selectedCaseId) return;
+            await editCaseMessage(selectedCaseId, messageId, newContent);
+            await fetchDetail(selectedCaseId);
+          }}
+          onDeleteMessage={async (messageId) => {
+            if (!selectedCaseId) return;
+            await deleteCaseMessage(selectedCaseId, messageId);
             await fetchDetail(selectedCaseId);
           }}
         />

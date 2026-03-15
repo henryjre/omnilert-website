@@ -36,6 +36,7 @@ export interface CaseMessage {
   attachments: CaseAttachment[];
   mentions: CaseMention[];
   created_at: string;
+  is_edited: boolean;
 }
 
 export interface CaseReaction {

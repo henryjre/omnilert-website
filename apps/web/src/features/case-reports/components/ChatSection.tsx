@@ -8,7 +8,9 @@ import { ChatMessage } from './ChatMessage';
 
 interface ChatSectionProps {
   messages: CaseMessage[];
-  disabled: boolean;
+  currentUserId: string;
+  canManage: boolean;
+  chatLocked: boolean;
   users: MentionableUser[];
   roles: MentionableRole[];
   onSend: (input: {
@@ -19,17 +21,25 @@ interface ChatSectionProps {
     files: File[];
   }) => Promise<void>;
   onReact: (messageId: string, emoji: string) => Promise<void>;
+  onEdit: (messageId: string, newContent: string) => Promise<void>;
+  onDelete: (messageId: string) => Promise<void>;
 }
 
 export function ChatSection({
   messages,
-  disabled,
+  currentUserId,
+  canManage,
+  chatLocked,
   users,
   roles,
   onSend,
   onReact,
+  onEdit,
+  onDelete,
 }: ChatSectionProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
   const [content, setContent] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [replyTo, setReplyTo] = useState<CaseMessage | null>(null);
@@ -38,18 +48,32 @@ export function ChatSection({
   const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([]);
   const [mentionedRoleIds, setMentionedRoleIds] = useState<string[]>([]);
 
+  function handleScrollToMessage(messageId: string) {
+    const el = document.querySelector(`[data-message-id="${messageId}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
+
   return (
     <div className="flex h-full flex-col">
-      <div className="flex-1 space-y-3 overflow-y-auto pr-1">
+      <div className="flex-1 space-y-1 overflow-y-auto pr-1">
         {messages.map((message) => (
           <ChatMessage
             key={message.id}
             message={message}
-            canReply={!disabled}
+            currentUserId={currentUserId}
+            canManage={canManage}
+            chatLocked={chatLocked}
+            allMessages={messages}
             onReply={setReplyTo}
             onReact={(messageId, emoji) => void onReact(messageId, emoji)}
+            onEdit={onEdit}
+            onDelete={onDelete}
+            onScrollToMessage={handleScrollToMessage}
           />
         ))}
+        <div ref={messagesEndRef} />
       </div>
 
       <div className="relative mt-4 border-t border-gray-200 pt-4">
@@ -100,15 +124,15 @@ export function ChatSection({
               }
             }}
             rows={3}
-            disabled={disabled}
+            disabled={chatLocked}
             className="min-h-[96px] flex-1 rounded-2xl border border-gray-300 px-3 py-3 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 disabled:bg-gray-50"
-            placeholder={disabled ? 'Chat is locked for this case' : 'Write a message...'}
+            placeholder={chatLocked ? 'Chat is locked for this case' : 'Write a message...'}
           />
           <div className="flex flex-col gap-2">
-            <Button variant="secondary" onClick={() => setMentionOpen((current) => !current)} disabled={disabled}>
+            <Button variant="secondary" onClick={() => setMentionOpen((current) => !current)} disabled={chatLocked}>
               <AtSign className="h-4 w-4" />
             </Button>
-            <Button variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={disabled}>
+            <Button variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={chatLocked}>
               <Paperclip className="h-4 w-4" />
             </Button>
             <Button
@@ -128,7 +152,7 @@ export function ChatSection({
                 setMentionedUserIds([]);
                 setMentionedRoleIds([]);
               }}
-              disabled={disabled || !content.trim()}
+              disabled={chatLocked || !content.trim()}
             >
               <Send className="h-4 w-4" />
             </Button>
