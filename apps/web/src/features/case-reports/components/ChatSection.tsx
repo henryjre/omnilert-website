@@ -11,6 +11,7 @@ interface ChatSectionProps {
   className?: string;
   messages: CaseMessage[];
   currentUserId: string;
+  currentUserRoleIds?: string[];
   canManage: boolean;
   chatLocked: boolean;
   users: MentionableUser[];
@@ -31,6 +32,7 @@ export function ChatSection({
   className,
   messages,
   currentUserId,
+  currentUserRoleIds,
   canManage,
   chatLocked,
   users,
@@ -51,11 +53,14 @@ export function ChatSection({
   const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([]);
   const [mentionedRoleIds, setMentionedRoleIds] = useState<string[]>([]);
   const [previewImage, setPreviewImage] = useState<{ url: string; fileName: string } | null>(null);
+  const [flashMessageId, setFlashMessageId] = useState<string | null>(null);
 
   function handleScrollToMessage(messageId: string) {
     const el = document.querySelector(`[data-message-id="${messageId}"]`);
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setFlashMessageId(messageId);
+      setTimeout(() => setFlashMessageId(null), 1200);
     }
   }
 
@@ -67,12 +72,14 @@ export function ChatSection({
             key={message.id}
             message={message}
             currentUserId={currentUserId}
+            currentUserRoleIds={currentUserRoleIds}
             canManage={canManage}
             chatLocked={chatLocked}
             allMessages={messages}
             users={users}
             roles={roles}
             isReplyTarget={replyTo?.id === message.id}
+            isFlashing={flashMessageId === message.id}
             onReply={setReplyTo}
             onReact={(messageId, emoji) => void onReact(messageId, emoji)}
             onEdit={onEdit}

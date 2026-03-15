@@ -58,7 +58,9 @@ interface ChatMessageProps {
   onReact: (messageId: string, emoji: string) => void;
   onEdit: (messageId: string, newContent: string) => Promise<void>;
   onDelete: (messageId: string) => Promise<void>;
+  currentUserRoleIds?: string[];
   isReplyTarget?: boolean;
+  isFlashing?: boolean;
   onScrollToMessage: (messageId: string) => void;
   users?: MentionableUser[];
   roles?: MentionableRole[];
@@ -77,7 +79,9 @@ export function ChatMessage({
   onReact,
   onEdit,
   onDelete,
+  currentUserRoleIds,
   isReplyTarget,
+  isFlashing,
   onScrollToMessage,
   users,
   roles,
@@ -237,6 +241,14 @@ export function ChatMessage({
     });
   }
 
+  // ── Mention highlight ─────────────────────────────────────────────────────
+
+  const isMentioned = message.mentions.some(
+    (m) =>
+      (m.mentioned_user_id && m.mentioned_user_id === currentUserId) ||
+      (m.mentioned_role_id && currentUserRoleIds?.includes(m.mentioned_role_id)),
+  );
+
   // ── System message ────────────────────────────────────────────────────────
 
   if (message.is_system) {
@@ -264,14 +276,18 @@ export function ChatMessage({
       {/* Swiping message content */}
       <motion.div
         animate={
-          isReplyTarget
+          isFlashing
             ? { scale: 1, backgroundColor: '#fde68a' }
-            : isLongPressing
-              ? { scale: 1.03, backgroundColor: '#f3f4f6' }
-              : { scale: 1, backgroundColor: '#ffffff' }
+            : isReplyTarget
+              ? { scale: 1, backgroundColor: '#fef3c7' }
+              : isMentioned
+                ? { scale: 1, backgroundColor: '#ede9fe' }
+                : isLongPressing
+                  ? { scale: 1.03, backgroundColor: '#f3f4f6' }
+                  : { scale: 1, backgroundColor: '#ffffff' }
         }
-        initial={{ scale: 1, backgroundColor: '#ffffff' }}
-        transition={isLongPressing ? { duration: 0.2 } : { type: 'spring', stiffness: 400, damping: 25 }}
+        initial={{ scale: 1, backgroundColor: isMentioned ? '#ede9fe' : '#ffffff' }}
+        transition={isFlashing || isLongPressing ? { duration: 0.2 } : { type: 'spring', stiffness: 400, damping: 25 }}
         style={{ x: swipeX }}
         className="group relative flex gap-3 rounded-xl py-1 sm:hover:bg-gray-50"
         onPointerDown={handlePointerDown}

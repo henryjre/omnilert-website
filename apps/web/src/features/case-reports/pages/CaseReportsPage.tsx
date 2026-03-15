@@ -402,6 +402,7 @@ export function CaseReportsPage() {
           report={selectedReport}
           messages={messages}
           currentUserId={user?.id ?? ''}
+          currentUserRoleIds={user?.roles.map((r) => r.id)}
           users={users}
           roles={roles}
           canManage={canManage}

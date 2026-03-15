@@ -11,6 +11,7 @@ interface CaseReportDetailPanelProps {
   report: CaseReportDetail | null;
   messages: CaseMessage[];
   currentUserId: string;
+  currentUserRoleIds?: string[];
   users: MentionableUser[];
   roles: MentionableRole[];
   canManage: boolean;
@@ -42,6 +43,7 @@ export function CaseReportDetailPanel({
   report,
   messages,
   currentUserId,
+  currentUserRoleIds,
   users,
   roles,
   canManage,
@@ -196,6 +198,7 @@ export function CaseReportDetailPanel({
               className="flex-1 min-h-0"
               messages={messages}
               currentUserId={currentUserId}
+              currentUserRoleIds={currentUserRoleIds}
               canManage={canManage}
               chatLocked={chatLocked}
               users={users}
