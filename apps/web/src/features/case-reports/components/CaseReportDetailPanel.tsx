@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import type { CaseMessage } from '@omnilert/shared';
-import { ChevronDown, ChevronUp, FileWarning, Paperclip, X } from 'lucide-react';
+import { ChevronDown, FileWarning, Paperclip, X } from 'lucide-react';
 import { Badge } from '@/shared/components/ui/Badge';
 import { Button } from '@/shared/components/ui/Button';
 import type { CaseReportDetail, MentionableRole, MentionableUser } from '../services/caseReport.api';
@@ -92,7 +93,16 @@ export function CaseReportDetailPanel({
         </div>
 
         <div className="grid min-h-0 flex-1 grid-rows-[auto_1fr]">
-          <div className={`space-y-5 overflow-y-auto px-4 py-3 transition-all sm:px-6 sm:py-5 ${detailsVisible ? 'max-h-[40vh] sm:max-h-none' : 'hidden'}`}>
+          <AnimatePresence initial={false}>
+          {detailsVisible && <motion.div
+            key="details"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25, ease: 'easeInOut' }}
+            style={{ overflow: 'hidden' }}
+            className="space-y-5 px-4 py-3 sm:px-6 sm:py-5"
+          >
             <section>
               <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Description</p>
               <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-700">{report.description}</p>
@@ -176,7 +186,8 @@ export function CaseReportDetailPanel({
                 </Button>
               )}
             </div>
-          </div>
+          </motion.div>}
+          </AnimatePresence>
 
           <div className="flex min-h-0 flex-col border-t border-gray-200 px-4 py-3 sm:px-6 sm:py-5">
             {/* Toggle bar */}
@@ -187,11 +198,14 @@ export function CaseReportDetailPanel({
                 className="flex items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-0.5 text-xs text-gray-400 shadow-sm hover:bg-gray-50 hover:text-gray-600"
                 title={detailsVisible ? 'Hide details' : 'Show details'}
               >
-                {detailsVisible ? (
-                  <><ChevronUp className="h-3.5 w-3.5" /> Hide details</>
-                ) : (
-                  <><ChevronDown className="h-3.5 w-3.5" /> Show details</>
-                )}
+                <motion.span
+                  animate={{ rotate: detailsVisible ? 180 : 0 }}
+                  transition={{ duration: 0.25, ease: 'easeInOut' }}
+                  style={{ display: 'inline-flex' }}
+                >
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </motion.span>
+                {detailsVisible ? 'Hide details' : 'Show details'}
               </button>
             </div>
             <ChatSection
