@@ -242,11 +242,12 @@ export function ChatMessage({
       const matchedRole = roles?.find((r) => r.name === name);
 
       if (matchedRole) {
+        const color = matchedRole.color ?? undefined;
         return (
           <span
             key={i}
             className="rounded px-1 font-medium"
-            style={{ backgroundColor: matchedRole.color + '20', color: matchedRole.color }}
+            style={{ backgroundColor: color ? color + '20' : undefined, color }}
           >
             {part}
           </span>
