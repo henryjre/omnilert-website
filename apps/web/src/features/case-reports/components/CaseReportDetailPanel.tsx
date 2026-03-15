@@ -70,7 +70,7 @@ export function CaseReportDetailPanel({
   return (
     <>
       <div className="flex h-full flex-col bg-white">
-        <div className="flex items-start justify-between border-b border-gray-200 px-6 py-4">
+        <div className="flex items-start justify-between border-b border-gray-200 px-4 py-3 sm:px-6 sm:py-4">
           <div>
             <div className="flex items-center gap-3">
               <FileWarning className="h-5 w-5 text-primary-600" />
@@ -89,7 +89,7 @@ export function CaseReportDetailPanel({
         </div>
 
         <div className="grid min-h-0 flex-1 grid-rows-[auto_1fr]">
-          <div className="space-y-5 overflow-y-auto px-6 py-5">
+          <div className="max-h-[40vh] space-y-5 overflow-y-auto px-4 py-3 sm:max-h-none sm:px-6 sm:py-5">
             <section>
               <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Description</p>
               <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-700">{report.description}</p>
@@ -175,7 +175,7 @@ export function CaseReportDetailPanel({
             </div>
           </div>
 
-          <div className="min-h-0 border-t border-gray-200 px-6 py-5">
+          <div className="min-h-0 border-t border-gray-200 px-4 py-3 sm:px-6 sm:py-5">
             <ChatSection
               messages={messages}
               currentUserId={currentUserId}
