@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
 import type { CaseMessage } from '@omnilert/shared';
 import { AtSign, Paperclip, Send, X } from 'lucide-react';
 import { Button } from '@/shared/components/ui/Button';
@@ -9,7 +9,7 @@ import { ImagePreviewModal } from './ImagePreviewModal';
 
 interface ChatSectionProps {
   className?: string;
-  messages: CaseMessage[];
+  messages: (CaseMessage & { isPending?: boolean })[];
   currentUserId: string;
   currentUserRoleIds?: string[];
   canManage: boolean;
@@ -23,6 +23,8 @@ interface ChatSectionProps {
     mentionedRoleIds: string[];
     files: File[];
   }) => Promise<void>;
+  initialFlashMessageId?: string | null;
+  onFlashMessageConsumed?: () => void;
   onReact: (messageId: string, emoji: string) => Promise<void>;
   onEdit: (messageId: string, newContent: string) => Promise<void>;
   onDelete: (messageId: string) => Promise<void>;
@@ -37,6 +39,8 @@ export function ChatSection({
   chatLocked,
   users,
   roles,
+  initialFlashMessageId,
+  onFlashMessageConsumed,
   onSend,
   onReact,
   onEdit,
@@ -57,8 +61,45 @@ export function ChatSection({
   const [mentionedRoleIds, setMentionedRoleIds] = useState<string[]>([]);
   // Track inserted mentions for highlight: { token: string; color?: string }[]
   const [mentionTokens, setMentionTokens] = useState<{ token: string; color?: string }[]>([]);
-  const [previewImage, setPreviewImage] = useState<{ url: string; fileName: string } | null>(null);
+  const [previewMedia, setPreviewMedia] = useState<{ items: { url: string; fileName: string }[]; index: number } | null>(null);
   const [flashMessageId, setFlashMessageId] = useState<string | null>(null);
+  const initialFlashFiredRef = useRef(false);
+
+  // Focus the textarea whenever a reply is set
+  useEffect(() => {
+    if (replyTo) textareaRef.current?.focus();
+  }, [replyTo]);
+
+  const handleSend = useCallback(async () => {
+    if (chatLocked || (!content.trim() && files.length === 0)) return;
+    await onSend({ content, parentMessageId: replyTo?.id ?? null, mentionedUserIds, mentionedRoleIds, files });
+    setContent('');
+    setFiles([]);
+    setReplyTo(null);
+    setMentionOpen(false);
+    setMentionQuery('');
+    setMentionedUserIds([]);
+    setMentionedRoleIds([]);
+    setMentionTokens([]);
+  }, [chatLocked, content, files, replyTo, mentionedUserIds, mentionedRoleIds, onSend]);
+
+  // When messages load and an initialFlashMessageId is set, scroll + flash to it once
+  useEffect(() => {
+    if (!initialFlashMessageId || initialFlashFiredRef.current || messages.length === 0) return;
+    initialFlashFiredRef.current = true;
+    const targetId = initialFlashMessageId;
+    // Give the DOM a tick to render messages before scrolling
+    setTimeout(() => {
+      const el = document.querySelector(`[data-message-id="${targetId}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setFlashMessageId(targetId);
+        setTimeout(() => setFlashMessageId(null), 1200);
+      }
+      onFlashMessageConsumed?.();
+    }, 100);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages.length, initialFlashMessageId]);
 
   // Sync overlay scroll with textarea scroll
   function handleScroll() {
@@ -107,27 +148,40 @@ export function ChatSection({
   return (
     <div className={`flex h-full flex-col${className ? ` ${className}` : ''}`}>
       <div className="flex-1 space-y-1 overflow-y-auto pr-1">
-        {messages.map((message) => (
-          <ChatMessage
-            key={message.id}
-            message={message}
-            currentUserId={currentUserId}
-            currentUserRoleIds={currentUserRoleIds}
-            canManage={canManage}
-            chatLocked={chatLocked}
-            allMessages={messages}
-            users={users}
-            roles={roles}
-            isReplyTarget={replyTo?.id === message.id}
-            isFlashing={flashMessageId === message.id}
-            onReply={setReplyTo}
-            onReact={(messageId, emoji) => void onReact(messageId, emoji)}
-            onEdit={onEdit}
-            onDelete={onDelete}
-            onScrollToMessage={handleScrollToMessage}
-            onPreviewImage={(url, fileName) => setPreviewImage({ url, fileName })}
-          />
-        ))}
+        {messages.map((message, index) => {
+          const prev = index > 0 ? messages[index - 1] : null;
+          const isGrouped =
+            !message.is_system &&
+            !message.is_deleted &&
+            prev !== null &&
+            !prev.is_system &&
+            prev.user_id === message.user_id &&
+            new Date(message.created_at).getTime() - new Date(prev.created_at).getTime() < 5 * 60 * 1000;
+
+          return (
+            <ChatMessage
+              key={message.id}
+              message={message}
+              currentUserId={currentUserId}
+              currentUserRoleIds={currentUserRoleIds}
+              canManage={canManage}
+              chatLocked={chatLocked}
+              allMessages={messages}
+              users={users}
+              roles={roles}
+              isGrouped={isGrouped}
+              isPending={message.isPending}
+              isReplyTarget={replyTo?.id === message.id}
+              isFlashing={flashMessageId === message.id}
+              onReply={setReplyTo}
+              onReact={(messageId, emoji) => void onReact(messageId, emoji)}
+              onEdit={onEdit}
+              onDelete={onDelete}
+              onScrollToMessage={handleScrollToMessage}
+              onPreviewImage={(items, index) => setPreviewMedia({ items, index })}
+            />
+          );
+        })}
         <div ref={messagesEndRef} />
       </div>
 
@@ -221,6 +275,13 @@ export function ChatSection({
                   setMentionAtIndex(-1);
                 }
               }}
+              onKeyDown={(e) => {
+                // Enter sends on desktop; Shift+Enter inserts newline; mobile never triggers this path
+                if (e.key === 'Enter' && !e.shiftKey && !('ontouchstart' in window)) {
+                  e.preventDefault();
+                  void handleSend();
+                }
+              }}
               onScroll={handleScroll}
               rows={2}
               disabled={chatLocked}
@@ -237,23 +298,7 @@ export function ChatSection({
               <Paperclip className="h-4 w-4" />
             </Button>
             <Button
-              onClick={async () => {
-                await onSend({
-                  content,
-                  parentMessageId: replyTo?.id ?? null,
-                  mentionedUserIds,
-                  mentionedRoleIds,
-                  files,
-                });
-                setContent('');
-                setFiles([]);
-                setReplyTo(null);
-                setMentionOpen(false);
-                setMentionQuery('');
-                setMentionedUserIds([]);
-                setMentionedRoleIds([]);
-                setMentionTokens([]);
-              }}
+              onClick={() => void handleSend()}
               disabled={chatLocked || (!content.trim() && files.length === 0)}
             >
               <Send className="h-4 w-4" />
@@ -270,9 +315,10 @@ export function ChatSection({
       </div>
 
       <ImagePreviewModal
-        imageUrl={previewImage?.url ?? null}
-        fileName={previewImage?.fileName}
-        onClose={() => setPreviewImage(null)}
+        items={previewMedia?.items ?? null}
+        index={previewMedia?.index ?? 0}
+        onIndexChange={(i) => setPreviewMedia((prev) => prev ? { ...prev, index: i } : null)}
+        onClose={() => setPreviewMedia(null)}
       />
     </div>
   );

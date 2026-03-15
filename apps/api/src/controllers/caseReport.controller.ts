@@ -104,6 +104,7 @@ export async function close(req: Request, res: Response, next: NextFunction) {
       tenantDb: req.tenantDb!,
       companyId: req.user!.companyId,
       userId: req.user!.sub,
+      permissions: req.user!.permissions,
       caseId: String(req.params.id),
     });
     res.json({ success: true, data });
@@ -134,10 +135,27 @@ export async function uploadAttachment(req: Request, res: Response, next: NextFu
       companyId: req.user!.companyId,
       companyStorageRoot: req.companyContext?.companyStorageRoot ?? '',
       userId: req.user!.sub,
+      permissions: req.user!.permissions,
       caseId: String(req.params.id),
       file,
     });
     res.status(201).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function deleteAttachment(req: Request, res: Response, next: NextFunction) {
+  try {
+    await caseReportService.deleteAttachment({
+      tenantDb: req.tenantDb!,
+      companyId: req.user!.companyId,
+      userId: req.user!.sub,
+      permissions: req.user!.permissions,
+      caseId: String(req.params.id),
+      attachmentId: String(req.params.attachmentId),
+    });
+    res.json({ success: true });
   } catch (error) {
     next(error);
   }

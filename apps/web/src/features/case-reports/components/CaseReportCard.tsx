@@ -1,5 +1,5 @@
 import type { CaseReport } from '@omnilert/shared';
-import { MessageSquare, MoreHorizontal } from 'lucide-react';
+import { MessageSquare, MoreHorizontal, Reply } from 'lucide-react';
 import { Badge } from '@/shared/components/ui/Badge';
 import { Card } from '@/shared/components/ui/Card';
 
@@ -77,6 +77,12 @@ export function CaseReportCard({
             {report.is_joined && report.unread_count > 0 && (
               <span className="rounded-full bg-primary-600 px-2 py-0.5 text-xs font-semibold text-white">
                 +{report.unread_count}
+              </span>
+            )}
+            {report.is_joined && report.unread_reply_count > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-red-500 px-2 py-0.5 text-xs font-semibold text-white">
+                <Reply className="h-3 w-3" />
+                {report.unread_reply_count}
               </span>
             )}
             {report.is_joined && <span className="h-2.5 w-2.5 rounded-full bg-yellow-400" />}

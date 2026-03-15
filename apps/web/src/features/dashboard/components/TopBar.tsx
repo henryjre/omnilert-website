@@ -195,6 +195,10 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
       decrement();
     }
     setOpen(false);
+    if (n.link_url?.startsWith('/case-reports')) {
+      navigate(n.link_url);
+      return;
+    }
     const shiftExchangeId = getShiftExchangeId(n.link_url);
     const target = shiftExchangeId
       ? `/account/notifications?shiftExchangeId=${shiftExchangeId}`

@@ -16,6 +16,7 @@ export interface CaseReport {
   closed_at: string | null;
   message_count: number;
   unread_count: number;
+  unread_reply_count: number;
   is_joined: boolean;
   is_muted: boolean;
   created_at: string;
@@ -30,6 +31,7 @@ export interface CaseMessage {
   user_avatar?: string;
   content: string;
   is_system: boolean;
+  is_deleted: boolean;
   parent_message_id: string | null;
   replies?: CaseMessage[];
   reactions: CaseReaction[];

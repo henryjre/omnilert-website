@@ -59,15 +59,24 @@ interface ChatMessageProps {
   onEdit: (messageId: string, newContent: string) => Promise<void>;
   onDelete: (messageId: string) => Promise<void>;
   currentUserRoleIds?: string[];
+  isGrouped?: boolean;
+  isPending?: boolean;
   isReplyTarget?: boolean;
   isFlashing?: boolean;
   onScrollToMessage: (messageId: string) => void;
   users?: MentionableUser[];
   roles?: MentionableRole[];
-  onPreviewImage?: (url: string, fileName: string) => void;
+  onPreviewImage?: (items: { url: string; fileName: string }[], index: number) => void;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
+
+// ── Compact time formatter (HH:MM) ────────────────────────────────────────────
+
+function formatCompactTime(value: string): string {
+  const date = new Date(value);
+  return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
 
 export function ChatMessage({
   message,
@@ -80,6 +89,8 @@ export function ChatMessage({
   onEdit,
   onDelete,
   currentUserRoleIds,
+  isGrouped,
+  isPending,
   isReplyTarget,
   isFlashing,
   onScrollToMessage,
@@ -261,6 +272,97 @@ export function ChatMessage({
     );
   }
 
+  // ── Pending message placeholder ───────────────────────────────────────────
+
+  if (isPending && !message.is_deleted) {
+    return (
+      <div data-message-id={message.id} className="flex gap-3 rounded-xl py-0.5 opacity-60">
+        {isGrouped ? (
+          <div className="w-10 shrink-0" />
+        ) : (
+          <div className="shrink-0">
+            {message.user_avatar ? (
+              <img
+                src={message.user_avatar}
+                alt={message.user_name ?? ''}
+                className="h-10 w-10 rounded-full object-cover opacity-50"
+              />
+            ) : (
+              <div
+                className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold text-white opacity-50"
+                style={{ backgroundColor: getAvatarColor(message.user_name ?? 'User') }}
+              >
+                {getInitials(message.user_name ?? 'User')}
+              </div>
+            )}
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          {!isGrouped && (
+            <div className="flex flex-wrap items-baseline gap-2">
+              <span className="text-sm font-semibold text-gray-400">{message.user_name ?? 'Unknown'}</span>
+              <span className="text-xs text-gray-300">Sending…</span>
+            </div>
+          )}
+          <div className={`flex items-center gap-2 ${isGrouped ? '' : 'mt-0.5'}`}>
+            <span className="flex items-end gap-[3px] pb-0.5">
+              {[0, 1, 2].map((i) => (
+                <motion.span
+                  key={i}
+                  className="block h-1.5 w-1.5 rounded-full bg-gray-400"
+                  animate={{ y: [0, -4, 0] }}
+                  transition={{ duration: 0.6, repeat: Infinity, delay: i * 0.15, ease: 'easeInOut' }}
+                />
+              ))}
+            </span>
+            <p className="text-sm italic text-gray-400">sending a message...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Deleted message tombstone ─────────────────────────────────────────────
+
+  if (message.is_deleted) {
+    return (
+      <div data-message-id={message.id} className={`flex gap-3 rounded-xl py-0.5 ${isPending ? 'opacity-60' : ''}`}>
+        {isGrouped ? (
+          /* Grouped: narrow gutter, no avatar */
+          <div className="w-10 shrink-0" />
+        ) : (
+          /* First in group: show avatar at 50% opacity */
+          <div className="shrink-0">
+            {message.user_avatar ? (
+              <img
+                src={message.user_avatar}
+                alt={message.user_name ?? ''}
+                className="h-10 w-10 rounded-full object-cover opacity-50"
+              />
+            ) : (
+              <div
+                className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold text-white opacity-50"
+                style={{ backgroundColor: getAvatarColor(message.user_name ?? 'User') }}
+              >
+                {getInitials(message.user_name ?? 'User')}
+              </div>
+            )}
+          </div>
+        )}
+        {/* Right column */}
+        <div className="min-w-0 flex-1">
+          {!isGrouped && (
+            <div className="flex flex-wrap items-baseline gap-2">
+              <span className="text-sm font-semibold text-gray-400">{message.user_name ?? 'Unknown'}</span>
+              <span className="text-xs text-gray-300">{formatTimestamp(message.created_at)}</span>
+            </div>
+          )}
+          <p className={`text-sm italic text-gray-400 ${isGrouped ? '' : 'mt-0.5'}`}>{message.content}</p>
+        </div>
+      </div>
+    );
+  }
+
   // ── Normal message ────────────────────────────────────────────────────────
 
   return (
@@ -289,7 +391,7 @@ export function ChatMessage({
         initial={{ scale: 1, backgroundColor: isMentioned ? '#ede9fe' : '#ffffff' }}
         transition={isFlashing || isLongPressing ? { duration: 0.2 } : { type: 'spring', stiffness: 400, damping: 25 }}
         style={{ x: swipeX }}
-        className="group relative flex gap-3 rounded-xl py-1 sm:hover:bg-gray-50"
+        className={`group relative flex gap-3 rounded-xl sm:hover:bg-gray-50 ${isGrouped ? 'py-0.5' : 'py-1'}`}
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
@@ -297,34 +399,45 @@ export function ChatMessage({
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
-        {/* Avatar */}
-        <div className="shrink-0">
-          {message.user_avatar ? (
-            <img
-              src={message.user_avatar}
-              alt={message.user_name ?? ''}
-              className="h-8 w-8 rounded-full object-cover"
-            />
-          ) : (
-            <div
-              className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold text-white"
-              style={{ backgroundColor: getAvatarColor(message.user_name ?? 'User') }}
-            >
-              {getInitials(message.user_name ?? 'User')}
-            </div>
-          )}
-        </div>
+        {/* Avatar or compact-time gutter */}
+        {isGrouped ? (
+          /* Grouped message: show compact time on hover, no avatar */
+          <div className="w-10 shrink-0 self-center text-right">
+            <span className="invisible whitespace-nowrap text-[10px] text-gray-400 group-hover:visible">
+              {formatCompactTime(message.created_at)}
+            </span>
+          </div>
+        ) : (
+          <div className="shrink-0">
+            {message.user_avatar ? (
+              <img
+                src={message.user_avatar}
+                alt={message.user_name ?? ''}
+                className="h-10 w-10 rounded-full object-cover"
+              />
+            ) : (
+              <div
+                className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold text-white"
+                style={{ backgroundColor: getAvatarColor(message.user_name ?? 'User') }}
+              >
+                {getInitials(message.user_name ?? 'User')}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Right column */}
         <div className="min-w-0 flex-1">
-          {/* Name + timestamp */}
-          <div className="flex flex-wrap items-baseline gap-2">
-            <span className="text-sm font-semibold text-gray-900">{message.user_name ?? 'Unknown'}</span>
-            <span className="text-xs text-gray-400">{formatTimestamp(message.created_at)}</span>
-            {message.is_edited && (
-              <span className="text-xs italic text-gray-400">edited</span>
-            )}
-          </div>
+          {/* Name + timestamp — only for first message in a group */}
+          {!isGrouped && (
+            <div className="flex flex-wrap items-baseline gap-2">
+              <span className="text-sm font-semibold text-gray-900">{message.user_name ?? 'Unknown'}</span>
+              <span className="text-xs text-gray-400">{formatTimestamp(message.created_at)}</span>
+              {message.is_edited && (
+                <span className="text-xs italic text-gray-400">edited</span>
+              )}
+            </div>
+          )}
 
           {/* Quoted reply block */}
           {message.parent_message_id && (() => {
@@ -376,45 +489,83 @@ export function ChatMessage({
               </div>
             </div>
           ) : (
-            <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-gray-700">
+            <p className="mt-0.5 whitespace-pre-wrap text-sm leading-6 text-gray-700">
               {renderContent(message.content)}
+              {isGrouped && message.is_edited && (
+                <span className="ml-1 text-xs italic text-gray-400">edited</span>
+              )}
             </p>
           )}
 
           {/* Attachments */}
-          {message.attachments.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-2">
-              {message.attachments.map((att) => {
-                const isImage =
-                  /\.(png|jpe?g|gif|webp|svg)$/i.test(att.file_name) ||
-                  att.content_type?.startsWith('image/');
+          {message.attachments.length > 0 && (() => {
+            const mediaItems = message.attachments
+              .filter((a) => {
+                const isImg = /\.(png|jpe?g|gif|webp|svg)$/i.test(a.file_name) || a.content_type?.startsWith('image/');
+                const isVid = /\.(mp4|webm|ogg|mov)$/i.test(a.file_name) || a.content_type?.startsWith('video/');
+                return isImg || isVid;
+              })
+              .map((a) => ({ url: a.file_url, fileName: a.file_name }));
 
-                if (isImage) {
+            return (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {message.attachments.map((att) => {
+                  const isImage = /\.(png|jpe?g|gif|webp|svg)$/i.test(att.file_name) || att.content_type?.startsWith('image/');
+                  const isVideo = /\.(mp4|webm|ogg|mov)$/i.test(att.file_name) || att.content_type?.startsWith('video/');
+                  const mediaIndex = mediaItems.findIndex((m) => m.url === att.file_url);
+
+                  if (isImage) {
+                    return (
+                      <img
+                        key={att.id}
+                        src={att.file_url}
+                        alt={att.file_name}
+                        className="max-h-[180px] max-w-[240px] cursor-pointer rounded-xl object-cover hover:opacity-90"
+                        onClick={() => onPreviewImage?.(mediaItems, mediaIndex)}
+                      />
+                    );
+                  }
+
+                  if (isVideo) {
+                    return (
+                      <div
+                        key={att.id}
+                        className="relative cursor-pointer overflow-hidden rounded-xl bg-black"
+                        style={{ maxWidth: 240, maxHeight: 180 }}
+                        onClick={() => onPreviewImage?.(mediaItems, mediaIndex)}
+                      >
+                        <video
+                          src={att.file_url}
+                          className="max-h-[180px] max-w-[240px] object-cover opacity-80"
+                          muted
+                          preload="metadata"
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white">
+                            <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5 pl-0.5">
+                              <path d="M8 5v14l11-7z" />
+                            </svg>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+
                   return (
-                    <img
+                    <a
                       key={att.id}
-                      src={att.file_url}
-                      alt={att.file_name}
-                      className="max-h-[180px] max-w-[240px] cursor-pointer rounded-xl object-cover hover:opacity-90"
-                      onClick={() => onPreviewImage?.(att.file_url, att.file_name)}
-                    />
+                      href={att.file_url}
+                      download={att.file_name}
+                      className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-primary-700 hover:bg-gray-100"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      {att.file_name}
+                    </a>
                   );
-                }
-
-                return (
-                  <a
-                    key={att.id}
-                    href={att.file_url}
-                    download={att.file_name}
-                    className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-primary-700 hover:bg-gray-100"
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    {att.file_name}
-                  </a>
-                );
-              })}
-            </div>
-          )}
+                })}
+              </div>
+            );
+          })()}
 
           {/* Reaction pills */}
           {message.reactions.length > 0 && (

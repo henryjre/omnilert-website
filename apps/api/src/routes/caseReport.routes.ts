@@ -9,14 +9,11 @@ import { validateBody } from '../middleware/validateRequest.js';
 import * as caseReportController from '../controllers/caseReport.controller.js';
 
 const storage = multer.memoryStorage();
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
 const attachmentUpload = multer({
   storage,
   limits: { fileSize: MAX_FILE_SIZE, files: 1 },
-  fileFilter: (_req, file, cb) => {
-    cb(null, file.mimetype === 'application/pdf');
-  },
 });
 
 const messageUpload = multer({
@@ -30,7 +27,7 @@ const messageUpload = multer({
       'application/vnd.ms-excel',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     ];
-    cb(null, file.mimetype.startsWith('image/') || allowed.includes(file.mimetype));
+    cb(null, file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/') || allowed.includes(file.mimetype));
   },
 });
 
@@ -83,6 +80,7 @@ router.post(
   attachmentUpload.any(),
   caseReportController.uploadAttachment,
 );
+router.delete('/:id/attachments/:attachmentId', requirePermission(PERMISSIONS.CASE_REPORT_VIEW), caseReportController.deleteAttachment);
 router.get('/:id/messages', requirePermission(PERMISSIONS.CASE_REPORT_VIEW), caseReportController.listMessages);
 router.post(
   '/:id/messages',

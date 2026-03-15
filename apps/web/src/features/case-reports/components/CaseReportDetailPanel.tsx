@@ -17,12 +17,15 @@ interface CaseReportDetailPanelProps {
   roles: MentionableRole[];
   canManage: boolean;
   canClose: boolean;
+  initialFlashMessageId?: string | null;
+  onFlashMessageConsumed?: () => void;
   onClosePanel: () => void;
   onUpdateCorrectiveAction: (value: string) => Promise<void>;
   onUpdateResolution: (value: string) => Promise<void>;
   onCloseCase: () => Promise<void>;
   onRequestVN: () => Promise<void>;
   onUploadAttachment: (file: File) => Promise<void>;
+  onDeleteAttachment: (attachmentId: string) => Promise<void>;
   onSendMessage: (input: {
     content: string;
     parentMessageId?: string | null;
@@ -49,12 +52,15 @@ export function CaseReportDetailPanel({
   roles,
   canManage,
   canClose,
+  initialFlashMessageId,
+  onFlashMessageConsumed,
   onClosePanel,
   onUpdateCorrectiveAction,
   onUpdateResolution,
   onCloseCase,
   onRequestVN,
   onUploadAttachment,
+  onDeleteAttachment,
   onSendMessage,
   onReactMessage,
   onEditMessage,
@@ -68,6 +74,8 @@ export function CaseReportDetailPanel({
     () => report?.status === 'closed' && !canManage,
     [canManage, report?.status],
   );
+
+  const isCreator = report?.created_by === currentUserId;
 
   if (!report) return null;
 
@@ -117,7 +125,7 @@ export function CaseReportDetailPanel({
             <section>
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Corrective Action</p>
-                {(report.status === 'open' || canManage) && (
+                {(isCreator || canManage) && (report.status === 'open' || canManage) && (
                   <Button variant="ghost" size="sm" onClick={() => setEditingField('corrective_action')}>
                     {report.corrective_action ? 'Edit' : 'Add'} Corrective Action
                   </Button>
@@ -131,7 +139,7 @@ export function CaseReportDetailPanel({
             <section>
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Resolution</p>
-                {(report.status === 'open' || canManage) && (
+                {(isCreator || canManage) && (report.status === 'open' || canManage) && (
                   <Button variant="ghost" size="sm" onClick={() => setEditingField('resolution')}>
                     {report.resolution ? 'Edit' : 'Add'} Resolution
                   </Button>
@@ -145,25 +153,38 @@ export function CaseReportDetailPanel({
             <section>
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Attachments</p>
-                <Button variant="secondary" size="sm" onClick={() => attachmentInputRef.current?.click()}>
-                  <Paperclip className="mr-2 h-4 w-4" />
-                  Add File
-                </Button>
+                {(isCreator || canManage) && (
+                  <Button variant="secondary" size="sm" onClick={() => attachmentInputRef.current?.click()}>
+                    <Paperclip className="mr-2 h-4 w-4" />
+                    Add File
+                  </Button>
+                )}
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {report.attachments.length === 0 ? (
                   <p className="text-sm text-gray-400">No case attachments yet</p>
                 ) : (
                   report.attachments.map((attachment) => (
-                    <a
-                      key={attachment.id}
-                      href={attachment.file_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-primary-700 hover:bg-gray-100"
-                    >
-                      {attachment.file_name}
-                    </a>
+                    <div key={attachment.id} className="flex items-center gap-1 rounded-xl border border-gray-200 bg-gray-50 pl-3 pr-1 py-1.5">
+                      <a
+                        href={attachment.file_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sm text-primary-700 hover:underline"
+                      >
+                        {attachment.file_name}
+                      </a>
+                      {(isCreator || canManage) && (
+                        <button
+                          type="button"
+                          onClick={() => void onDeleteAttachment(attachment.id)}
+                          className="ml-1 rounded-full p-0.5 text-gray-400 hover:bg-red-100 hover:text-red-500"
+                          title="Remove attachment"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
                   ))
                 )}
               </div>
@@ -180,17 +201,17 @@ export function CaseReportDetailPanel({
             </section>
 
             <div className="flex flex-wrap gap-2">
-              <Button
-                disabled={!canClose || !report.corrective_action || !report.resolution || report.status === 'closed'}
-                onClick={() => void onCloseCase()}
-              >
-                Close Case
-              </Button>
-              {report.status === 'closed' && (
-                <Button variant="secondary" onClick={() => void onRequestVN()}>
-                  Request VN
+              {(isCreator || canManage) && (
+                <Button
+                  disabled={!canClose || !report.corrective_action || !report.resolution || report.status === 'closed'}
+                  onClick={() => void onCloseCase()}
+                >
+                  Close Case
                 </Button>
               )}
+              <Button variant="danger" onClick={() => void onRequestVN()}>
+                Request VN
+              </Button>
             </div>
           </motion.div>}
           </AnimatePresence>
@@ -223,6 +244,8 @@ export function CaseReportDetailPanel({
               chatLocked={chatLocked}
               users={users}
               roles={roles}
+              initialFlashMessageId={initialFlashMessageId}
+              onFlashMessageConsumed={onFlashMessageConsumed}
               onSend={onSendMessage}
               onReact={onReactMessage}
               onEdit={onEditMessage}

@@ -11,7 +11,7 @@ import { db } from '../config/database.js';
 import { getIO } from '../config/socket.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { createAndDispatchNotification } from './notification.service.js';
-import { buildTenantStoragePrefix, uploadFile } from './storage.service.js';
+import { buildTenantStoragePrefix, deleteFile, uploadFile } from './storage.service.js';
 import { hydrateUsersByIds } from './globalUser.service.js';
 import { logger } from '../utils/logger.js';
 
@@ -45,6 +45,8 @@ type CaseMessageRow = {
   user_id: string;
   content: string;
   is_system: boolean;
+  is_deleted: boolean;
+  deleted_by: string | null;
   parent_message_id: string | null;
   created_at: Date | string;
   updated_at: Date | string;
@@ -89,6 +91,7 @@ function normalizeSortOrder(value?: string): 'asc' | 'desc' {
 
 function isAllowedMessageAttachment(contentType: string): boolean {
   return contentType.startsWith('image/')
+    || contentType.startsWith('video/')
     || [
       'application/pdf',
       'application/msword',
@@ -278,13 +281,14 @@ async function buildCaseMessageTree(tenantDb: Knex, caseId: string): Promise<Cas
       user_avatar: typeof user?.avatar_url === 'string' ? user.avatar_url : undefined,
       content: row.content,
       is_system: row.is_system,
+      is_deleted: row.is_deleted ?? false,
       parent_message_id: row.parent_message_id,
       reactions: reactionsByMessage.get(row.id) ?? [],
       attachments: attachmentsByMessage.get(row.id) ?? [],
       mentions: mentionsByMessage.get(row.id) ?? [],
       replies: [],
       created_at: new Date(row.created_at).toISOString(),
-      is_edited: new Date(row.updated_at) > new Date(row.created_at),
+      is_edited: !row.is_deleted && new Date(row.updated_at) > new Date(row.created_at),
     });
   }
 
@@ -310,7 +314,7 @@ async function enrichCaseReports(
     ...new Set(rows.flatMap((row) => [row.created_by, row.closed_by].filter(Boolean) as string[])),
   ];
 
-  const [participants, messageCounts, unreadCounts, userNames] = await Promise.all([
+  const [participants, messageCounts, unreadCounts, unreadReplyCounts, userNames] = await Promise.all([
     tenantDb('case_participants')
       .whereIn('case_id', caseIds)
       .andWhere({ user_id: userId })
@@ -331,6 +335,21 @@ async function enrichCaseReports(
       .groupBy('cp.case_id')
       .select('cp.case_id')
       .count<{ count: string }[]>({ count: 'cm.id' }),
+    // Count replies to the current user's messages that are unread
+    tenantDb('case_messages as reply')
+      .join('case_messages as parent', 'reply.parent_message_id', 'parent.id')
+      .join('case_participants as cp', (join) => {
+        join.on('cp.case_id', 'reply.case_id').andOnVal('cp.user_id', userId);
+      })
+      .whereIn('reply.case_id', caseIds)
+      .where('parent.user_id', userId)
+      .where('reply.user_id', '!=', userId)
+      .andWhere((builder) => {
+        builder.whereNull('cp.last_read_at').orWhereRaw('reply.created_at > cp.last_read_at');
+      })
+      .groupBy('reply.case_id')
+      .select('reply.case_id')
+      .count<{ count: string }[]>({ count: 'reply.id' }),
     resolveUserNames(userIds),
   ]);
 
@@ -342,6 +361,9 @@ async function enrichCaseReports(
   );
   const unreadCountMap = new Map(
     unreadCounts.map((row: any) => [String(row.case_id), Number(row.count ?? 0)]),
+  );
+  const unreadReplyCountMap = new Map(
+    unreadReplyCounts.map((row: any) => [String(row.case_id), Number(row.count ?? 0)]),
   );
 
   return rows.map((row) => {
@@ -362,6 +384,7 @@ async function enrichCaseReports(
       closed_at: toIso(row.closed_at),
       message_count: messageCountMap.get(row.id) ?? 0,
       unread_count: unreadCountMap.get(row.id) ?? 0,
+      unread_reply_count: unreadReplyCountMap.get(row.id) ?? 0,
       is_joined: participant?.is_joined ?? false,
       is_muted: participant?.is_muted ?? false,
       created_at: new Date(row.created_at).toISOString(),
@@ -386,6 +409,7 @@ async function maybeNotifyMentionedUsers(input: {
   tenantDb: Knex;
   companyId: string;
   caseId: string;
+  messageId: string;
   senderId: string;
   mentionedUserIds: string[];
   mentionedRoleIds: string[];
@@ -427,7 +451,7 @@ async function maybeNotifyMentionedUsers(input: {
         title: 'Case report mention',
         message: `${senderName} mentioned you in a case report`,
         type: 'info',
-        linkUrl: `/case-reports?caseId=${input.caseId}`,
+        linkUrl: `/case-reports?caseId=${input.caseId}&messageId=${input.messageId}`,
       });
     }),
   );
@@ -555,6 +579,9 @@ export async function updateCorrectiveAction(input: {
   correctiveAction: string;
 }): Promise<CaseReport & { attachments: CaseAttachment[] }> {
   const current = await assertCanMutateCase(input.tenantDb, input.caseId, input.permissions);
+  if (current.created_by !== input.userId && !hasManagePermission(input.permissions)) {
+    throw new AppError(403, 'Only the case creator can update the corrective action');
+  }
   const nextText = ensureNonEmpty(input.correctiveAction, 'Corrective action');
   const userNames = await resolveUserNames([input.userId]);
   const verb = current.corrective_action ? 'updated the corrective action' : 'added a corrective action';
@@ -588,6 +615,9 @@ export async function updateResolution(input: {
   resolution: string;
 }): Promise<CaseReport & { attachments: CaseAttachment[] }> {
   const current = await assertCanMutateCase(input.tenantDb, input.caseId, input.permissions);
+  if (current.created_by !== input.userId && !hasManagePermission(input.permissions)) {
+    throw new AppError(403, 'Only the case creator can update the resolution');
+  }
   const nextText = ensureNonEmpty(input.resolution, 'Resolution');
   const userNames = await resolveUserNames([input.userId]);
   const verb = current.resolution ? 'updated the resolution' : 'added a resolution';
@@ -616,10 +646,14 @@ export async function closeCase(input: {
   tenantDb: Knex;
   companyId: string;
   userId: string;
+  permissions: string[];
   caseId: string;
 }): Promise<CaseReport & { attachments: CaseAttachment[] }> {
   const current = await getCaseOrThrow(input.tenantDb, input.caseId);
   if (current.status === 'closed') throw new AppError(409, 'Case is already closed');
+  if (current.created_by !== input.userId && !hasManagePermission(input.permissions)) {
+    throw new AppError(403, 'Only the case creator can close this case');
+  }
   if (!current.corrective_action || !current.resolution) {
     throw new AppError(400, 'Corrective action and resolution are required before closing');
   }
@@ -681,14 +715,17 @@ export async function uploadAttachment(input: {
   companyId: string;
   companyStorageRoot: string;
   userId: string;
+  permissions?: string[];
   caseId: string;
   file?: Express.Multer.File;
 }): Promise<CaseAttachment> {
   if (!input.file) throw new AppError(400, 'Attachment file is required');
-  if (input.file.mimetype !== 'application/pdf') throw new AppError(400, 'Only PDF files are allowed');
-  if (input.file.size > 10 * 1024 * 1024) throw new AppError(400, 'File exceeds 10MB limit');
+  if (input.file.size > 50 * 1024 * 1024) throw new AppError(400, 'File exceeds 50MB limit');
 
   const report = await getCaseOrThrow(input.tenantDb, input.caseId);
+  if (report.created_by !== input.userId && !hasManagePermission(input.permissions ?? [])) {
+    throw new AppError(403, 'Only the case creator can add attachments');
+  }
   const folder = buildTenantStoragePrefix(
     input.companyStorageRoot,
     'Case Reports',
@@ -734,6 +771,40 @@ export async function uploadAttachment(input: {
     attachment: payload,
   });
   return payload;
+}
+
+export async function deleteAttachment(input: {
+  tenantDb: Knex;
+  companyId: string;
+  userId: string;
+  permissions: string[];
+  caseId: string;
+  attachmentId: string;
+}): Promise<void> {
+  const attachment = await input.tenantDb('case_attachments')
+    .where({ id: input.attachmentId, case_id: input.caseId })
+    .whereNull('message_id')
+    .first() as CaseAttachmentRow | undefined;
+  if (!attachment) throw new AppError(404, 'Attachment not found');
+
+  const report = await getCaseOrThrow(input.tenantDb, input.caseId);
+  const isCreator = report.created_by === input.userId;
+  if (!isCreator && !hasManagePermission(input.permissions)) {
+    throw new AppError(403, 'Only the case creator can remove attachments');
+  }
+
+  const userNames = await resolveUserNames([input.userId]);
+  await input.tenantDb.transaction(async (trx) => {
+    await trx('case_attachments').where({ id: input.attachmentId }).delete();
+    await createSystemMessage(trx, {
+      caseId: input.caseId,
+      userId: input.userId,
+      content: `${userNames[input.userId] ?? 'Someone'} removed the attachment: ${attachment.file_name}`,
+    });
+  });
+  await deleteFile(attachment.file_url).catch(() => {});
+
+  emitCaseReportEvent('case-report:attachment', input.companyId, { caseId: input.caseId });
 }
 
 export async function listMessages(input: {
@@ -826,6 +897,7 @@ export async function sendMessage(input: {
     tenantDb: input.tenantDb,
     companyId: input.companyId,
     caseId: input.caseId,
+    messageId,
     senderId: input.userId,
     mentionedUserIds: input.mentionedUserIds,
     mentionedRoleIds: input.mentionedRoleIds,
@@ -1014,7 +1086,25 @@ export async function deleteMessage(input: {
   const canManage = hasManagePermission(input.permissions);
   if (!isOwn && !canManage) throw new AppError(403, 'Permission denied');
 
-  await input.tenantDb('case_messages').where({ id: input.messageId }).delete();
+  // Fetch attachments before deleting so we can remove them from S3
+  const attachments = await input.tenantDb('case_attachments')
+    .where({ message_id: input.messageId })
+    .select('file_url') as { file_url: string }[];
+
+  const userNames = await resolveUserNames([input.userId]);
+  const deleterName = userNames[input.userId] ?? 'Someone';
+
+  await input.tenantDb.transaction(async (trx) => {
+    await trx('case_messages').where({ id: input.messageId }).update({
+      content: `${deleterName} deleted this message`,
+      is_deleted: true,
+      deleted_by: input.userId,
+      updated_at: new Date(),
+    });
+  });
+
+  // Delete S3 files after DB update (best-effort)
+  await Promise.all(attachments.map((a) => deleteFile(a.file_url).catch(() => {})));
 
   emitCaseReportEvent('case-report:message:deleted', input.companyId, {
     caseId: input.caseId,

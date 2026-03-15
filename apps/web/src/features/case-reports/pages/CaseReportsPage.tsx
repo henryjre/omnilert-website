@@ -14,6 +14,7 @@ import { useSocket } from '@/shared/hooks/useSocket';
 import {
   closeCase,
   createCaseReport,
+  deleteCaseAttachment,
   deleteCaseMessage,
   editCaseMessage,
   getCaseReport,
@@ -40,6 +41,8 @@ import { CreateCaseModal } from '../components/CreateCaseModal';
 
 type StatusTab = 'all' | 'open' | 'closed';
 
+type OptimisticMessage = CaseMessage & { isPending?: boolean };
+
 const DEFAULT_FILTERS: CaseReportFilters = { sort_order: 'desc' };
 
 const STATUS_TABS: { key: StatusTab; label: string }[] = [
@@ -56,9 +59,18 @@ export function CaseReportsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [reports, setReports] = useState<CaseReport[]>([]);
-  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(searchParams.get('caseId'));
+  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(() => searchParams.get('caseId'));
+  const [initialFlashMessageId, setInitialFlashMessageId] = useState<string | null>(() => searchParams.get('messageId'));
+
+  // Sync state when URL params change externally (e.g. navigating here from a notification while already on this page)
+  useEffect(() => {
+    const caseId = searchParams.get('caseId');
+    const messageId = searchParams.get('messageId');
+    setSelectedCaseId((prev) => (prev !== caseId ? caseId : prev));
+    if (messageId) setInitialFlashMessageId(messageId);
+  }, [searchParams]);
   const [selectedReport, setSelectedReport] = useState<CaseReportDetail | null>(null);
-  const [messages, setMessages] = useState<CaseMessage[]>([]);
+  const [messages, setMessages] = useState<OptimisticMessage[]>([]);
   const [users, setUsers] = useState<MentionableUser[]>([]);
   const [roles, setRoles] = useState<MentionableRole[]>([]);
   const [statusTab, setStatusTab] = useState<StatusTab>('all');
@@ -102,8 +114,8 @@ export function CaseReportsPage() {
       setSelectedReport(detail);
       setMessages(nextMessages);
       await markCaseRead(caseId);
-      // Clear the unread badge immediately in the local list
-      setReports((prev) => prev.map((r) => r.id === caseId ? { ...r, unread_count: 0 } : r));
+      // Clear the unread badges immediately in the local list
+      setReports((prev) => prev.map((r) => r.id === caseId ? { ...r, unread_count: 0, unread_reply_count: 0 } : r));
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to load case detail');
     }
@@ -409,6 +421,8 @@ export function CaseReportsPage() {
           roles={roles}
           canManage={canManage}
           canClose={canClose}
+          initialFlashMessageId={initialFlashMessageId}
+          onFlashMessageConsumed={() => setInitialFlashMessageId(null)}
           onClosePanel={() => {
             setSelectedCaseId(null);
             setSelectedReport(null);
@@ -444,11 +458,41 @@ export function CaseReportsPage() {
             await fetchDetail(selectedCaseId);
             await fetchReports(true);
           }}
+          onDeleteAttachment={async (attachmentId) => {
+            if (!selectedCaseId) return;
+            await deleteCaseAttachment(selectedCaseId, attachmentId);
+            await fetchDetail(selectedCaseId);
+          }}
           onSendMessage={async (input) => {
             if (!selectedCaseId) return;
-            await sendCaseMessage({ caseId: selectedCaseId, ...input });
-            await fetchDetail(selectedCaseId);
-            await fetchReports(true);
+            // Optimistic: append placeholder immediately
+            const tempId = `optimistic-${Date.now()}`;
+            const optimistic: OptimisticMessage = {
+              id: tempId,
+              case_id: selectedCaseId,
+              user_id: user?.id ?? '',
+              user_name: user ? `${user.firstName} ${user.lastName}`.trim() : undefined,
+              user_avatar: user?.avatarUrl ?? undefined,
+              content: input.content,
+              is_system: false,
+              is_deleted: false,
+              is_edited: false,
+              parent_message_id: input.parentMessageId ?? null,
+              reactions: [],
+              attachments: [],
+              mentions: [],
+              created_at: new Date().toISOString(),
+              isPending: true,
+            };
+            setMessages((prev) => [...prev, optimistic]);
+            try {
+              await sendCaseMessage({ caseId: selectedCaseId, ...input });
+              await fetchDetail(selectedCaseId);
+              await fetchReports(true);
+            } catch {
+              // Remove the optimistic message on failure
+              setMessages((prev) => prev.filter((m) => m.id !== tempId));
+            }
           }}
           onReactMessage={async (messageId, emoji) => {
             if (!selectedCaseId) return;
@@ -462,8 +506,26 @@ export function CaseReportsPage() {
           }}
           onDeleteMessage={async (messageId) => {
             if (!selectedCaseId) return;
-            await deleteCaseMessage(selectedCaseId, messageId);
-            await fetchDetail(selectedCaseId);
+            // Optimistic: apply tombstone immediately
+            const original = messages.find((m) => m.id === messageId);
+            if (original) {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === messageId
+                    ? { ...m, is_deleted: true, content: `${m.user_name ?? 'Someone'} deleted this message`, isPending: true }
+                    : m,
+                ),
+              );
+            }
+            try {
+              await deleteCaseMessage(selectedCaseId, messageId);
+              await fetchDetail(selectedCaseId);
+            } catch {
+              // Restore original on failure
+              if (original) {
+                setMessages((prev) => prev.map((m) => m.id === messageId ? original : m));
+              }
+            }
           }}
         />
       </div>
