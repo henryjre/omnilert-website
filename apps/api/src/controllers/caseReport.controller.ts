@@ -243,3 +243,35 @@ export async function markRead(req: Request, res: Response, next: NextFunction) 
     next(error);
   }
 }
+
+export async function editMessage(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await caseReportService.editMessage({
+      tenantDb: req.tenantDb!,
+      companyId: req.user!.companyId,
+      userId: req.user!.sub,
+      caseId: String(req.params.id),
+      messageId: String(req.params.messageId),
+      content: String(req.body.content ?? ''),
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function deleteMessage(req: Request, res: Response, next: NextFunction) {
+  try {
+    await caseReportService.deleteMessage({
+      tenantDb: req.tenantDb!,
+      companyId: req.user!.companyId,
+      userId: req.user!.sub,
+      permissions: req.user!.permissions,
+      caseId: String(req.params.id),
+      messageId: String(req.params.messageId),
+    });
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+}

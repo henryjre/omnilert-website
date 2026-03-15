@@ -284,6 +284,7 @@ async function buildCaseMessageTree(tenantDb: Knex, caseId: string): Promise<Cas
       mentions: mentionsByMessage.get(row.id) ?? [],
       replies: [],
       created_at: new Date(row.created_at).toISOString(),
+      is_edited: new Date(row.updated_at) > new Date(row.created_at),
     });
   }
 
@@ -949,4 +950,73 @@ export async function markCaseRead(input: {
     last_read_at: now,
   });
   return { last_read_at: now.toISOString() };
+}
+
+function findMessageInTree(messages: CaseMessage[], id: string): CaseMessage | undefined {
+  for (const msg of messages) {
+    if (msg.id === id) return msg;
+    if (msg.replies) {
+      const found = findMessageInTree(msg.replies, id);
+      if (found) return found;
+    }
+  }
+  return undefined;
+}
+
+export async function editMessage(input: {
+  tenantDb: Knex;
+  companyId: string;
+  userId: string;
+  caseId: string;
+  messageId: string;
+  content: string;
+}): Promise<CaseMessage> {
+  const content = ensureNonEmpty(input.content, 'Message content');
+  const message = await input.tenantDb('case_messages')
+    .where({ id: input.messageId, case_id: input.caseId })
+    .first() as CaseMessageRow | undefined;
+  if (!message) throw new AppError(404, 'Message not found');
+  if (message.is_system) throw new AppError(400, 'Cannot edit system messages');
+  if (message.user_id !== input.userId) throw new AppError(403, 'You can only edit your own messages');
+
+  await input.tenantDb('case_messages')
+    .where({ id: input.messageId })
+    .update({ content, updated_at: new Date() });
+
+  const messages = await buildCaseMessageTree(input.tenantDb, input.caseId);
+  const updated = findMessageInTree(messages, input.messageId);
+  if (!updated) throw new AppError(500, 'Failed to retrieve updated message');
+
+  emitCaseReportEvent('case-report:message:edited', input.companyId, {
+    caseId: input.caseId,
+    message: updated,
+  });
+
+  return updated;
+}
+
+export async function deleteMessage(input: {
+  tenantDb: Knex;
+  companyId: string;
+  userId: string;
+  permissions: string[];
+  caseId: string;
+  messageId: string;
+}): Promise<void> {
+  const message = await input.tenantDb('case_messages')
+    .where({ id: input.messageId, case_id: input.caseId })
+    .first() as CaseMessageRow | undefined;
+  if (!message) throw new AppError(404, 'Message not found');
+  if (message.is_system) throw new AppError(400, 'Cannot delete system messages');
+
+  const isOwn = message.user_id === input.userId;
+  const canManage = hasManagePermission(input.permissions);
+  if (!isOwn && !canManage) throw new AppError(403, 'Permission denied');
+
+  await input.tenantDb('case_messages').where({ id: input.messageId }).delete();
+
+  emitCaseReportEvent('case-report:message:deleted', input.companyId, {
+    caseId: input.caseId,
+    messageId: input.messageId,
+  });
 }
