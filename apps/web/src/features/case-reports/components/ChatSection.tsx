@@ -8,6 +8,7 @@ import { ChatMessage } from './ChatMessage';
 import { ImagePreviewModal } from './ImagePreviewModal';
 
 interface ChatSectionProps {
+  className?: string;
   messages: CaseMessage[];
   currentUserId: string;
   canManage: boolean;
@@ -27,6 +28,7 @@ interface ChatSectionProps {
 }
 
 export function ChatSection({
+  className,
   messages,
   currentUserId,
   canManage,
@@ -58,7 +60,7 @@ export function ChatSection({
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className={`flex h-full flex-col${className ? ` ${className}` : ''}`}>
       <div className="flex-1 space-y-1 overflow-y-auto pr-1">
         {messages.map((message) => (
           <ChatMessage
@@ -109,8 +111,16 @@ export function ChatSection({
         {files.length > 0 && (
           <div className="mb-3 flex flex-wrap gap-2">
             {files.map((file) => (
-              <span key={`${file.name}-${file.size}`} className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700">
+              <span key={`${file.name}-${file.size}`} className="flex items-center gap-1 rounded-full bg-gray-100 pl-3 pr-1 py-1 text-xs text-gray-700">
                 {file.name}
+                <button
+                  type="button"
+                  onClick={() => setFiles((current) => current.filter((f) => f !== file))}
+                  className="ml-0.5 rounded-full p-0.5 hover:bg-gray-300"
+                  title="Remove attachment"
+                >
+                  <X className="h-3 w-3" />
+                </button>
               </span>
             ))}
           </div>

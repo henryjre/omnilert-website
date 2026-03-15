@@ -42,14 +42,7 @@ function formatTimestamp(value: string): string {
 // ── Tree search ───────────────────────────────────────────────────────────────
 
 function findInTree(messages: CaseMessage[], id: string): CaseMessage | undefined {
-  for (const msg of messages) {
-    if (msg.id === id) return msg;
-    if (msg.replies) {
-      const found = findInTree(msg.replies, id);
-      if (found) return found;
-    }
-  }
-  return undefined;
+  return messages.find((msg) => msg.id === id);
 }
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -290,10 +283,14 @@ export function ChatMessage({
 
       {/* Swiping message content */}
       <div
-        className={`group relative flex gap-3 bg-white py-1 transition-all duration-200 ${isLongPressing ? 'scale-[1.02] rounded-xl bg-gray-100' : ''}`}
+        className={`group relative flex gap-3 bg-white py-1 ${isLongPressing ? 'scale-[1.02] rounded-xl bg-gray-100' : ''}`}
         style={{
           transform: `translateX(${swipeDeltaX}px)`,
-          transition: isSwipeReleasing ? 'transform 0.2s ease-out' : 'none',
+          transition: isSwipeReleasing
+            ? 'transform 0.2s ease-out, background-color 0.2s, transform 0.2s'
+            : isLongPressing
+              ? 'background-color 0.2s, transform 0.2s'
+              : 'background-color 0.2s',
         }}
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
