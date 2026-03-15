@@ -72,6 +72,7 @@ export function ChatSection({
             allMessages={messages}
             users={users}
             roles={roles}
+            isReplyTarget={replyTo?.id === message.id}
             onReply={setReplyTo}
             onReact={(messageId, emoji) => void onReact(messageId, emoji)}
             onEdit={onEdit}
