@@ -128,3 +128,12 @@ export async function markCaseRead(caseId: string) {
   const response = await api.post(`/case-reports/${caseId}/read`);
   return response.data.data as { last_read_at: string };
 }
+
+export async function editCaseMessage(caseId: string, messageId: string, content: string): Promise<CaseMessage> {
+  const response = await api.patch(`/case-reports/${caseId}/messages/${messageId}`, { content });
+  return response.data.data as CaseMessage;
+}
+
+export async function deleteCaseMessage(caseId: string, messageId: string): Promise<void> {
+  await api.delete(`/case-reports/${caseId}/messages/${messageId}`);
+}
