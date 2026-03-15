@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import type { CaseMessage } from '@omnilert/shared';
-import { FileWarning, Paperclip, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, FileWarning, Paperclip, X } from 'lucide-react';
 import { Badge } from '@/shared/components/ui/Badge';
 import { Button } from '@/shared/components/ui/Button';
 import type { CaseReportDetail, MentionableRole, MentionableUser } from '../services/caseReport.api';
@@ -59,6 +59,7 @@ export function CaseReportDetailPanel({
 }: CaseReportDetailPanelProps) {
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const [editingField, setEditingField] = useState<'corrective_action' | 'resolution' | null>(null);
+  const [detailsVisible, setDetailsVisible] = useState(true);
 
   const chatLocked = useMemo(
     () => report?.status === 'closed' && !canManage,
@@ -83,13 +84,23 @@ export function CaseReportDetailPanel({
               Case {String(report.case_number).padStart(4, '0')} � Created by {report.created_by_name ?? 'Unknown'} on {formatDate(report.created_at)}
             </p>
           </div>
-          <button type="button" onClick={onClosePanel} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setDetailsVisible((v) => !v)}
+              className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              title={detailsVisible ? 'Hide details' : 'Show details'}
+            >
+              {detailsVisible ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+            </button>
+            <button type="button" onClick={onClosePanel} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
         <div className="grid min-h-0 flex-1 grid-rows-[auto_1fr]">
-          <div className="max-h-[40vh] space-y-5 overflow-y-auto px-4 py-3 sm:max-h-none sm:px-6 sm:py-5">
+          <div className={`space-y-5 overflow-y-auto px-4 py-3 transition-all sm:px-6 sm:py-5 ${detailsVisible ? 'max-h-[40vh] sm:max-h-none' : 'hidden'}`}>
             <section>
               <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Description</p>
               <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-700">{report.description}</p>
