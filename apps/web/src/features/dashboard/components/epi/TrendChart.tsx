@@ -17,7 +17,12 @@ interface TrendChartProps {
   height?: number;
 }
 
-function CustomTooltip({ active, payload, label }: TooltipProps<number, string>) {
+type CustomTooltipProps = TooltipProps<number, string> & {
+  payload?: Array<{ value?: number }>;
+  label?: string;
+};
+
+function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
   if (!active || !payload?.length) return null;
   return (
     <div className="rounded-md bg-gray-900 px-2 py-1 text-xs text-white shadow-lg">
