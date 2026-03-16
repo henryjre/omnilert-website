@@ -17,7 +17,7 @@ export function AvatarFallback({
   size = 'md',
   className = '',
 }: AvatarFallbackProps) {
-  const initials = `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
+  const initials = `${firstName.trim().charAt(0)}${lastName.trim().charAt(0)}`.toUpperCase().trim();
 
   return (
     <div

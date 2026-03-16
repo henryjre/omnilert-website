@@ -43,7 +43,8 @@ export function RadialGauge({
   const arcLength = circumference * 0.75;
   const gapLength = circumference - arcLength;
   const clampedValue = Math.max(0, Math.min(value, max));
-  const dashOffset = arcLength * (1 - clampedValue / max);
+  const fillRatio = max > 0 ? clampedValue / max : 0;
+  const dashOffset = arcLength * (1 - fillRatio);
 
   const track = trackColor ?? '#e5e7eb'; // gray-200 light track
   const stroke = colors.stroke;
@@ -91,11 +92,11 @@ export function RadialGauge({
                 className={`font-bold leading-none ${valueColor ? '' : `${colors.text} ${colors.darkText}`}`}
                 style={{ fontSize: size * 0.18 }}
               >
-                {valueFormat(value)}
+                {valueFormat(clampedValue)}
               </span>
             ) : (
               <AnimatedCounter
-                value={value}
+                value={clampedValue}
                 decimals={decimals}
                 delay={delay}
                 duration={duration}

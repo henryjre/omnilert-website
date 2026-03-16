@@ -16,7 +16,7 @@ export function AnimatedCounter({
   value,
   duration = 1.2,
   delay = 0,
-  decimals = 1,
+  decimals = 0,
   prefix = '',
   suffix = '',
   className,
