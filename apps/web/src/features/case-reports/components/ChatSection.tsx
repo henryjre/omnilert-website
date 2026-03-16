@@ -14,6 +14,8 @@ interface ChatSectionProps {
   currentUserRoleIds?: string[];
   canManage: boolean;
   chatLocked: boolean;
+  isClosed?: boolean;
+  closedLabel?: string;
   users: MentionableUser[];
   roles: MentionableRole[];
   onSend: (input: {
@@ -37,6 +39,8 @@ export function ChatSection({
   currentUserRoleIds,
   canManage,
   chatLocked,
+  isClosed,
+  closedLabel,
   users,
   roles,
   initialFlashMessageId,
@@ -185,7 +189,13 @@ export function ChatSection({
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="relative mt-4 border-t border-gray-200 pb-[env(safe-area-inset-bottom)] pt-4">
+      {isClosed && (
+        <p className="mt-4 border-t border-gray-200 pt-4 text-center text-sm italic text-gray-400">
+          {closedLabel ?? 'This case has been closed'}
+        </p>
+      )}
+
+      <div className={`relative mt-4 border-t border-gray-200 pb-[env(safe-area-inset-bottom)] pt-4${isClosed ? ' hidden' : ''}`}>
         <MentionPicker
           isOpen={mentionOpen}
           query={mentionQuery}

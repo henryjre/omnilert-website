@@ -913,6 +913,41 @@ export async function uploadDisciplinaryFile(input: {
   return enriched;
 }
 
+async function appendViolationNoticeToTargetUsers(input: {
+  tenantDb: Knex;
+  companyId: string;
+  vnId: string;
+  vnNumber: number;
+  description: string;
+  completedAt: Date;
+}): Promise<void> {
+  const targets = await input.tenantDb('violation_notice_targets')
+    .where({ violation_notice_id: input.vnId })
+    .select('user_id');
+  if (targets.length === 0) return;
+
+  const masterDb = db.getMasterDb();
+  const entry = JSON.stringify([{
+    vn_id: input.vnId,
+    vn_number: input.vnNumber,
+    company_id: input.companyId,
+    description: input.description,
+    completed_at: input.completedAt.toISOString(),
+  }]);
+
+  for (const target of targets) {
+    await masterDb('users')
+      .where({ id: target.user_id })
+      .update({
+        violation_notices: masterDb.raw(
+          `COALESCE(violation_notices, '[]'::jsonb) || ?::jsonb`,
+          [entry],
+        ),
+        updated_at: new Date(),
+      });
+  }
+}
+
 export async function completeViolationNotice(input: {
   tenantDb: Knex;
   companyId: string;
@@ -925,12 +960,13 @@ export async function completeViolationNotice(input: {
   }
 
   const userNames = await resolveUserNames([input.userId]);
+  const completedAt = new Date();
 
   await input.tenantDb.transaction(async (trx) => {
     await trx('violation_notices').where({ id: input.vnId }).update({
       status: 'completed',
       completed_by: input.userId,
-      updated_at: new Date(),
+      updated_at: completedAt,
     });
     await createSystemMessage(
       trx,
@@ -944,6 +980,19 @@ export async function completeViolationNotice(input: {
     id: input.vnId,
     status: 'completed',
   });
+
+  try {
+    await appendViolationNoticeToTargetUsers({
+      tenantDb: input.tenantDb,
+      companyId: input.companyId,
+      vnId: input.vnId,
+      vnNumber: record.vn_number,
+      description: record.description,
+      completedAt,
+    });
+  } catch (err) {
+    logger.error({ err, vnId: input.vnId }, 'Failed to append VN to target users in master DB');
+  }
 
   const updated = await getVNOrThrow(input.tenantDb, input.vnId);
   const [enriched] = await enrichViolationNotices(input.tenantDb, input.userId, [updated]);

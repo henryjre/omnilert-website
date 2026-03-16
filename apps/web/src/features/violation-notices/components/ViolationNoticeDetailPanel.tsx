@@ -6,11 +6,12 @@ import type {
   ViolationNoticeStatus,
   ViolationNoticeCategory,
 } from '@omnilert/shared';
-import { ChevronDown, ExternalLink, FileText, X } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ExternalLink, FileCheck, FileX, TriangleAlert, UserCheck, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/shared/components/ui/Button';
 import type { MentionableRole, MentionableUser } from '../../case-reports/services/caseReport.api';
 import { ChatSection } from '../../case-reports/components/ChatSection';
+import { ImagePreviewModal } from '../../case-reports/components/ImagePreviewModal';
 import {
   confirmVN,
   rejectVN,
@@ -127,6 +128,7 @@ export function ViolationNoticeDetailPanel({
   const [rejectMode, setRejectMode] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
+  const [disciplinaryPreviewOpen, setDisciplinaryPreviewOpen] = useState(false);
 
   // Adapt VN messages to CaseMessage shape expected by ChatSection
   const adaptedMessages = messages.map((msg) => ({
@@ -196,6 +198,14 @@ export function ViolationNoticeDetailPanel({
   async function handleIssuanceFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    // Skip upload if same file name and size as the already stored file
+    if (
+      vn.issuance_file_name === file.name &&
+      vn.issuance_file_url
+    ) {
+      if (issuanceFileRef.current) issuanceFileRef.current.value = '';
+      return;
+    }
     setActionLoading(true);
     try {
       const updated = await uploadIssuanceFile(vn.id, file);
@@ -210,6 +220,14 @@ export function ViolationNoticeDetailPanel({
   async function handleDisciplinaryFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    // Skip upload if same file name as the already stored file
+    if (
+      vn.disciplinary_file_name === file.name &&
+      vn.disciplinary_file_url
+    ) {
+      if (disciplinaryFileRef.current) disciplinaryFileRef.current.value = '';
+      return;
+    }
     setActionLoading(true);
     try {
       const updated = await uploadDisciplinaryFile(vn.id, file);
@@ -227,7 +245,7 @@ export function ViolationNoticeDetailPanel({
       <div className="flex items-start justify-between border-b border-gray-200 px-4 py-3 sm:px-6 sm:py-4">
         <div>
           <div className="flex items-center gap-3">
-            <FileText className="h-5 w-5 text-primary-600" />
+            <TriangleAlert className="h-5 w-5 text-primary-600" />
             <h2 className="text-xl font-semibold text-gray-900">
               VN-{String(vn.vn_number).padStart(4, '0')}
             </h2>
@@ -323,6 +341,117 @@ export function ViolationNoticeDetailPanel({
                 </section>
               )}
 
+              {/* Issuance PDF section */}
+              {(vn.status === 'issuance' || vn.issuance_file_url) && (
+                <section>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Issuance PDF</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {vn.issuance_file_url ? (
+                      <a
+                        href={vn.issuance_file_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-sm text-primary-700 hover:underline"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        {vn.issuance_file_name ?? 'Issuance File'}
+                      </a>
+                    ) : (
+                      <span className="text-sm text-gray-400 italic">No file uploaded yet</span>
+                    )}
+                    {canIssue && vn.status === 'issuance' && (
+                      <button
+                        type="button"
+                        onClick={() => issuanceFileRef.current?.click()}
+                        disabled={actionLoading}
+                        className="text-xs text-gray-400 hover:text-gray-600 underline disabled:opacity-50"
+                      >
+                        {vn.issuance_file_url ? 'Replace' : 'Upload PDF'}
+                      </button>
+                    )}
+                    <input
+                      ref={issuanceFileRef}
+                      type="file"
+                      accept="application/pdf"
+                      style={{ display: 'none' }}
+                      onChange={(e) => void handleIssuanceFileChange(e)}
+                    />
+                  </div>
+                  {canIssue && vn.status === 'issuance' && vn.issuance_file_url && (
+                    <div className="mt-2">
+                      <Button
+                        onClick={() => void handleAdvanceToDisciplinary()}
+                        disabled={actionLoading}
+                      >
+                        Advance to Disciplinary Meeting
+                      </Button>
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {/* Disciplinary Proof section */}
+              {(vn.status === 'disciplinary_meeting' || vn.disciplinary_file_url) && (
+                <section>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Disciplinary Meeting</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {vn.disciplinary_file_url ? (
+                      <button
+                        type="button"
+                        onClick={() => setDisciplinaryPreviewOpen(true)}
+                        className="group relative overflow-hidden rounded-lg border border-gray-200 bg-gray-50 hover:border-primary-300"
+                      >
+                        {/\.(mp4|webm|ogg|mov)$/i.test(vn.disciplinary_file_name ?? '') ? (
+                          <video
+                            src={vn.disciplinary_file_url}
+                            className="h-24 w-40 object-cover"
+                            muted
+                          />
+                        ) : /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(vn.disciplinary_file_name ?? '') ? (
+                          <img
+                            src={vn.disciplinary_file_url}
+                            alt={vn.disciplinary_file_name ?? 'Disciplinary Proof'}
+                            className="h-24 w-40 object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-24 w-40 flex-col items-center justify-center gap-1 text-gray-500">
+                            <ExternalLink className="h-5 w-5" />
+                            <span className="max-w-[9rem] truncate px-2 text-xs">{vn.disciplinary_file_name ?? 'View File'}</span>
+                          </div>
+                        )}
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/20" />
+                      </button>
+                    ) : (
+                      <span className="text-sm text-gray-400 italic">No file uploaded yet</span>
+                    )}
+                    {vn.status === 'disciplinary_meeting' && (
+                      <button
+                        type="button"
+                        onClick={() => disciplinaryFileRef.current?.click()}
+                        disabled={actionLoading}
+                        className="text-xs text-gray-400 hover:text-gray-600 underline disabled:opacity-50"
+                      >
+                        {vn.disciplinary_file_url ? 'Replace' : 'Upload Proof'}
+                      </button>
+                    )}
+                    <input
+                      ref={disciplinaryFileRef}
+                      type="file"
+                      accept="image/*,video/*,.pdf,.doc,.docx"
+                      style={{ display: 'none' }}
+                      onChange={(e) => void handleDisciplinaryFileChange(e)}
+                    />
+                  </div>
+                  {canComplete && vn.status === 'disciplinary_meeting' && vn.disciplinary_file_url && (
+                    <div className="mt-2">
+                      <Button onClick={() => void handleComplete()} disabled={actionLoading}>
+                        Complete VN
+                      </Button>
+                    </div>
+                  )}
+                </section>
+              )}
+
               {/* Status-specific action area */}
               <section>
                 {vn.status === 'queued' && (
@@ -355,105 +484,42 @@ export function ViolationNoticeDetailPanel({
                   </div>
                 )}
 
-                {vn.status === 'issuance' && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    {canIssue && (
-                      <Button
-                        variant="secondary"
-                        onClick={() => issuanceFileRef.current?.click()}
-                        disabled={actionLoading}
-                      >
-                        Upload Issuance PDF
-                      </Button>
-                    )}
-                    {vn.issuance_file_url && (
-                      <a
-                        href={vn.issuance_file_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-sm text-primary-700 hover:underline"
-                      >
-                        <ExternalLink className="h-3.5 w-3.5" />
-                        {vn.issuance_file_name ?? 'Issuance File'}
-                      </a>
-                    )}
-                    {canIssue && vn.issuance_file_url && (
-                      <Button
-                        onClick={() => void handleAdvanceToDisciplinary()}
-                        disabled={actionLoading}
-                      >
-                        Advance to Disciplinary Meeting
-                      </Button>
-                    )}
-                    <input
-                      ref={issuanceFileRef}
-                      type="file"
-                      accept="application/pdf"
-                      style={{ display: 'none' }}
-                      onChange={(e) => void handleIssuanceFileChange(e)}
-                    />
-                  </div>
-                )}
-
-                {vn.status === 'disciplinary_meeting' && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      variant="secondary"
-                      onClick={() => disciplinaryFileRef.current?.click()}
-                      disabled={actionLoading}
-                    >
-                      Upload Disciplinary Proof
-                    </Button>
-                    {vn.disciplinary_file_url && (
-                      <a
-                        href={vn.disciplinary_file_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-sm text-primary-700 hover:underline"
-                      >
-                        <ExternalLink className="h-3.5 w-3.5" />
-                        {vn.disciplinary_file_name ?? 'Disciplinary Proof'}
-                      </a>
-                    )}
-                    {canComplete && vn.disciplinary_file_url && (
-                      <Button onClick={() => void handleComplete()} disabled={actionLoading}>
-                        Complete VN
-                      </Button>
-                    )}
-                    <input
-                      ref={disciplinaryFileRef}
-                      type="file"
-                      accept="image/*,video/*,.pdf,.doc,.docx"
-                      style={{ display: 'none' }}
-                      onChange={(e) => void handleDisciplinaryFileChange(e)}
-                    />
-                  </div>
-                )}
-
                 {vn.status === 'completed' && (
-                  <div className="rounded-2xl bg-green-50 px-4 py-3 text-sm text-gray-700 space-y-1">
+                  <div className="rounded-2xl bg-green-50 px-4 py-3 text-sm text-gray-700 space-y-2">
                     {vn.confirmed_by_name && (
-                      <p>Confirmed by <span className="font-medium">{vn.confirmed_by_name}</span></p>
+                      <div className="flex items-center gap-2">
+                        <UserCheck className="h-4 w-4 shrink-0 text-green-500" />
+                        <span>Confirmed by <span className="font-medium">{vn.confirmed_by_name}</span></span>
+                      </div>
                     )}
                     {vn.issued_by_name && (
-                      <p>Issued by <span className="font-medium">{vn.issued_by_name}</span></p>
+                      <div className="flex items-center gap-2">
+                        <FileCheck className="h-4 w-4 shrink-0 text-green-500" />
+                        <span>Issued by <span className="font-medium">{vn.issued_by_name}</span></span>
+                      </div>
                     )}
                     {vn.completed_by_name && (
-                      <p>Completed by <span className="font-medium">{vn.completed_by_name}</span></p>
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="h-4 w-4 shrink-0 text-green-500" />
+                        <span>Completed by <span className="font-medium">{vn.completed_by_name}</span></span>
+                      </div>
                     )}
                   </div>
                 )}
 
                 {vn.status === 'rejected' && (
-                  <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-gray-700 space-y-1">
+                  <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-gray-700 space-y-2">
                     {vn.rejection_reason && (
-                      <p>
-                        <span className="font-medium">Reason: </span>
-                        {vn.rejection_reason}
-                      </p>
+                      <div className="flex items-start gap-2">
+                        <FileX className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+                        <span><span className="font-medium">Reason: </span>{vn.rejection_reason}</span>
+                      </div>
                     )}
                     {vn.rejected_by_name && (
-                      <p>Rejected by <span className="font-medium">{vn.rejected_by_name}</span></p>
+                      <div className="flex items-center gap-2">
+                        <UserCheck className="h-4 w-4 shrink-0 text-red-400" />
+                        <span>Rejected by <span className="font-medium">{vn.rejected_by_name}</span></span>
+                      </div>
                     )}
                   </div>
                 )}
@@ -522,6 +588,8 @@ export function ViolationNoticeDetailPanel({
             currentUserRoleIds={currentUserRoleIds}
             canManage={canManage}
             chatLocked={false}
+            isClosed={vn.status === 'completed' && !canManage}
+            closedLabel="Violation Notice Complete"
             users={mentionables.users}
             roles={mentionables.roles}
             initialFlashMessageId={initialFlashMessageId}
@@ -533,6 +601,15 @@ export function ViolationNoticeDetailPanel({
           />
         </div>
       </div>
+
+      {vn.disciplinary_file_url && (
+        <ImagePreviewModal
+          items={disciplinaryPreviewOpen ? [{ url: vn.disciplinary_file_url, fileName: vn.disciplinary_file_name ?? 'Disciplinary Proof' }] : null}
+          index={0}
+          onIndexChange={() => {}}
+          onClose={() => setDisciplinaryPreviewOpen(false)}
+        />
+      )}
     </div>
   );
 }

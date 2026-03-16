@@ -62,14 +62,14 @@ export async function confirmIssuance(vnId: string): Promise<ViolationNotice> {
 export async function uploadIssuanceFile(vnId: string, file: File): Promise<ViolationNotice> {
   const form = new FormData();
   form.append('file', file);
-  const response = await api.post(`/violation-notices/${vnId}/issuance-file`, form);
+  const response = await api.post(`/violation-notices/${vnId}/issuance-upload`, form);
   return response.data.data as ViolationNotice;
 }
 
 export async function uploadDisciplinaryFile(vnId: string, file: File): Promise<ViolationNotice> {
   const form = new FormData();
   form.append('file', file);
-  const response = await api.post(`/violation-notices/${vnId}/disciplinary-file`, form);
+  const response = await api.post(`/violation-notices/${vnId}/disciplinary-upload`, form);
   return response.data.data as ViolationNotice;
 }
 

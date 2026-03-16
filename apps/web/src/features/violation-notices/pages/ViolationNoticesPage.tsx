@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import type { ViolationNotice, ViolationNoticeDetail, ViolationNoticeMessage, GroupedUsersResponse } from '@omnilert/shared';
 import { PERMISSIONS } from '@omnilert/shared';
 import { useAuth } from '@/features/auth/hooks/useAuth';
-import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, FileText, Filter, Plus } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, TriangleAlert, Filter, Plus } from 'lucide-react';
 import { Button } from '@/shared/components/ui/Button';
 import { DateRangePicker } from '@/shared/components/ui/DateRangePicker';
 import { Card, CardBody } from '@/shared/components/ui/Card';
@@ -337,12 +337,12 @@ export function ViolationNoticesPage() {
       <div className="space-y-4">
         {/* Page header */}
         <div className="flex items-center gap-3">
-          <FileText className="h-6 w-6 text-primary-600" />
+          <TriangleAlert className="h-6 w-6 text-primary-600" />
           <h1 className="text-2xl font-bold text-gray-900">Violation Notices</h1>
         </div>
 
         {/* Status tabs + filter toggle */}
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
             <div className="flex w-max gap-1 rounded-lg bg-gray-100 p-1 sm:w-fit">
               {STATUS_TABS.map((tab) => (
@@ -362,31 +362,32 @@ export function ViolationNoticesPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex w-full items-center gap-2 sm:w-auto">
             {canCreate && (
-              <Button onClick={openCreateModal} className="flex-1 sm:flex-none">
+              <Button onClick={openCreateModal} className="w-full sm:w-auto">
                 <Plus className="mr-1.5 h-4 w-4" />
-                <span className="sm:hidden">New Notice</span>
-                <span className="hidden sm:inline">New Violation Notice</span>
+                New Violation Notice
               </Button>
             )}
 
             <button
               type="button"
               onClick={toggleFilters}
-              className={`flex flex-1 items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors sm:flex-none ${
+              className={`flex w-full items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors sm:w-auto ${
                 hasActiveFilters
                   ? 'border-primary-300 bg-primary-50 text-primary-700'
                   : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'
               }`}
             >
-              <Filter className="h-4 w-4" />
-              <span>Filters</span>
-              {hasActiveFilters && (
-                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary-600 text-[10px] text-white">
-                  !
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4" />
+                <span>Filters</span>
+                {hasActiveFilters && (
+                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary-600 text-[10px] text-white">
+                    !
+                  </span>
+                )}
+              </div>
               <span className="ml-auto">
                 {filtersOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
               </span>

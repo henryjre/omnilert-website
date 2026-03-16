@@ -20,6 +20,7 @@ import {
   Settings,
   Receipt,
   ClipboardList,
+  TriangleAlert,
   FileWarning,
 } from 'lucide-react';
 import { usePermission } from '@/shared/hooks/usePermission';
@@ -372,7 +373,7 @@ export function Sidebar({ className = '' }: SidebarProps) {
                 )}
                 {hasPermission(PERMISSIONS.VIOLATION_NOTICE_VIEW) && (
                   <NavLink to="/violation-notices" className={linkClass}>
-                    <FileWarning className="h-5 w-5" />
+                    <TriangleAlert className="h-5 w-5" />
                     Violation Notices
                   </NavLink>
                 )}

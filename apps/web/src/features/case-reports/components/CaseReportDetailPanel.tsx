@@ -77,6 +77,8 @@ export function CaseReportDetailPanel({
     [canManage, report?.status],
   );
 
+  const canEdit = report?.status === 'open' || canManage;
+
   const isCreator = report?.created_by === currentUserId;
 
   if (!report) return null;
@@ -127,7 +129,7 @@ export function CaseReportDetailPanel({
             <section>
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Corrective Action</p>
-                {(isCreator || canManage) && (report.status === 'open' || canManage) && (
+                {(isCreator || canManage) && canEdit && (
                   <Button variant="ghost" size="sm" onClick={() => setEditingField('corrective_action')}>
                     {report.corrective_action ? 'Edit' : 'Add'} Corrective Action
                   </Button>
@@ -141,7 +143,7 @@ export function CaseReportDetailPanel({
             <section>
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Resolution</p>
-                {(isCreator || canManage) && (report.status === 'open' || canManage) && (
+                {(isCreator || canManage) && canEdit && (
                   <Button variant="ghost" size="sm" onClick={() => setEditingField('resolution')}>
                     {report.resolution ? 'Edit' : 'Add'} Resolution
                   </Button>
@@ -155,7 +157,7 @@ export function CaseReportDetailPanel({
             <section>
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Attachments</p>
-                {(isCreator || canManage) && (
+                {(isCreator || canManage) && canEdit && (
                   <Button variant="secondary" size="sm" onClick={() => attachmentInputRef.current?.click()}>
                     <Paperclip className="mr-2 h-4 w-4" />
                     Add File
@@ -217,9 +219,9 @@ export function CaseReportDetailPanel({
             )}
 
             <div className="flex flex-wrap gap-2">
-              {(isCreator || canManage) && (
+              {(isCreator || canManage) && report.status !== 'closed' && (
                 <Button
-                  disabled={!canClose || !report.corrective_action || !report.resolution || report.status === 'closed'}
+                  disabled={!canClose || !report.corrective_action || !report.resolution}
                   onClick={() => void onCloseCase()}
                 >
                   Close Case
@@ -258,6 +260,7 @@ export function CaseReportDetailPanel({
               currentUserRoleIds={currentUserRoleIds}
               canManage={canManage}
               chatLocked={chatLocked}
+              isClosed={report.status === 'closed'}
               users={users}
               roles={roles}
               initialFlashMessageId={initialFlashMessageId}
