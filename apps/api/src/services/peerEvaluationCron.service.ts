@@ -49,6 +49,8 @@ export async function runPeerEvaluationExpiryRun(): Promise<void> {
 
 export function initPeerEvaluationCron(): void {
   if (cronHandle) return;
+  // Run once immediately on startup to catch any expired records from before last restart
+  void runPeerEvaluationExpiryRun();
   cronHandle = setInterval(() => {
     void runPeerEvaluationExpiryRun();
   }, 30 * 60 * 1000); // 30 minutes

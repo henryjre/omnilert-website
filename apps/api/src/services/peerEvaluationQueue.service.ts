@@ -51,6 +51,7 @@ async function processPeerEvaluationJob(job: Job<PeerEvaluationJobPayload>): Pro
     domain: [
       ['company_id', '=', Number(payload.branchOdooId)],
       ['check_in', '<', payload.shiftEnd],
+      ['check_in', '>=', new Date(new Date(payload.shiftStart).getTime() - 24 * 60 * 60 * 1000).toISOString()],
       '|',
       ['check_out', '=', false],
       ['check_out', '>', payload.shiftStart],
@@ -120,7 +121,15 @@ async function processPeerEvaluationJob(job: Job<PeerEvaluationJobPayload>): Pro
   })) as Array<{ id: number; x_website_key?: string | null }>;
 
   // Step 6 & 7: Resolve master user UUIDs and filter out the shift owner
-  const masterDb = db.getMasterDb();
+
+  // Collect all valid x_website_key values from hr.employee records
+  const websiteKeys = hrEmployees
+    .map((e) => e.x_website_key)
+    .filter((k): k is string => Boolean(k));
+
+  // ONE batch query instead of N serial queries
+  const masterUsers = await db.getMasterDb()('users').whereIn('id', websiteKeys).select('id');
+  const masterUserSet = new Set(masterUsers.map((u) => String(u.id)));
 
   const qualifyingCoworkers: Array<{ userId: string; overlapMinutes: number }> = [];
 
@@ -138,9 +147,8 @@ async function processPeerEvaluationJob(job: Job<PeerEvaluationJobPayload>): Pro
       continue;
     }
 
-    // Verify user exists in master DB
-    const user = await masterDb('users').where({ id: websiteKey }).first('id');
-    if (!user) {
+    // Verify user exists in master DB (using pre-fetched set)
+    if (!masterUserSet.has(websiteKey)) {
       logger.warn(
         {
           queue: env.PEER_EVAL_QUEUE_NAME,
@@ -154,10 +162,10 @@ async function processPeerEvaluationJob(job: Job<PeerEvaluationJobPayload>): Pro
     }
 
     // Filter out the shift owner (no self-evaluation)
-    if (user.id === payload.shiftUserId) continue;
+    if (websiteKey === payload.shiftUserId) continue;
 
     const totalOverlap = overlapByEmployee.get(hrEmployee.id) ?? 0;
-    qualifyingCoworkers.push({ userId: user.id as string, overlapMinutes: totalOverlap });
+    qualifyingCoworkers.push({ userId: websiteKey, overlapMinutes: totalOverlap });
   }
 
   if (qualifyingCoworkers.length === 0) {
