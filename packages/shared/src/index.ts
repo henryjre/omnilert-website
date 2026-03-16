@@ -8,6 +8,7 @@ export type * from './types/role.types.js';
 export type * from './types/socket.types.js';
 export type * from './types/storeAudit.types.js';
 export type * from './types/user.types.js';
+export type * from './types/violationNotice.types.js';
 export type * from './types/webhook.types.js';
 
 // Constants

@@ -54,7 +54,7 @@ interface CompanyOption {
   themeColor?: string | null;
 }
 
-const HR_PATHS = ['/employee-profiles', '/employee-schedule', '/employee-requirements'];
+const HR_PATHS = ['/employee-profiles', '/employee-schedule', '/employee-requirements', '/violation-notices'];
 const FINANCE_PATHS = ['/cash-requests'];
 const AUDIT_PATHS = ['/store-audits'];
 
@@ -345,7 +345,8 @@ export function Sidebar({ className = '' }: SidebarProps) {
 
             {(hasPermission(PERMISSIONS.EMPLOYEE_VIEW_ALL_PROFILES)
               || hasPermission(PERMISSIONS.SHIFT_VIEW_ALL)
-              || hasPermission(PERMISSIONS.EMPLOYEE_REQUIREMENTS_APPROVE)) && (
+              || hasPermission(PERMISSIONS.EMPLOYEE_REQUIREMENTS_APPROVE)
+              || hasPermission(PERMISSIONS.VIOLATION_NOTICE_VIEW)) && (
               <SubCategory
                 label="Human Resources"
                 expanded={hrExpanded}
@@ -367,6 +368,12 @@ export function Sidebar({ className = '' }: SidebarProps) {
                   <NavLink to="/employee-requirements" className={linkClass}>
                     <ClipboardCheck className="h-5 w-5" />
                     Employee Requirements
+                  </NavLink>
+                )}
+                {hasPermission(PERMISSIONS.VIOLATION_NOTICE_VIEW) && (
+                  <NavLink to="/violation-notices" className={linkClass}>
+                    <FileWarning className="h-5 w-5" />
+                    Violation Notices
                   </NavLink>
                 )}
               </SubCategory>

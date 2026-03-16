@@ -1,0 +1,538 @@
+import { useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import type {
+  ViolationNoticeDetail,
+  ViolationNoticeMessage,
+  ViolationNoticeStatus,
+  ViolationNoticeCategory,
+} from '@omnilert/shared';
+import { ChevronDown, ExternalLink, FileText, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Button } from '@/shared/components/ui/Button';
+import type { MentionableRole, MentionableUser } from '../../case-reports/services/caseReport.api';
+import { ChatSection } from '../../case-reports/components/ChatSection';
+import {
+  confirmVN,
+  rejectVN,
+  issueVN,
+  completeVN,
+  uploadIssuanceFile,
+  uploadDisciplinaryFile,
+  confirmIssuance,
+} from '../services/violationNotice.api';
+
+export interface SendMessagePayload {
+  content: string;
+  parentMessageId?: string | null;
+  mentionedUserIds: string[];
+  mentionedRoleIds: string[];
+  files: File[];
+}
+
+interface ViolationNoticeDetailPanelProps {
+  vn: ViolationNoticeDetail;
+  messages: ViolationNoticeMessage[];
+  onClose: () => void;
+  onUpdate: (vn: ViolationNoticeDetail) => void;
+  onSilentRefetch: () => void;
+  // Chat handlers
+  onSendMessage: (payload: SendMessagePayload) => Promise<void>;
+  onEditMessage: (messageId: string, content: string) => Promise<void>;
+  onDeleteMessage: (messageId: string) => Promise<void>;
+  onToggleReaction: (messageId: string, emoji: string) => Promise<void>;
+  mentionables: { users: MentionableUser[]; roles: MentionableRole[] };
+  initialFlashMessageId?: string | null;
+  onFlashMessageConsumed?: () => void;
+  // Permissions
+  canConfirm: boolean;
+  canReject: boolean;
+  canIssue: boolean;
+  canComplete: boolean;
+  canManage: boolean;
+  // Current user context
+  currentUserId: string;
+  currentUserRoleIds?: string[];
+}
+
+function formatDate(value: string | null) {
+  if (!value) return 'N/A';
+  return new Date(value).toLocaleString();
+}
+
+function formatStatus(status: ViolationNoticeStatus): string {
+  return status
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+function getStatusClasses(status: ViolationNoticeStatus): string {
+  switch (status) {
+    case 'queued':
+      return 'bg-yellow-100 text-yellow-800';
+    case 'discussion':
+      return 'bg-blue-100 text-blue-800';
+    case 'issuance':
+      return 'bg-orange-100 text-orange-800';
+    case 'disciplinary_meeting':
+      return 'bg-purple-100 text-purple-800';
+    case 'completed':
+      return 'bg-green-100 text-green-800';
+    case 'rejected':
+      return 'bg-red-100 text-red-800';
+    default:
+      return 'bg-gray-100 text-gray-800';
+  }
+}
+
+function formatCategory(category: ViolationNoticeCategory): string {
+  switch (category) {
+    case 'manual':
+      return 'Manual';
+    case 'case_reports':
+      return 'Case Report';
+    case 'store_audits':
+      return 'Store Audit';
+    default:
+      return category;
+  }
+}
+
+export function ViolationNoticeDetailPanel({
+  vn,
+  messages,
+  onClose,
+  onUpdate,
+  onSilentRefetch,
+  onSendMessage,
+  onEditMessage,
+  onDeleteMessage,
+  onToggleReaction,
+  mentionables,
+  initialFlashMessageId,
+  onFlashMessageConsumed,
+  canConfirm,
+  canReject,
+  canIssue,
+  canComplete,
+  canManage,
+  currentUserId,
+  currentUserRoleIds,
+}: ViolationNoticeDetailPanelProps) {
+  const navigate = useNavigate();
+  const issuanceFileRef = useRef<HTMLInputElement | null>(null);
+  const disciplinaryFileRef = useRef<HTMLInputElement | null>(null);
+
+  const [detailsVisible, setDetailsVisible] = useState(true);
+  const [rejectMode, setRejectMode] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
+
+  // Adapt VN messages to CaseMessage shape expected by ChatSection
+  const adaptedMessages = messages.map((msg) => ({
+    ...msg,
+    is_system: msg.type === 'system',
+    violation_notice_id: undefined,
+  }));
+
+  async function handleConfirm() {
+    setActionLoading(true);
+    try {
+      const updated = await confirmVN(vn.id);
+      onUpdate({ ...vn, ...updated });
+      onSilentRefetch();
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleRejectConfirm() {
+    if (!rejectionReason.trim()) return;
+    setActionLoading(true);
+    try {
+      const updated = await rejectVN(vn.id, rejectionReason.trim());
+      onUpdate({ ...vn, ...updated });
+      onSilentRefetch();
+      setRejectMode(false);
+      setRejectionReason('');
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleIssue() {
+    setActionLoading(true);
+    try {
+      const updated = await issueVN(vn.id);
+      onUpdate({ ...vn, ...updated });
+      onSilentRefetch();
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleAdvanceToDisciplinary() {
+    setActionLoading(true);
+    try {
+      const updated = await confirmIssuance(vn.id);
+      onUpdate({ ...vn, ...updated });
+      onSilentRefetch();
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleComplete() {
+    setActionLoading(true);
+    try {
+      const updated = await completeVN(vn.id);
+      onUpdate({ ...vn, ...updated });
+      onSilentRefetch();
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleIssuanceFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setActionLoading(true);
+    try {
+      const updated = await uploadIssuanceFile(vn.id, file);
+      onUpdate({ ...vn, ...updated });
+      onSilentRefetch();
+    } finally {
+      setActionLoading(false);
+      if (issuanceFileRef.current) issuanceFileRef.current.value = '';
+    }
+  }
+
+  async function handleDisciplinaryFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setActionLoading(true);
+    try {
+      const updated = await uploadDisciplinaryFile(vn.id, file);
+      onUpdate({ ...vn, ...updated });
+      onSilentRefetch();
+    } finally {
+      setActionLoading(false);
+      if (disciplinaryFileRef.current) disciplinaryFileRef.current.value = '';
+    }
+  }
+
+  return (
+    <div className="flex h-full flex-col bg-white">
+      {/* Fixed header */}
+      <div className="flex items-start justify-between border-b border-gray-200 px-4 py-3 sm:px-6 sm:py-4">
+        <div>
+          <div className="flex items-center gap-3">
+            <FileText className="h-5 w-5 text-primary-600" />
+            <h2 className="text-xl font-semibold text-gray-900">
+              VN-{String(vn.vn_number).padStart(4, '0')}
+            </h2>
+            <span
+              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${getStatusClasses(vn.status)}`}
+            >
+              {formatStatus(vn.status)}
+            </span>
+          </div>
+          {/* Metadata row */}
+          <p className="mt-1 text-sm text-gray-500">
+            <span className="hidden sm:inline">Created by </span>
+            <span>{vn.created_by_name ?? 'Unknown'}</span>
+            <span className="mx-1 text-gray-300 sm:hidden"> · </span>
+            <span className="hidden sm:inline"> on {formatDate(vn.created_at)}</span>
+            <span className="block text-xs text-gray-400 sm:hidden">{formatDate(vn.created_at)}</span>
+            <span className="mx-1 text-gray-300">·</span>
+            <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+              {formatCategory(vn.category)}
+            </span>
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+
+      <div className="flex min-h-0 flex-1 flex-col">
+        {/* Collapsible details section */}
+        <AnimatePresence initial={false}>
+          {detailsVisible && (
+            <motion.div
+              key="details"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.25, ease: 'easeInOut' }}
+              style={{ overflow: 'hidden' }}
+              className="space-y-4 px-4 py-3 sm:px-6 sm:py-5"
+            >
+              {/* Description */}
+              <section>
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Description</p>
+                <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-700">{vn.description}</p>
+              </section>
+
+              {/* Target employees */}
+              {vn.targets.length > 0 && (
+                <section>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Target Employees</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {vn.targets.map((target) => (
+                      <span
+                        key={target.id}
+                        className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-sm font-medium text-gray-700"
+                      >
+                        {target.user_name ?? 'Unknown'}
+                      </span>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {/* Linked source */}
+              {vn.source_case_report_id && (
+                <section>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Linked Source</p>
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/case-reports?caseId=${vn.source_case_report_id}`)}
+                    className="mt-2 inline-flex items-center gap-1 text-sm text-primary-700 hover:underline"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    View Case Report
+                  </button>
+                </section>
+              )}
+              {vn.source_store_audit_id && (
+                <section>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Linked Source</p>
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/store-audits?auditId=${vn.source_store_audit_id}`)}
+                    className="mt-2 inline-flex items-center gap-1 text-sm text-primary-700 hover:underline"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    View Store Audit
+                  </button>
+                </section>
+              )}
+
+              {/* Status-specific action area */}
+              <section>
+                {vn.status === 'queued' && (
+                  <div className="flex flex-wrap gap-2">
+                    {canConfirm && (
+                      <Button onClick={() => void handleConfirm()} disabled={actionLoading}>
+                        Confirm VN
+                      </Button>
+                    )}
+                    {canReject && !rejectMode && (
+                      <Button variant="danger" onClick={() => setRejectMode(true)} disabled={actionLoading}>
+                        Reject
+                      </Button>
+                    )}
+                  </div>
+                )}
+
+                {vn.status === 'discussion' && (
+                  <div className="flex flex-wrap gap-2">
+                    {canIssue && (
+                      <Button onClick={() => void handleIssue()} disabled={actionLoading}>
+                        Issue VN
+                      </Button>
+                    )}
+                    {canReject && !rejectMode && (
+                      <Button variant="danger" onClick={() => setRejectMode(true)} disabled={actionLoading}>
+                        Reject VN
+                      </Button>
+                    )}
+                  </div>
+                )}
+
+                {vn.status === 'issuance' && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {canIssue && (
+                      <Button
+                        variant="secondary"
+                        onClick={() => issuanceFileRef.current?.click()}
+                        disabled={actionLoading}
+                      >
+                        Upload Issuance PDF
+                      </Button>
+                    )}
+                    {vn.issuance_file_url && (
+                      <a
+                        href={vn.issuance_file_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-sm text-primary-700 hover:underline"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        {vn.issuance_file_name ?? 'Issuance File'}
+                      </a>
+                    )}
+                    {canIssue && vn.issuance_file_url && (
+                      <Button
+                        onClick={() => void handleAdvanceToDisciplinary()}
+                        disabled={actionLoading}
+                      >
+                        Advance to Disciplinary Meeting
+                      </Button>
+                    )}
+                    <input
+                      ref={issuanceFileRef}
+                      type="file"
+                      accept="application/pdf"
+                      style={{ display: 'none' }}
+                      onChange={(e) => void handleIssuanceFileChange(e)}
+                    />
+                  </div>
+                )}
+
+                {vn.status === 'disciplinary_meeting' && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="secondary"
+                      onClick={() => disciplinaryFileRef.current?.click()}
+                      disabled={actionLoading}
+                    >
+                      Upload Disciplinary Proof
+                    </Button>
+                    {vn.disciplinary_file_url && (
+                      <a
+                        href={vn.disciplinary_file_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-sm text-primary-700 hover:underline"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        {vn.disciplinary_file_name ?? 'Disciplinary Proof'}
+                      </a>
+                    )}
+                    {canComplete && vn.disciplinary_file_url && (
+                      <Button onClick={() => void handleComplete()} disabled={actionLoading}>
+                        Complete VN
+                      </Button>
+                    )}
+                    <input
+                      ref={disciplinaryFileRef}
+                      type="file"
+                      accept="image/*,video/*,.pdf,.doc,.docx"
+                      style={{ display: 'none' }}
+                      onChange={(e) => void handleDisciplinaryFileChange(e)}
+                    />
+                  </div>
+                )}
+
+                {vn.status === 'completed' && (
+                  <div className="rounded-2xl bg-green-50 px-4 py-3 text-sm text-gray-700 space-y-1">
+                    {vn.confirmed_by_name && (
+                      <p>Confirmed by <span className="font-medium">{vn.confirmed_by_name}</span></p>
+                    )}
+                    {vn.issued_by_name && (
+                      <p>Issued by <span className="font-medium">{vn.issued_by_name}</span></p>
+                    )}
+                    {vn.completed_by_name && (
+                      <p>Completed by <span className="font-medium">{vn.completed_by_name}</span></p>
+                    )}
+                  </div>
+                )}
+
+                {vn.status === 'rejected' && (
+                  <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-gray-700 space-y-1">
+                    {vn.rejection_reason && (
+                      <p>
+                        <span className="font-medium">Reason: </span>
+                        {vn.rejection_reason}
+                      </p>
+                    )}
+                    {vn.rejected_by_name && (
+                      <p>Rejected by <span className="font-medium">{vn.rejected_by_name}</span></p>
+                    )}
+                  </div>
+                )}
+
+                {/* Inline reject prompt */}
+                {rejectMode && (
+                  <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-4 space-y-3">
+                    <p className="text-sm font-medium text-red-700">Provide a rejection reason:</p>
+                    <textarea
+                      value={rejectionReason}
+                      onChange={(e) => setRejectionReason(e.target.value)}
+                      rows={3}
+                      className="w-full rounded-xl border border-red-300 bg-white px-3 py-2 text-sm outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
+                      placeholder="Enter reason for rejection..."
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        variant="danger"
+                        onClick={() => void handleRejectConfirm()}
+                        disabled={actionLoading || !rejectionReason.trim()}
+                      >
+                        Confirm Rejection
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          setRejectMode(false);
+                          setRejectionReason('');
+                        }}
+                        disabled={actionLoading}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </section>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Chat section */}
+        <div className="flex min-h-0 flex-1 flex-col border-t border-gray-200 px-4 py-3 sm:px-6 sm:py-5">
+          {/* Toggle bar */}
+          <div className="mb-2 flex justify-center">
+            <button
+              type="button"
+              onClick={() => setDetailsVisible((v) => !v)}
+              className="flex items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-0.5 text-xs text-gray-400 shadow-sm hover:bg-gray-50 hover:text-gray-600"
+              title={detailsVisible ? 'Hide details' : 'Show details'}
+            >
+              <motion.span
+                animate={{ rotate: detailsVisible ? 180 : 0 }}
+                transition={{ duration: 0.25, ease: 'easeInOut' }}
+                style={{ display: 'inline-flex' }}
+              >
+                <ChevronDown className="h-3.5 w-3.5" />
+              </motion.span>
+              {detailsVisible ? 'Hide details' : 'Show details'}
+            </button>
+          </div>
+          <ChatSection
+            className="flex-1 min-h-0"
+            messages={adaptedMessages as unknown as Parameters<typeof ChatSection>[0]['messages']}
+            currentUserId={currentUserId}
+            currentUserRoleIds={currentUserRoleIds}
+            canManage={canManage}
+            chatLocked={false}
+            users={mentionables.users}
+            roles={mentionables.roles}
+            initialFlashMessageId={initialFlashMessageId}
+            onFlashMessageConsumed={onFlashMessageConsumed}
+            onSend={onSendMessage}
+            onReact={onToggleReaction}
+            onEdit={onEditMessage}
+            onDelete={onDeleteMessage}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}

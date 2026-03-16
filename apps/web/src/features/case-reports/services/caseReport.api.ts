@@ -56,8 +56,11 @@ export async function closeCase(caseId: string) {
   return response.data.data as CaseReportDetail;
 }
 
-export async function requestViolationNotice(caseId: string) {
-  const response = await api.post(`/case-reports/${caseId}/request-vn`);
+export async function requestViolationNotice(
+  caseId: string,
+  payload: { description: string; targetUserIds: string[] }
+): Promise<CaseReportDetail> {
+  const response = await api.post(`/case-reports/${caseId}/request-vn`, payload);
   return response.data.data as CaseReportDetail;
 }
 

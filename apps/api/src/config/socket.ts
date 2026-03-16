@@ -191,6 +191,31 @@ export function initializeSocket(
     logger.debug(`Case Reports: ${socket.data.user?.sub} connected`);
   });
 
+  // Violation Notices namespace
+  const violationNoticesNs = io.of('/violation-notices');
+  violationNoticesNs.use((socket, next) => {
+    const token = socket.handshake.auth.token as string | undefined;
+    if (!token) return next(new Error('Authentication required'));
+    try {
+      const payload = verifyAccessToken(token);
+      if (!payload.permissions.includes('violation_notice.view')) {
+        return next(new Error('Insufficient permissions'));
+      }
+      socket.data.user = payload;
+      next();
+    } catch {
+      next(new Error('Invalid token'));
+    }
+  });
+
+  violationNoticesNs.on('connection', (socket) => {
+    const companyId = socket.data.user?.companyId;
+    if (companyId) {
+      socket.join(`company:${companyId}`);
+    }
+    logger.debug(`Violation Notices: ${socket.data.user?.sub} connected`);
+  });
+
   // Employee Requirements namespace
   const employeeRequirementsNs = io.of('/employee-requirements');
   employeeRequirementsNs.use((socket, next) => {

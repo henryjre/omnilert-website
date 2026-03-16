@@ -115,13 +115,16 @@ export async function close(req: Request, res: Response, next: NextFunction) {
 
 export async function requestViolationNotice(req: Request, res: Response, next: NextFunction) {
   try {
-    const data = await caseReportService.requestViolationNotice({
+    const { description, targetUserIds } = req.body as { description: string; targetUserIds: string[] };
+    const result = await caseReportService.requestViolationNotice({
       tenantDb: req.tenantDb!,
       companyId: req.user!.companyId,
       userId: req.user!.sub,
       caseId: String(req.params.id),
+      description,
+      targetUserIds,
     });
-    res.json({ success: true, data });
+    res.json({ success: true, data: result });
   } catch (error) {
     next(error);
   }

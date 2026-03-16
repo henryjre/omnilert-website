@@ -14,6 +14,7 @@ import { createAndDispatchNotification } from './notification.service.js';
 import { buildTenantStoragePrefix, deleteFile, uploadFile } from './storage.service.js';
 import { hydrateUsersByIds } from './globalUser.service.js';
 import { logger } from '../utils/logger.js';
+import * as violationNoticeService from './violationNotice.service.js';
 
 type CaseReportRow = {
   id: string;
@@ -314,7 +315,7 @@ async function enrichCaseReports(
     ...new Set(rows.flatMap((row) => [row.created_by, row.closed_by].filter(Boolean) as string[])),
   ];
 
-  const [participants, messageCounts, unreadCounts, unreadReplyCounts, userNames] = await Promise.all([
+  const [participants, messageCounts, unreadCounts, unreadReplyCounts, userNames, linkedVns] = await Promise.all([
     tenantDb('case_participants')
       .whereIn('case_id', caseIds)
       .andWhere({ user_id: userId })
@@ -351,7 +352,13 @@ async function enrichCaseReports(
       .select('reply.case_id')
       .count<{ count: string }[]>({ count: 'reply.id' }),
     resolveUserNames(userIds),
+    tenantDb('violation_notices')
+      .whereIn('source_case_report_id', caseIds)
+      .whereNotNull('source_case_report_id')
+      .select('id', 'source_case_report_id'),
   ]);
+
+  const vnMap = new Map(linkedVns.map((vn: any) => [vn.source_case_report_id as string, vn.id as string]));
 
   const participantMap = new Map(
     participants.map((row: any) => [String(row.case_id), row as CaseParticipantRow]),
@@ -377,6 +384,7 @@ async function enrichCaseReports(
       corrective_action: row.corrective_action,
       resolution: row.resolution,
       vn_requested: row.vn_requested,
+      linked_vn_id: vnMap.get(row.id) ?? null,
       created_by: row.created_by,
       created_by_name: userNames[row.created_by] ?? undefined,
       closed_by: row.closed_by,
@@ -686,6 +694,8 @@ export async function requestViolationNotice(input: {
   companyId: string;
   userId: string;
   caseId: string;
+  description: string;
+  targetUserIds: string[];
 }): Promise<CaseReport & { attachments: CaseAttachment[] }> {
   const current = await getCaseOrThrow(input.tenantDb, input.caseId);
   const userNames = await resolveUserNames([input.userId]);
@@ -707,6 +717,17 @@ export async function requestViolationNotice(input: {
     caseNumber: current.case_number,
     field: 'vn_requested',
   });
+
+  await violationNoticeService.createViolationNotice({
+    tenantDb: input.tenantDb,
+    companyId: input.companyId,
+    userId: input.userId,
+    description: input.description,
+    targetUserIds: input.targetUserIds,
+    category: 'case_reports',
+    sourceCaseReportId: input.caseId,
+  });
+
   return getCaseReport({ tenantDb: input.tenantDb, userId: input.userId, caseId: input.caseId });
 }
 

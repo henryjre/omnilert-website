@@ -1,7 +1,8 @@
 import { useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import type { CaseMessage } from '@omnilert/shared';
-import { ChevronDown, FileWarning, Paperclip, X } from 'lucide-react';
+import { ChevronDown, ExternalLink, FileWarning, Paperclip, X } from 'lucide-react';
 import { Badge } from '@/shared/components/ui/Badge';
 import { Button } from '@/shared/components/ui/Button';
 import type { CaseReportDetail, MentionableRole, MentionableUser } from '../services/caseReport.api';
@@ -66,6 +67,7 @@ export function CaseReportDetailPanel({
   onEditMessage,
   onDeleteMessage,
 }: CaseReportDetailPanelProps) {
+  const navigate = useNavigate();
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const [editingField, setEditingField] = useState<'corrective_action' | 'resolution' | null>(null);
   const [detailsVisible, setDetailsVisible] = useState(true);
@@ -106,7 +108,7 @@ export function CaseReportDetailPanel({
           </button>
         </div>
 
-        <div className="grid min-h-0 flex-1 grid-rows-[auto_1fr]">
+        <div className="flex min-h-0 flex-1 flex-col">
           <AnimatePresence initial={false}>
           {detailsVisible && <motion.div
             key="details"
@@ -200,6 +202,20 @@ export function CaseReportDetailPanel({
               />
             </section>
 
+            {report.linked_vn_id && (
+              <section>
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Violation Notice</p>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/violation-notices?vnId=${report.linked_vn_id}`)}
+                  className="mt-2 inline-flex items-center gap-1 text-sm text-primary-700 hover:underline"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  View Violation Notice
+                </button>
+              </section>
+            )}
+
             <div className="flex flex-wrap gap-2">
               {(isCreator || canManage) && (
                 <Button
@@ -209,14 +225,14 @@ export function CaseReportDetailPanel({
                   Close Case
                 </Button>
               )}
-              <Button variant="danger" onClick={() => void onRequestVN()}>
-                Request VN
-              </Button>
+              {!report.vn_requested && !report.linked_vn_id && (
+                <Button variant="danger" onClick={() => void onRequestVN()}>Request VN</Button>
+              )}
             </div>
           </motion.div>}
           </AnimatePresence>
 
-          <div className="flex min-h-0 flex-col border-t border-gray-200 px-4 py-3 sm:px-6 sm:py-5">
+          <div className="flex min-h-0 flex-1 flex-col border-t border-gray-200 px-4 py-3 sm:px-6 sm:py-5">
             {/* Toggle bar */}
             <div className="mb-2 flex justify-center">
               <button

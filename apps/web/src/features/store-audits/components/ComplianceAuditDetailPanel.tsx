@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { StoreAudit } from '@omnilert/shared';
+import { ExternalLink } from 'lucide-react';
 import { Button } from '@/shared/components/ui/Button';
 import { YesNoPill } from './YesNoPill';
 
@@ -38,14 +40,17 @@ export function ComplianceAuditDetailPanel({
   audit,
   canProcess,
   canComplete,
+  canRequestVN,
   actionLoading,
   panelError,
   onProcess,
   onComplete,
+  onRequestVN,
 }: {
   audit: StoreAudit;
   canProcess: boolean;
   canComplete: boolean;
+  canRequestVN?: boolean;
   actionLoading: boolean;
   panelError: string;
   onProcess: () => void;
@@ -56,7 +61,9 @@ export function ComplianceAuditDetailPanel({
     hygiene: boolean;
     sop: boolean;
   }) => void;
+  onRequestVN?: () => void;
 }) {
+  const navigate = useNavigate();
   const [answers, setAnswers] = useState<AnswersState>({
     non_idle: audit.comp_non_idle,
     cellphone: audit.comp_cellphone,
@@ -123,6 +130,19 @@ export function ComplianceAuditDetailPanel({
                 {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(audit.monetary_reward ?? 0))}
               </p>
             </div>
+            {audit.linked_vn_id && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Violation Notice</p>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/violation-notices?vnId=${audit.linked_vn_id}`)}
+                  className="mt-1 inline-flex items-center gap-1 text-sm text-primary-700 hover:underline"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  View Violation Notice
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -155,12 +175,11 @@ export function ComplianceAuditDetailPanel({
             {actionLoading ? 'Completing...' : 'Audit Complete'}
           </Button>
         )}
-        {audit.status === 'completed' && (
-          <Button className="w-full" variant="secondary" disabled>
+        {audit.status === 'completed' && !audit.vn_requested && canRequestVN && (
+          <Button className="w-full" variant="danger" onClick={onRequestVN}>
             Request VN
           </Button>
         )}
-        {/* TODO: implement VN request */}
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 # Omnilert Project Context
 
-Last updated: 2026-03-11
+Last updated: 2026-03-16
 
 This document is for AI and engineer handoff. It captures the current implementation state of this repository from code-confirmed behavior.
 
@@ -9,6 +9,7 @@ This document is for AI and engineer handoff. It captures the current implementa
 Omnilert is a multi-tenant internal operations platform for branch-based businesses.
 
 Core responsibilities:
+
 - Receive and process Odoo webhook payloads.
 - Run POS verification and POS session workflows.
 - Track employee shifts, logs, and authorization approvals.
@@ -20,8 +21,11 @@ Core responsibilities:
   - Employment Requirements verification
   - Bank Information verification
 - Support super-admin managed tenant lifecycle, including hard delete of a tenant company.
+- Run Case Reports workflow (create, discuss, resolve workplace cases with threaded chat, @mentions, attachments, corrective action / resolution lifecycle).
+- Run Violation Notices workflow (create, confirm, issue, and complete employee violation notices with multi-step status lifecycle, target employee selection, file uploads, and threaded discussion).
 
 Primary business context:
+
 - Branch operations in Philippines-based deployments.
 - Currency/date displays in UI are commonly PH-localized.
 
@@ -41,6 +45,7 @@ omnilert-website/
 ```
 
 Key backend layers (`apps/api/src`):
+
 - `routes/` endpoint definitions
 - `controllers/` request/response orchestration
 - `services/` business logic
@@ -51,6 +56,7 @@ Key backend layers (`apps/api/src`):
 - `utils/` shared helpers (JWT, encryption, logger)
 
 Key frontend areas (`apps/web/src`):
+
 - `app/` router and app shell
 - `features/` domain pages/components
   - `employee-verifications/`
@@ -63,9 +69,11 @@ Key frontend areas (`apps/web/src`):
 ## 3) Source-of-Truth Config and Startup Flow
 
 Environment schema source of truth:
+
 - `apps/api/src/config/env.ts`
 
 Defined API env vars:
+
 - Server: `PORT`, `NODE_ENV`, `CLIENT_URL`
 - Master DB: `MASTER_DB_HOST`, `MASTER_DB_PORT`, `MASTER_DB_NAME`, `MASTER_DB_USER`, `MASTER_DB_PASSWORD`
 - Tenant auth JWT: `JWT_SECRET`, `JWT_REFRESH_SECRET`, `JWT_EXPIRES_IN`, `JWT_REFRESH_EXPIRES_IN`
@@ -79,9 +87,11 @@ Defined API env vars:
 - Web push: `WEB_PUSH_ENABLED`, `WEB_PUSH_VAPID_PUBLIC_KEY`, `WEB_PUSH_VAPID_PRIVATE_KEY`, `WEB_PUSH_VAPID_SUBJECT`
 
 Canonical env example:
+
 - `apps/api/.env.example`
 
 Server bootstrap behavior (`apps/api/src/server.ts`):
+
 - Initialize Socket.IO
 - Initialize attendance queue
 - Verify SMTP transporter connectivity (`verifyMailConnection`)
@@ -90,10 +100,12 @@ Server bootstrap behavior (`apps/api/src/server.ts`):
 ## 4) Multi-Tenant Model and Runtime Company Context
 
 Tenant strategy:
+
 - One master database for global metadata.
 - One tenant database per company.
 
 Master DB key tables:
+
 - `companies` (includes `theme_color`, `company_code`, `is_active`)
 - `company_databases` (tenant migration tracking metadata)
 - `super_admins`
@@ -108,6 +120,7 @@ Master DB key tables:
 - `shift_exchange_requests` (global inter-company shift exchange authorization workflow across requester + accepting shifts)
 
 Tenant DB key additions:
+
 - `users.employee_number`
 - `users.valid_id_url`, `users.valid_id_updated_at`
 - `users.address`, `users.sss_number`, `users.tin_number`, `users.pagibig_number`, `users.philhealth_number`, `users.marital_status`
@@ -123,8 +136,12 @@ Tenant DB key additions:
 - `departments`
 - `push_subscriptions`
 - `employee_notifications.user_id` stores global user UUIDs and is not FK-bound to tenant `users`
+- `store_audits` (CSS and compliance audits; includes `vn_requested` boolean flag)
+- `case_reports`, `case_messages`, `case_attachments`, `case_reactions`, `case_participants`, `case_mentions` (case reporting system)
+- `violation_notices`, `violation_notice_targets`, `violation_notice_messages`, `violation_notice_attachments`, `violation_notice_reactions`, `violation_notice_participants`, `violation_notice_mentions`, `violation_notice_reads` (violation notice workflow)
 
 Current implementation note:
+
 - Auth and registration are now master-backed.
 - My Account profile and `/users/me*` account endpoints are now master-user backed.
 - Runtime API user/role actions have been swept to global scope:
@@ -133,6 +150,7 @@ Current implementation note:
   - legacy tenant user/role references remain only in migration/provisioning scripts (`scripts/migration.ts`, `services/databaseProvisioner.ts`) for backward/bootstrapping paths.
 
 Request-scoped company context (`apps/api/src/middleware/companyResolver.ts`):
+
 - `req.companyContext.companyId`
 - `req.companyContext.companySlug`
 - `req.companyContext.companyName`
@@ -143,6 +161,7 @@ Company resolver also enforces active company (`companies.is_active = true`) bef
 ## 5) Migration and Provisioning Model
 
 Master migrations (`apps/api/src/migrations/master`):
+
 - `001_create_companies.ts`
 - `002_create_super_admins.ts`
 - `003_create_company_databases.ts`
@@ -156,8 +175,12 @@ Master migrations (`apps/api/src/migrations/master`):
 - `007_add_users_last_company.ts`
 - `008_add_users_department_id.ts` (adds nullable `users.department_id` in master DB for global-profile work-info compatibility)
 - `009_add_shift_exchange_requests_and_suspended_status.ts`
+- `010_add_audit_result_columns.ts`
+- `011_case_report_permissions.ts` (seeds case_report.view/create/close/manage; assigns to system roles)
+- `012_violation_notice_permissions.ts` (seeds violation_notice.view/create/confirm/reject/issue/complete/manage; assigns all to Admin + Management; Service Crew gets view + create)
 
 Tenant migrations (`apps/api/src/migrations/tenant`):
+
 - `001_baseline.ts`
 - `002_add_user_key_to_users.ts`
 - `003_add_user_profile_columns.ts`
@@ -174,16 +197,23 @@ Tenant migrations (`apps/api/src/migrations/tenant`):
 - `014_drop_cash_requests_user_fks.ts` (drops tenant FKs on `cash_requests.user_id|reviewed_by|disbursed_by`)
 - `015_drop_authorization_requests_user_fks.ts` (drops tenant FKs on `authorization_requests.user_id|reviewed_by`)
 - `016_drop_more_global_user_fks.ts` (drops tenant FKs on global-user-backed fields in `shift_authorizations`, `registration_requests`, and verification tables)
+- `017_store_audits.ts` (creates store_audits table with type discriminator, status enum, and partial unique index for one-active-audit-per-auditor constraint)
+- `018_case_reports.ts` (creates case_reports, case_messages, case_attachments, case_reactions, case_participants, case_mentions; all global UUID columns have no FK to tenant users)
+- `019_case_messages_soft_delete.ts` (adds is_deleted boolean NOT NULL DEFAULT false + deleted_by uuid nullable to case_messages; idempotent via hasColumn)
+- `020_violation_notices.ts` (creates violation_notices, violation_notice_targets, violation_notice_messages, violation_notice_attachments, violation_notice_reactions, violation_notice_participants, violation_notice_mentions, violation_notice_reads; source_case_report_id and source_store_audit_id FK to tenant tables with SET NULL on delete)
+- `021_store_audits_vn_requested.ts` (adds vn_requested boolean NOT NULL DEFAULT false to store_audits; idempotent via hasColumn)
 - Compatibility `.js` shim files exist for legacy entries recorded in `knex_migrations`
   (currently `001` to `013`) to prevent Knex "migration directory is corrupt" errors on older tenants.
 
 Operational scripts (`apps/api/src/scripts`):
+
 - `migrate-tenants.ts`
 - `migration-status-tenants.ts`
 - `rollback-tenants.ts`
 - `migration.ts` (legacy helper)
 
 Tenant provisioning (`apps/api/src/services/databaseProvisioner.ts`):
+
 - Creates current tenant schema for new companies.
 - Seeds permissions/roles and fixed employment requirement catalog.
 - Runs versioned tenant migrations after initial table creation.
@@ -191,11 +221,13 @@ Tenant provisioning (`apps/api/src/services/databaseProvisioner.ts`):
 ## 6) Auth and RBAC
 
 Permission source:
+
 - `packages/shared/src/constants/permissions.ts`
 
 Current permission keys:
 
 Admin
+
 - `admin.manage_roles`
 - `admin.manage_users`
 - `admin.manage_branches`
@@ -203,20 +235,24 @@ Admin
 - `admin.toggle_branch`
 
 Dashboard
+
 - `dashboard.view`
 - `dashboard.view_performance_index`
 - `dashboard.view_payslip` — gates the Payslip page at `/account/payslip` (My Account sidebar); no longer rendered on the Dashboard page
 
 POS Verification
+
 - `pos_verification.view`
 - `pos_verification.confirm_reject`
 - `pos_verification.upload_image`
 
 POS Session
+
 - `pos_session.view`
 - `pos_session.audit_complete`
 
 Account
+
 - `account.view_schedule`
 - `account.view_auth_requests`
 - `account.submit_private_auth_request`
@@ -226,36 +262,60 @@ Account
 - `account.view_notifications`
 
 Employee
+
 - `employee.view_own_profile`
 - `employee.edit_own_profile`
 - `employee.view_all_profiles`
 - `employee.edit_work_profile`
 
 Shifts
+
 - `shift.view_all`
 - `shift.approve_authorizations`
 - `shift.end_shift`
 
 Authorization Requests
+
 - `auth_request.approve_management`
 - `auth_request.view_all`
 - `auth_request.approve_service_crew`
 
 Cash Requests
+
 - `cash_request.view_all`
 - `cash_request.approve`
 
 Employee Verifications
+
 - `employee_verification.view`
 - `registration.approve`
 - `personal_information.approve`
 - `employee_requirements.approve`
 - `bank_information.approve`
 
+Case Reports
+
+- `case_report.view`
+- `case_report.create`
+- `case_report.close`
+- `case_report.manage`
+
+Violation Notices
+
+- `violation_notice.view`
+- `violation_notice.create`
+- `violation_notice.confirm`
+- `violation_notice.reject`
+- `violation_notice.issue`
+- `violation_notice.complete`
+- `violation_notice.manage`
+
 Permission migration note:
+
 - Legacy `registration.view` is migrated to `employee_verification.view` in tenant migration `005_employee_verifications_expansion.ts`.
 
 Auth behavior highlights (`apps/api/src/services/auth.service.ts`):
+
 - Login authenticates against master `users`.
 - Login `companySlug` is optional:
   - when provided, access is validated (`user_company_access` for regular users; superusers bypass assignment checks)
@@ -273,14 +333,16 @@ Auth behavior highlights (`apps/api/src/services/auth.service.ts`):
 - System role default permission sets are auto-synced (additive) during auth flows to prevent drift after resets/cutovers.
 
 Role/permission management behavior:
+
 - Role and permission CRUD endpoints are master-backed (`roles`, `permissions`, `role_permissions`) so admin edits match JWT permission source-of-truth.
-- Service Crew default permission set includes dashboard, POS verification/session view, core account actions, and own-profile view/edit permissions.
+- Service Crew default permission set includes dashboard, POS verification/session view, core account actions, own-profile view/edit, and violation_notice.view + violation_notice.create permissions.
 
 ## 7) API Surface Overview
 
 Base path: `/api/v1`
 
 Public/general routes:
+
 - `GET /health`
 - Auth:
   - `POST /auth/login` (`{ email, password }`, optional compatibility `companySlug`)
@@ -299,6 +361,7 @@ Public/general routes:
   - `/webhooks/odoo/*`
 
 Super company management routes (`apps/api/src/routes/super.routes.ts`):
+
 - `GET /super/companies/current` (tenant JWT, admin role check in controller)
 - `PUT /super/companies/current` (tenant JWT, admin role check in controller)
 - `POST /super/companies/current/delete` (tenant JWT + superuser re-auth checks)
@@ -307,6 +370,7 @@ Super company management routes (`apps/api/src/routes/super.routes.ts`):
 - `PUT /super/companies/:id` (super-admin token)
 
 Company-scoped authenticated route groups (`apps/api/src/routes/index.ts`):
+
 - `/branches`, `/roles`, `/permissions`, `/users`
 - `/pos-verifications`, `/pos-sessions`
 - `/employee-shifts`, `/shift-authorizations`
@@ -319,8 +383,11 @@ Company-scoped authenticated route groups (`apps/api/src/routes/index.ts`):
 - `/employee-profiles`
 - `/account/*`
 - `/dashboard/*`
+- `/case-reports`
+- `/violation-notices`
 
 Global User Management endpoints (`/users`, admin-scoped):
+
 - `GET /users`
   - Lists global users across all companies with:
     - global identity fields
@@ -343,6 +410,7 @@ Global User Management endpoints (`/users`, admin-scoped):
   - Global permanent delete.
 
 Employee Verifications endpoints (`/employee-verifications`):
+
 - `GET /employee-verifications`
 - `GET /employee-verifications/registration/assignment-options`
 - `POST /employee-verifications/registration/:id/approve`
@@ -355,21 +423,71 @@ Employee Verifications endpoints (`/employee-verifications`):
 - `POST /employee-verifications/bank-information/:id/reject`
 
 Registration approve payload (both approval surfaces):
+
 - `roleIds: string[]`
 - `companyAssignments: Array<{ companyId: string; branchIds: string[] }>`
 - `residentBranch: { companyId: string; branchId: string }`
 
 Registration compatibility endpoints (`/registration-requests`):
+
 - `GET /registration-requests`
 - `GET /registration-requests/assignment-options`
 - `POST /registration-requests/:id/approve`
 - `POST /registration-requests/:id/reject`
 
+Case Reports endpoints (`/case-reports`):
+
+- `GET /case-reports` (filters: status, search, date_from, date_to, sort_order, vn_only)
+- `POST /case-reports`
+- `GET /case-reports/:id`
+- `PATCH /case-reports/:id/corrective-action`
+- `PATCH /case-reports/:id/resolution`
+- `POST /case-reports/:id/close` (requires corrective_action + resolution; creator or case_report.manage)
+- `POST /case-reports/:id/request-vn` (requires body: `description` + `targetUserIds`; sets vn_requested = true and creates a linked ViolationNotice; requires case_report.manage)
+- `POST /case-reports/:id/attachments` (upload; case creator only)
+- `DELETE /case-reports/:id/attachments/:attachmentId` (delete + S3 cleanup; case creator only)
+- `GET /case-reports/:id/messages`
+- `POST /case-reports/:id/messages`
+- `PATCH /case-reports/:id/messages/:messageId` (edit own message)
+- `DELETE /case-reports/:id/messages/:messageId` (soft-delete; own message or case_report.manage)
+- `POST /case-reports/:id/messages/:messageId/reactions` (toggle)
+- `POST /case-reports/:id/read` (updates last_read_at)
+- `POST /case-reports/:id/leave`
+- `POST /case-reports/:id/mute`
+- `GET /case-reports/mentionables`
+
+Violation Notices endpoints (`/violation-notices`):
+
+- `GET /violation-notices` (filters: status, search, date_from, date_to, sort_order, category, target_user_id)
+- `POST /violation-notices` (manual creation; requires description + targetUserIds)
+- `GET /violation-notices/grouped-users` (users grouped by role for target selection; requires violation_notice.create)
+- `GET /violation-notices/mentionables` (users + roles for @mentions; requires violation_notice.view)
+- `POST /violation-notices/from-case-report` (create VN linked to a case report)
+- `POST /violation-notices/from-store-audit` (create VN linked to a store audit)
+- `GET /violation-notices/:id`
+- `POST /violation-notices/:id/confirm` (queued → discussion; requires violation_notice.confirm)
+- `POST /violation-notices/:id/reject` (requires rejection_reason; requires violation_notice.reject)
+- `POST /violation-notices/:id/issue` (discussion → issuance; requires violation_notice.issue)
+- `POST /violation-notices/:id/issuance-upload` (PDF upload, 1 file, 50 MB max)
+- `POST /violation-notices/:id/confirm-issuance` (issuance → disciplinary_meeting)
+- `POST /violation-notices/:id/disciplinary-upload` (any media/doc, 1 file, 50 MB max)
+- `POST /violation-notices/:id/complete` (disciplinary_meeting → completed; requires violation_notice.complete)
+- `GET /violation-notices/:id/messages`
+- `POST /violation-notices/:id/messages` (up to 10 file attachments, images/video/PDF/Word/Excel, 50 MB max)
+- `PATCH /violation-notices/:id/messages/:messageId` (edit own message)
+- `DELETE /violation-notices/:id/messages/:messageId` (soft-delete; own message or violation_notice.manage)
+- `POST /violation-notices/:id/messages/:messageId/reactions` (toggle emoji)
+- `POST /violation-notices/:id/read` (updates read tracking)
+- `POST /violation-notices/:id/leave`
+- `POST /violation-notices/:id/mute`
+
 Employee Requirements manager endpoints (`/employee-requirements`):
+
 - `GET /employee-requirements`
 - `GET /employee-requirements/:userId`
 
 Employee Profiles endpoints (`/employee-profiles`):
+
 - `GET /employee-profiles`
   - Supports `status=all|active|resigned|inactive|suspended`, `page`, `pageSize`, `search`
   - Supports advanced filters: `departmentId`, `roleIdsCsv` (ANY match), `sortBy`, `sortDirection`
@@ -380,6 +498,7 @@ Employee Profiles endpoints (`/employee-profiles`):
   - supports optional `companyAssignments` to sync branch assignments before resident-branch update
 
 Shift Exchange endpoints (`/shift-exchanges`):
+
 - `GET /shift-exchanges/options?fromShiftId=<uuid>`
 - `POST /shift-exchanges` (`fromShiftId`, `toShiftId`, `toCompanyId`)
 - `GET /shift-exchanges/:id`
@@ -388,6 +507,7 @@ Shift Exchange endpoints (`/shift-exchanges`):
 - `POST /shift-exchanges/:id/reject` (required `reason`)
 
 My Account verification/requirements endpoints (`/account`):
+
 - `GET /account/profile`
 - `PATCH /account/email`
 - `POST /account/personal-information/verifications`
@@ -405,24 +525,31 @@ My Account verification/requirements endpoints (`/account`):
 ## 8) Realtime Model (Socket.IO)
 
 Socket config source:
+
 - `apps/api/src/config/socket.ts`
 - Event typings: `packages/shared/src/types/socket.types.ts`
 
 Namespaces:
+
 - `/pos-verification`
 - `/pos-session`
 - `/employee-shifts`
 - `/employee-verifications`
 - `/employee-requirements`
 - `/notifications`
+- `/store-audits`
+- `/case-reports`
+- `/violation-notices`
 
 Room model:
+
 - Branch rooms: `branch:{branchId}`
 - Company rooms (verifications/requirements): `company:{companyId}`
 - User rooms: `user:{userId}`
 - Notification offline detection for push uses `/notifications` room presence (`user:{userId}` has zero sockets => offline).
 
 Notable server events:
+
 - Verification events:
   - `employee-verification:updated`
   - `employee-verification:approval-progress`
@@ -432,10 +559,29 @@ Notable server events:
   - `auth:force-logout`
 - Existing operational events:
   - POS, session, shift, and notification events remain active.
+- Case Reports events (room: `company:{companyId}`):
+  - `case-report:created`
+  - `case-report:updated`
+  - `case-report:message`
+  - `case-report:reaction`
+  - `case-report:attachment`
+  - `case-report:message:edited`
+  - `case-report:message:deleted`
+- Violation Notices events (room: `company:{companyId}`):
+  - `violation-notice:created`
+  - `violation-notice:updated`
+  - `violation-notice:status-changed`
+  - `violation-notice:message`
+  - `violation-notice:reaction`
+  - `violation-notice:message:edited`
+  - `violation-notice:message:deleted`
+- Store Audits additional event:
+  - `store-audit:updated` (emitted when a VN is linked to an audit via request-vn flow)
 
 ## 9) Odoo and Verification Workflow Notes
 
 Registration approval flow (`apps/api/src/services/registration.service.ts`):
+
 - Registration request creation is global (`master.registration_requests`) and no longer includes a company selector.
 - Approval validates:
   - `roleIds` (required, global roles)
@@ -457,10 +603,12 @@ Registration approval flow (`apps/api/src/services/registration.service.ts`):
   - append `category_id` tag `3`
 
 Name formatting helpers (`apps/api/src/services/odoo.service.ts`):
+
 - `formatBranchEmployeeCode(odooBranchId, employeeNumber)`
 - `formatEmployeeDisplayName(...)` -> `<branch-code> - <First Last>`
 
 Personal information verification:
+
 - User profile changes are submitted as a verification first.
 - Odoo profile sync happens on approval (`employeeVerification.service.ts` + `odoo.service.ts`).
 - Name updates preserve prefixed naming format when context is available.
@@ -473,6 +621,7 @@ Personal information verification:
   - tenant DB only (not synced to Odoo): SSS, TIN, Pag-IBIG, PhilHealth, marital status, emergency relationship
 
 Avatar sync:
+
 - `/users/me/avatar` upload updates website user avatar and asynchronously syncs Odoo `image_1920` on:
   - canonical `res.partner`
   - linked `hr.employee` records
@@ -485,6 +634,7 @@ Avatar sync:
   - continues with warning if import fails.
 
 Employment requirements:
+
 - Fixed requirement catalog is seeded in tenant DB.
 - Display statuses are mapped as:
   - `approved` -> `complete`
@@ -495,6 +645,7 @@ Employment requirements:
 ## 10) Email and Notification Behavior
 
 Mail service (`apps/api/src/services/mail.service.ts`):
+
 - SMTP delivery uses `SMTP_*` env vars.
 - Sender display name is controlled via `SMTP_FROM` (for example `Omnilert Onboarding <...>`).
 - Registration approved email includes:
@@ -505,11 +656,13 @@ Mail service (`apps/api/src/services/mail.service.ts`):
   - optional `companySlug` query for preselection
 
 Login-triggered employee notifications (`auth.service.ts`):
+
 - `Complete Your Profile` when profile is not yet marked updated.
 - `Submit Your Requirements` when zero requirements submitted.
 - `Complete Your Requirements` when some but not all submitted.
 
 Verification decision notifications:
+
 - Personal information and employment requirement submit/approve/reject paths create `employee_notifications` and emit realtime notification events.
 - Shift assignment notifications:
   - Planning slot upsert flow (`webhook.service.ts` -> `processEmployeeShift`) sends `New Shift Assigned`
@@ -534,22 +687,30 @@ Verification decision notifications:
 ## 11) Tenant-Rooted S3 Storage and Company Hard Delete
 
 Storage service source:
+
 - `apps/api/src/services/storage.service.ts`
 
 Tenant-rooted object key strategy:
+
 - `buildTenantStoragePrefix(companyStorageRoot, ...parts)`
 - `companyStorageRoot` is derived from slug + environment suffix:
   - production: `${company.slug}-prod`
   - non-production: `${company.slug}-dev`
 
 Current upload paths:
+
 - Cash requests: `${companyStorageRoot}/Cash Requests/${userId}`
 - Valid IDs: `${companyStorageRoot}/Valid IDs/${userId}`
 - Employment requirements: `${companyStorageRoot}/Employment Requirements/${userId}/${requirementCode}`
 - Profile pictures: `${companyStorageRoot}/Profile Pictures/${userId}`
 - POS verification images: `${companyStorageRoot}/POS Verifications/${userId}`
+- Case report attachments: `${companyStorageRoot}/Case Reports/CASE-{caseNumber}/{filename}`
+- Violation notice files (issuance + disciplinary): `${companyStorageRoot}/Violation Notices/VN-{vnNumber}/{filename}`
+
+Note: Case attachment S3 files are deleted on `DELETE /case-reports/:id/attachments/:attachmentId` and on message soft-delete. Both use best-effort delete (errors swallowed, operation does not block).
 
 Company hard delete flow (`apps/api/src/services/company.service.ts`):
+
 1. Validate current tenant user is an active superuser (email exists in master `super_admins`).
 2. Re-authenticate with submitted super-admin credentials and enforce same email as current session.
 3. Validate typed company name matches current company name.
@@ -566,11 +727,13 @@ Company hard delete flow (`apps/api/src/services/company.service.ts`):
 11. Return warnings for partial cleanup failures.
 
 Scope note:
+
 - Deletion targets Omnilert-managed data only. It does not delete Odoo-side records.
 
 ## 12) Frontend State Snapshot
 
 Router and navigation (`apps/web/src/app/router.tsx`, `Sidebar.tsx`):
+
 - Management label is `Employee Verifications`.
 - Primary route: `/employee-verifications`.
 - Compatibility alias route: `/registration-requests` redirects to `/employee-verifications`.
@@ -583,7 +746,7 @@ Router and navigation (`apps/web/src/app/router.tsx`, `Sidebar.tsx`):
     `Schedule`, `Payslip` (permission-gated: `dashboard.view_payslip`), `Authorization Requests`, `Cash Requests`, `Notifications`, `Profile`, `Settings`
   - `Management` keeps direct links for `Authorization Requests` and `Employee Verifications`
   - adds collapsible `Human Resources` group:
-    `Employee Profiles`, `Employee Schedule`, `Employee Requirements`
+    `Employee Profiles`, `Employee Schedule`, `Employee Requirements`, `Violation Notices` (gated: `violation_notice.view`)
   - adds collapsible `Accounting and Finance` group:
     `Cash Requests`
   - removes `Service Crew` section
@@ -598,6 +761,7 @@ Router and navigation (`apps/web/src/app/router.tsx`, `Sidebar.tsx`):
   - overlay includes a visible left-chevron hint that follows drawer slide animation and indicates tap-to-close behavior.
 
 Login page (`apps/web/src/features/auth/components/LoginForm.tsx`):
+
 - Modes:
   - Sign In
   - Register (submits `/auth/register-request`)
@@ -607,6 +771,7 @@ Login page (`apps/web/src/features/auth/components/LoginForm.tsx`):
 - Sign In no longer includes company selection; backend auto-selects company context.
 
 Employee Verifications UI:
+
 - Card list with right-side detail panel for approve/reject actions.
 - Type tabs: Registration, Personal Information, Employment Requirements, Bank Information.
 - Status tabs order: All, Pending, Approved, Rejected (default Pending).
@@ -619,6 +784,7 @@ Employee Verifications UI:
 - The same registration assignment model is used in `/registration-requests` approval UI.
 
 My Account Profile tab and Employee Requirements page:
+
 - Requirement cards support image/PDF previews (inline modal).
 - Status language uses Incomplete for not-yet-submitted state.
 - Profile personal verification form is grouped into subsections:
@@ -636,6 +802,7 @@ My Account Profile tab and Employee Requirements page:
 - Profile, valid-ID upload, employment requirement valid-ID reuse, and settings user reads/writes are resolved against master `users` (not tenant `users`), preventing `User not found` for global-user UUID sessions.
 
 Employee Schedule page:
+
 - Filter panel now uses staged controls with explicit `Clear`, `Apply`, and `Cancel` actions (instead of live-apply on input change).
 - Displays small `Filters applied` helper text when any non-default filter is active.
 - `Pending Approvals` filter control is rendered as a toggle switch (not a checkbox).
@@ -649,6 +816,7 @@ Employee Schedule page:
     - Step 2: Confirm/Cancel prompt targeting the selected employee.
 
 Employee Profiles page:
+
 - Uses card list + right-side detail panel.
 - Data scope is global across assigned users (not limited to the currently selected company context).
   - one card per user across all active company assignments.
@@ -683,6 +851,7 @@ Employee Profiles page:
   - sends `companyAssignments` in work-information update payload when edited.
 
 My Account Schedule + Notifications + Authorization Requests:
+
 - My Account Schedule now enables owner-open shift exchange with the same two-step flow used in Employee Schedule.
 - Notifications tab recognizes shift-exchange links and opens a detailed request modal showing both shifts and action buttons.
 - Authorization Requests service-crew list now includes `shift_exchange` items with stage-aware labels:
@@ -692,6 +861,7 @@ My Account Schedule + Notifications + Authorization Requests:
 - In Authorization Requests, clicking a `shift_exchange` item opens the same right-side detail panel pattern as other request types (not a centered modal).
 
 User Management page:
+
 - Hard-cutover to global master-backed user management (no tenant-local admin user CRUD path).
 - Lists users globally across companies, showing:
   - global roles
@@ -724,30 +894,36 @@ User Management page:
 - Branch target selection in User Management is not used as JWT branch authorization scope.
 
 Company page:
+
 - Includes Danger Zone delete action shown only when `canDeleteCompany` is true.
 
 ## 13) Queue Subsystem (Delayed Early Check-In Authorization)
 
 Queue implementation:
+
 - `apps/api/src/services/attendanceQueue.service.ts`
 - Uses `pg-boss` with master Postgres schema (default `pgboss`).
 
 Startup/shutdown lifecycle:
+
 - Initialized from `apps/api/src/server.ts` via `initAttendanceQueue()`.
 - Gracefully stopped via `stopAttendanceQueue()`.
 
 Behavior:
+
 - Early check-in webhook paths can schedule delayed authorization jobs at `shift_start + 1 minute`.
 - Worker revalidates shift/log state before insert.
 - Worker inserts `early_check_in` authorization only when still valid.
 
 Idempotency:
+
 - Deterministic singleton key: `companyDbName:shiftLogId:early_check_in`.
 - Duplicate authorization creation is guarded in both queue keying and worker checks.
 
 ## 14) Operational Guardrails and Known Risks
 
 Guardrails:
+
 - Do not change permission keys without migration impact review.
 - Keep master and tenant migration lifecycles separate and coordinated.
 - Company resolver active-company checks are critical for post-delete token safety.
@@ -755,10 +931,50 @@ Guardrails:
 - Socket namespace permission guards are enforced per namespace.
 
 Known risks/gaps:
+
 - Company hard delete is intentionally non-transactional across DB + storage + queue cleanup.
 - Storage and queue cleanup are best effort; warning payloads must be monitored.
 - Compatibility alias `/registration-requests` is temporary and should be removed after client transition.
 - Legacy migration helper `apps/api/src/scripts/migration.ts` may diverge from standard migration flow.
 
-This file should be updated whenever route contracts, permission keys, migrations, realtime contracts, queue behavior, storage topology, or deletion behavior changes.
+Case Reports page (`apps/web/src/features/case-reports/`):
 
+- Card list + right-side detail panel pattern.
+- Status tabs: All | Open | Closed.
+- Filter panel: staged apply/clear/cancel (search, date range, sort, VN toggle).
+- Detail panel: description, corrective action, resolution, attachments, chat.
+- Creator-only controls: only the case creator (or `case_report.manage`) can add/edit corrective action, add/edit resolution, close the case, and add/delete attachments.
+- Discord-style chat: avatar + name layout, grouped messages (5-min same-user), swipe-to-reply (mobile), long-press drawer (mobile), hover ⋯ menu (desktop), 7-emoji quick reactions.
+- Soft-deleted messages render as tombstones (italic muted text, no controls).
+- Optimistic UI: messages appear immediately as pending, replaced on server confirmation.
+- Notification deep-link: `/case-reports?caseId=X&messageId=Y` scrolls and flashes the target message.
+- `unread_reply_count`: replies to current user's own messages sent by others after `last_read_at`; shown as red Reply pill on card.
+- `Request VN` button (danger variant) opens RequestVNModal (target employee selection + description). On submit creates a linked ViolationNotice. Button hidden once `linked_vn_id` is set on the case. When linked, "View Violation Notice" link navigates to `/violation-notices?vnId=X`.
+- `linked_vn_id` is returned on CaseReport and CaseReportDetail — non-null means a VN was already created from this case.
+
+Store Audits page (`apps/web/src/features/store-audits/`):
+
+- CSS and Compliance audit detail panels now have a functional `Request VN` button (danger variant) when `status = 'completed'` and `vn_requested = false` and user has `violation_notice.create`. Opens RequestVNModal.
+- After VN is created, `vn_requested` flag set to true in-memory immediately; button hidden. "View Violation Notice" link (`/violation-notices?vnId=X`) shown when `linked_vn_id` is present.
+- Deep-link support: `/store-audits?auditId=X` opens the audit directly (status auto-set to `completed` to ensure the audit is in the right filter).
+- Socket: listens to `store-audit:updated` event to refresh vn_requested flag in real time.
+
+Violation Notices page (`apps/web/src/features/violation-notices/`):
+
+- Card list + right-side detail panel pattern. Deep-link: `/violation-notices?vnId=X`.
+- Status tabs: All | Queued | Discussion | Issuance | Disciplinary Meeting | Completed | Rejected.
+- Filter panel: staged apply/clear/cancel (search, date range, category, target employee, sort order).
+- Status workflow: `queued` → `discussion` → `issuance` → `disciplinary_meeting` → `completed`; `rejected` is terminal from `queued` or `discussion`.
+- VN creation: manual (CreateVNModal), from case reports (RequestVNModal with sourceCaseReportId), from store audits (RequestVNModal with sourceStoreAuditId).
+- Detail panel: description, target employees, linked source (case report or store audit), status-specific action buttons.
+  - queued: Confirm VN, Reject (inline textarea for reason)
+  - discussion: Issue VN, Reject (inline textarea for reason)
+  - issuance: Upload PDF (issuance letter), advance to Disciplinary (only when file uploaded)
+  - disciplinary_meeting: Upload proof file, Complete VN (only when file uploaded)
+  - completed: summary of who confirmed/issued/completed
+  - rejected: rejection reason + who rejected
+- Chat section reuses ChatSection component from case reports (threading, @mentions, reactions, soft-delete, optimistic UI).
+- GroupedUserSelect component: groups users by role (management, service_crew, other) for target employee selection.
+- Socket namespace: `/violation-notices` (room: `company:{companyId}`).
+
+This file should be updated whenever route contracts, permission keys, migrations, realtime contracts, queue behavior, storage topology, or deletion behavior changes.

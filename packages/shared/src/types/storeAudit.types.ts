@@ -23,6 +23,8 @@ export interface StoreAudit {
   auditor_name?: string | null;
   monetary_reward: string;
   completed_at: string | null;
+  vn_requested: boolean;
+  linked_vn_id: string | null;
   created_at: string;
   updated_at: string;
 

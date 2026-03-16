@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import type { CaseMessage, CaseReport } from '@omnilert/shared';
+import type { CaseMessage, CaseReport, GroupedUsersResponse } from '@omnilert/shared';
 import { PERMISSIONS } from '@omnilert/shared';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, FileWarning, Filter, Plus } from 'lucide-react';
@@ -23,7 +23,6 @@ import {
   listCaseMessages,
   listCaseReports,
   markCaseRead,
-  requestViolationNotice,
   sendCaseMessage,
   toggleCaseMute,
   toggleCaseReaction,
@@ -38,6 +37,8 @@ import {
 import { CaseReportCard } from '../components/CaseReportCard';
 import { CaseReportDetailPanel } from '../components/CaseReportDetailPanel';
 import { CreateCaseModal } from '../components/CreateCaseModal';
+import { RequestVNModal } from '@/features/violation-notices/components/RequestVNModal';
+import { getGroupedUsers } from '@/features/violation-notices/services/violationNotice.api';
 
 type StatusTab = 'all' | 'open' | 'closed';
 
@@ -78,6 +79,9 @@ export function CaseReportsPage() {
   const [filters, setFilters] = useState<CaseReportFilters>(DEFAULT_FILTERS);
   const [draftFilters, setDraftFilters] = useState<CaseReportFilters>(DEFAULT_FILTERS);
   const [createOpen, setCreateOpen] = useState(false);
+  const [showRequestVNModal, setShowRequestVNModal] = useState(false);
+  const [groupedUsers, setGroupedUsers] = useState<GroupedUsersResponse | null>(null);
+  const [loadingGroupedUsers, setLoadingGroupedUsers] = useState(false);
 
   const canCreate = hasPermission(PERMISSIONS.CASE_REPORT_CREATE);
   const canClose = hasPermission(PERMISSIONS.CASE_REPORT_CLOSE);
@@ -133,6 +137,15 @@ export function CaseReportsPage() {
   }, []);
 
   useEffect(() => {
+    setLoadingGroupedUsers(true);
+    void getGroupedUsers().then((data) => {
+      setGroupedUsers(data);
+    }).catch(() => undefined).finally(() => {
+      setLoadingGroupedUsers(false);
+    });
+  }, []);
+
+  useEffect(() => {
     if (!selectedCaseId) {
       setSelectedReport(null);
       setMessages([]);
@@ -151,14 +164,22 @@ export function CaseReportsPage() {
       }
     };
 
+    const refreshDetailById = (payload: { id?: string; caseId?: string }) => {
+      const id = payload.caseId ?? payload.id;
+      void fetchReports(true);
+      if (id && id === selectedCaseId) {
+        void fetchDetail(id);
+      }
+    };
+
     socket.on('case-report:created', refresh);
-    socket.on('case-report:updated', refresh);
+    socket.on('case-report:updated', refreshDetailById);
     socket.on('case-report:attachment', refreshDetail);
     socket.on('case-report:message', refreshDetail);
     socket.on('case-report:reaction', refreshDetail);
     return () => {
       socket.off('case-report:created', refresh);
-      socket.off('case-report:updated', refresh);
+      socket.off('case-report:updated', refreshDetailById);
       socket.off('case-report:attachment', refreshDetail);
       socket.off('case-report:message', refreshDetail);
       socket.off('case-report:reaction', refreshDetail);
@@ -194,7 +215,7 @@ export function CaseReportsPage() {
 
   return (
     <>
-      <div className="space-y-4">
+      <div className="min-w-0 space-y-4">
         {/* Page header */}
         <div className="flex items-center gap-3">
           <FileWarning className="h-6 w-6 text-primary-600" />
@@ -373,7 +394,7 @@ export function CaseReportsPage() {
             </CardBody>
           </Card>
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="grid min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {reports.map((report) => (
               <CaseReportCard
                 key={report.id}
@@ -448,9 +469,7 @@ export function CaseReportsPage() {
           }}
           onRequestVN={async () => {
             if (!selectedCaseId) return;
-            const detail = await requestViolationNotice(selectedCaseId);
-            setSelectedReport(detail);
-            await fetchReports(true);
+            setShowRequestVNModal(true);
           }}
           onUploadAttachment={async (file) => {
             if (!selectedCaseId) return;
@@ -539,6 +558,20 @@ export function CaseReportsPage() {
           setSelectedCaseId(created.id);
           setSearchParams({ caseId: created.id });
         }}
+      />
+
+      <RequestVNModal
+        isOpen={showRequestVNModal}
+        onClose={() => setShowRequestVNModal(false)}
+        onCreated={(_vn) => {
+          setShowRequestVNModal(false);
+          void fetchReports(true);
+          if (selectedCaseId) void fetchDetail(selectedCaseId);
+        }}
+        groupedUsers={groupedUsers}
+        loadingUsers={loadingGroupedUsers}
+        sourceCaseReportId={selectedCaseId ?? undefined}
+        sourceLabel={`Case Report #${String(selectedReport?.case_number).padStart(4, '0')}`}
       />
     </>
   );

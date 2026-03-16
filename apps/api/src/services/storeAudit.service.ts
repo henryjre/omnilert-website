@@ -38,20 +38,26 @@ async function enrichAuditRows(tenantDb: Knex, rows: any[]): Promise<StoreAuditR
 
   const branchIds = [...new Set(rows.map((row) => row.branch_id).filter(Boolean))] as string[];
   const auditorIds = [...new Set(rows.map((row) => row.auditor_user_id).filter(Boolean))] as string[];
+  const auditIds = rows.map((row) => row.id) as string[];
 
-  const [branches, auditors] = await Promise.all([
+  const [branches, auditors, linkedVns] = await Promise.all([
     branchIds.length > 0
       ? tenantDb('branches').whereIn('id', branchIds).select('id', 'name')
       : Promise.resolve([]),
     auditorIds.length > 0
       ? db.getMasterDb()('users').whereIn('id', auditorIds).select('id', 'first_name', 'last_name')
       : Promise.resolve([]),
+    tenantDb('violation_notices')
+      .whereIn('source_store_audit_id', auditIds)
+      .whereNotNull('source_store_audit_id')
+      .select('id', 'source_store_audit_id'),
   ]);
 
   const branchMap = new Map(branches.map((branch: any) => [branch.id as string, branch.name as string]));
   const auditorMap = new Map(
     auditors.map((auditor: any) => [auditor.id as string, `${auditor.first_name} ${auditor.last_name}`.trim()]),
   );
+  const vnMap = new Map(linkedVns.map((vn: any) => [vn.source_store_audit_id as string, vn.id as string]));
 
   return rows.map((row) => {
     const normalized = normalizeRow(row);
@@ -61,6 +67,7 @@ async function enrichAuditRows(tenantDb: Knex, rows: any[]): Promise<StoreAuditR
       auditor_name: normalized.auditor_name ?? (
         normalized.auditor_user_id ? auditorMap.get(normalized.auditor_user_id) ?? null : null
       ),
+      linked_vn_id: vnMap.get(normalized.id) ?? null,
     };
   });
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { StoreAudit, StoreAuditStatus, StoreAuditType } from '@omnilert/shared';
+import { useSearchParams } from 'react-router-dom';
+import type { StoreAudit, StoreAuditStatus, StoreAuditType, GroupedUsersResponse, ViolationNotice } from '@omnilert/shared';
 import { PERMISSIONS } from '@omnilert/shared';
 import { ClipboardList, LayoutGrid, ShieldCheck, Star, X } from 'lucide-react';
 import { Badge } from '@/shared/components/ui/Badge';
@@ -9,6 +10,8 @@ import { usePermission } from '@/shared/hooks/usePermission';
 import { useSocket } from '@/shared/hooks/useSocket';
 import { api } from '@/shared/services/api.client';
 import { useAuthStore } from '@/features/auth/store/authSlice';
+import { getGroupedUsers } from '@/features/violation-notices/services/violationNotice.api';
+import { RequestVNModal } from '@/features/violation-notices/components/RequestVNModal';
 import { CssAuditCard } from '../components/CssAuditCard';
 import { ComplianceAuditCard } from '../components/ComplianceAuditCard';
 import { CssAuditDetailPanel } from '../components/CssAuditDetailPanel';
@@ -27,16 +30,25 @@ export function StoreAuditsPage() {
   const { hasPermission } = usePermission();
   const currentUserId = useAuthStore((state) => state.user?.id ?? null);
   const canProcessAudit = hasPermission(PERMISSIONS.STORE_AUDIT_PROCESS);
+  const canRequestVN = hasPermission(PERMISSIONS.VIOLATION_NOTICE_CREATE);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [panelError, setPanelError] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [category, setCategory] = useState<CategoryTab>('all');
-  const [status, setStatus] = useState<StoreAuditStatus>('pending');
+  const [status, setStatus] = useState<StoreAuditStatus>(
+    () => (searchParams.get('auditId') ? 'completed' : 'pending'),
+  );
   const [audits, setAudits] = useState<StoreAudit[]>([]);
   const [processingAuditId, setProcessingAuditId] = useState<string | null>(null);
-  const [selectedAuditId, setSelectedAuditId] = useState<string | null>(null);
+  const [selectedAuditId, setSelectedAuditId] = useState<string | null>(
+    () => searchParams.get('auditId'),
+  );
+  const [showRequestVNModal, setShowRequestVNModal] = useState(false);
+  const [groupedUsers, setGroupedUsers] = useState<GroupedUsersResponse | null>(null);
+  const [loadingGroupedUsers, setLoadingGroupedUsers] = useState(false);
 
   const selectedAudit = useMemo(
     () => audits.find((audit) => audit.id === selectedAuditId) ?? null,
@@ -73,10 +85,29 @@ export function StoreAuditsPage() {
   }, [fetchAudits]);
 
   useEffect(() => {
-    if (!selectedAuditId) return;
+    if (!selectedAuditId || loading) return;
     const exists = audits.some((audit) => audit.id === selectedAuditId);
     if (!exists) setSelectedAuditId(null);
-  }, [audits, selectedAuditId]);
+  }, [audits, selectedAuditId, loading]);
+
+  // Sync selectedAuditId to URL
+  useEffect(() => {
+    if (selectedAuditId) {
+      setSearchParams((prev) => { prev.set('auditId', selectedAuditId); return prev; }, { replace: true });
+    } else {
+      setSearchParams((prev) => { prev.delete('auditId'); return prev; }, { replace: true });
+    }
+  }, [selectedAuditId, setSearchParams]);
+
+  // Fetch grouped users for VN modal when user has VN create permission
+  useEffect(() => {
+    if (!canRequestVN) return;
+    setLoadingGroupedUsers(true);
+    getGroupedUsers()
+      .then(setGroupedUsers)
+      .catch(() => undefined)
+      .finally(() => setLoadingGroupedUsers(false));
+  }, [canRequestVN]);
 
   useEffect(() => {
     if (!socket) return;
@@ -84,15 +115,25 @@ export function StoreAuditsPage() {
     const refresh = () => {
       void fetchAudits({ silent: true });
     };
+    const refreshUpdated = (payload: { id?: string }) => {
+      void fetchAudits({ silent: true });
+      if (payload.id && payload.id === selectedAuditId) {
+        setAudits((prev) =>
+          prev.map((a) => (a.id === payload.id ? { ...a, vn_requested: true } : a)),
+        );
+      }
+    };
 
     socket.on('store-audit:new', refresh);
     socket.on('store-audit:claimed', refresh);
     socket.on('store-audit:completed', refresh);
+    socket.on('store-audit:updated', refreshUpdated);
 
     return () => {
       socket.off('store-audit:new', refresh);
       socket.off('store-audit:claimed', refresh);
       socket.off('store-audit:completed', refresh);
+      socket.off('store-audit:updated', refreshUpdated);
     };
   }, [socket, fetchAudits]);
 
@@ -128,6 +169,17 @@ export function StoreAuditsPage() {
   };
 
   const canClaimAudit = canProcessAudit && processingAuditId === null;
+
+  const handleVNCreated = (_vn: ViolationNotice) => {
+    setShowRequestVNModal(false);
+    // Update the in-memory audit so the button hides immediately
+    if (selectedAuditId) {
+      setAudits((prev) =>
+        prev.map((a) => (a.id === selectedAuditId ? { ...a, vn_requested: true } : a)),
+      );
+    }
+    void fetchAudits({ silent: true });
+  };
 
   return (
     <>
@@ -273,10 +325,12 @@ export function StoreAuditsPage() {
                   && selectedAudit.status === 'processing'
                   && selectedAudit.auditor_user_id === currentUserId
                 }
+                canRequestVN={canRequestVN && selectedAudit.status === 'completed' && !selectedAudit.vn_requested}
                 actionLoading={actionLoading}
                 panelError={panelError}
                 onProcess={() => void handleProcess(selectedAudit.id)}
                 onComplete={(payload) => void handleComplete(selectedAudit.id, payload)}
+                onRequestVN={() => setShowRequestVNModal(true)}
               />
             ) : (
               <ComplianceAuditDetailPanel
@@ -287,15 +341,29 @@ export function StoreAuditsPage() {
                   && selectedAudit.status === 'processing'
                   && selectedAudit.auditor_user_id === currentUserId
                 }
+                canRequestVN={canRequestVN && selectedAudit.status === 'completed' && !selectedAudit.vn_requested}
                 actionLoading={actionLoading}
                 panelError={panelError}
                 onProcess={() => void handleProcess(selectedAudit.id)}
                 onComplete={(payload) => void handleComplete(selectedAudit.id, payload)}
+                onRequestVN={() => setShowRequestVNModal(true)}
               />
             )}
           </div>
         )}
       </div>
+
+      {showRequestVNModal && selectedAudit && (
+        <RequestVNModal
+          isOpen={showRequestVNModal}
+          onClose={() => setShowRequestVNModal(false)}
+          onCreated={handleVNCreated}
+          groupedUsers={groupedUsers}
+          loadingUsers={loadingGroupedUsers}
+          sourceStoreAuditId={selectedAudit.id}
+          sourceLabel={`Store Audit — ${selectedAudit.type === 'customer_service' ? 'CSS' : 'Compliance'} (${selectedAudit.branch_name || selectedAudit.id})`}
+        />
+      )}
     </>
   );
 }

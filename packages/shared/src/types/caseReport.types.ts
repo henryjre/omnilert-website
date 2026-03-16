@@ -9,6 +9,7 @@ export interface CaseReport {
   corrective_action: string | null;
   resolution: string | null;
   vn_requested: boolean;
+  linked_vn_id: string | null;
   created_by: string;
   created_by_name?: string;
   closed_by: string | null;

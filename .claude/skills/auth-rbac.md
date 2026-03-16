@@ -1,6 +1,7 @@
 # Skill: Auth & RBAC
 
 ## Auth Flow
+
 - Login authenticates against master `users`.
 - `companySlug` is optional on login:
   - provided → validates via `user_company_access` (superusers bypass this)
@@ -11,6 +12,7 @@
 - System role default permission sets are additive-synced during auth flows — do not manually patch permissions after role resets.
 
 ## Super Admins
+
 - Identified by email present in master `super_admins`.
 - Bypass `user_company_access` — can sign in to any active company.
 - Receive full permission key set at token issue time. No manual per-company assignment needed.
@@ -18,12 +20,14 @@
 - Super admin routes use a separate JWT (`SUPER_ADMIN_JWT_SECRET`), not the tenant JWT.
 
 ## RBAC Source of Truth
+
 Permission keys defined in: `packages/shared/src/constants/permissions.ts`
 Role/permission CRUD is master-backed (`roles`, `permissions`, `role_permissions`).
 
 **Never rename or delete a permission key without a migration.** Existing role assignments reference keys by string — renaming silently breaks them.
 
 ## All Permission Keys
+
 ```
 admin.manage_roles | admin.manage_users | admin.manage_branches
 admin.view_all_branches | admin.toggle_branch
@@ -49,12 +53,21 @@ employee_verification.view | registration.approve
 personal_information.approve | employee_requirements.approve | bank_information.approve
 
 store_audit.view | store_audit.process
+
+case_report.view | case_report.create | case_report.close | case_report.manage
+
+violation_notice.view | violation_notice.create | violation_notice.confirm
+violation_notice.reject | violation_notice.issue | violation_notice.complete | violation_notice.manage
 ```
 
 ## Socket Namespace Auth
+
 Permission guards are enforced per namespace — do not assume a valid JWT is sufficient for all namespaces.
 
 ## Realtime Namespaces & Rooms
-Namespaces: `/pos-verification`, `/pos-session`, `/employee-shifts`, `/employee-verifications`, `/employee-requirements`, `/notifications`, `/store-audits`
+
+Namespaces: `/pos-verification`, `/pos-session`, `/employee-shifts`, `/employee-verifications`, `/employee-requirements`, `/notifications`, `/store-audits`, `/case-reports`, `/violation-notices`
 Rooms: `branch:{branchId}`, `company:{companyId}`, `user:{userId}`
+`/case-reports` namespace uses room `company:{companyId}` only.
+`/violation-notices` namespace uses room `company:{companyId}` only.
 Push offline rule: user has zero sockets in `/notifications` room `user:{userId}` → eligible for web push.

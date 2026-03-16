@@ -44,6 +44,11 @@ const resolutionSchema = z.object({
   resolution: z.string().trim().min(1),
 });
 
+const requestVNSchema = z.object({
+  description: z.string().trim().min(1).max(2000),
+  targetUserIds: z.array(z.string().uuid()).min(1),
+});
+
 const reactionSchema = z.object({
   emoji: z.string().trim().min(1).max(20),
 });
@@ -73,7 +78,7 @@ router.patch(
   caseReportController.updateResolution,
 );
 router.post('/:id/close', requirePermission(PERMISSIONS.CASE_REPORT_CLOSE), caseReportController.close);
-router.post('/:id/request-vn', requirePermission(PERMISSIONS.CASE_REPORT_MANAGE), caseReportController.requestViolationNotice);
+router.post('/:id/request-vn', requirePermission(PERMISSIONS.CASE_REPORT_MANAGE), validateBody(requestVNSchema), caseReportController.requestViolationNotice);
 router.post(
   '/:id/attachments',
   requirePermission(PERMISSIONS.CASE_REPORT_VIEW),

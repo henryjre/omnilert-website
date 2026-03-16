@@ -65,6 +65,15 @@ export const PERMISSIONS = {
   CASE_REPORT_CREATE: 'case_report.create',
   CASE_REPORT_CLOSE: 'case_report.close',
   CASE_REPORT_MANAGE: 'case_report.manage',
+
+  // Violation Notices
+  VIOLATION_NOTICE_VIEW: 'violation_notice.view',
+  VIOLATION_NOTICE_CREATE: 'violation_notice.create',
+  VIOLATION_NOTICE_CONFIRM: 'violation_notice.confirm',
+  VIOLATION_NOTICE_REJECT: 'violation_notice.reject',
+  VIOLATION_NOTICE_ISSUE: 'violation_notice.issue',
+  VIOLATION_NOTICE_COMPLETE: 'violation_notice.complete',
+  VIOLATION_NOTICE_MANAGE: 'violation_notice.manage',
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -174,6 +183,18 @@ export const PERMISSION_CATEGORIES: Record<string, { label: string; permissions:
         PERMISSIONS.CASE_REPORT_CREATE,
         PERMISSIONS.CASE_REPORT_CLOSE,
         PERMISSIONS.CASE_REPORT_MANAGE,
+      ],
+    },
+    violation_notice: {
+      label: 'Violation Notices',
+      permissions: [
+        PERMISSIONS.VIOLATION_NOTICE_VIEW,
+        PERMISSIONS.VIOLATION_NOTICE_CREATE,
+        PERMISSIONS.VIOLATION_NOTICE_CONFIRM,
+        PERMISSIONS.VIOLATION_NOTICE_REJECT,
+        PERMISSIONS.VIOLATION_NOTICE_ISSUE,
+        PERMISSIONS.VIOLATION_NOTICE_COMPLETE,
+        PERMISSIONS.VIOLATION_NOTICE_MANAGE,
       ],
     },
   };

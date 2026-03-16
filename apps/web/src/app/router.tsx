@@ -27,6 +27,7 @@ import { EmployeeVerificationsPage } from '@/features/employee-verifications/pag
 import { EmployeeProfilesPage } from '@/features/employee-profiles/pages/EmployeeProfilesPage';
 import { StoreAuditsPage } from '@/features/store-audits/pages/StoreAuditsPage';
 import { CaseReportsPage } from '@/features/case-reports/pages/CaseReportsPage';
+import { ViolationNoticesPage } from '@/features/violation-notices/pages/ViolationNoticesPage';
 import { PERMISSIONS } from '@omnilert/shared';
 
 export const router = createBrowserRouter([
@@ -176,6 +177,14 @@ export const router = createBrowserRouter([
             element: (
               <PermissionGuard permission={PERMISSIONS.CASE_REPORT_VIEW}>
                 <CaseReportsPage />
+              </PermissionGuard>
+            ),
+          },
+          {
+            path: 'violation-notices',
+            element: (
+              <PermissionGuard permission={PERMISSIONS.VIOLATION_NOTICE_VIEW}>
+                <ViolationNoticesPage />
               </PermissionGuard>
             ),
           },

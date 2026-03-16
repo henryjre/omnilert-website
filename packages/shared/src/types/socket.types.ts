@@ -1,6 +1,7 @@
 import type { PosVerification, PosSession } from './pos.types';
 import type { CaseAttachment, CaseMessage } from './caseReport.types';
 import type { StoreAudit } from './storeAudit.types';
+import type { ViolationNoticeMessage } from './violationNotice.types.js';
 
 export interface ServerToClientEvents {
   'pos-verification:new': (data: PosVerification) => void;
@@ -78,6 +79,7 @@ export interface ServerToClientEvents {
     auditor_name: string | null;
   }) => void;
   'store-audit:completed': (data: { id: string }) => void;
+  'store-audit:updated': (data: { id: string }) => void;
 
   'case-report:created': (data: {
     id: string;
@@ -106,6 +108,41 @@ export interface ServerToClientEvents {
   }) => void;
   'case-report:message:edited': (data: { caseId: string; message: CaseMessage }) => void;
   'case-report:message:deleted': (data: { caseId: string; messageId: string }) => void;
+
+  'violation-notice:created': (data: {
+    id: string;
+    vnNumber: number;
+    status: string;
+    category: string;
+    createdBy: string;
+  }) => void;
+  'violation-notice:updated': (data: {
+    id: string;
+    vnNumber: number;
+    field: string;
+  }) => void;
+  'violation-notice:status-changed': (data: {
+    id: string;
+    vnNumber: number;
+    status: string;
+  }) => void;
+  'violation-notice:message': (data: {
+    violationNoticeId: string;
+    message: ViolationNoticeMessage;
+  }) => void;
+  'violation-notice:reaction': (data: {
+    violationNoticeId: string;
+    messageId: string;
+    reactions: Array<{ emoji: string; users: Array<{ id: string; name: string }> }>;
+  }) => void;
+  'violation-notice:message:edited': (data: {
+    violationNoticeId: string;
+    message: ViolationNoticeMessage;
+  }) => void;
+  'violation-notice:message:deleted': (data: {
+    violationNoticeId: string;
+    messageId: string;
+  }) => void;
 }
 
 export interface ClientToServerEvents {
