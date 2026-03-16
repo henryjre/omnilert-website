@@ -20,6 +20,7 @@ export function getRateZone(rate: number): EpiZone {
 }
 
 export function getAovZone(yours: number, branchAvg: number): EpiZone {
+  if (branchAvg === 0) return 'amber';
   const ratio = yours / branchAvg;
   if (ratio >= 1.05) return 'green';
   if (ratio >= 0.95) return 'amber';

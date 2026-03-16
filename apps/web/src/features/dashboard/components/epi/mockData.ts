@@ -33,8 +33,8 @@ export const MOCK_EPI_DATA: EpiDashboardData = {
 const mockCriteria = (epiScore: number) => ({
   sqaaScore: Math.min(5, epiScore / 25),
   scsaScore: Math.min(5, epiScore / 28),
-  workplaceRelationsScore: null as number | null,
-  productivityRate: null as number | null,
+  workplaceRelationsScore: null,
+  productivityRate: null,
   cashierAccuracyRate: Math.min(100, epiScore * 0.85),
   attendanceRate: Math.min(100, epiScore * 0.82),
   aov: Math.round(epiScore * 2.2),
@@ -57,3 +57,19 @@ export const MOCK_LEADERBOARD: LeaderboardEntry[] = [
   { id: '11', rank: 11, firstName: 'Jose', lastName: 'Morales', avatarUrl: null, epiScore: 99.4, isCurrentUser: false, criteria: mockCriteria(99.4) },
   { id: '12', rank: 12, firstName: 'Grace', lastName: 'Rivera', avatarUrl: null, epiScore: 97.3, isCurrentUser: false, criteria: mockCriteria(97.3) },
 ];
+
+// Rank-12 variant for testing the "outside top 10" separator feature:
+// export const MOCK_LEADERBOARD_RANK12: LeaderboardEntry[] = [
+//   { id: '1', rank: 1, firstName: 'Maria', lastName: 'Santos', avatarUrl: null, epiScore: 124.1, isCurrentUser: false, criteria: mockCriteria(124.1) },
+//   { id: '2', rank: 2, firstName: 'Juan', lastName: 'Dela Cruz', avatarUrl: null, epiScore: 119.7, isCurrentUser: false, criteria: mockCriteria(119.7) },
+//   { id: '3', rank: 3, firstName: 'Ana', lastName: 'Reyes', avatarUrl: null, epiScore: 116.3, isCurrentUser: false, criteria: mockCriteria(116.3) },
+//   { id: '4', rank: 4, firstName: 'Pedro', lastName: 'Garcia', avatarUrl: null, epiScore: 114.8, isCurrentUser: false, criteria: mockCriteria(114.8) },
+//   { id: '5', rank: 5, firstName: 'Rosa', lastName: 'Flores', avatarUrl: null, epiScore: 113.2, isCurrentUser: false, criteria: mockCriteria(113.2) },
+//   { id: '6', rank: 6, firstName: 'Carlos', lastName: 'Lopez', avatarUrl: null, epiScore: 110.9, isCurrentUser: false, criteria: mockCriteria(110.9) },
+//   { id: '7', rank: 7, firstName: 'Liza', lastName: 'Cruz', avatarUrl: null, epiScore: 108.4, isCurrentUser: false, criteria: mockCriteria(108.4) },
+//   { id: '8', rank: 8, firstName: 'Ramon', lastName: 'Torres', avatarUrl: null, epiScore: 106.1, isCurrentUser: false, criteria: mockCriteria(106.1) },
+//   { id: '9', rank: 9, firstName: 'Elena', lastName: 'Ramos', avatarUrl: null, epiScore: 104.5, isCurrentUser: false, criteria: mockCriteria(104.5) },
+//   { id: '10', rank: 10, firstName: 'Jose', lastName: 'Morales', avatarUrl: null, epiScore: 102.8, isCurrentUser: false, criteria: mockCriteria(102.8) },
+//   { id: '11', rank: 11, firstName: 'Grace', lastName: 'Rivera', avatarUrl: null, epiScore: 99.4, isCurrentUser: false, criteria: mockCriteria(99.4) },
+//   { id: '12', rank: 12, firstName: 'You', lastName: '', avatarUrl: null, epiScore: 97.3, isCurrentUser: true, criteria: MOCK_EPI_DATA.criteria },
+// ];
