@@ -1,4 +1,3 @@
-import React from 'react';
 import type { EpiZone } from './types';
 
 export function getEpiZone(score: number): EpiZone {
@@ -91,10 +90,3 @@ export function getGreeting(): string {
   return 'Good evening';
 }
 
-export function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
-      {children}
-    </p>
-  );
-}
