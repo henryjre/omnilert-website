@@ -5,6 +5,8 @@ import { env } from './config/env.js';
 import { db } from './config/database.js';
 import { initAttendanceQueue, stopAttendanceQueue } from './services/attendanceQueue.service.js';
 import { initComplianceCron, stopComplianceCron } from './services/complianceCron.service.js';
+import { initPeerEvaluationQueue, stopPeerEvaluationQueue } from './services/peerEvaluationQueue.service.js';
+import { initPeerEvaluationCron, stopPeerEvaluationCron } from './services/peerEvaluationCron.service.js';
 import { verifyMailConnection } from './services/mail.service.js';
 import { logger } from './utils/logger.js';
 import fs from 'fs';
@@ -37,6 +39,18 @@ async function shutdown(signal: string): Promise<void> {
     logger.error({ err: error }, 'Failed to stop compliance cron');
   }
 
+  try {
+    await stopPeerEvaluationQueue();
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to stop peer evaluation queue');
+  }
+
+  try {
+    stopPeerEvaluationCron();
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to stop peer evaluation cron');
+  }
+
   await new Promise<void>((resolve) => {
     server.close(() => resolve());
   });
@@ -54,6 +68,8 @@ async function bootstrap(): Promise<void> {
 
   await initAttendanceQueue();
   await initComplianceCron();
+  await initPeerEvaluationQueue();
+  initPeerEvaluationCron();
   await verifyMailConnection();
 
   server.listen(env.PORT, () => {

@@ -2,6 +2,8 @@ import type { Request, Response, NextFunction } from 'express';
 import { AppError } from '../middleware/errorHandler.js';
 import { getIO } from '../config/socket.js';
 import { db } from '../config/database.js';
+import { enqueuePeerEvaluationJob } from '../services/peerEvaluationQueue.service.js';
+import { logger } from '../utils/logger.js';
 
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
@@ -130,6 +132,21 @@ export async function endShift(req: Request, res: Response, next: NextFunction) 
         odoo_payload: JSON.stringify({}),
       })
       .returning('*');
+
+    // Enqueue peer evaluation check (fire-and-forget)
+    const shiftBranch = await tenantDb('branches').where({ id: shift.branch_id }).first('odoo_branch_id');
+    if (shiftBranch?.odoo_branch_id && shift.user_id) {
+      enqueuePeerEvaluationJob({
+        companyDbName: req.user!.companyDbName,
+        companyId: req.companyContext!.companyId,
+        shiftId: id,
+        branchId: shift.branch_id,
+        shiftUserId: shift.user_id,
+        shiftStart: String(shift.shift_start),
+        shiftEnd: new Date().toISOString(),
+        branchOdooId: String(shiftBranch.odoo_branch_id),
+      }).catch((err) => logger.error({ err }, 'Failed to enqueue peer evaluation job'));
+    }
 
     // Check for overtime: total_worked_hours > allocated_hours
     const totalWorked = Number(shift.total_worked_hours ?? 0);
