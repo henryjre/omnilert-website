@@ -1,9 +1,49 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { StoreAudit } from '@omnilert/shared';
+import type { CssCriteriaScores, StoreAudit } from '@omnilert/shared';
 import { ExternalLink } from 'lucide-react';
 import { Button } from '@/shared/components/ui/Button';
 import { StarRatingInput } from './StarRatingInput';
+
+const CSS_CRITERIA: { key: keyof CssCriteriaScores; label: string; description: string }[] = [
+  {
+    key: 'greeting',
+    label: 'Greeting & First Impression',
+    description: 'Acknowledgment within 5 sec, eye contact, verbal greeting, positive expression',
+  },
+  {
+    key: 'order_accuracy',
+    label: 'Order Accuracy & Confirmation',
+    description: 'Repeats/confirms order, clarifies unclear requests, attentive posture',
+  },
+  {
+    key: 'suggestive_selling',
+    label: 'Suggestive Selling / Revenue Initiative',
+    description: 'At least one upsell attempt, offer of add-on, natural delivery',
+  },
+  {
+    key: 'service_efficiency',
+    label: 'Service Efficiency & Flow',
+    description: 'Smooth workflow, no idle pauses, appropriate speed, organized handling',
+  },
+  {
+    key: 'professionalism',
+    label: 'Professionalism & Closing Experience',
+    description: 'Polite tone, respectful body language, proper handover, thanked customer',
+  },
+];
+
+type CriteriaState = Record<keyof CssCriteriaScores, number | null>;
+
+function buildInitialCriteria(scores: CssCriteriaScores | null): CriteriaState {
+  return {
+    greeting: scores?.greeting ?? null,
+    order_accuracy: scores?.order_accuracy ?? null,
+    suggestive_selling: scores?.suggestive_selling ?? null,
+    service_efficiency: scores?.service_efficiency ?? null,
+    professionalism: scores?.professionalism ?? null,
+  };
+}
 
 function MarkdownReport({ text }: { text: string }) {
   const lines = text.split('\n');
@@ -19,7 +59,6 @@ function MarkdownReport({ text }: { text: string }) {
     const isBullet = /^[-*]\s/.test(line);
     const content = isBullet ? line.replace(/^[-*]\s/, '') : line;
 
-    // Replace **bold** with <strong>
     const renderInline = (raw: string): React.ReactNode[] => {
       const parts = raw.split(/(\*\*[^*]+\*\*)/g);
       return parts.map((part, i) =>
@@ -79,17 +118,66 @@ export function CssAuditDetailPanel({
   actionLoading: boolean;
   panelError: string;
   onProcess: () => void;
-  onComplete: (payload: { star_rating: number; audit_log: string }) => void;
+  onComplete: (payload: { criteria_scores: CssCriteriaScores; audit_log: string }) => void;
   onRequestVN?: () => void;
 }) {
   const navigate = useNavigate();
-  const [starRating, setStarRating] = useState<number | null>(audit.css_star_rating ?? null);
-  const [auditLog, setAuditLog] = useState(audit.css_audit_log ?? '');
+  const draftKey = `css-audit-draft-${audit.id}`;
+
+  const [criteriaScores, setCriteriaScores] = useState<CriteriaState>(() => {
+    if (audit.status === 'processing') {
+      try {
+        const saved = localStorage.getItem(draftKey);
+        if (saved) {
+          const parsed = JSON.parse(saved) as { criteriaScores?: CriteriaState };
+          if (parsed.criteriaScores) return parsed.criteriaScores;
+        }
+      } catch { /* ignore */ }
+    }
+    return buildInitialCriteria(audit.css_criteria_scores);
+  });
+  const [auditLog, setAuditLog] = useState(() => {
+    if (audit.status === 'processing') {
+      try {
+        const saved = localStorage.getItem(draftKey);
+        if (saved) {
+          const parsed = JSON.parse(saved) as { auditLog?: string };
+          if (typeof parsed.auditLog === 'string') return parsed.auditLog;
+        }
+      } catch { /* ignore */ }
+    }
+    return audit.css_audit_log ?? '';
+  });
 
   useEffect(() => {
-    setStarRating(audit.css_star_rating ?? null);
+    if (audit.status !== 'processing') return;
+    try {
+      localStorage.setItem(draftKey, JSON.stringify({ criteriaScores, auditLog }));
+    } catch { /* ignore */ }
+  }, [draftKey, criteriaScores, auditLog, audit.status]);
+
+  useEffect(() => {
+    const saved = audit.status === 'processing' ? (() => {
+      try { return localStorage.getItem(draftKey); } catch { return null; }
+    })() : null;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as { criteriaScores?: CriteriaState; auditLog?: string };
+        setCriteriaScores(parsed.criteriaScores ?? buildInitialCriteria(audit.css_criteria_scores));
+        setAuditLog(parsed.auditLog ?? audit.css_audit_log ?? '');
+        return;
+      } catch { /* ignore */ }
+    }
+    setCriteriaScores(buildInitialCriteria(audit.css_criteria_scores));
     setAuditLog(audit.css_audit_log ?? '');
-  }, [audit.id, audit.css_star_rating, audit.css_audit_log]);
+  }, [audit.id, audit.css_criteria_scores, audit.css_audit_log, audit.status, draftKey]);
+
+  const allScored = CSS_CRITERIA.every((c) => criteriaScores[c.key] !== null);
+  const computedAverage = allScored
+    ? Math.round(
+        (CSS_CRITERIA.reduce((sum, c) => sum + (criteriaScores[c.key] as number), 0) / 5) * 100,
+      ) / 100
+    : null;
 
   const orderLines = Array.isArray(audit.css_order_lines) ? audit.css_order_lines : [];
 
@@ -140,10 +228,26 @@ export function CssAuditDetailPanel({
 
         {audit.status === 'processing' && canComplete && (
           <div className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
-            <div>
-              <p className="mb-2 text-sm font-medium text-gray-800">Star Rating</p>
-              <StarRatingInput value={starRating} onChange={setStarRating} disabled={actionLoading} />
+            <p className="text-sm font-semibold text-gray-800">CSS Criteria Scores</p>
+            <div className="space-y-3">
+              {CSS_CRITERIA.map((criterion) => (
+                <div key={criterion.key} className="rounded-lg border border-gray-200 bg-white p-3">
+                  <p className="text-sm font-medium text-gray-800">{criterion.label}</p>
+                  <p className="mb-2 text-xs text-gray-500">{criterion.description}</p>
+                  <StarRatingInput
+                    value={criteriaScores[criterion.key]}
+                    onChange={(value) => setCriteriaScores((prev) => ({ ...prev, [criterion.key]: value }))}
+                    disabled={actionLoading}
+                  />
+                </div>
+              ))}
             </div>
+            {computedAverage !== null && (
+              <div className="flex items-center gap-2 rounded-lg bg-primary-50 px-3 py-2">
+                <span className="text-sm text-gray-600">Final Score:</span>
+                <span className="text-sm font-semibold text-primary-700">{computedAverage.toFixed(2)} / 5</span>
+              </div>
+            )}
             <div>
               <label className="mb-2 block text-sm font-medium text-gray-800">Audit Log</label>
               <textarea
@@ -169,10 +273,32 @@ export function CssAuditDetailPanel({
                 {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(audit.monetary_reward ?? 0))}
               </p>
             </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Star Rating</p>
-              <p className="text-sm text-gray-900">{audit.css_star_rating ?? '—'} / 5</p>
-            </div>
+            {audit.css_criteria_scores ? (
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Criteria Scores</p>
+                <div className="space-y-1">
+                  {CSS_CRITERIA.map((criterion) => (
+                    <div key={criterion.key} className="flex items-center justify-between text-sm">
+                      <span className="text-gray-700">{criterion.label}</span>
+                      <span className="font-medium text-gray-900">
+                        {audit.css_criteria_scores![criterion.key]} / 5
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-2 flex items-center justify-between border-t border-gray-200 pt-2 text-sm">
+                  <span className="font-medium text-gray-700">Overall Average</span>
+                  <span className="font-semibold text-primary-700">
+                    {typeof audit.css_star_rating === 'number' ? audit.css_star_rating.toFixed(2) : audit.css_star_rating} / 5
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Star Rating</p>
+                <p className="text-sm text-gray-900">{audit.css_star_rating ?? '—'} / 5</p>
+              </div>
+            )}
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Audit Log</p>
               <p className="whitespace-pre-wrap text-sm text-gray-800">{audit.css_audit_log || '—'}</p>
@@ -215,10 +341,14 @@ export function CssAuditDetailPanel({
             className="w-full"
             variant="success"
             onClick={() => {
-              if (!starRating || !auditLog.trim()) return;
-              onComplete({ star_rating: starRating, audit_log: auditLog.trim() });
+              if (!allScored || !auditLog.trim()) return;
+              try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
+              onComplete({
+                criteria_scores: criteriaScores as CssCriteriaScores,
+                audit_log: auditLog.trim(),
+              });
             }}
-            disabled={actionLoading || !starRating || !auditLog.trim()}
+            disabled={actionLoading || !allScored || !auditLog.trim()}
           >
             {actionLoading ? 'Completing...' : 'Audit Complete'}
           </Button>

@@ -7,6 +7,7 @@ import { Button } from '@/shared/components/ui/Button';
 import { api } from '@/shared/services/api.client';
 import { useNotificationStore } from '@/shared/store/notificationStore';
 import { ShiftExchangeDetailModal } from '@/features/shift-exchange/components/ShiftExchangeDetailModal';
+import { PeerEvaluationModal } from '../../peer-evaluations/components/PeerEvaluationModal';
 import { Bell, Check, X } from 'lucide-react';
 
 function fmtDateTime(dateStr: string): string {
@@ -61,6 +62,12 @@ function getShiftExchangeId(linkUrl: string | null | undefined): string | null {
   return match?.[1] ?? null;
 }
 
+function getPeerEvaluationId(linkUrl: string | null | undefined): string | null {
+  if (!linkUrl) return null;
+  const match = linkUrl.match(/[?&]peerEvaluationId=([0-9a-f-]{36})/i);
+  return match?.[1] ?? null;
+}
+
 const PAGE_SIZE = 10;
 
 export function EmployeeNotificationsTab() {
@@ -83,6 +90,7 @@ export function EmployeeNotificationsTab() {
   const [confirmVerify, setConfirmVerify] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [shiftExchangeRequestId, setShiftExchangeRequestId] = useState<string | null>(null);
+  const [peerEvalId, setPeerEvalId] = useState<string | null>(null);
 
   useEffect(() => {
     api
@@ -131,6 +139,10 @@ export function EmployeeNotificationsTab() {
     const shiftExchangeId = params.get('shiftExchangeId');
     if (shiftExchangeId) {
       setShiftExchangeRequestId(shiftExchangeId);
+    }
+    const peerEvaluationId = params.get('peerEvaluationId');
+    if (peerEvaluationId) {
+      setPeerEvalId(peerEvaluationId);
     }
   }, [location.search]);
 
@@ -238,6 +250,7 @@ export function EmployeeNotificationsTab() {
         {pagedNotifications.map((n) => {
           const tokenPayId = getTokenPayVerificationId(n.link_url);
           const shiftExchangeId = getShiftExchangeId(n.link_url);
+          const peerEvaluationId = getPeerEvaluationId(n.link_url);
           return (
             <div key={n.id} ref={(el) => { cardRefs.current[n.id] = el; }}>
             <Card className={`transition-all duration-300 ${n.is_read ? 'opacity-60' : ''} ${highlightId === n.id ? 'ring-2 ring-primary-400 animate-pulse' : ''}`}>
@@ -267,6 +280,15 @@ export function EmployeeNotificationsTab() {
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
+                    {peerEvaluationId && (
+                      <Button
+                        variant="secondary"
+                        onClick={() => setPeerEvalId(peerEvaluationId)}
+                        className="text-xs"
+                      >
+                        Rate Peer
+                      </Button>
+                    )}
                     {shiftExchangeId && (
                       <Button
                         variant="secondary"
@@ -554,6 +576,12 @@ export function EmployeeNotificationsTab() {
             setNotifications(res.data.data || []);
           });
         }}
+      />
+
+      <PeerEvaluationModal
+        isOpen={Boolean(peerEvalId)}
+        initialEvaluationId={peerEvalId}
+        onClose={() => setPeerEvalId(null)}
       />
     </div>
   );

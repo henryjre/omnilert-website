@@ -27,6 +27,7 @@ import { authenticate } from '../middleware/auth.js';
 import { resolveCompany } from '../middleware/companyResolver.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { PERMISSIONS } from '@omnilert/shared';
+import { runComplianceCron } from '../services/complianceCron.service.js';
 
 const router = Router();
 
@@ -34,6 +35,14 @@ const router = Router();
 router.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+// Dev-only: manual cron triggers
+if (process.env.NODE_ENV !== 'production') {
+  router.post('/dev/trigger/compliance-cron', (_req, res) => {
+    void runComplianceCron();
+    res.json({ triggered: true });
+  });
+}
 
 // Auth routes
 router.use('/auth', authRoutes);

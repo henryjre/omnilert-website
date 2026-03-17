@@ -23,7 +23,7 @@ export async function runPeerEvaluationExpiryRun(): Promise<void> {
           getIO()
             .of('/peer-evaluations')
             .to(`company:${company.id}`)
-            .emit('peer-evaluation:expired');
+            .emit('peer-evaluation:expired', { count });
         } catch {
           logger.warn(
             { companyId: company.id },

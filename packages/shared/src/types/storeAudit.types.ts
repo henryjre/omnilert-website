@@ -1,4 +1,12 @@
 export type StoreAuditType = 'customer_service' | 'compliance';
+
+export interface CssCriteriaScores {
+  greeting: number;           // 1-5
+  order_accuracy: number;     // 1-5
+  suggestive_selling: number; // 1-5
+  service_efficiency: number; // 1-5
+  professionalism: number;    // 1-5
+}
 export type StoreAuditStatus = 'pending' | 'processing' | 'completed';
 
 export interface StoreAuditOrderLine {
@@ -39,6 +47,7 @@ export interface StoreAudit {
   css_order_lines: StoreAuditOrderLine[] | null;
   css_payments: StoreAuditPayment[] | null;
   css_star_rating: number | null;
+  css_criteria_scores: CssCriteriaScores | null;
   css_audit_log: string | null;
   css_ai_report: string | null;
 
@@ -47,8 +56,7 @@ export interface StoreAudit {
   comp_employee_avatar: string | null;
   comp_check_in_time: string | null;
   comp_extra_fields: Record<string, unknown> | null;
-  comp_non_idle: boolean | null;
-  comp_cellphone: boolean | null;
+  comp_productivity_rate: boolean | null;
   comp_uniform: boolean | null;
   comp_hygiene: boolean | null;
   comp_sop: boolean | null;

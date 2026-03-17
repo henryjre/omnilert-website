@@ -15,6 +15,10 @@ interface TrendChartProps {
   history: EpiMonthEntry[];
   zone: EpiZone;
   height?: number;
+  /** Override stroke color — use for hero card where bg is themed */
+  strokeColor?: string;
+  /** Override axis tick color */
+  tickColor?: string;
 }
 
 type CustomTooltipProps = TooltipProps<number, string> & {
@@ -32,8 +36,10 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
   );
 }
 
-export function TrendChart({ history, zone, height = 120 }: TrendChartProps) {
+export function TrendChart({ history, zone, height = 120, strokeColor, tickColor }: TrendChartProps) {
   const colors = getZoneColors(zone);
+  const stroke = strokeColor ?? colors.stroke;
+  const tick = tickColor ?? '#9ca3af';
   const gradientId = `gradient-${zone}-${useId().replace(/:/g, '')}`;
 
   return (
@@ -47,13 +53,13 @@ export function TrendChart({ history, zone, height = 120 }: TrendChartProps) {
         <AreaChart data={history} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={colors.stroke} stopOpacity={0.25} />
-              <stop offset="95%" stopColor={colors.stroke} stopOpacity={0} />
+              <stop offset="5%" stopColor={stroke} stopOpacity={0.25} />
+              <stop offset="95%" stopColor={stroke} stopOpacity={0} />
             </linearGradient>
           </defs>
           <XAxis
             dataKey="month"
-            tick={{ fontSize: 11, fill: '#9ca3af' }}
+            tick={{ fontSize: 11, fill: tick }}
             axisLine={false}
             tickLine={false}
           />
@@ -61,11 +67,11 @@ export function TrendChart({ history, zone, height = 120 }: TrendChartProps) {
           <Area
             type="monotone"
             dataKey="score"
-            stroke={colors.stroke}
+            stroke={stroke}
             strokeWidth={2}
             fill={`url(#${gradientId})`}
             dot={false}
-            activeDot={{ r: 4, stroke: colors.stroke, strokeWidth: 2, fill: 'white' }}
+            activeDot={{ r: 4, stroke: stroke, strokeWidth: 2, fill: 'white' }}
             isAnimationActive
             animationDuration={1500}
             animationEasing="ease-out"

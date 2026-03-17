@@ -40,12 +40,11 @@ export type PeerEvaluationWithUsers = PeerEvaluationRow & {
 
 export interface ListPeerEvaluationsFilters {
   status?: string;
-  evaluatorName?: string;
-  evaluatedName?: string;
   dateFrom?: string;
   dateTo?: string;
   sortBy?: string;
   sortOrder?: 'asc' | 'desc';
+  userId?: string;
   page?: number;
   pageSize?: number;
 }
@@ -82,11 +81,16 @@ export async function listPeerEvaluations(
     status,
     dateFrom,
     dateTo,
-    sortBy = 'created_at',
+    sortBy,
     sortOrder = 'desc',
+    userId,
     page = 1,
     pageSize: rawPageSize = 20,
   } = filters;
+
+  // 'score' sorts by average of q1+q2+q3
+  const ALLOWED_SORT_FIELDS = ['created_at', 'submitted_at', 'status', 'overlap_minutes'];
+  const safeSortBy = sortBy === 'score' ? null : (ALLOWED_SORT_FIELDS.includes(sortBy ?? '') ? sortBy! : 'created_at');
 
   const pageSize = Math.min(rawPageSize, 100);
   const offset = (page - 1) * pageSize;
@@ -96,16 +100,21 @@ export async function listPeerEvaluations(
     if (status) q = q.where('status', status);
     if (dateFrom) q = q.where('created_at', '>=', dateFrom);
     if (dateTo) q = q.where('created_at', '<=', dateTo);
+    if (userId) q = q.where('evaluated_user_id', userId);
     return q;
   };
 
+  const rowsQuery = buildQuery().limit(pageSize).offset(offset).select('*');
+  if (safeSortBy === null) {
+    // sort by average score
+    rowsQuery.orderByRaw(`(q1_score + q2_score + q3_score) / 3.0 ${sortOrder}`);
+  } else {
+    rowsQuery.orderBy(safeSortBy, sortOrder);
+  }
+
   const [countResult, rows] = await Promise.all([
     buildQuery().count('id as count').first(),
-    buildQuery()
-      .orderBy(sortBy, sortOrder)
-      .limit(pageSize)
-      .offset(offset)
-      .select('*'),
+    rowsQuery,
   ]);
 
   const total = Number((countResult as any)?.count ?? 0);

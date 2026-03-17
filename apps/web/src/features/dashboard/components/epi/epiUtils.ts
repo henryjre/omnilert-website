@@ -2,7 +2,7 @@ import type { EpiZone } from './types';
 
 export function getEpiZone(score: number): EpiZone {
   if (score >= 100) return 'green';
-  if (score >= 80) return 'amber';
+  if (score >= 75) return 'amber';
   return 'red';
 }
 

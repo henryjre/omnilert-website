@@ -2,22 +2,21 @@ import { motion } from 'framer-motion';
 import type { EpiCriteria } from './types';
 import { getScoreZone, getZoneColors } from './epiUtils';
 import { SectionLabel } from './SectionLabel';
-import { RadialGauge } from './RadialGauge';
+import { StarRating } from './StarRating';
 import { Card, CardBody } from '@/shared/components/ui/Card';
 
 interface PerformanceScoresSectionProps {
   criteria: EpiCriteria;
 }
 
-interface ScoreTileProps {
+interface StarTileProps {
   label: string;
   score: number | null;
-  max: number;
   contribution: string;
   delay: number;
 }
 
-function ScoreTile({ label, score, max, contribution, delay }: ScoreTileProps) {
+function StarTile({ label, score, contribution, delay }: StarTileProps) {
   const zone = score !== null ? getScoreZone(score) : 'amber';
   const colors = getZoneColors(zone);
 
@@ -26,20 +25,13 @@ function ScoreTile({ label, score, max, contribution, delay }: ScoreTileProps) {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay, ease: 'easeOut' }}
+      className="h-full"
     >
-      <Card>
-        <CardBody className="flex flex-col items-center gap-2 py-6 text-center">
+      <Card className="h-full">
+        <CardBody className="flex h-full flex-col items-center justify-center gap-3 py-6 text-center">
           {score !== null ? (
             <>
-              <RadialGauge
-                value={score}
-                max={max}
-                size={80}
-                strokeWidth={8}
-                zone={zone}
-                decimals={1}
-                delay={delay}
-              />
+              <StarRating score={score} zone={zone} delay={delay} size={24} gap={5} />
               <div>
                 <p className="text-xs font-medium text-gray-700 dark:text-gray-300">{label}</p>
                 <p className={`text-xs ${colors.text} ${colors.darkText}`}>{contribution}</p>
@@ -47,8 +39,16 @@ function ScoreTile({ label, score, max, contribution, delay }: ScoreTileProps) {
             </>
           ) : (
             <>
-              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
-                <span className="text-2xl font-bold text-gray-400">—</span>
+              {/* Empty state: 5 hollow stars */}
+              <div className="flex items-center gap-1.5">
+                {Array.from({ length: 5 }, (_, i) => (
+                  <svg key={i} width={24} height={24} viewBox="0 0 24 24">
+                    <path
+                      d="M12 2.25l2.47 5.01 5.53.8-4 3.9.94 5.5L12 14.77l-4.94 2.69.94-5.5-4-3.9 5.53-.8z"
+                      fill="#e5e7eb"
+                    />
+                  </svg>
+                ))}
               </div>
               <div>
                 <p className="text-xs font-medium text-gray-700 dark:text-gray-300">{label}</p>
@@ -66,32 +66,28 @@ export function PerformanceScoresSection({ criteria }: PerformanceScoresSectionP
   return (
     <div>
       <SectionLabel>Performance Scores</SectionLabel>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <ScoreTile
-          label="Avg. Service Crew QA Audit"
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:grid-rows-2 items-stretch">
+        <StarTile
+          label="Customer Service Score"
           score={criteria.sqaaScore}
-          max={5}
           contribution="Contributes to EPI"
           delay={0}
         />
-        <ScoreTile
-          label="Avg. Store CCTV Spot Audit"
+        <StarTile
+          label="Workplace Relations Score"
           score={criteria.scsaScore}
-          max={5}
           contribution="Contributes to EPI"
           delay={0.15}
         />
-        <ScoreTile
-          label="Workplace Relations"
+        <StarTile
+          label="Professional Conduct Score"
           score={criteria.workplaceRelationsScore}
-          max={5}
           contribution="Contributes to EPI"
           delay={0.3}
         />
-        <ScoreTile
-          label="Productivity Rate"
-          score={criteria.productivityRate}
-          max={100}
+        <StarTile
+          label="Compliance Score"
+          score={criteria.productivityRate !== null ? criteria.productivityRate / 20 : null}
           contribution="Contributes to EPI"
           delay={0.45}
         />

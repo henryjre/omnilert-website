@@ -7,14 +7,21 @@ import { requirePermission } from '../middleware/rbac.js';
 import { validateBody } from '../middleware/validateRequest.js';
 import * as storeAuditController from '../controllers/storeAudit.controller.js';
 
+const cssCriteriaScoresSchema = z.object({
+  greeting: z.number().int().min(1).max(5),
+  order_accuracy: z.number().int().min(1).max(5),
+  suggestive_selling: z.number().int().min(1).max(5),
+  service_efficiency: z.number().int().min(1).max(5),
+  professionalism: z.number().int().min(1).max(5),
+});
+
 const cssCompleteSchema = z.object({
-  star_rating: z.number().int().min(1).max(5),
+  criteria_scores: cssCriteriaScoresSchema,
   audit_log: z.string().min(1),
 });
 
 const complianceCompleteSchema = z.object({
-  non_idle: z.boolean(),
-  cellphone: z.boolean(),
+  productivity_rate: z.boolean(),
   uniform: z.boolean(),
   hygiene: z.boolean(),
   sop: z.boolean(),

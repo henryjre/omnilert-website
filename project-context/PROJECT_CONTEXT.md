@@ -112,6 +112,10 @@ Master DB key tables:
 - `employee_identities` (global identity reuse by normalized email)
 - `users` (canonical global auth users)
   - includes `last_company_id` (server-side last-used company context for auto company selection on login)
+  - `css_audits` JSONB array — CSS star rating log per user, appended on audit completion
+  - `compliance_audit` JSONB object — latest compliance audit answers, replaced on audit completion
+  - `violation_notices` JSONB array — completed VN records targeting this user, each entry: `{ vn_id, vn_number, company_id, description, completed_at }`. Appended by `violationNotice.service.ts` on VN completion (best-effort, non-blocking).
+  - `rewards` JSONB array — reserved for future use, default `[]`
 - `permissions`, `roles`, `role_permissions`, `user_roles` (global RBAC catalogs + assignments)
 - `user_company_access` (which companies a global user can access)
 - `user_company_branches` (per-company branch scope with `resident|borrow` assignment type)
@@ -178,6 +182,7 @@ Master migrations (`apps/api/src/migrations/master`):
 - `010_add_audit_result_columns.ts`
 - `011_case_report_permissions.ts` (seeds case_report.view/create/close/manage; assigns to system roles)
 - `012_violation_notice_permissions.ts` (seeds violation_notice.view/create/confirm/reject/issue/complete/manage; assigns all to Admin + Management; Service Crew gets view + create)
+- `013_add_violation_notice_and_rewards_columns.ts` (adds `violation_notices` JSONB array and `rewards` JSONB array to master `users`; both default `[]`; idempotent via hasColumn)
 
 Tenant migrations (`apps/api/src/migrations/tenant`):
 

@@ -1,10 +1,49 @@
 import { motion } from 'framer-motion';
-import type { EpiCriteria } from './types';
+import { CalendarCheck, Clock, Zap, ShoppingCart } from 'lucide-react';
+import type { EpiCriteria, EpiZone } from './types';
 import { getRateZone, getAovZone, getZoneColors } from './epiUtils';
 import { SectionLabel } from './SectionLabel';
 import { RadialGauge } from './RadialGauge';
 import { AnimatedCounter } from './AnimatedCounter';
 import { Card, CardBody } from '@/shared/components/ui/Card';
+
+function getStatusLabel(zone: EpiZone): string {
+  switch (zone) {
+    case 'green': return 'On Track';
+    case 'amber': return 'At Risk';
+    case 'red': return 'Critical';
+  }
+}
+
+function ZoneBadge({ zone }: { zone: EpiZone }) {
+  const colors = getZoneColors(zone);
+  return (
+    <span
+      className="rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-widest"
+      style={{ backgroundColor: `${colors.stroke}18`, color: colors.stroke }}
+    >
+      {getStatusLabel(zone)}
+    </span>
+  );
+}
+
+function MetricIcon({
+  icon: Icon,
+  zone,
+}: {
+  icon: React.ElementType;
+  zone: EpiZone;
+}) {
+  const colors = getZoneColors(zone);
+  return (
+    <div
+      className="flex h-9 w-9 items-center justify-center rounded-full"
+      style={{ backgroundColor: `${colors.stroke}15` }}
+    >
+      <Icon size={18} style={{ color: colors.stroke }} strokeWidth={2} />
+    </div>
+  );
+}
 
 interface OperationalMetricsSectionProps {
   criteria: EpiCriteria;
@@ -24,52 +63,21 @@ export function OperationalMetricsSection({ criteria }: OperationalMetricsSectio
 
   return (
     <div>
-      <SectionLabel>Operational Metrics</SectionLabel>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {/* Cashier Accuracy */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0, ease: 'easeOut' }}
-        >
-          <Card>
-            <CardBody className="flex flex-col items-center gap-2 py-6 text-center">
-              {criteria.cashierAccuracyRate !== null ? (
-                <>
-                  <RadialGauge
-                    value={criteria.cashierAccuracyRate}
-                    max={100}
-                    size={80}
-                    strokeWidth={8}
-                    zone={getRateZone(criteria.cashierAccuracyRate)}
-                    valueFormat={(v) => `${v.toFixed(0)}%`}
-                    delay={0}
-                  />
-                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Cashier Accuracy</p>
-                </>
-              ) : (
-                <>
-                  <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
-                    <span className="text-2xl font-bold text-gray-400">—</span>
-                  </div>
-                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Cashier Accuracy</p>
-                  <p className="text-xs italic text-gray-400">No data this period</p>
-                </>
-              )}
-            </CardBody>
-          </Card>
-        </motion.div>
+      <SectionLabel>Operational Performance Metrics</SectionLabel>
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 items-stretch">
 
         {/* Attendance Rate */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.1, ease: 'easeOut' }}
+          className="h-full"
         >
-          <Card>
-            <CardBody className="flex flex-col items-center gap-2 py-6 text-center">
+          <Card className="h-full">
+            <CardBody className="flex h-full flex-col items-center justify-center gap-2 py-6 text-center">
               {criteria.attendanceRate !== null ? (
                 <>
+                  <MetricIcon icon={CalendarCheck} zone={getRateZone(criteria.attendanceRate)} />
                   <RadialGauge
                     value={criteria.attendanceRate}
                     max={100}
@@ -80,13 +88,57 @@ export function OperationalMetricsSection({ criteria }: OperationalMetricsSectio
                     delay={0.1}
                   />
                   <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Attendance Rate</p>
+                  <ZoneBadge zone={getRateZone(criteria.attendanceRate)} />
                 </>
               ) : (
                 <>
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
+                    <CalendarCheck size={18} className="text-gray-400" />
+                  </div>
                   <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
                     <span className="text-2xl font-bold text-gray-400">—</span>
                   </div>
                   <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Attendance Rate</p>
+                  <p className="text-xs italic text-gray-400">No data this period</p>
+                </>
+              )}
+            </CardBody>
+          </Card>
+        </motion.div>
+
+        {/* Punctuality Rate */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0, ease: 'easeOut' }}
+          className="h-full"
+        >
+          <Card className="h-full">
+            <CardBody className="flex h-full flex-col items-center justify-center gap-2 py-6 text-center">
+              {criteria.cashierAccuracyRate !== null ? (
+                <>
+                  <MetricIcon icon={Clock} zone={getRateZone(criteria.cashierAccuracyRate)} />
+                  <RadialGauge
+                    value={criteria.cashierAccuracyRate}
+                    max={100}
+                    size={80}
+                    strokeWidth={8}
+                    zone={getRateZone(criteria.cashierAccuracyRate)}
+                    valueFormat={(v) => `${v.toFixed(0)}%`}
+                    delay={0}
+                  />
+                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Punctuality Rate</p>
+                  <ZoneBadge zone={getRateZone(criteria.cashierAccuracyRate)} />
+                </>
+              ) : (
+                <>
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
+                    <Clock size={18} className="text-gray-400" />
+                  </div>
+                  <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
+                    <span className="text-2xl font-bold text-gray-400">—</span>
+                  </div>
+                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Punctuality Rate</p>
                   <p className="text-xs italic text-gray-400">No data this period</p>
                 </>
               )}
@@ -99,11 +151,13 @@ export function OperationalMetricsSection({ criteria }: OperationalMetricsSectio
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.2, ease: 'easeOut' }}
+          className="h-full"
         >
-          <Card>
-            <CardBody className="flex flex-col items-center gap-2 py-6 text-center">
+          <Card className="h-full">
+            <CardBody className="flex h-full flex-col items-center justify-center gap-2 py-6 text-center">
               {criteria.productivityRate !== null ? (
                 <>
+                  <MetricIcon icon={Zap} zone={getRateZone(criteria.productivityRate)} />
                   <RadialGauge
                     value={criteria.productivityRate}
                     max={100}
@@ -114,9 +168,13 @@ export function OperationalMetricsSection({ criteria }: OperationalMetricsSectio
                     delay={0.2}
                   />
                   <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Productivity Rate</p>
+                  <ZoneBadge zone={getRateZone(criteria.productivityRate)} />
                 </>
               ) : (
                 <>
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
+                    <Zap size={18} className="text-gray-400" />
+                  </div>
                   <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
                     <span className="text-2xl font-bold text-gray-400">—</span>
                   </div>
@@ -133,11 +191,13 @@ export function OperationalMetricsSection({ criteria }: OperationalMetricsSectio
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.3, ease: 'easeOut' }}
+          className="h-full"
         >
-          <Card>
-            <CardBody className="flex flex-col items-center gap-3 py-6 text-center">
+          <Card className="h-full">
+            <CardBody className="flex h-full flex-col items-center justify-center gap-3 py-6 text-center">
               {criteria.aov !== null ? (
                 <>
+                  <MetricIcon icon={ShoppingCart} zone={aovZone} />
                   <div>
                     <p className="text-xs text-gray-500 dark:text-gray-400">Your AOV</p>
                     <AnimatedCounter
@@ -145,14 +205,14 @@ export function OperationalMetricsSection({ criteria }: OperationalMetricsSectio
                       decimals={0}
                       prefix="₱"
                       delay={0.3}
-                      className={`text-2xl font-bold ${aovColors.text} ${aovColors.darkText}`}
+                      className={`text-xl lg:text-2xl font-bold ${aovColors.text} ${aovColors.darkText}`}
                     />
                   </div>
                   {/* Comparison bars */}
                   <div className="w-full space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="w-16 text-right text-xs text-gray-400">Yours</span>
-                      <div className="relative flex-1 h-3 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-10 text-right text-[10px] text-gray-400">You</span>
+                      <div className="relative flex-1 h-2.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
                         <motion.div
                           className={`absolute inset-y-0 left-0 rounded-full ${aovColors.bg}`}
                           style={{ backgroundColor: aovColors.stroke }}
@@ -162,11 +222,11 @@ export function OperationalMetricsSection({ criteria }: OperationalMetricsSectio
                         />
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="w-16 text-right text-xs text-gray-400">Branch</span>
-                      <div className="relative flex-1 h-3 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
+                    <div className="flex items-center gap-1.5">
+                      <span className="w-10 text-right text-[10px] text-gray-400">Branch</span>
+                      <div className="relative flex-1 h-2.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
                         <motion.div
-                          className="absolute inset-y-0 left-0 rounded-full bg-gray-300 dark:bg-gray-600"
+                          className="absolute inset-y-0 left-0 rounded-full bg-gray-400 dark:bg-gray-500"
                           initial={{ width: '0%' }}
                           animate={{ width: `${branchPercent}%` }}
                           transition={{ duration: 1.2, delay: 0.4, ease: 'easeOut' }}
@@ -177,14 +237,18 @@ export function OperationalMetricsSection({ criteria }: OperationalMetricsSectio
                       Branch avg: ₱{criteria.branchAov?.toFixed(0) ?? '—'}
                     </p>
                   </div>
-                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Avg Order Value</p>
+                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Average Order Value</p>
+                  <ZoneBadge zone={aovZone} />
                 </>
               ) : (
                 <>
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
+                    <ShoppingCart size={18} className="text-gray-400" />
+                  </div>
                   <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
                     <span className="text-2xl font-bold text-gray-400">—</span>
                   </div>
-                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Avg Order Value</p>
+                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Average Order Value</p>
                   <p className="text-xs italic text-gray-400">No data this period</p>
                 </>
               )}

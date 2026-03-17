@@ -1,4 +1,5 @@
 import type { StoreAudit } from '@omnilert/shared';
+import { ShieldCheck } from 'lucide-react';
 import { Badge } from '@/shared/components/ui/Badge';
 
 function statusVariant(status: StoreAudit['status']) {
@@ -42,16 +43,22 @@ export function ComplianceAuditCard({
       }`}
     >
       <div className="flex items-start justify-between gap-3">
-        <p className="text-sm font-semibold text-gray-900">{audit.comp_employee_name || 'Compliance Audit'}</p>
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-1.5 py-0.5 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-200">
+            <ShieldCheck className="h-3 w-3" />
+            Compliance
+          </span>
+          <p className="truncate text-sm font-semibold text-gray-900">{audit.comp_employee_name || '—'}</p>
+        </div>
         <Badge variant={statusVariant(audit.status)}>{audit.status}</Badge>
       </div>
-      <p className="mt-1 text-xs text-gray-600">Check-in: {formatDateTime(audit.comp_check_in_time)}</p>
-      {audit.auditor_name && (
-        <p className="mt-1 text-xs text-gray-500">Auditor: {audit.auditor_name}</p>
-      )}
-      <div className="mt-2 flex items-center justify-between text-xs text-gray-700">
-        <span>Employee ID: {audit.comp_odoo_employee_id ?? '—'}</span>
-        <span>
+      <div className="mt-1.5 flex items-center justify-between gap-3 text-xs text-gray-600">
+        <span className="truncate">Branch: {audit.branch_name || '—'}</span>
+        <span className="shrink-0">{formatDateTime(audit.comp_check_in_time)}</span>
+      </div>
+      <div className="mt-1 flex items-center justify-between text-xs text-gray-500">
+        <span>Auditor: {audit.auditor_name ?? '—'}</span>
+        <span className="font-medium text-gray-700">
           Rate: {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(reward)}
         </span>
       </div>

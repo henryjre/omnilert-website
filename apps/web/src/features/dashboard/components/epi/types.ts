@@ -9,11 +9,16 @@ export interface EpiCriteria {
   branchAov: number | null;
   violationCount: number;
   awardCount: number;
+  uniformComplianceRate: number | null;
+  hygieneComplianceRate: number | null;
+  sopComplianceRate: number | null;
 }
 
 export interface EpiMonthEntry {
-  month: string;
+  month: string;       // Short label: "Jan", "Feb", etc.
+  year: number;        // e.g. 2025, 2026
   score: number;
+  criteria: EpiCriteria;
 }
 
 export interface EpiDashboardData {
@@ -34,6 +39,8 @@ export interface LeaderboardEntry {
   epiScore: number;
   isCurrentUser: boolean;
   criteria: EpiCriteria;
+  /** Full 12-month history, same order as EpiDashboardData.history */
+  history: EpiMonthEntry[];
 }
 
 export type EpiZone = 'green' | 'amber' | 'red';

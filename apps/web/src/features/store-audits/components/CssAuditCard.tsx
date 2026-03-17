@@ -1,4 +1,5 @@
 import type { StoreAudit } from '@omnilert/shared';
+import { Star } from 'lucide-react';
 import { Badge } from '@/shared/components/ui/Badge';
 
 function statusVariant(status: StoreAudit['status']) {
@@ -42,14 +43,22 @@ export function CssAuditCard({
       }`}
     >
       <div className="flex items-start justify-between gap-3">
-        <p className="text-sm font-semibold text-gray-900">{audit.css_pos_reference || 'CSS Audit'}</p>
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-200">
+            <Star className="h-3 w-3" />
+            CSS
+          </span>
+          <p className="truncate text-sm font-semibold text-gray-900">{audit.css_cashier_name || '—'}</p>
+        </div>
         <Badge variant={statusVariant(audit.status)}>{audit.status}</Badge>
       </div>
-      <p className="mt-1 text-xs text-gray-600">{audit.css_cashier_name || 'Unknown cashier'}</p>
-      <p className="mt-1 text-xs text-gray-500">{formatDateTime(audit.css_date_order)}</p>
-      <div className="mt-2 flex items-center justify-between text-xs text-gray-700">
+      <div className="mt-1.5 flex items-center justify-between gap-3 text-xs text-gray-600">
+        <span className="truncate">Branch: {audit.branch_name || '—'}</span>
+        <span className="shrink-0">{formatDateTime(audit.css_date_order)}</span>
+      </div>
+      <div className="mt-1 flex items-center justify-between text-xs text-gray-500">
         <span>Auditor: {audit.auditor_name ?? '—'}</span>
-        <span>
+        <span className="font-medium text-gray-700">
           Rate: {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(reward)}
         </span>
       </div>

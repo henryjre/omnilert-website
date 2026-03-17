@@ -21,19 +21,17 @@ function formatDateTime(value: string | null): string {
 }
 
 type AnswersState = {
-  non_idle: boolean | null;
-  cellphone: boolean | null;
+  productivity_rate: boolean | null;
   uniform: boolean | null;
   hygiene: boolean | null;
   sop: boolean | null;
 };
 
-const QUESTIONS: Array<{ key: keyof AnswersState; label: string }> = [
-  { key: 'non_idle', label: 'Employee was non-idle during shift' },
-  { key: 'cellphone', label: 'No personal cellphone use while on duty' },
-  { key: 'uniform', label: 'Proper uniform and grooming observed' },
-  { key: 'hygiene', label: 'Hygiene standards were followed' },
-  { key: 'sop', label: 'Standard operating procedures were followed' },
+const QUESTIONS: Array<{ key: keyof AnswersState; label: string; question: string }> = [
+  { key: 'productivity_rate', label: 'Productivity Rate', question: 'Was the employee actively working (not idle) during the spot audit?' },
+  { key: 'uniform', label: 'Uniform Compliance', question: 'Was the employee wearing the correct uniform and meeting grooming standards?' },
+  { key: 'hygiene', label: 'Hygiene Compliance', question: 'Was the employee following food safety and sanitation standards?' },
+  { key: 'sop', label: 'SOP Compliance', question: 'Was the employee following the correct operational procedures and product preparation workflows?' },
 ];
 
 export function ComplianceAuditDetailPanel({
@@ -55,8 +53,7 @@ export function ComplianceAuditDetailPanel({
   panelError: string;
   onProcess: () => void;
   onComplete: (payload: {
-    non_idle: boolean;
-    cellphone: boolean;
+    productivity_rate: boolean;
     uniform: boolean;
     hygiene: boolean;
     sop: boolean;
@@ -64,29 +61,60 @@ export function ComplianceAuditDetailPanel({
   onRequestVN?: () => void;
 }) {
   const navigate = useNavigate();
-  const [answers, setAnswers] = useState<AnswersState>({
-    non_idle: audit.comp_non_idle,
-    cellphone: audit.comp_cellphone,
-    uniform: audit.comp_uniform,
-    hygiene: audit.comp_hygiene,
-    sop: audit.comp_sop,
+  const draftKey = `compliance-audit-draft-${audit.id}`;
+
+  const [answers, setAnswers] = useState<AnswersState>(() => {
+    if (audit.status === 'processing') {
+      try {
+        const saved = localStorage.getItem(`compliance-audit-draft-${audit.id}`);
+        if (saved) {
+          const parsed = JSON.parse(saved) as Partial<AnswersState>;
+          if (parsed && typeof parsed === 'object') return { ...{ productivity_rate: null, uniform: null, hygiene: null, sop: null }, ...parsed };
+        }
+      } catch { /* ignore */ }
+    }
+    return {
+      productivity_rate: audit.comp_productivity_rate ?? null,
+      uniform: audit.comp_uniform,
+      hygiene: audit.comp_hygiene,
+      sop: audit.comp_sop,
+    };
   });
 
   useEffect(() => {
+    if (audit.status !== 'processing') return;
+    try {
+      localStorage.setItem(draftKey, JSON.stringify(answers));
+    } catch { /* ignore */ }
+  }, [draftKey, answers, audit.status]);
+
+  useEffect(() => {
+    const saved = audit.status === 'processing' ? (() => {
+      try { return localStorage.getItem(draftKey); } catch { return null; }
+    })() : null;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as Partial<AnswersState>;
+        if (parsed && typeof parsed === 'object') {
+          setAnswers({ productivity_rate: null, uniform: null, hygiene: null, sop: null, ...parsed });
+          return;
+        }
+      } catch { /* ignore */ }
+    }
     setAnswers({
-      non_idle: audit.comp_non_idle,
-      cellphone: audit.comp_cellphone,
+      productivity_rate: audit.comp_productivity_rate ?? null,
       uniform: audit.comp_uniform,
       hygiene: audit.comp_hygiene,
       sop: audit.comp_sop,
     });
   }, [
     audit.id,
-    audit.comp_non_idle,
-    audit.comp_cellphone,
+    audit.comp_productivity_rate,
     audit.comp_uniform,
     audit.comp_hygiene,
     audit.comp_sop,
+    audit.status,
+    draftKey,
   ]);
 
   const allAnswered = Object.values(answers).every((value) => value !== null);
@@ -104,15 +132,20 @@ export function ComplianceAuditDetailPanel({
         </div>
 
         {(audit.status === 'processing' || audit.status === 'completed') && (
-          <div className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
-            {QUESTIONS.map((question) => (
-              <div key={question.key} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm text-gray-800">{question.label}</p>
-                <YesNoPill
-                  value={answers[question.key]}
-                  onChange={(value) => setAnswers((prev) => ({ ...prev, [question.key]: value }))}
-                  disabled={audit.status === 'completed' || actionLoading || !canComplete}
-                />
+          <div className="space-y-3">
+            {QUESTIONS.map((q) => (
+              <div key={q.key} className="rounded-lg border border-gray-200 bg-white p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-gray-800">{q.label}</p>
+                    <p className="text-xs text-gray-500">{q.question}</p>
+                  </div>
+                  <YesNoPill
+                    value={answers[q.key]}
+                    onChange={(value) => setAnswers((prev) => ({ ...prev, [q.key]: value }))}
+                    disabled={audit.status === 'completed' || actionLoading || !canComplete}
+                  />
+                </div>
               </div>
             ))}
           </div>
@@ -162,9 +195,9 @@ export function ComplianceAuditDetailPanel({
             variant="success"
             onClick={() => {
               if (!allAnswered) return;
+              try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
               onComplete({
-                non_idle: Boolean(answers.non_idle),
-                cellphone: Boolean(answers.cellphone),
+                productivity_rate: Boolean(answers.productivity_rate),
                 uniform: Boolean(answers.uniform),
                 hygiene: Boolean(answers.hygiene),
                 sop: Boolean(answers.sop),

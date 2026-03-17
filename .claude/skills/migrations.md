@@ -16,11 +16,13 @@ npx ts-node src/scripts/rollback-tenants.ts        # rollback
 
 Do not use `apps/api/src/scripts/migration.ts` — legacy helper, may diverge from standard flow.
 
-## Master Migration Sequence (001–012)
+## Master Migration Sequence (001–013)
 
-001 create_companies → 002 create_super_admins → 003 create_company_databases → 004 add_theme_color → 005 add_company_code_and_employee_identities → 006 global_users_and_registration → 007 add_users_last_company → 008 add_users_department_id → 009 add_shift_exchange_requests_and_suspended_status → 010 add_audit_result_columns → 011 case_report_permissions (seeds case_report.view/create/close/manage; assigns to system roles) → 012 violation_notice_permissions (seeds violation_notice.view/create/confirm/reject/issue/complete/manage; assigns to system roles; Service Crew gets view + create)
+001 create_companies → 002 create_super_admins → 003 create_company_databases → 004 add_theme_color → 005 add_company_code_and_employee_identities → 006 global_users_and_registration → 007 add_users_last_company → 008 add_users_department_id → 009 add_shift_exchange_requests_and_suspended_status → 010 add_audit_result_columns → 011 case_report_permissions (seeds case_report.view/create/close/manage; assigns to system roles) → 012 violation_notice_permissions (seeds violation_notice.view/create/confirm/reject/issue/complete/manage; assigns to system roles; Service Crew gets view + create) → 013 add_violation_notice_and_rewards_columns (adds `violation_notices` JSONB array and `rewards` JSONB array to master `users`)
 
 Migration 010 note: adds `css_audits` (JSONB array) and `compliance_audit` (JSONB object) columns to master `users`; also seeds `store_audit.view` and `store_audit.process` permission keys.
+
+Migration 013 note: adds `violation_notices` (JSONB array, default `[]`) to master `users` — appended automatically when a VN is completed (see service note below). Also adds `rewards` (JSONB array, default `[]`) for future use. Each `violation_notices` entry: `{ vn_id, vn_number, company_id, description, completed_at }`.
 
 Migration 006 note: includes idempotent/self-healing for legacy truncated constraint names on `registration_request_company_assignments` and `registration_request_assignment_branches`. Safe to re-run.
 

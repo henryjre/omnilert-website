@@ -55,7 +55,7 @@ interface CompanyOption {
   themeColor?: string | null;
 }
 
-const HR_PATHS = ['/employee-profiles', '/employee-schedule', '/employee-requirements', '/violation-notices'];
+const HR_PATHS = ['/employee-profiles', '/employee-schedule', '/employee-requirements', '/violation-notices', '/workplace-relations'];
 const FINANCE_PATHS = ['/cash-requests'];
 const AUDIT_PATHS = ['/store-audits'];
 
@@ -347,7 +347,8 @@ export function Sidebar({ className = '' }: SidebarProps) {
             {(hasPermission(PERMISSIONS.EMPLOYEE_VIEW_ALL_PROFILES)
               || hasPermission(PERMISSIONS.SHIFT_VIEW_ALL)
               || hasPermission(PERMISSIONS.EMPLOYEE_REQUIREMENTS_APPROVE)
-              || hasPermission(PERMISSIONS.VIOLATION_NOTICE_VIEW)) && (
+              || hasPermission(PERMISSIONS.VIOLATION_NOTICE_VIEW)
+              || hasPermission(PERMISSIONS.PEER_EVALUATION_VIEW)) && (
               <SubCategory
                 label="Human Resources"
                 expanded={hrExpanded}
@@ -375,6 +376,12 @@ export function Sidebar({ className = '' }: SidebarProps) {
                   <NavLink to="/violation-notices" className={linkClass}>
                     <TriangleAlert className="h-5 w-5" />
                     Violation Notices
+                  </NavLink>
+                )}
+                {hasPermission(PERMISSIONS.PEER_EVALUATION_VIEW) && (
+                  <NavLink to="/workplace-relations" className={linkClass}>
+                    <Users className="h-5 w-5" />
+                    Workplace Relations
                   </NavLink>
                 )}
               </SubCategory>
