@@ -461,6 +461,27 @@ function formatDiffMinutes(minutes: number): string {
   return `${minutes}m`;
 }
 
+export async function reassignUserToSingleCheckedInBranch(
+  tenantDb: Awaited<ReturnType<typeof db.getTenantDb>>,
+  userId: string,
+  branchId: string,
+) {
+  await tenantDb.transaction(async (trx) => {
+    await trx('user_branches')
+      .where({ user_id: userId })
+      .delete();
+
+    await trx('user_branches')
+      .insert({
+        user_id: userId,
+        branch_id: branchId,
+        is_primary: false,
+      })
+      .onConflict(['user_id', 'branch_id'])
+      .ignore();
+  });
+}
+
 export async function processAttendance(
   companyDbName: string,
   payload: {
@@ -529,45 +550,18 @@ export async function processAttendance(
       .where({ id: shift.id as string })
       .update({ status: 'active', check_in_status: 'checked_in', updated_at: new Date() });
 
-    // Reassign checked-in employee to this branch while preserving assignments to main branches.
+    // Reassign checked-in employee to a single active branch for branch-scoped access.
     if (shift.user_id) {
       const userId = shift.user_id as string;
-      const userBranchAssignments = await tenantDb('user_branches').where({ user_id: userId }).select('branch_id');
-      const mainBranchRows = await tenantDb('branches').where({ is_main_branch: true }).select('id');
-      const mainBranchIds = mainBranchRows.map((row: { id: string }) => row.id);
-      const alreadyAssignedToCheckedInBranch = userBranchAssignments.some(
-        (assignment: { branch_id: string }) => assignment.branch_id === branch.id,
-      );
-
-      await tenantDb.transaction(async (trx) => {
-        let deleteQuery = trx('user_branches').where({ user_id: userId });
-        if (mainBranchIds.length > 0) {
-          deleteQuery = deleteQuery.whereNotIn('branch_id', mainBranchIds);
-        }
-        await deleteQuery.delete();
-
-        if (!alreadyAssignedToCheckedInBranch) {
-          await trx('user_branches')
-            .insert({
-              user_id: userId,
-              branch_id: branch.id,
-              is_primary: false,
-            })
-            .onConflict(['user_id', 'branch_id'])
-            .ignore();
-        }
-      });
+      const checkedInBranchId = branch.id as string;
+      await reassignUserToSingleCheckedInBranch(tenantDb, userId, checkedInBranchId);
 
       // Push updated branch assignments to the active web client for immediate UI sync.
       try {
-        const updatedAssignments = await tenantDb('user_branches')
-          .where({ user_id: userId })
-          .select('branch_id');
-        const updatedBranchIds = updatedAssignments.map((row: { branch_id: string }) => row.branch_id);
         getIO()
           .of('/notifications')
           .to(`user:${userId}`)
-          .emit('user:branch-assignments-updated', { branchIds: updatedBranchIds });
+          .emit('user:branch-assignments-updated', { branchIds: [checkedInBranchId] });
       } catch {
         logger.warn('Socket.IO not available for branch assignment update emit');
       }

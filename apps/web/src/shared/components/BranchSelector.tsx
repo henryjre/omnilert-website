@@ -56,9 +56,7 @@ export function BranchSelector() {
           {/* All Branches */}
           <button
             onClick={selectAll}
-            className={`flex w-full items-center gap-2.5 px-3 py-2 text-sm hover:bg-gray-50 ${
-              selectedBranchIds.length === branches.length ? 'bg-primary-50 text-primary-700 font-medium' : 'text-gray-700'
-            }`}
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
           >
             <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
               selectedBranchIds.length === branches.length ? 'border-primary-600 bg-primary-600' : 'border-gray-300'
@@ -79,9 +77,7 @@ export function BranchSelector() {
               <button
                 key={branch.id}
                 onClick={() => toggleBranch(branch.id)}
-                className={`flex w-full items-center gap-2.5 px-3 py-2 text-sm hover:bg-gray-50 ${
-                  isSelected ? 'bg-primary-50 text-primary-700 font-medium' : 'text-gray-700'
-                }`}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
               >
                 <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
                   isSelected ? 'border-primary-600 bg-primary-600' : 'border-gray-300'
