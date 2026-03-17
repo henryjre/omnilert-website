@@ -21,6 +21,16 @@ test('deploy workflow rebuilds shared artifacts before running master migrations
   assert.ok(sharedBuildIndex < migrateIndex, 'shared build must happen before master migrations');
 });
 
+test('deploy workflow preserves server runtime files during cleanup', async () => {
+  const workflow = await readFile('.github/workflows/deploy.yml', 'utf8');
+
+  assert.match(
+    workflow,
+    /git clean -fdx -e apps\/api\/\.env -e apps\/api\/uploads\//,
+    'deploy cleanup should preserve the server API env file and uploads directory',
+  );
+});
+
 test('master permission migrations are self-contained', async () => {
   for (const filePath of MIGRATION_FILES) {
     const source = await readFile(filePath, 'utf8');
