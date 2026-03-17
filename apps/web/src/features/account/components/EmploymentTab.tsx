@@ -6,11 +6,6 @@ import { Spinner } from '@/shared/components/ui/Spinner';
 import { api } from '@/shared/services/api.client';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useAuthStore } from '@/features/auth/store/authSlice';
-<<<<<<< HEAD
-import { usePermission } from '@/shared/hooks/usePermission';
-=======
-import { PERMISSIONS } from '@omnilert/shared';
->>>>>>> 7e0dbe038c8b626c843cc45ad7f2edd6a5254b85
 import {
   AlertCircle,
   AlertTriangle,
@@ -241,11 +236,8 @@ function shouldApplyRequestedValue(key: string, requestedValue: unknown, current
 export function EmploymentTab() {
   const updateUser = useAuthStore((s) => s.updateUser);
   const { hasPermission } = usePermission();
-<<<<<<< HEAD
   const canSubmitEmployeeRequirements = hasPermission(PERMISSIONS.ACCOUNT_SUBMIT_EMPLOYEE_REQUIREMENTS);
-=======
   const canEditOwnProfile = hasPermission(PERMISSIONS.EMPLOYEE_EDIT_OWN_PROFILE);
->>>>>>> 7e0dbe038c8b626c843cc45ad7f2edd6a5254b85
 
   const [loading, setLoading] = useState(true);
   const [submittingPersonal, setSubmittingPersonal] = useState(false);
