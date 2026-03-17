@@ -37,6 +37,7 @@ type VNRow = {
   issuance_file_name: string | null;
   disciplinary_file_url: string | null;
   disciplinary_file_name: string | null;
+  epi_decrease: number | null;
   created_at: Date | string;
   updated_at: Date | string;
 };
