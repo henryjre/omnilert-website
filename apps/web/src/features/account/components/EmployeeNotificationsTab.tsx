@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Card, CardBody } from '@/shared/components/ui/Card';
 import { Badge } from '@/shared/components/ui/Badge';
 import { Spinner } from '@/shared/components/ui/Spinner';
@@ -78,6 +78,7 @@ export function EmployeeNotificationsTab() {
   const [actedNotifIds, setActedNotifIds] = useState<Set<string>>(new Set());
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const location = useLocation();
+  const navigate = useNavigate();
   const decrement = useNotificationStore((s) => s.decrement);
   const latestNotification = useNotificationStore((s) => s.latestNotification);
 
@@ -150,6 +151,25 @@ export function EmployeeNotificationsTab() {
     await api.put(`/account/notifications/${id}/read`);
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)));
     decrement();
+  };
+
+  const handleOpenNotificationLink = async (notification: any) => {
+    const linkUrl = typeof notification?.link_url === 'string' ? notification.link_url.trim() : '';
+    if (!linkUrl) return;
+    if (!notification.is_read) {
+      await markAsRead(notification.id);
+    }
+    if (linkUrl === '/account/settings') {
+      navigate('/account/settings');
+      return;
+    }
+    if (linkUrl === '/account/profile') {
+      navigate('/account/profile');
+      return;
+    }
+    if (linkUrl.startsWith('/case-reports')) {
+      navigate(linkUrl);
+    }
   };
 
   const openTokenPayModal = async (notifId: string, verificationId: string) => {
@@ -305,6 +325,24 @@ export function EmployeeNotificationsTab() {
                         className="text-xs"
                       >
                         View Order
+                      </Button>
+                    )}
+                    {n.link_url === '/account/settings' && (
+                      <Button
+                        variant="secondary"
+                        onClick={() => { void handleOpenNotificationLink(n); }}
+                        className="text-xs"
+                      >
+                        Open Settings
+                      </Button>
+                    )}
+                    {n.link_url === '/account/profile' && (
+                      <Button
+                        variant="secondary"
+                        onClick={() => { void handleOpenNotificationLink(n); }}
+                        className="text-xs"
+                      >
+                        Open Profile
                       </Button>
                     )}
                     {!n.is_read && (

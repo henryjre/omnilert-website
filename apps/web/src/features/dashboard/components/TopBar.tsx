@@ -199,6 +199,14 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
       navigate(n.link_url);
       return;
     }
+    if (n.link_url === '/account/profile') {
+      navigate('/account/profile');
+      return;
+    }
+    if (n.link_url === '/account/settings') {
+      navigate('/account/settings');
+      return;
+    }
     const shiftExchangeId = getShiftExchangeId(n.link_url);
     const target = shiftExchangeId
       ? `/account/notifications?shiftExchangeId=${shiftExchangeId}`
