@@ -1934,3 +1934,52 @@ export async function getResourceIdByWebsiteUserKeyAndCompanyId(
     throw err;
   }
 }
+
+/**
+ * Finds the hr.employee ID on Odoo company_id = 1 for a given x_website_key.
+ * Returns null if not found.
+ */
+export async function getCompany1EmployeeIdByWebsiteKey(websiteUserKey: string): Promise<number | null> {
+  const rows = (await callOdooKw(
+    'hr.employee',
+    'search_read',
+    [],
+    {
+      domain: [['x_website_key', '=', websiteUserKey], ['company_id', '=', 1]],
+      fields: ['id'],
+      limit: 1,
+    },
+  )) as Array<{ id: number }>;
+  return rows.length > 0 ? rows[0].id : null;
+}
+
+/**
+ * Creates an hr.salary.attachment record in Odoo for an audit monetary reward.
+ * Silently logs and returns false on failure — never blocks audit completion.
+ */
+export async function createAuditSalaryAttachment(input: {
+  websiteUserKey: string;
+  description: string;
+  totalAmount: number;
+}): Promise<boolean> {
+  try {
+    const employeeId = await getCompany1EmployeeIdByWebsiteKey(input.websiteUserKey);
+    if (!employeeId) {
+      logger.warn({ websiteUserKey: input.websiteUserKey }, 'createAuditSalaryAttachment: no company_id=1 employee found, skipping');
+      return false;
+    }
+
+    await callOdooKw('hr.salary.attachment', 'create', [{
+      employee_ids: [[4, employeeId]],
+      description: input.description,
+      other_input_type_id: 19,
+      total_amount: input.totalAmount,
+    }]);
+
+    logger.info({ employeeId, description: input.description }, 'createAuditSalaryAttachment: created');
+    return true;
+  } catch (err) {
+    logger.error({ err, websiteUserKey: input.websiteUserKey }, 'createAuditSalaryAttachment: failed, skipping');
+    return false;
+  }
+}

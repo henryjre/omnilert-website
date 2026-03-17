@@ -5,7 +5,7 @@ import { env } from '../config/env.js';
 import { getIO } from '../config/socket.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
-import { getEmployeeWebsiteKeyByEmployeeId } from './odoo.service.js';
+import { createAuditSalaryAttachment, getEmployeeWebsiteKeyByEmployeeId } from './odoo.service.js';
 
 type StoreAuditRow = StoreAudit & {
   branch_name?: string | null;
@@ -362,6 +362,16 @@ export async function completeStoreAudit(input: {
         criteria_scores,
         audited_at: completedAt.toISOString(),
       });
+
+      const monetaryReward = Number(audit.monetary_reward ?? 0);
+      if (monetaryReward > 0) {
+        const description = `CSS Audit ${input.auditId} – ${completedAt.toISOString()}`;
+        void createAuditSalaryAttachment({
+          websiteUserKey: String(audit.css_cashier_user_key),
+          description,
+          totalAmount: monetaryReward,
+        });
+      }
     }
   } else {
     const compPayload = input.payload as {
@@ -394,6 +404,19 @@ export async function completeStoreAudit(input: {
         },
         audited_at: completedAt.toISOString(),
       });
+
+      const monetaryReward = Number(audit.monetary_reward ?? 0);
+      if (monetaryReward > 0) {
+        const websiteKey = await getEmployeeWebsiteKeyByEmployeeId(Number(audit.comp_odoo_employee_id));
+        if (websiteKey) {
+          const description = `Compliance Audit ${input.auditId} – ${completedAt.toISOString()}`;
+          void createAuditSalaryAttachment({
+            websiteUserKey: websiteKey,
+            description,
+            totalAmount: monetaryReward,
+          });
+        }
+      }
     }
   }
 

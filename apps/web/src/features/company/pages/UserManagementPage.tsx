@@ -300,17 +300,24 @@ export function UserManagementPage() {
 
     setSaving(true);
     try {
-      const updates: Promise<any>[] = [
-        api.put(`/users/${selectedUser.id}/roles`, { roleIds: editRoleIds }),
-        api.put(`/users/${selectedUser.id}/branches`, { companyAssignments: editCompanyAssignments }),
-      ];
+      const originalRoleIds = selectedUser.roles.map((r) => r.id).sort();
+      const rolesChanged = JSON.stringify([...editRoleIds].sort()) !== JSON.stringify(originalRoleIds);
+
+      const originalAssignments = groupBranchesByCompany(selectedUser);
+      const branchesChanged = JSON.stringify(editCompanyAssignments) !== JSON.stringify(originalAssignments);
+
+      const updates: Promise<any>[] = [];
+      if (rolesChanged) updates.push(api.put(`/users/${selectedUser.id}/roles`, { roleIds: editRoleIds }));
+      if (branchesChanged) updates.push(api.put(`/users/${selectedUser.id}/branches`, { companyAssignments: editCompanyAssignments }));
 
       const trimmedUserKey = editUserKey.trim();
       const trimmedEmployeeNumber = editEmployeeNumber.trim();
-      if (trimmedUserKey || trimmedEmployeeNumber) {
+      const userKeyChanged = trimmedUserKey !== (selectedUser.user_key || '');
+      const employeeNumberChanged = trimmedEmployeeNumber !== (selectedUser.employee_number ? String(selectedUser.employee_number) : '');
+      if (userKeyChanged || employeeNumberChanged) {
         updates.push(api.put(`/users/${selectedUser.id}`, {
-          userKey: trimmedUserKey || undefined,
-          employeeNumber: trimmedEmployeeNumber ? Number(trimmedEmployeeNumber) : undefined,
+          userKey: userKeyChanged ? (trimmedUserKey || undefined) : undefined,
+          employeeNumber: employeeNumberChanged && trimmedEmployeeNumber ? Number(trimmedEmployeeNumber) : undefined,
         }));
       }
 
