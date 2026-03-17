@@ -4,10 +4,8 @@ export const PERMISSIONS = {
   ADMIN_MANAGE_USERS: 'admin.manage_users',
   ADMIN_MANAGE_BRANCHES: 'admin.manage_branches',
   ADMIN_VIEW_ALL_BRANCHES: 'admin.view_all_branches',
-  ADMIN_TOGGLE_BRANCH: 'admin.toggle_branch',
 
   // Dashboard
-  DASHBOARD_VIEW: 'dashboard.view',
   DASHBOARD_VIEW_PERFORMANCE_INDEX: 'dashboard.view_performance_index',
   DASHBOARD_VIEW_PAYSLIP: 'dashboard.view_payslip',
 
@@ -94,13 +92,11 @@ export const PERMISSION_CATEGORIES: Record<string, { label: string; permissions:
         PERMISSIONS.ADMIN_MANAGE_USERS,
         PERMISSIONS.ADMIN_MANAGE_BRANCHES,
         PERMISSIONS.ADMIN_VIEW_ALL_BRANCHES,
-        PERMISSIONS.ADMIN_TOGGLE_BRANCH,
       ],
     },
     dashboard: {
       label: 'Dashboard',
       permissions: [
-        PERMISSIONS.DASHBOARD_VIEW,
         PERMISSIONS.DASHBOARD_VIEW_PERFORMANCE_INDEX,
         PERMISSIONS.DASHBOARD_VIEW_PAYSLIP,
       ],

@@ -348,7 +348,6 @@ async function migrateTenantsDb() {
       // Seed new permissions if missing and grant to Administrator + Management
       const newPermissions = [
         { key: 'shift.view_all', name: 'View All', category: 'shifts' },
-        { key: 'admin.toggle_branch', name: 'Toggle Branch', category: 'admin' },
         { key: 'shift.approve_authorizations', name: 'Approve Authorizations', category: 'shifts' },
         { key: 'shift.end_shift', name: 'End Shift', category: 'shifts' },
         { key: 'auth_request.approve_management', name: 'Approve Management Request', category: 'auth_requests' },

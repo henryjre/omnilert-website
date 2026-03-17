@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
+import { PERMISSIONS } from '@omnilert/shared';
 import { AppError } from '../middleware/errorHandler.js';
 
 export async function list(req: Request, res: Response, next: NextFunction) {
@@ -14,7 +15,7 @@ export async function list(req: Request, res: Response, next: NextFunction) {
     }
 
     // If user doesn't have admin.view_all_branches, filter by assigned branches
-    if (!user.permissions.includes('admin.view_all_branches')) {
+    if (!user.permissions.includes(PERMISSIONS.ADMIN_VIEW_ALL_BRANCHES)) {
       query = query.whereIn('id', user.branchIds);
     }
 

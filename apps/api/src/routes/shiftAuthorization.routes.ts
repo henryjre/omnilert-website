@@ -12,7 +12,7 @@ router.use(authenticate, resolveCompany);
 /** Employee submits reason for tardiness / late_check_out */
 router.post(
   '/:id/reason',
-  requirePermission(PERMISSIONS.ACCOUNT_VIEW_SCHEDULE),
+  requirePermission(PERMISSIONS.ACCOUNT_SUBMIT_PUBLIC_AUTH_REQUEST),
   shiftAuthorizationController.submitReason,
 );
 

@@ -72,26 +72,34 @@ router.post(
 
 router.post(
   '/personal-information/verifications',
+  requirePermission(PERMISSIONS.EMPLOYEE_EDIT_OWN_PROFILE),
   validateBody(submitPersonalInformationVerificationSchema),
   accountController.submitPersonalInformationVerification,
 );
 
-router.get('/profile', accountController.getProfile);
+router.get(
+  '/profile',
+  requirePermission(PERMISSIONS.EMPLOYEE_VIEW_OWN_PROFILE),
+  accountController.getProfile,
+);
 
 router.patch(
   '/email',
+  requirePermission(PERMISSIONS.EMPLOYEE_EDIT_OWN_PROFILE),
   validateBody(updateAccountEmailSchema),
   accountController.updateAccountEmail,
 );
 
 router.post(
   '/valid-id',
+  requirePermission(PERMISSIONS.EMPLOYEE_EDIT_OWN_PROFILE),
   upload.single('document'),
   accountController.uploadValidId,
 );
 
 router.post(
   '/bank-information/verifications',
+  requirePermission(PERMISSIONS.EMPLOYEE_EDIT_OWN_PROFILE),
   validateBody(submitBankInformationVerificationSchema),
   accountController.submitBankInformationVerification,
 );
@@ -103,7 +111,11 @@ router.get(
 );
 router.post(
   '/employment/requirements/:requirementCode/submit',
+<<<<<<< HEAD
   requirePermission(PERMISSIONS.ACCOUNT_SUBMIT_EMPLOYEE_REQUIREMENTS),
+=======
+  requirePermission(PERMISSIONS.EMPLOYEE_EDIT_OWN_PROFILE),
+>>>>>>> 7e0dbe038c8b626c843cc45ad7f2edd6a5254b85
   upload.single('document'),
   accountController.submitEmploymentRequirement,
 );
@@ -113,9 +125,21 @@ router.get(
   requirePermission(PERMISSIONS.ACCOUNT_VIEW_NOTIFICATIONS),
   accountController.getNotifications,
 );
-router.get('/notifications/count', accountController.getNotificationCount);
-router.put('/notifications/read-all', accountController.markAllNotificationsRead);
-router.put('/notifications/:id/read', accountController.markNotificationRead);
+router.get(
+  '/notifications/count',
+  requirePermission(PERMISSIONS.ACCOUNT_VIEW_NOTIFICATIONS),
+  accountController.getNotificationCount,
+);
+router.put(
+  '/notifications/read-all',
+  requirePermission(PERMISSIONS.ACCOUNT_VIEW_NOTIFICATIONS),
+  accountController.markAllNotificationsRead,
+);
+router.put(
+  '/notifications/:id/read',
+  requirePermission(PERMISSIONS.ACCOUNT_VIEW_NOTIFICATIONS),
+  accountController.markNotificationRead,
+);
 router.get('/push/config', accountController.getPushConfig);
 router.get('/push/preferences', accountController.getPushPreferences);
 router.patch('/push/preferences', accountController.updatePushPreferences);
