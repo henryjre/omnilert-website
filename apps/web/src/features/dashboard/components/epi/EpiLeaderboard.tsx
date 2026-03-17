@@ -149,9 +149,6 @@ function ExpandedMetrics({ criteria }: { criteria: EpiCriteria }) {
           {criteria.workplaceRelationsScore !== null
             ? <MetricBar label="Professional Conduct" value={criteria.workplaceRelationsScore} max={5} format={`${criteria.workplaceRelationsScore.toFixed(1)}/5`} />
             : <NullMetric label="Professional Conduct" />}
-          {criteria.productivityRate !== null
-            ? <MetricBar label="Compliance" value={criteria.productivityRate / 20} max={5} format={`${(criteria.productivityRate / 20).toFixed(1)}/5`} />
-            : <NullMetric label="Compliance" />}
         </div>
       </div>
 

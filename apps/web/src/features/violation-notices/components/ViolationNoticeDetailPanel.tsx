@@ -6,7 +6,7 @@ import type {
   ViolationNoticeStatus,
   ViolationNoticeCategory,
 } from '@omnilert/shared';
-import { CheckCircle2, ChevronDown, ExternalLink, FileCheck, FileX, TriangleAlert, UserCheck, X } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ExternalLink, FileCheck, FileX, TrendingDown, TriangleAlert, UserCheck, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/shared/components/ui/Button';
 import type { MentionableRole, MentionableUser } from '../../case-reports/services/caseReport.api';
@@ -520,9 +520,14 @@ export function ViolationNoticeDetailPanel({
                         <span>Completed by <span className="font-medium">{vn.completed_by_name}</span></span>
                       </div>
                     )}
-                    {vn.epi_decrease != null && vn.epi_decrease > 0 && (
-                      <p className="text-sm text-gray-600 dark:text-gray-400">EPI Decrease: <span className="font-medium text-red-600">-{vn.epi_decrease}</span></p>
-                    )}
+                    <div className="flex items-center gap-2 mt-1 pt-2 border-t border-green-100">
+                      <TrendingDown className={`h-4 w-4 shrink-0 ${vn.epi_decrease != null && vn.epi_decrease > 0 ? 'text-red-400' : 'text-gray-400'}`} />
+                      <span>EPI Decrease:</span>
+                      {vn.epi_decrease != null && vn.epi_decrease > 0
+                        ? <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">-{vn.epi_decrease} pts</span>
+                        : <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">None</span>
+                      }
+                    </div>
                   </div>
                 )}
 

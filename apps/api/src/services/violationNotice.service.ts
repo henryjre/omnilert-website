@@ -379,6 +379,7 @@ async function enrichViolationNotices(
       issuance_file_name: row.issuance_file_name,
       disciplinary_file_url: row.disciplinary_file_url,
       disciplinary_file_name: row.disciplinary_file_name,
+      epi_decrease: row.epi_decrease != null ? Number(row.epi_decrease) : null,
       targets,
       message_count: messageCountMap.get(row.id) ?? 0,
       unread_count: unreadCountMap.get(row.id) ?? 0,
