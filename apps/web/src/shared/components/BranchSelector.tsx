@@ -1,16 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Check } from 'lucide-react';
 import { useBranchStore } from '@/shared/store/branchStore';
-import { usePermission } from '@/shared/hooks/usePermission';
-import { useAuthStore } from '@/features/auth/store/authSlice';
-import { PERMISSIONS } from '@omnilert/shared';
 
 export function BranchSelector() {
   const { branches, selectedBranchIds, toggleBranch, selectAll } = useBranchStore();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const { hasPermission } = usePermission();
-  const user = useAuthStore((s) => s.user);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -22,10 +17,8 @@ export function BranchSelector() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // Hide the selector when the user is restricted to specific branches and lacks toggle permission.
-  // Users with no assigned branches (e.g. admins) or with the explicit toggle permission always see it.
-  const userHasAssignedBranches = user?.branchIds && user.branchIds.length > 0;
-  const canToggle = hasPermission(PERMISSIONS.ADMIN_TOGGLE_BRANCH) || !userHasAssignedBranches;
+  // Branch toggle is available whenever there is more than one selectable branch.
+  const canToggle = branches.length > 1;
   if (!canToggle) return null;
 
   if (branches.length === 0) return null;

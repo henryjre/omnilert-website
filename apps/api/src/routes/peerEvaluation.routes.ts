@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { PERMISSIONS } from '@omnilert/shared';
 import { authenticate } from '../middleware/auth.js';
 import { resolveCompany } from '../middleware/companyResolver.js';
-import { requirePermission } from '../middleware/rbac.js';
+import { requireAnyPermission, requirePermission } from '../middleware/rbac.js';
 import { validateBody } from '../middleware/validateRequest.js';
 import * as peerEvaluationController from '../controllers/peerEvaluation.controller.js';
 
@@ -19,9 +19,26 @@ const router = Router();
 router.use(authenticate, resolveCompany);
 
 // IMPORTANT: static routes before /:id
-router.get('/pending-mine', peerEvaluationController.getMyPending);
-router.get('/', requirePermission(PERMISSIONS.PEER_EVALUATION_VIEW), peerEvaluationController.list);
-router.get('/:id', requirePermission(PERMISSIONS.PEER_EVALUATION_VIEW), peerEvaluationController.getById);
-router.post('/:id/submit', requirePermission(PERMISSIONS.PEER_EVALUATION_VIEW), validateBody(submitSchema), peerEvaluationController.submit);
+router.get(
+  '/pending-mine',
+  requireAnyPermission(PERMISSIONS.PEER_EVALUATION_VIEW, PERMISSIONS.PEER_EVALUATION_MANAGE),
+  peerEvaluationController.getMyPending,
+);
+router.get(
+  '/',
+  requireAnyPermission(PERMISSIONS.PEER_EVALUATION_VIEW, PERMISSIONS.PEER_EVALUATION_MANAGE),
+  peerEvaluationController.list,
+);
+router.get(
+  '/:id',
+  requireAnyPermission(PERMISSIONS.PEER_EVALUATION_VIEW, PERMISSIONS.PEER_EVALUATION_MANAGE),
+  peerEvaluationController.getById,
+);
+router.post(
+  '/:id/submit',
+  requireAnyPermission(PERMISSIONS.PEER_EVALUATION_VIEW, PERMISSIONS.PEER_EVALUATION_MANAGE),
+  validateBody(submitSchema),
+  peerEvaluationController.submit,
+);
 
 export default router;

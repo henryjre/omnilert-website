@@ -1,6 +1,7 @@
 import { Server as HttpServer } from 'http';
 import { Server as SocketIOServer } from 'socket.io';
 import type { ServerToClientEvents, ClientToServerEvents } from '@omnilert/shared';
+import { PERMISSIONS } from '@omnilert/shared';
 import { verifyAccessToken } from '../utils/jwt.js';
 import { env } from './env.js';
 import { logger } from '../utils/logger.js';
@@ -40,7 +41,7 @@ export function initializeSocket(
     if (!token) return next(new Error('Authentication required'));
     try {
       const payload = verifyAccessToken(token);
-      if (!payload.permissions.includes('pos_verification.view')) {
+      if (!payload.permissions.includes(PERMISSIONS.POS_VERIFICATION_VIEW)) {
         return next(new Error('Insufficient permissions'));
       }
       socket.data.user = payload;
@@ -54,7 +55,7 @@ export function initializeSocket(
     logger.debug(`POS Verification: ${socket.data.user?.sub} connected`);
 
     socket.on('join-branch', (branchId: string) => {
-      const canViewAll = socket.data.user?.permissions.includes('admin.view_all_branches');
+      const canViewAll = socket.data.user?.permissions.includes(PERMISSIONS.ADMIN_VIEW_ALL_BRANCHES);
       if (canViewAll || socket.data.user?.branchIds.includes(branchId)) {
         socket.join(`branch:${branchId}`);
         logger.debug(`POS Verification: ${socket.data.user?.sub} joined branch:${branchId}`);
@@ -73,7 +74,7 @@ export function initializeSocket(
     if (!token) return next(new Error('Authentication required'));
     try {
       const payload = verifyAccessToken(token);
-      if (!payload.permissions.includes('pos_session.view')) {
+      if (!payload.permissions.includes(PERMISSIONS.POS_SESSION_VIEW)) {
         return next(new Error('Insufficient permissions'));
       }
       socket.data.user = payload;
@@ -87,7 +88,7 @@ export function initializeSocket(
     logger.debug(`POS Session: ${socket.data.user?.sub} connected`);
 
     socket.on('join-branch', (branchId: string) => {
-      const canViewAll = socket.data.user?.permissions.includes('admin.view_all_branches');
+      const canViewAll = socket.data.user?.permissions.includes(PERMISSIONS.ADMIN_VIEW_ALL_BRANCHES);
       if (canViewAll || socket.data.user?.branchIds.includes(branchId)) {
         socket.join(`branch:${branchId}`);
         logger.debug(`POS Session: ${socket.data.user?.sub} joined branch:${branchId}`);
@@ -106,7 +107,10 @@ export function initializeSocket(
     if (!token) return next(new Error('Authentication required'));
     try {
       const payload = verifyAccessToken(token);
-      if (!payload.permissions.includes('shift.view_all') && !payload.permissions.includes('account.view_schedule')) {
+      if (
+        !payload.permissions.includes(PERMISSIONS.SHIFT_VIEW_ALL)
+        && !payload.permissions.includes(PERMISSIONS.ACCOUNT_VIEW_SCHEDULE)
+      ) {
         return next(new Error('Insufficient permissions'));
       }
       socket.data.user = payload;
@@ -123,7 +127,7 @@ export function initializeSocket(
     if (!token) return next(new Error('Authentication required'));
     try {
       const payload = verifyAccessToken(token);
-      if (!payload.permissions.includes('employee_verification.view')) {
+      if (!payload.permissions.includes(PERMISSIONS.EMPLOYEE_VERIFICATION_VIEW)) {
         return next(new Error('Insufficient permissions'));
       }
       socket.data.user = payload;
@@ -148,7 +152,7 @@ export function initializeSocket(
     if (!token) return next(new Error('Authentication required'));
     try {
       const payload = verifyAccessToken(token);
-      if (!payload.permissions.includes('store_audit.view')) {
+      if (!payload.permissions.includes(PERMISSIONS.STORE_AUDIT_VIEW)) {
         return next(new Error('Insufficient permissions'));
       }
       socket.data.user = payload;
@@ -173,7 +177,7 @@ export function initializeSocket(
     if (!token) return next(new Error('Authentication required'));
     try {
       const payload = verifyAccessToken(token);
-      if (!payload.permissions.includes('case_report.view')) {
+      if (!payload.permissions.includes(PERMISSIONS.CASE_REPORT_VIEW)) {
         return next(new Error('Insufficient permissions'));
       }
       socket.data.user = payload;
@@ -198,7 +202,7 @@ export function initializeSocket(
     if (!token) return next(new Error('Authentication required'));
     try {
       const payload = verifyAccessToken(token);
-      if (!payload.permissions.includes('violation_notice.view')) {
+      if (!payload.permissions.includes(PERMISSIONS.VIOLATION_NOTICE_VIEW)) {
         return next(new Error('Insufficient permissions'));
       }
       socket.data.user = payload;
@@ -223,7 +227,7 @@ export function initializeSocket(
     if (!token) return next(new Error('Authentication required'));
     try {
       const payload = verifyAccessToken(token);
-      if (!payload.permissions.includes('shift.view_all')) {
+      if (!payload.permissions.includes(PERMISSIONS.SHIFT_VIEW_ALL)) {
         return next(new Error('Insufficient permissions'));
       }
       socket.data.user = payload;
@@ -245,8 +249,8 @@ export function initializeSocket(
     logger.debug(`Employee Shifts: ${socket.data.user?.sub} connected`);
 
     socket.on('join-branch', (branchId: string) => {
-      const canViewAll = socket.data.user?.permissions.includes('shift.view_all')
-        || socket.data.user?.permissions.includes('admin.view_all_branches');
+      const canViewAll = socket.data.user?.permissions.includes(PERMISSIONS.SHIFT_VIEW_ALL)
+        || socket.data.user?.permissions.includes(PERMISSIONS.ADMIN_VIEW_ALL_BRANCHES);
       if (canViewAll || socket.data.user?.branchIds.includes(branchId)) {
         socket.join(`branch:${branchId}`);
         logger.debug(`Employee Shifts: ${socket.data.user?.sub} joined branch:${branchId}`);
@@ -267,7 +271,9 @@ export function initializeSocket(
     if (!token) return next(new Error('Authentication required'));
     try {
       const payload = verifyAccessToken(token);
-      if (!payload.permissions.includes('peer_evaluation.view')) {
+      const canAccessPeerEvaluations = payload.permissions.includes(PERMISSIONS.PEER_EVALUATION_VIEW)
+        || payload.permissions.includes(PERMISSIONS.PEER_EVALUATION_MANAGE);
+      if (!canAccessPeerEvaluations) {
         return next(new Error('Insufficient permissions'));
       }
       socket.data.user = payload;

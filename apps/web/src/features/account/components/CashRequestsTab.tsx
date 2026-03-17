@@ -5,6 +5,8 @@ import { Button } from '@/shared/components/ui/Button';
 import { Spinner } from '@/shared/components/ui/Spinner';
 import { api } from '@/shared/services/api.client';
 import { useBranchStore } from '@/shared/store/branchStore';
+import { usePermission } from '@/shared/hooks/usePermission';
+import { PERMISSIONS } from '@omnilert/shared';
 import { DollarSign, X, Plus, Paperclip } from 'lucide-react';
 import { ImageModal } from '@/features/pos-verification/components/ImageModal';
 
@@ -223,6 +225,8 @@ function NewRequestModal({ onClose, onCreated }: NewRequestModalProps) {
 
 export function CashRequestsTab() {
   const PAGE_SIZE = 10;
+  const { hasPermission } = usePermission();
+  const canSubmitCashRequest = hasPermission(PERMISSIONS.ACCOUNT_SUBMIT_CASH_REQUEST);
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -259,7 +263,7 @@ export function CashRequestsTab() {
         <h1 className="text-2xl font-bold text-gray-900">Cash Requests</h1>
       </div>
 
-      {showModal && (
+      {showModal && canSubmitCashRequest && (
         <NewRequestModal
           onClose={() => setShowModal(false)}
           onCreated={(r) => {
@@ -273,10 +277,16 @@ export function CashRequestsTab() {
         {/* Header row */}
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-gray-700">My Requests</h2>
-          <Button size="sm" onClick={() => setShowModal(true)}>
-            <Plus className="mr-1.5 h-4 w-4" />
-            New Request
-          </Button>
+          {canSubmitCashRequest ? (
+            <Button size="sm" onClick={() => setShowModal(true)}>
+              <Plus className="mr-1.5 h-4 w-4" />
+              New Request
+            </Button>
+          ) : (
+            <span className="text-xs text-amber-700">
+              You do not have permission to submit cash requests.
+            </span>
+          )}
         </div>
 
         {requests.length === 0 ? (

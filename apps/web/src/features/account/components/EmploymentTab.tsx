@@ -4,7 +4,9 @@ import { Button } from '@/shared/components/ui/Button';
 import { Input } from '@/shared/components/ui/Input';
 import { Spinner } from '@/shared/components/ui/Spinner';
 import { api } from '@/shared/services/api.client';
+import { usePermission } from '@/shared/hooks/usePermission';
 import { useAuthStore } from '@/features/auth/store/authSlice';
+import { PERMISSIONS } from '@omnilert/shared';
 import {
   AlertCircle,
   AlertTriangle,
@@ -233,6 +235,8 @@ function shouldApplyRequestedValue(key: string, requestedValue: unknown, current
 
 export function EmploymentTab() {
   const updateUser = useAuthStore((s) => s.updateUser);
+  const { hasPermission } = usePermission();
+  const canEditOwnProfile = hasPermission(PERMISSIONS.EMPLOYEE_EDIT_OWN_PROFILE);
 
   const [loading, setLoading] = useState(true);
   const [submittingPersonal, setSubmittingPersonal] = useState(false);
@@ -442,6 +446,10 @@ export function EmploymentTab() {
   };
 
   const handleUploadValidId = async (file: File) => {
+    if (!canEditOwnProfile) {
+      setError('You do not have permission to edit your profile.');
+      return;
+    }
     setError('');
     setSuccess('');
     setUploadingValidId(true);
@@ -470,6 +478,10 @@ export function EmploymentTab() {
   };
 
   const handleSubmitPersonalVerification = async () => {
+    if (!canEditOwnProfile) {
+      setError('You do not have permission to edit your profile.');
+      return;
+    }
     setError('');
     setSuccess('');
     setSubmittingPersonal(true);
@@ -501,6 +513,10 @@ export function EmploymentTab() {
   };
 
   const handleSubmitBankVerification = async () => {
+    if (!canEditOwnProfile) {
+      setError('You do not have permission to edit your profile.');
+      return;
+    }
     setError('');
     setSuccess('');
     if (!bankId || !bankAccountNumber.trim()) {
@@ -529,6 +545,10 @@ export function EmploymentTab() {
   };
 
   const submitRequirement = async () => {
+    if (!canEditOwnProfile) {
+      setError('You do not have permission to edit your profile.');
+      return;
+    }
     if (!selectedRequirement) return;
     setError('');
     setSuccess('');
@@ -626,7 +646,8 @@ export function EmploymentTab() {
                 <button
                   type="button"
                   onClick={() => setProfileModalOpen(true)}
-                  className="mt-1 text-sm text-primary-600 hover:underline"
+                  disabled={!canEditOwnProfile}
+                  className="mt-1 text-sm text-primary-600 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline"
                 >
                   Add/Change Profile Picture
                 </button>
@@ -636,6 +657,11 @@ export function EmploymentTab() {
             <p className="text-xs text-gray-500">
               Changes are sent for verification first. Your profile and Odoo records are updated only after approval.
             </p>
+            {!canEditOwnProfile && (
+              <p className="text-xs text-amber-700">
+                You can view your profile, but you do not have permission to submit profile updates.
+              </p>
+            )}
 
             <div className="space-y-6">
               <div className="space-y-4 border-t border-gray-100 pt-4">
@@ -862,7 +888,7 @@ export function EmploymentTab() {
                 type="button"
                 variant="secondary"
                 onClick={() => validIdInputRef.current?.click()}
-                disabled={uploadingValidId}
+                disabled={uploadingValidId || !canEditOwnProfile}
               >
                 <Upload className="mr-1 h-4 w-4" />
                 {uploadingValidId ? 'Uploading...' : validIdUrl ? 'Replace Valid ID' : 'Upload Valid ID'}
@@ -873,7 +899,7 @@ export function EmploymentTab() {
                 <Button
                   type="button"
                   variant="success"
-                  disabled={Boolean(personalPending) || submittingPersonal}
+                  disabled={!canEditOwnProfile || Boolean(personalPending) || submittingPersonal}
                   onClick={handleSubmitPersonalVerification}
                 >
                   {submittingPersonal ? 'Submitting...' : 'Submit Personal Information for Verification'}
@@ -1036,7 +1062,7 @@ export function EmploymentTab() {
                 <Button
                   type="button"
                   variant="success"
-                  disabled={Boolean(bankPending) || Boolean(profile?.bankCooldown.cooldownActive) || submittingBank}
+                  disabled={!canEditOwnProfile || Boolean(bankPending) || Boolean(profile?.bankCooldown.cooldownActive) || submittingBank}
                   onClick={handleSubmitBankVerification}
                 >
                   {submittingBank ? 'Submitting...' : 'Submit Bank Information for Verification'}
@@ -1158,7 +1184,11 @@ export function EmploymentTab() {
                   Close
                 </Button>
                 {selectedRequirement.display_status !== 'verification' && (
-                  <Button variant="success" onClick={submitRequirement} disabled={submittingRequirement}>
+                  <Button
+                    variant="success"
+                    onClick={submitRequirement}
+                    disabled={!canEditOwnProfile || submittingRequirement}
+                  >
                     <Upload className="mr-1 h-4 w-4" />
                     {submittingRequirement ? 'Submitting...' : 'Submit for Verification'}
                   </Button>

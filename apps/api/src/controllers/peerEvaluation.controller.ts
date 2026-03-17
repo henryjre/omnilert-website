@@ -6,6 +6,7 @@ import * as peerEvaluationService from '../services/peerEvaluation.service.js';
 
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
+    const canManage = req.user!.permissions.includes(PERMISSIONS.PEER_EVALUATION_MANAGE);
     const filters = {
       status: req.query.status as string | undefined,
       dateFrom: (req.query.date_from ?? req.query.dateFrom) as string | undefined,
@@ -15,6 +16,8 @@ export async function list(req: Request, res: Response, next: NextFunction) {
       userId: req.query.user_id as string | undefined,
       page: req.query.page ? Number(req.query.page) : undefined,
       pageSize: req.query.pageSize ? Number(req.query.pageSize) : undefined,
+      requesterUserId: req.user!.sub,
+      canManage,
     };
 
     const result = await peerEvaluationService.listPeerEvaluations(req.tenantDb!, filters);
@@ -27,7 +30,11 @@ export async function list(req: Request, res: Response, next: NextFunction) {
 export async function getById(req: Request, res: Response, next: NextFunction) {
   try {
     const id = req.params.id as string;
-    const evaluation = await peerEvaluationService.getPeerEvaluationById(req.tenantDb!, id);
+    const canManage = req.user!.permissions.includes(PERMISSIONS.PEER_EVALUATION_MANAGE);
+    const evaluation = await peerEvaluationService.getPeerEvaluationById(req.tenantDb!, id, {
+      requesterUserId: req.user!.sub,
+      canManage,
+    });
     if (!evaluation) throw new AppError(404, 'Peer evaluation not found');
     res.json({ success: true, data: evaluation });
   } catch (err) {
