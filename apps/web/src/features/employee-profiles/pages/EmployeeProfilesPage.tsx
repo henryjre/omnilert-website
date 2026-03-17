@@ -375,6 +375,7 @@ export function EmployeeProfilesPage() {
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const openTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [workEditMode, setWorkEditMode] = useState(false);
+  const workEditModeRef = useRef(false);
   const [assignmentOptions, setAssignmentOptions] = useState<AssignmentOptionCompany[]>([]);
   const [assignmentOptionsLoading, setAssignmentOptionsLoading] = useState(false);
   const [editCompanyAssignments, setEditCompanyAssignments] = useState<CompanyAssignmentForm[]>([]);
@@ -437,6 +438,8 @@ export function EmployeeProfilesPage() {
 
   const applyDetailToState = useCallback((payload: EmployeeDetail) => {
     setDetail(payload);
+    // Don't reset the form while the user is actively editing it.
+    if (workEditModeRef.current) return;
     setWorkForm({
       departmentId: payload.work_information.department_id ?? '',
       positionTitle: payload.work_information.position_title ?? '',
@@ -706,7 +709,7 @@ export function EmployeeProfilesPage() {
     }
     setPanelOpen(false);
     setDetailLoading(false);
-    setWorkEditMode(false);
+    workEditModeRef.current = false; setWorkEditMode(false);
     setWorkUpdateSuccess('');
     setWorkUpdateError('');
     closeTimerRef.current = window.setTimeout(() => {
@@ -795,7 +798,7 @@ export function EmployeeProfilesPage() {
         };
       }));
       setWorkUpdateSuccess('Work information updated.');
-      setWorkEditMode(false);
+      workEditModeRef.current = false; setWorkEditMode(false);
       setShowOdooConfirm(false);
       void fetchDetail(payload.id, { silentError: true });
       await fetchList({ silent: true });
@@ -817,7 +820,7 @@ export function EmployeeProfilesPage() {
     setEditCompanyAssignments(
       Array.from(assignmentMap.entries()).map(([companyId, branchIds]) => ({ companyId, branchIds })),
     );
-    setWorkEditMode(false);
+    workEditModeRef.current = false; setWorkEditMode(false);
     setShowOdooConfirm(false);
     setWorkForm({
       departmentId: detail.work_information.department_id ?? '',
@@ -935,7 +938,7 @@ export function EmployeeProfilesPage() {
           ?? selectedCompany?.branchIds[0]
           ?? '',
       }));
-      setWorkEditMode(true);
+      workEditModeRef.current = true; setWorkEditMode(true);
     } catch (err: any) {
       setWorkUpdateError(err.response?.data?.error || 'Failed to load assignment options');
     } finally {
