@@ -946,7 +946,7 @@ export function EmployeeProfilesPage() {
     }
   }, [assignmentOptions.length, assignmentOptionsLoading, detail]);
 
-  const handleSaveWorkInformation = useCallback(() => {
+  const handleSaveWorkInformation = () => {
     if (!detail) return;
     const currentBranchIds = new Set(
       detail.work_information.branch_options.map((branch) => branch.branch_id),
@@ -959,7 +959,7 @@ export function EmployeeProfilesPage() {
       return;
     }
     void saveWorkInformation();
-  }, [detail, editCompanyAssignments]);
+  };
 
   if (loading) {
     return (

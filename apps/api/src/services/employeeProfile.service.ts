@@ -48,6 +48,8 @@ type UserBranchSummary = {
   branch_options: BranchRef[];
 };
 
+type CompanyAssignmentInput = { companyId: string; branchIds: string[] };
+
 async function loadUserBranchSummaryMap(
   masterDb: Knex,
   userIds: string[],
@@ -120,6 +122,47 @@ async function loadUserBranchSummaryMap(
   }
 
   return out;
+}
+
+function normalizeCompanyAssignments(assignments: CompanyAssignmentInput[]): CompanyAssignmentInput[] {
+  return assignments
+    .map((assignment) => ({
+      companyId: assignment.companyId,
+      branchIds: Array.from(new Set(assignment.branchIds)).sort(),
+    }))
+    .sort((a, b) => a.companyId.localeCompare(b.companyId));
+}
+
+function toCompanyAssignmentsFromBranches(branches: BranchRef[]): CompanyAssignmentInput[] {
+  const map = new Map<string, Set<string>>();
+  for (const branch of branches) {
+    const set = map.get(branch.company_id) ?? new Set<string>();
+    set.add(branch.branch_id);
+    map.set(branch.company_id, set);
+  }
+  return Array.from(map.entries()).map(([companyId, branchIds]) => ({
+    companyId,
+    branchIds: Array.from(branchIds),
+  }));
+}
+
+function areCompanyAssignmentsEqual(
+  current: CompanyAssignmentInput[],
+  next: CompanyAssignmentInput[],
+): boolean {
+  const normalizedCurrent = normalizeCompanyAssignments(current);
+  const normalizedNext = normalizeCompanyAssignments(next);
+  if (normalizedCurrent.length !== normalizedNext.length) return false;
+  for (let i = 0; i < normalizedCurrent.length; i += 1) {
+    if (normalizedCurrent[i].companyId !== normalizedNext[i].companyId) return false;
+    const currentBranches = normalizedCurrent[i].branchIds;
+    const nextBranches = normalizedNext[i].branchIds;
+    if (currentBranches.length !== nextBranches.length) return false;
+    for (let j = 0; j < currentBranches.length; j += 1) {
+      if (currentBranches[j] !== nextBranches[j]) return false;
+    }
+  }
+  return true;
 }
 
 export async function listEmployeeProfiles(input: {
@@ -423,7 +466,7 @@ export async function updateEmployeeWorkInformation(input: {
   positionTitle: string | null;
   employmentStatus?: EmploymentStatus;
   isActive?: boolean;
-  companyAssignments?: Array<{ companyId: string; branchIds: string[] }>;
+  companyAssignments?: CompanyAssignmentInput[];
   residentBranch?: { companyId: string; branchId: string } | null;
   dateStarted: string | null;
   excludedEmails?: string[];
@@ -471,10 +514,17 @@ export async function updateEmployeeWorkInformation(input: {
       throw new AppError(400, 'Selected resident branch must be included in company assignments');
     }
 
-    await assignGlobalCompanyBranches({
-      userId: input.userId,
-      companyAssignments: input.companyAssignments,
-    });
+    const branchSummaryByUserId = await loadUserBranchSummaryMap(masterDb, [input.userId]);
+    const currentAssignments = toCompanyAssignmentsFromBranches(
+      branchSummaryByUserId[input.userId]?.branch_options ?? [],
+    );
+    const assignmentsChanged = !areCompanyAssignmentsEqual(currentAssignments, input.companyAssignments);
+    if (assignmentsChanged) {
+      await assignGlobalCompanyBranches({
+        userId: input.userId,
+        companyAssignments: input.companyAssignments,
+      });
+    }
   }
 
   await masterDb.transaction(async (trx) => {
