@@ -1418,6 +1418,7 @@ export function EmployeeProfilesPage() {
                           <Button
                             size="sm"
                             variant="secondary"
+                            disabled={detailLoading}
                             onClick={() => {
                               void enterWorkEditMode();
                             }}
