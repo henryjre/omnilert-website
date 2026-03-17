@@ -66,7 +66,7 @@ export function PerformanceScoresSection({ criteria }: PerformanceScoresSectionP
   return (
     <div>
       <SectionLabel>Performance Scores</SectionLabel>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:grid-rows-2 items-stretch">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 items-stretch">
         <StarTile
           label="Customer Service Score"
           score={criteria.sqaaScore}
@@ -84,12 +84,6 @@ export function PerformanceScoresSection({ criteria }: PerformanceScoresSectionP
           score={criteria.workplaceRelationsScore}
           contribution="Contributes to EPI"
           delay={0.3}
-        />
-        <StarTile
-          label="Compliance Score"
-          score={criteria.productivityRate !== null ? criteria.productivityRate / 20 : null}
-          contribution="Contributes to EPI"
-          delay={0.45}
         />
       </div>
     </div>

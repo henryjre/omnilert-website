@@ -1,6 +1,7 @@
 import type { Knex } from 'knex';
 import { AppError } from '../middleware/errorHandler.js';
 import { hydrateUsersByIds } from './globalUser.service.js';
+import { db } from '../config/database.js';
 
 // ─── Internal Row Types ───────────────────────────────────────────────────────
 
@@ -153,6 +154,7 @@ export async function submitEvaluation(
   id: string,
   userId: string,
   body: SubmitEvaluationBody,
+  companyId: string,
 ): Promise<PeerEvaluationRow> {
   const evaluation = await tenantDb('peer_evaluations').where({ id }).first() as PeerEvaluationRow | undefined;
 
@@ -186,5 +188,32 @@ export async function submitEvaluation(
     })
     .returning('*');
 
-  return updated as PeerEvaluationRow;
+  const completed = updated as PeerEvaluationRow;
+
+  // Append snapshot to master users.peer_evaluations for the evaluated user
+  const masterDb = db.getMasterDb();
+  const averageScore = (completed.q1_score + completed.q2_score + completed.q3_score) / 3;
+  const entry = {
+    id: completed.id,
+    company_id: companyId,
+    evaluator_user_id: completed.evaluator_user_id,
+    shift_id: completed.shift_id,
+    q1_score: completed.q1_score,
+    q2_score: completed.q2_score,
+    q3_score: completed.q3_score,
+    average_score: Math.round(averageScore * 100) / 100,
+    additional_message: completed.additional_message,
+    submitted_at: completed.submitted_at,
+  };
+
+  await masterDb('users')
+    .where({ id: completed.evaluated_user_id })
+    .update({
+      peer_evaluations: masterDb.raw(
+        `coalesce(peer_evaluations, '[]'::jsonb) || ?::jsonb`,
+        [JSON.stringify([entry])],
+      ),
+    });
+
+  return completed;
 }

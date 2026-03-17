@@ -184,6 +184,22 @@ function ExpandedMetrics({ criteria }: { criteria: EpiCriteria }) {
         </div>
       </div>
 
+      {/* Operational Compliance */}
+      <div>
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">Operational Compliance</p>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {criteria.uniformComplianceRate !== null
+            ? <MetricBar label="Uniform Compliance" value={criteria.uniformComplianceRate} max={100} format={`${criteria.uniformComplianceRate.toFixed(0)}%`} />
+            : <NullMetric label="Uniform Compliance" />}
+          {criteria.hygieneComplianceRate !== null
+            ? <MetricBar label="Hygiene Compliance" value={criteria.hygieneComplianceRate} max={100} format={`${criteria.hygieneComplianceRate.toFixed(0)}%`} />
+            : <NullMetric label="Hygiene Compliance" />}
+          {criteria.sopComplianceRate !== null
+            ? <MetricBar label="SOP Compliance" value={criteria.sopComplianceRate} max={100} format={`${criteria.sopComplianceRate.toFixed(0)}%`} />
+            : <NullMetric label="SOP Compliance" />}
+        </div>
+      </div>
+
       {/* Discipline & Recognition */}
       <div>
         <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">Discipline &amp; Recognition</p>

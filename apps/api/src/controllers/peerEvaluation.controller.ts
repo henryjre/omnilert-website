@@ -50,7 +50,7 @@ export async function submit(req: Request, res: Response, next: NextFunction) {
     const id = req.params.id as string;
     const userId = req.user!.sub;
 
-    const result = await peerEvaluationService.submitEvaluation(req.tenantDb!, id, userId, req.body);
+    const result = await peerEvaluationService.submitEvaluation(req.tenantDb!, id, userId, req.body, req.companyContext!.companyId);
 
     try {
       getIO().of('/peer-evaluations').to('company:' + req.companyContext!.companyId).emit('peer-evaluation:completed', { id });
