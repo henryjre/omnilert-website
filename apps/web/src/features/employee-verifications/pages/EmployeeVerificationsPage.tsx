@@ -775,7 +775,7 @@ export function EmployeeVerificationsPage() {
           <p className="mt-1 text-sm font-medium text-gray-600 sm:hidden">{activeTypeLabel}</p>
         </div>
 
-        <div className="mx-auto flex w-fit flex-wrap items-center justify-center gap-2 rounded-lg bg-gray-100 p-1 sm:mx-0 sm:justify-start">
+        <div className="flex justify-center gap-1 border-b border-gray-200 sm:justify-start">
           {([
             { key: 'registration', label: 'Registration', icon: UserRoundPlus },
             { key: 'personalInformation', label: 'Personal Information', icon: IdCard },
@@ -785,18 +785,14 @@ export function EmployeeVerificationsPage() {
             <button
               key={tab.key}
               onClick={() => setActiveType(tab.key)}
-              aria-label={tab.label}
-              title={tab.label}
-              className={`rounded-md px-4 py-2.5 text-sm font-medium transition-colors sm:px-4 sm:py-1.5 ${
+              className={`flex items-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
                 activeType === tab.key
-                  ? 'bg-primary-600 text-white shadow-sm'
-                  : 'text-gray-600 hover:text-gray-800'
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
-              <span className="flex items-center justify-center gap-2">
-                <tab.icon className="h-5 w-5 sm:h-4 sm:w-4" />
-                <span className="hidden sm:inline">{tab.label}</span>
-              </span>
+              <tab.icon className="h-4 w-4" />
+              <span className="hidden sm:inline">{tab.label}</span>
             </button>
           ))}
         </div>

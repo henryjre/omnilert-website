@@ -44,8 +44,13 @@ Same pattern as `employee_notifications.user_id`. Do not add that FK.
 **`store_audits` partial unique index enforces the one-active-audit-per-auditor constraint.**
 `CREATE UNIQUE INDEX store_audits_one_active_per_auditor ON store_audits(auditor_user_id) WHERE status = 'processing'`. This also acts as race-condition protection for concurrent claim requests — a duplicate constraint error is caught by the API and returned as 409.
 
-**`users.css_audits` and `users.compliance_audit` live on master `users`.**
-CSS audit results (star rating log) and compliance audit results (latest answers) are stored on master `users` — not in tenant DB. This follows the rule: user data lives on master.
+**`users.css_audits`, `users.compliance_audit`, `users.violation_notices`, and `users.rewards` live on master `users`.**
+CSS audit results (star rating log), compliance audit results (latest answers), completed VN records, and future rewards are all stored as JSONB on master `users` — not in tenant DB. This follows the rule: user data lives on master.
+
+- `css_audits`: JSONB array, each entry `{ audit_id, star_rating, audited_at }`. Appended on CSS audit completion.
+- `compliance_audit`: JSONB object (latest only) `{ audit_id, answers: {...}, audited_at }`. Replaced on compliance audit completion.
+- `violation_notices`: JSONB array, each entry `{ vn_id, vn_number, company_id, description, completed_at }`. Appended by `appendViolationNoticeToTargetUsers()` in `violationNotice.service.ts` when a VN is completed. Write is best-effort (errors logged, do not fail the completion response).
+- `rewards`: JSONB array, default `[]`. Reserved for future use.
 
 **`req.companyContext` is your runtime company handle.**
 Populated by `middleware/companyResolver.ts`. Fields: `companyId`, `companySlug`, `companyName`, `companyStorageRoot`. The resolver enforces `companies.is_active = true` before resolving the tenant DB — this is a security boundary, do not short-circuit it.

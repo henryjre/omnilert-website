@@ -143,6 +143,9 @@ export interface ServerToClientEvents {
     violationNoticeId: string;
     messageId: string;
   }) => void;
+  'peer-evaluation:new': (data: { shiftId: string }) => void;
+  'peer-evaluation:completed': (data: { id: string }) => void;
+  'peer-evaluation:expired': (data: { count: number }) => void;
 }
 
 export interface ClientToServerEvents {

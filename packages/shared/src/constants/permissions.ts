@@ -74,6 +74,10 @@ export const PERMISSIONS = {
   VIOLATION_NOTICE_ISSUE: 'violation_notice.issue',
   VIOLATION_NOTICE_COMPLETE: 'violation_notice.complete',
   VIOLATION_NOTICE_MANAGE: 'violation_notice.manage',
+
+  // Peer Evaluations
+  PEER_EVALUATION_VIEW: 'peer_evaluation.view',
+  PEER_EVALUATION_MANAGE: 'peer_evaluation.manage',
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -195,6 +199,13 @@ export const PERMISSION_CATEGORIES: Record<string, { label: string; permissions:
         PERMISSIONS.VIOLATION_NOTICE_ISSUE,
         PERMISSIONS.VIOLATION_NOTICE_COMPLETE,
         PERMISSIONS.VIOLATION_NOTICE_MANAGE,
+      ],
+    },
+    peer_evaluation: {
+      label: 'Peer Evaluations',
+      permissions: [
+        PERMISSIONS.PEER_EVALUATION_VIEW,
+        PERMISSIONS.PEER_EVALUATION_MANAGE,
       ],
     },
   };

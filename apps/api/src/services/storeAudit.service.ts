@@ -1,5 +1,5 @@
 import type { Knex } from 'knex';
-import type { StoreAudit, StoreAuditStatus, StoreAuditType } from '@omnilert/shared';
+import type { CssCriteriaScores, StoreAudit, StoreAuditStatus, StoreAuditType } from '@omnilert/shared';
 import { db } from '../config/database.js';
 import { env } from '../config/env.js';
 import { getIO } from '../config/socket.js';
@@ -29,6 +29,7 @@ function normalizeRow(row: any): StoreAuditRow {
     ...row,
     css_order_lines: parseJsonField(row.css_order_lines, null),
     css_payments: parseJsonField(row.css_payments, null),
+    css_criteria_scores: parseJsonField(row.css_criteria_scores, null),
     comp_extra_fields: parseJsonField(row.comp_extra_fields, null),
   };
 }
@@ -90,7 +91,21 @@ function emitStoreAuditEvent(
   }
 }
 
-async function analyzeCssAuditLog(auditLog: string): Promise<string> {
+async function analyzeCssAudit(auditLog: string, criteriaScores: CssCriteriaScores): Promise<string> {
+  const criteriaLabels: Record<keyof CssCriteriaScores, string> = {
+    greeting: 'Greeting & First Impression',
+    order_accuracy: 'Order Accuracy & Confirmation',
+    suggestive_selling: 'Suggestive Selling / Revenue Initiative',
+    service_efficiency: 'Service Efficiency & Flow',
+    professionalism: 'Professionalism & Closing Experience',
+  };
+
+  const scoresPreamble = (Object.keys(criteriaLabels) as Array<keyof CssCriteriaScores>)
+    .map((key) => `- ${criteriaLabels[key]}: ${criteriaScores[key]}/5`)
+    .join('\n');
+
+  const userContent = `Criteria Scores:\n${scoresPreamble}\n\nAudit Log:\n${auditLog}`;
+
   const response = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: {
@@ -110,7 +125,7 @@ async function analyzeCssAuditLog(auditLog: string): Promise<string> {
         },
         {
           role: 'user',
-          content: auditLog,
+          content: userContent,
         },
       ],
     }),
@@ -147,6 +162,7 @@ async function analyzeCssAuditLog(auditLog: string): Promise<string> {
 async function appendCssAuditResult(userKey: string, payload: {
   audit_id: string;
   star_rating: number;
+  criteria_scores: CssCriteriaScores;
   audited_at: string;
 }): Promise<void> {
   const masterDb = db.getMasterDb();
@@ -167,8 +183,7 @@ async function appendCssAuditResult(userKey: string, payload: {
 async function updateComplianceAuditResult(odooEmployeeId: number, payload: {
   audit_id: string;
   answers: {
-    non_idle: boolean;
-    cellphone: boolean;
+    productivity_rate: boolean;
     uniform: boolean;
     hygiene: boolean;
     sop: boolean;
@@ -297,12 +312,11 @@ export async function completeStoreAudit(input: {
   companyId: string;
   payload:
   | {
-    star_rating: number;
+    criteria_scores: CssCriteriaScores;
     audit_log: string;
   }
   | {
-    non_idle: boolean;
-    cellphone: boolean;
+    productivity_rate: boolean;
     uniform: boolean;
     hygiene: boolean;
     sop: boolean;
@@ -318,13 +332,19 @@ export async function completeStoreAudit(input: {
   let updated: any;
 
   if (audit.type === 'customer_service') {
-    const cssPayload = input.payload as { star_rating: number; audit_log: string };
-    const aiReport = await analyzeCssAuditLog(cssPayload.audit_log);
+    const cssPayload = input.payload as { criteria_scores: CssCriteriaScores; audit_log: string };
+    const { criteria_scores } = cssPayload;
+    const starRating = Math.round(
+      ((criteria_scores.greeting + criteria_scores.order_accuracy + criteria_scores.suggestive_selling
+        + criteria_scores.service_efficiency + criteria_scores.professionalism) / 5) * 100,
+    ) / 100;
+    const aiReport = await analyzeCssAudit(cssPayload.audit_log, criteria_scores);
     [updated] = await input.tenantDb('store_audits')
       .where({ id: input.auditId })
       .update({
         status: 'completed',
-        css_star_rating: cssPayload.star_rating,
+        css_criteria_scores: JSON.stringify(criteria_scores),
+        css_star_rating: starRating,
         css_audit_log: cssPayload.audit_log,
         css_ai_report: aiReport,
         completed_at: completedAt,
@@ -335,14 +355,14 @@ export async function completeStoreAudit(input: {
     if (audit.css_cashier_user_key) {
       await appendCssAuditResult(String(audit.css_cashier_user_key), {
         audit_id: input.auditId,
-        star_rating: cssPayload.star_rating,
+        star_rating: starRating,
+        criteria_scores,
         audited_at: completedAt.toISOString(),
       });
     }
   } else {
     const compPayload = input.payload as {
-      non_idle: boolean;
-      cellphone: boolean;
+      productivity_rate: boolean;
       uniform: boolean;
       hygiene: boolean;
       sop: boolean;
@@ -351,8 +371,7 @@ export async function completeStoreAudit(input: {
       .where({ id: input.auditId })
       .update({
         status: 'completed',
-        comp_non_idle: compPayload.non_idle,
-        comp_cellphone: compPayload.cellphone,
+        comp_productivity_rate: compPayload.productivity_rate,
         comp_uniform: compPayload.uniform,
         comp_hygiene: compPayload.hygiene,
         comp_sop: compPayload.sop,
@@ -365,8 +384,7 @@ export async function completeStoreAudit(input: {
       await updateComplianceAuditResult(Number(audit.comp_odoo_employee_id), {
         audit_id: input.auditId,
         answers: {
-          non_idle: compPayload.non_idle,
-          cellphone: compPayload.cellphone,
+          productivity_rate: compPayload.productivity_rate,
           uniform: compPayload.uniform,
           hygiene: compPayload.hygiene,
           sop: compPayload.sop,

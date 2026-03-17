@@ -22,10 +22,12 @@ import shiftExchangeRoutes from './shiftExchange.routes.js';
 import storeAuditRoutes from './storeAudit.routes.js';
 import caseReportRoutes from './caseReport.routes.js';
 import violationNoticeRoutes from './violationNotice.routes.js';
+import peerEvaluationRoutes from './peerEvaluation.routes.js';
 import { authenticate } from '../middleware/auth.js';
 import { resolveCompany } from '../middleware/companyResolver.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { PERMISSIONS } from '@omnilert/shared';
+import { runComplianceCron } from '../services/complianceCron.service.js';
 
 const router = Router();
 
@@ -33,6 +35,14 @@ const router = Router();
 router.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+// Dev-only: manual cron triggers
+if (process.env.NODE_ENV !== 'production') {
+  router.post('/dev/trigger/compliance-cron', (_req, res) => {
+    void runComplianceCron();
+    res.json({ triggered: true });
+  });
+}
 
 // Auth routes
 router.use('/auth', authRoutes);
@@ -62,6 +72,7 @@ router.use('/shift-exchanges', shiftExchangeRoutes);
 router.use('/store-audits', storeAuditRoutes);
 router.use('/case-reports', caseReportRoutes);
 router.use('/violation-notices', violationNoticeRoutes);
+router.use('/peer-evaluations', peerEvaluationRoutes);
 router.use('/account', accountRoutes);
 router.use('/dashboard', dashboardRoutes);
 

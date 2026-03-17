@@ -130,16 +130,26 @@ Reusable dropdown for target employee selection. Groups users by role (managemen
 
 - **queued**: Confirm VN, Reject (inline textarea)
 - **discussion**: Issue VN, Reject (inline textarea)
-- **issuance**: Upload Issuance PDF (1 file, PDF only, 50 MB), display current file link, Advance to Disciplinary (only if file exists)
-- **disciplinary_meeting**: Upload Disciplinary Proof (any media/doc, 50 MB), display current file link, Complete VN (only if file exists)
-- **completed**: Summary of who confirmed/issued/completed
-- **rejected**: Rejection reason + who rejected
+- **issuance**: Dedicated "Issuance PDF" section always visible — shows file link or "No file uploaded yet" placeholder. Inline "Upload PDF" / "Replace" text link triggers hidden file input. "Advance to Disciplinary Meeting" button appears below when file is present.
+- **disciplinary_meeting**: Dedicated "Disciplinary Meeting" section — shows media/doc thumbnail preview (image, video, or generic icon card) or placeholder. Inline "Upload Proof" / "Replace" text link. "Complete VN" button appears below when file is present. Clicking the thumbnail opens `ImagePreviewModal` (portal).
+- **completed**: Summary card (green bg) with icons: UserCheck (confirmed by), FileCheck (issued by), CheckCircle2 (completed by).
+- **rejected**: Summary card (red bg) with icons: FileX (rejection reason), UserCheck (rejected by).
 
 ### File uploads in VN
 
-- Issuance file: PDF only, stored at `{root}/Violation Notices/VN-{vnNumber}/{filename}`
-- Disciplinary proof: any media/doc, same path prefix
+- Issuance file: PDF only, stored at `{root}/Violation Notices/VN-{vnNumber}/{filename}`. Duplicate detection: if selected filename matches `vn.issuance_file_name`, upload is skipped client-side.
+- Disciplinary proof: any media/doc, same path prefix. Same duplicate filename check applies.
 - Message attachments: images, video, PDF, Word, Excel — up to 10 files
+
+### Disciplinary proof thumbnail
+
+Media type detection uses file extension from `vn.disciplinary_file_name`:
+
+- `.mp4/.webm/.ogg/.mov` → `<video>` thumbnail (muted, no controls)
+- `.jpg/.jpeg/.png/.gif/.webp/.svg` → `<img>` thumbnail
+- Other (PDF, DOC, etc.) → icon + truncated filename card
+
+Clicking the thumbnail opens `ImagePreviewModal` from `case-reports/components/ImagePreviewModal.tsx`.
 
 ### Chat section
 

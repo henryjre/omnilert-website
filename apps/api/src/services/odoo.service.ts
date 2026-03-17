@@ -1771,23 +1771,23 @@ export async function getActiveAttendances(): Promise<ActiveAttendanceRecord[]> 
     {
       domain: [
         ['check_out', '=', false],
-        ['company_id', '!=', 1],
+        ['x_company_id', '!=', 1],
       ],
-      fields: ['id', 'employee_id', 'company_id', 'check_in'],
+      fields: ['id', 'employee_id', 'x_company_id', 'check_in'],
       order: 'check_in desc',
       limit: 5000,
     },
   )) as Array<{
     id: number;
     employee_id?: [number, string] | false;
-    company_id?: [number, string] | false;
+    x_company_id?: [number, string] | false;
     check_in?: string;
     [key: string]: unknown;
   }>;
 
   const result: ActiveAttendanceRecord[] = [];
   for (const row of rows) {
-    if (!Array.isArray(row.employee_id) || !Array.isArray(row.company_id) || !row.check_in) {
+    if (!Array.isArray(row.employee_id) || !Array.isArray(row.x_company_id) || !row.check_in) {
       continue;
     }
     result.push({
@@ -1795,7 +1795,7 @@ export async function getActiveAttendances(): Promise<ActiveAttendanceRecord[]> 
       employee_id: Number(row.employee_id[0]),
       employee_name: String(row.employee_id[1] ?? ''),
       employee_avatar: null,
-      company_id: Number(row.company_id[0]),
+      company_id: Number(row.x_company_id[0]),
       check_in: String(row.check_in),
       raw: row,
     });
