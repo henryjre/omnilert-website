@@ -111,11 +111,7 @@ router.get(
 );
 router.post(
   '/employment/requirements/:requirementCode/submit',
-<<<<<<< HEAD
   requirePermission(PERMISSIONS.ACCOUNT_SUBMIT_EMPLOYEE_REQUIREMENTS),
-=======
-  requirePermission(PERMISSIONS.EMPLOYEE_EDIT_OWN_PROFILE),
->>>>>>> 7e0dbe038c8b626c843cc45ad7f2edd6a5254b85
   upload.single('document'),
   accountController.submitEmploymentRequirement,
 );

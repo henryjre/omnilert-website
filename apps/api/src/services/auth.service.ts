@@ -197,6 +197,18 @@ async function runLoginNudges(input: {
   }
 
   if (input.isSuperAdminFallback) return;
+
+  if (input.resolvedUser.push_notifications_enabled === false) {
+    await createAndDispatchNotification({
+      tenantDb: input.tenantDb,
+      userId: input.resolvedUser.id,
+      title: 'Enable Push Notification',
+      message: 'Please enable device push notifications in My Account > Settings.',
+      type: 'warning',
+      linkUrl: '/account/settings',
+    });
+  }
+
   const permissionSet = new Set(input.sessionPermissions);
   if (!permissionSet.has(PERMISSIONS.ACCOUNT_SUBMIT_EMPLOYEE_REQUIREMENTS)) return;
 
