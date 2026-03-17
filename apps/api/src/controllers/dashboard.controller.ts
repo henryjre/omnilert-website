@@ -3,6 +3,7 @@ import { db } from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import { getEmployeeByWebsiteUserKey, getEmployeePayslipData, createViewOnlyPayslip, getEmployeeEPIData, getEmployeeAuditRatings, getAllEmployeesWithEPI } from '../services/odoo.service.js';
+import { getEpiDashboard, getEpiLeaderboard } from '../services/epiDashboard.service.js';
 
 export async function getPerformanceIndex(req: Request, res: Response, next: NextFunction) {
   try {
@@ -270,6 +271,26 @@ export async function getPayslipBranches(req: Request, res: Response, next: Next
       .orderBy('name');
 
     res.json({ success: true, data: branches });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getEpiDashboardData(req: Request, res: Response, next: NextFunction) {
+  try {
+    const userId = req.user!.sub;
+    const data = await getEpiDashboard(userId);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getEpiLeaderboardData(req: Request, res: Response, next: NextFunction) {
+  try {
+    const companyId = req.companyContext!.companyId;
+    const data = await getEpiLeaderboard(companyId);
+    res.json({ success: true, data });
   } catch (err) {
     next(err);
   }

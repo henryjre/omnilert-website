@@ -36,6 +36,7 @@ export async function create(req: Request, res: Response, next: NextFunction) {
       lastName: req.body.lastName,
       userKey: req.body.userKey,
       employeeNumber: req.body.employeeNumber,
+      epiScore: req.body.epiScore,
       roleIds: req.body.roleIds,
       companyAssignments: req.body.companyAssignments,
       avatarStorageRoot: req.companyContext?.companyStorageRoot ?? null,

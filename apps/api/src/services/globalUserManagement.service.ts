@@ -467,6 +467,7 @@ export async function createGlobalUser(input: {
   lastName: string;
   userKey: string;
   employeeNumber?: number;
+  epiScore?: number;
   roleIds?: string[];
   companyAssignments: CompanyAssignmentInput[];
   avatarStorageRoot?: string | null;
@@ -499,6 +500,7 @@ export async function createGlobalUser(input: {
       last_name: input.lastName.trim(),
       user_key: input.userKey || randomUUID(),
       employee_number: employeeNumber,
+      epi_score: input.epiScore ?? 100,
       is_active: true,
       employment_status: 'active',
     })

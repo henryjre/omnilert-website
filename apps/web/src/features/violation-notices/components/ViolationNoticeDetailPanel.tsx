@@ -129,6 +129,7 @@ export function ViolationNoticeDetailPanel({
   const [rejectionReason, setRejectionReason] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [disciplinaryPreviewOpen, setDisciplinaryPreviewOpen] = useState(false);
+  const [epiDecrease, setEpiDecrease] = useState<number>(0);
 
   // Adapt VN messages to CaseMessage shape expected by ChatSection
   const adaptedMessages = messages.map((msg) => ({
@@ -187,7 +188,7 @@ export function ViolationNoticeDetailPanel({
   async function handleComplete() {
     setActionLoading(true);
     try {
-      const updated = await completeVN(vn.id);
+      const updated = await completeVN(vn.id, epiDecrease);
       onUpdate({ ...vn, ...updated });
       onSilentRefetch();
     } finally {
@@ -444,6 +445,21 @@ export function ViolationNoticeDetailPanel({
                   </div>
                   {canComplete && vn.status === 'disciplinary_meeting' && vn.disciplinary_file_url && (
                     <div className="mt-2">
+                      <div className="mt-3">
+                        <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                          EPI Decrease (0–5)
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={5}
+                          step={0.5}
+                          value={epiDecrease}
+                          onChange={(e) => setEpiDecrease(Math.min(5, Math.max(0, Number(e.target.value))))}
+                          className="w-24 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                        />
+                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Amount to deduct from employee's EPI score upon completion.</p>
+                      </div>
                       <Button onClick={() => void handleComplete()} disabled={actionLoading}>
                         Complete VN
                       </Button>
@@ -503,6 +519,9 @@ export function ViolationNoticeDetailPanel({
                         <CheckCircle2 className="h-4 w-4 shrink-0 text-green-500" />
                         <span>Completed by <span className="font-medium">{vn.completed_by_name}</span></span>
                       </div>
+                    )}
+                    {vn.epi_decrease != null && vn.epi_decrease > 0 && (
+                      <p className="text-sm text-gray-600 dark:text-gray-400">EPI Decrease: <span className="font-medium text-red-600">-{vn.epi_decrease}</span></p>
                     )}
                   </div>
                 )}

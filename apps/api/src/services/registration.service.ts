@@ -675,6 +675,14 @@ export async function approveRegistrationRequest(input: {
   });
 
   const passwordHash = await hashPassword(decryptedPassword);
+
+  // Calculate average EPI of active users — new registrations start at the company average
+  const avgResult = await masterDb('users')
+    .where({ is_active: true, employment_status: 'active' })
+    .avg('epi_score as avg')
+    .first();
+  const avgEpi = Math.round(Number(avgResult?.avg ?? 100) * 10) / 10;
+
   const result = await masterDb.transaction(async (trx) => {
     const existingUser = await trx('users')
       .whereRaw('LOWER(email) = ?', [normalizedEmail])
@@ -706,6 +714,7 @@ export async function approveRegistrationRequest(input: {
           password_hash: passwordHash,
           employee_number: employeeNumber,
           user_key: websiteKey,
+          epi_score: avgEpi,
           is_active: true,
           employment_status: 'active',
         })

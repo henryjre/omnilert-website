@@ -200,7 +200,10 @@ async function updateComplianceAuditResult(odooEmployeeId: number, payload: {
   await masterDb('users')
     .where({ id: targetUser.id })
     .update({
-      compliance_audit: masterDb.raw('?::jsonb', [JSON.stringify(payload)]),
+      compliance_audit: masterDb.raw(
+        `COALESCE(compliance_audit, '[]'::jsonb) || ?::jsonb`,
+        [JSON.stringify([payload])],
+      ),
       updated_at: new Date(),
     });
 }

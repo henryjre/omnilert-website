@@ -18,6 +18,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.650.0",
     "@omnilert/shared": "workspace:*",
+    "@types/pdfkit": "^0.17.5",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.0",
@@ -28,6 +29,7 @@
     "knex": "^3.1.0",
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^6.9.15",
+    "pdfkit": "^0.18.0",
     "pg": "^8.13.0",
     "pg-boss": "^12.13.0",
     "pino": "^9.5.0",

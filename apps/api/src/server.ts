@@ -7,6 +7,7 @@ import { initAttendanceQueue, stopAttendanceQueue } from './services/attendanceQ
 import { initComplianceCron, stopComplianceCron } from './services/complianceCron.service.js';
 import { initPeerEvaluationQueue, stopPeerEvaluationQueue } from './services/peerEvaluationQueue.service.js';
 import { initPeerEvaluationCron, stopPeerEvaluationCron } from './services/peerEvaluationCron.service.js';
+import { initEpiSnapshotCrons, stopEpiSnapshotCrons } from './services/epiSnapshotCron.service.js';
 import { verifyMailConnection } from './services/mail.service.js';
 import { logger } from './utils/logger.js';
 import fs from 'fs';
@@ -51,6 +52,12 @@ async function shutdown(signal: string): Promise<void> {
     logger.error({ err: error }, 'Failed to stop peer evaluation cron');
   }
 
+  try {
+    stopEpiSnapshotCrons();
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to stop EPI snapshot crons');
+  }
+
   await new Promise<void>((resolve) => {
     server.close(() => resolve());
   });
@@ -70,6 +77,7 @@ async function bootstrap(): Promise<void> {
   await initComplianceCron();
   await initPeerEvaluationQueue();
   initPeerEvaluationCron();
+  initEpiSnapshotCrons();
   await verifyMailConnection();
 
   server.listen(env.PORT, () => {

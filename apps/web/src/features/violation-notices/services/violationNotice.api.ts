@@ -49,8 +49,8 @@ export async function issueVN(vnId: string): Promise<ViolationNotice> {
   return response.data.data as ViolationNotice;
 }
 
-export async function completeVN(vnId: string): Promise<ViolationNotice> {
-  const response = await api.post(`/violation-notices/${vnId}/complete`);
+export async function completeVN(vnId: string, epiDecrease: number): Promise<ViolationNotice> {
+  const response = await api.post(`/violation-notices/${vnId}/complete`, { epiDecrease });
   return response.data.data as ViolationNotice;
 }
 

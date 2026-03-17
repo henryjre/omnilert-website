@@ -189,3 +189,124 @@ export async function verifyMailConnection(): Promise<void> {
     logger.error({ err: error }, 'SMTP verification failed');
   }
 }
+
+// ─── EPI Email Functions ───────────────────────────────────────────────────────
+
+export async function sendWeeklyEpiEmail(
+  to: string,
+  employeeName: string,
+  epiBefore: number,
+  epiAfter: number,
+  delta: number,
+  reportDate: string,
+  pdfBuffer: Buffer,
+): Promise<void> {
+  const transport = getTransporter();
+  if (!transport) {
+    logger.warn('SMTP config missing, skipping EPI report email');
+    return;
+  }
+
+  const sign = delta >= 0 ? '+' : '';
+  const dateLabel = new Date(reportDate).toLocaleDateString('en-PH', {
+    year: 'numeric', month: 'long', day: 'numeric',
+  });
+
+  const subject = `Your Weekly EPI Report — ${dateLabel}`;
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#111827">
+      <div style="background:#1e3a5f;padding:24px 32px;border-radius:8px 8px 0 0">
+        <h1 style="color:#fff;margin:0;font-size:20px">Weekly EPI Report</h1>
+        <p style="color:#93c5fd;margin:4px 0 0">${dateLabel}</p>
+      </div>
+      <div style="background:#fff;padding:32px;border:1px solid #e5e7eb;border-top:none">
+        <p>Hi ${escapeHtml(employeeName)},</p>
+        <p>Your weekly Employee Performance Index (EPI) report is ready.</p>
+        <table style="width:100%;border-collapse:collapse;margin:24px 0">
+          <tr>
+            <td style="padding:16px;background:#f0f9ff;border-radius:8px;text-align:center;width:33%">
+              <div style="color:#0369a1;font-size:12px">Previous EPI</div>
+              <div style="color:#0c4a6e;font-size:28px;font-weight:bold">${epiBefore.toFixed(1)}</div>
+            </td>
+            <td style="padding:16px;text-align:center;width:33%">
+              <div style="color:#6b7280;font-size:12px">Weekly Change</div>
+              <div style="color:${delta >= 0 ? '#16a34a' : '#dc2626'};font-size:28px;font-weight:bold">${sign}${delta.toFixed(1)}</div>
+            </td>
+            <td style="padding:16px;background:#f0f9ff;border-radius:8px;text-align:center;width:33%">
+              <div style="color:#0369a1;font-size:12px">New EPI</div>
+              <div style="color:#0c4a6e;font-size:28px;font-weight:bold">${epiAfter.toFixed(1)}</div>
+            </td>
+          </tr>
+        </table>
+        <p style="color:#6b7280;font-size:13px">Your detailed KPI breakdown is attached as a PDF. Review it to see which areas contributed positively or negatively to your score.</p>
+      </div>
+    </div>
+  `;
+
+  await transport.sendMail({
+    from: env.SMTP_FROM!,
+    to,
+    subject,
+    html,
+    attachments: [
+      {
+        filename: `epi-report-${reportDate}.pdf`,
+        content: pdfBuffer,
+        contentType: 'application/pdf',
+      },
+    ],
+  });
+}
+
+export async function sendManagerEpiSummaryEmail(
+  to: string,
+  managerName: string,
+  companyName: string,
+  totalEmployees: number,
+  avgDelta: number,
+  reportDate: string,
+  pdfBuffer: Buffer,
+): Promise<void> {
+  const transport = getTransporter();
+  if (!transport) {
+    logger.warn('SMTP config missing, skipping manager EPI summary email');
+    return;
+  }
+
+  const dateLabel = new Date(reportDate).toLocaleDateString('en-PH', {
+    year: 'numeric', month: 'long', day: 'numeric',
+  });
+  const sign = avgDelta >= 0 ? '+' : '';
+  const subject = `Weekly EPI Summary — ${companyName} — ${dateLabel}`;
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#111827">
+      <div style="background:#1e3a5f;padding:24px 32px;border-radius:8px 8px 0 0">
+        <h1 style="color:#fff;margin:0;font-size:20px">Weekly EPI Manager Summary</h1>
+        <p style="color:#93c5fd;margin:4px 0 0">${escapeHtml(companyName)} · ${dateLabel}</p>
+      </div>
+      <div style="background:#fff;padding:32px;border:1px solid #e5e7eb;border-top:none">
+        <p>Hi ${escapeHtml(managerName)},</p>
+        <p>The weekly EPI snapshot has been processed for your team.</p>
+        <ul style="padding-left:20px;color:#374151">
+          <li>Employees processed: <strong>${totalEmployees}</strong></li>
+          <li>Average EPI change: <strong style="color:${avgDelta >= 0 ? '#16a34a' : '#dc2626'}">${sign}${avgDelta.toFixed(1)}</strong></li>
+        </ul>
+        <p style="color:#6b7280;font-size:13px">A full breakdown table is attached as a PDF, sorted by EPI change (lowest first) to highlight employees who may need attention.</p>
+      </div>
+    </div>
+  `;
+
+  await transport.sendMail({
+    from: env.SMTP_FROM!,
+    to,
+    subject,
+    html,
+    attachments: [
+      {
+        filename: `epi-manager-summary-${reportDate}.pdf`,
+        content: pdfBuffer,
+        contentType: 'application/pdf',
+      },
+    ],
+  });
+}

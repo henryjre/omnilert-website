@@ -54,6 +54,7 @@ type CreateForm = {
   password: string;
   userKey: string;
   employeeNumber: string;
+  epiScore: string;
   roleIds: string[];
   companyAssignments: CompanyAssignmentForm[];
 };
@@ -65,6 +66,7 @@ const EMPTY_CREATE_FORM: CreateForm = {
   password: '',
   userKey: '',
   employeeNumber: '',
+  epiScore: '100',
   roleIds: [],
   companyAssignments: [],
 };
@@ -271,6 +273,7 @@ export function UserManagementPage() {
         password: createForm.password,
         userKey: createForm.userKey.trim(),
         employeeNumber: createForm.employeeNumber.trim() ? Number(createForm.employeeNumber) : undefined,
+        epiScore: createForm.epiScore.trim() ? Number(createForm.epiScore) : 100,
         roleIds: createForm.roleIds,
         companyAssignments: createForm.companyAssignments,
       });
@@ -414,6 +417,16 @@ export function UserManagementPage() {
                 value={createForm.employeeNumber}
                 onChange={(e) => setCreateForm((prev) => ({ ...prev, employeeNumber: e.target.value }))}
                 placeholder="e.g. 60"
+              />
+              <Input
+                label="Initial EPI Score"
+                type="number"
+                value={createForm.epiScore}
+                onChange={(e) => setCreateForm((prev) => ({ ...prev, epiScore: e.target.value }))}
+                placeholder="100"
+                min={0}
+                max={200}
+                step={0.1}
               />
 
               <div>

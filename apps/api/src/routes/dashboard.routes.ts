@@ -33,4 +33,16 @@ router.get(
   dashboardController.getEPILeaderboard,
 );
 
+router.get(
+  '/epi',
+  requirePermission(PERMISSIONS.DASHBOARD_VIEW_PERFORMANCE_INDEX),
+  dashboardController.getEpiDashboardData,
+);
+
+router.get(
+  '/epi/leaderboard',
+  requirePermission(PERMISSIONS.DASHBOARD_VIEW_PERFORMANCE_INDEX),
+  dashboardController.getEpiLeaderboardData,
+);
+
 export default router;
