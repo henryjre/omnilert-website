@@ -8,7 +8,7 @@ import {
   verifyRefreshToken,
 } from '../utils/jwt.js';
 import { AppError } from '../middleware/errorHandler.js';
-import { DEFAULT_ROLE_PERMISSIONS, SYSTEM_ROLES } from '@omnilert/shared';
+import { DEFAULT_ROLE_PERMISSIONS, PERMISSIONS, SYSTEM_ROLES } from '@omnilert/shared';
 import { createAndDispatchNotification } from './notification.service.js';
 import {
   getGlobalUserByEmail,
@@ -181,6 +181,7 @@ async function resolveCompanyForLogin(input: {
 async function runLoginNudges(input: {
   tenantDb: any;
   resolvedUser: any;
+  sessionPermissions: string[];
   isSuperAdminFallback: boolean;
   companySlug: string;
 }): Promise<void> {
@@ -196,6 +197,8 @@ async function runLoginNudges(input: {
   }
 
   if (input.isSuperAdminFallback) return;
+  const permissionSet = new Set(input.sessionPermissions);
+  if (!permissionSet.has(PERMISSIONS.ACCOUNT_SUBMIT_EMPLOYEE_REQUIREMENTS)) return;
 
   try {
     const hasRequirementTypesTable = await input.tenantDb.schema.hasTable('employment_requirement_types');
@@ -311,6 +314,7 @@ async function issueCompanySession(input: {
     await runLoginNudges({
       tenantDb,
       resolvedUser: input.resolvedUser,
+      sessionPermissions: permissions,
       isSuperAdminFallback: Boolean(input.isSuperAdminFallback),
       companySlug: input.company.slug,
     });

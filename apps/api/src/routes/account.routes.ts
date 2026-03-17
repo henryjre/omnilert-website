@@ -96,9 +96,14 @@ router.post(
   accountController.submitBankInformationVerification,
 );
 
-router.get('/employment/requirements', accountController.getEmploymentRequirements);
+router.get(
+  '/employment/requirements',
+  requirePermission(PERMISSIONS.ACCOUNT_SUBMIT_EMPLOYEE_REQUIREMENTS),
+  accountController.getEmploymentRequirements,
+);
 router.post(
   '/employment/requirements/:requirementCode/submit',
+  requirePermission(PERMISSIONS.ACCOUNT_SUBMIT_EMPLOYEE_REQUIREMENTS),
   upload.single('document'),
   accountController.submitEmploymentRequirement,
 );

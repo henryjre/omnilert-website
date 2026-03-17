@@ -5,6 +5,7 @@ import { Input } from '@/shared/components/ui/Input';
 import { Spinner } from '@/shared/components/ui/Spinner';
 import { api } from '@/shared/services/api.client';
 import { useAuthStore } from '@/features/auth/store/authSlice';
+import { usePermission } from '@/shared/hooks/usePermission';
 import {
   AlertCircle,
   AlertTriangle,
@@ -17,6 +18,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
+import { PERMISSIONS } from '@omnilert/shared';
 import { ProfilePictureModal } from './ProfilePictureModal';
 
 type RequirementStatus = 'complete' | 'rejected' | 'verification' | 'pending';
@@ -233,6 +235,8 @@ function shouldApplyRequestedValue(key: string, requestedValue: unknown, current
 
 export function EmploymentTab() {
   const updateUser = useAuthStore((s) => s.updateUser);
+  const { hasPermission } = usePermission();
+  const canSubmitEmployeeRequirements = hasPermission(PERMISSIONS.ACCOUNT_SUBMIT_EMPLOYEE_REQUIREMENTS);
 
   const [loading, setLoading] = useState(true);
   const [submittingPersonal, setSubmittingPersonal] = useState(false);
@@ -393,17 +397,29 @@ export function EmploymentTab() {
   };
 
   const fetchRequirements = async () => {
+    if (!canSubmitEmployeeRequirements) {
+      setRequirements([]);
+      return;
+    }
     const res = await api.get('/account/employment/requirements');
     setRequirements(res.data.data || []);
   };
 
   useEffect(() => {
-    Promise.all([fetchProfile(), fetchRequirements()])
+    const requests: Array<Promise<unknown>> = [fetchProfile()];
+    if (canSubmitEmployeeRequirements) {
+      requests.push(fetchRequirements());
+    } else {
+      setRequirements([]);
+      setSelectedRequirement(null);
+    }
+
+    Promise.all(requests)
       .catch((err: any) => {
         setError(err.response?.data?.error || 'Failed to load profile');
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [canSubmitEmployeeRequirements]);
 
   useEffect(() => {
     if (error && errorBannerRef.current) {
@@ -460,7 +476,9 @@ export function EmploymentTab() {
           },
         }
         : prev));
-      await fetchRequirements();
+      if (canSubmitEmployeeRequirements) {
+        await fetchRequirements();
+      }
       setSuccess('Valid ID uploaded successfully.');
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to upload valid ID');
@@ -530,6 +548,7 @@ export function EmploymentTab() {
 
   const submitRequirement = async () => {
     if (!selectedRequirement) return;
+    if (!canSubmitEmployeeRequirements) return;
     setError('');
     setSuccess('');
 
@@ -1050,54 +1069,56 @@ export function EmploymentTab() {
         </CardBody>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <h2 className="text-lg font-semibold text-gray-900">Employment Requirements</h2>
-          <p className="mt-1 text-sm text-gray-500">
-            Upload your documents per requirement. Each submission is reviewed before completion.
-          </p>
-        </CardHeader>
-        <CardBody>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {requirements.map((requirement) => {
-              const status = STATUS_CONFIG[requirement.display_status];
-              return (
-                <button
-                  key={requirement.code}
-                  type="button"
-                  onClick={() => {
-                    setSelectedRequirement(requirement);
-                    setSelectedFile(null);
-                  }}
-                  className="min-h-[180px] rounded-xl border border-gray-200 p-3 text-left transition hover:border-primary-300 hover:shadow-sm"
-                >
-                  <div className="flex h-full flex-col justify-between">
-                    <div className="space-y-2">
-                      <div className={`inline-flex rounded-full p-1.5 ${status.iconClass}`}>
-                        <status.Icon className="h-3.5 w-3.5" />
+      {canSubmitEmployeeRequirements && (
+        <Card>
+          <CardHeader>
+            <h2 className="text-lg font-semibold text-gray-900">Employment Requirements</h2>
+            <p className="mt-1 text-sm text-gray-500">
+              Upload your documents per requirement. Each submission is reviewed before completion.
+            </p>
+          </CardHeader>
+          <CardBody>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {requirements.map((requirement) => {
+                const status = STATUS_CONFIG[requirement.display_status];
+                return (
+                  <button
+                    key={requirement.code}
+                    type="button"
+                    onClick={() => {
+                      setSelectedRequirement(requirement);
+                      setSelectedFile(null);
+                    }}
+                    className="min-h-[180px] rounded-xl border border-gray-200 p-3 text-left transition hover:border-primary-300 hover:shadow-sm"
+                  >
+                    <div className="flex h-full flex-col justify-between">
+                      <div className="space-y-2">
+                        <div className={`inline-flex rounded-full p-1.5 ${status.iconClass}`}>
+                          <status.Icon className="h-3.5 w-3.5" />
+                        </div>
+                        <p className="text-[13px] font-medium leading-snug text-gray-900">{requirement.label}</p>
                       </div>
-                      <p className="text-[13px] font-medium leading-snug text-gray-900">{requirement.label}</p>
-                    </div>
 
-                    <div className="space-y-1.5">
-                      <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${status.containerClass}`}>
-                        {status.label}
-                      </span>
-                      {requirement.latest_submission?.rejection_reason && (
-                        <p className="line-clamp-2 text-xs text-red-600">
-                          {requirement.latest_submission.rejection_reason}
-                        </p>
-                      )}
+                      <div className="space-y-1.5">
+                        <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${status.containerClass}`}>
+                          {status.label}
+                        </span>
+                        {requirement.latest_submission?.rejection_reason && (
+                          <p className="line-clamp-2 text-xs text-red-600">
+                            {requirement.latest_submission.rejection_reason}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </CardBody>
-      </Card>
+                  </button>
+                );
+              })}
+            </div>
+          </CardBody>
+        </Card>
+      )}
 
-      {selectedRequirement && (
+      {canSubmitEmployeeRequirements && selectedRequirement && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <Card className="w-full max-w-lg">
             <CardHeader>
