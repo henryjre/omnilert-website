@@ -16,10 +16,7 @@ yarn-debug.log*
 pnpm-debug.log*
 
 # Local environment files (keep examples tracked)
-**/.env
-**/.env.local
-**/.env.development
-**/.env.production
+**/.env*
 !**/.env.example
 
 # Editor and workspace metadata
@@ -27,8 +24,11 @@ pnpm-debug.log*
 .vscode/
 .idea/
 *.swp
+.claude/settings.local.json
 .worktrees/
 
 # OS files
 .DS_Store
-.worktrees/
+
+# Generated audit artifacts
+project-context/permissions-audit/
