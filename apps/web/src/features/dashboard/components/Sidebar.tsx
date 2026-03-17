@@ -248,19 +248,19 @@ export function Sidebar({ className = '' }: SidebarProps) {
 
       {/* Navigation */}
       <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-4">
-        {hasPermission(PERMISSIONS.DASHBOARD_VIEW) && (
-          <NavLink to="/dashboard" className={linkClass}>
-            <LayoutDashboard className="h-5 w-5" />
-            Dashboard
-          </NavLink>
-        )}
+        <NavLink to="/dashboard" className={linkClass}>
+          <LayoutDashboard className="h-5 w-5" />
+          Dashboard
+        </NavLink>
 
         <div className="my-2 border-t border-gray-200" />
         {categoryLabel('My Account')}
-        <NavLink to="/account/schedule" className={linkClass}>
-          <Calendar className="h-5 w-5" />
-          Schedule
-        </NavLink>
+        {hasPermission(PERMISSIONS.ACCOUNT_VIEW_SCHEDULE) && (
+          <NavLink to="/account/schedule" className={linkClass}>
+            <Calendar className="h-5 w-5" />
+            Schedule
+          </NavLink>
+        )}
         {hasPermission(PERMISSIONS.DASHBOARD_VIEW_PAYSLIP) && (
           <NavLink to="/account/payslip" className={linkClass}>
             <Receipt className="h-5 w-5" />
@@ -279,14 +279,18 @@ export function Sidebar({ className = '' }: SidebarProps) {
             Cash Requests
           </NavLink>
         )}
-        <NavLink to="/account/notifications" className={linkClass}>
-          <Bell className="h-5 w-5" />
-          Notifications
-        </NavLink>
-        <NavLink to="/account/profile" className={linkClass}>
-          <IdCard className="h-5 w-5" />
-          Profile
-        </NavLink>
+        {hasPermission(PERMISSIONS.ACCOUNT_VIEW_NOTIFICATIONS) && (
+          <NavLink to="/account/notifications" className={linkClass}>
+            <Bell className="h-5 w-5" />
+            Notifications
+          </NavLink>
+        )}
+        {hasPermission(PERMISSIONS.EMPLOYEE_VIEW_OWN_PROFILE) && (
+          <NavLink to="/account/profile" className={linkClass}>
+            <IdCard className="h-5 w-5" />
+            Profile
+          </NavLink>
+        )}
         <NavLink to="/account/settings" className={linkClass}>
           <Settings className="h-5 w-5" />
           Settings

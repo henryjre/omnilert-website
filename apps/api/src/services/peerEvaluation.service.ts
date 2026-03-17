@@ -48,6 +48,8 @@ export interface ListPeerEvaluationsFilters {
   userId?: string;
   page?: number;
   pageSize?: number;
+  requesterUserId: string;
+  canManage: boolean;
 }
 
 export interface SubmitEvaluationBody {
@@ -87,6 +89,8 @@ export async function listPeerEvaluations(
     userId,
     page = 1,
     pageSize: rawPageSize = 20,
+    requesterUserId,
+    canManage,
   } = filters;
 
   // 'score' sorts by average of q1+q2+q3
@@ -98,6 +102,13 @@ export async function listPeerEvaluations(
 
   const buildQuery = () => {
     let q = tenantDb('peer_evaluations');
+    if (!canManage) {
+      q = q.where((builder) => {
+        builder
+          .where('evaluator_user_id', requesterUserId)
+          .orWhere('evaluated_user_id', requesterUserId);
+      });
+    }
     if (status) q = q.where('status', status);
     if (dateFrom) q = q.where('created_at', '>=', dateFrom);
     if (dateTo) q = q.where('created_at', '<=', dateTo);
@@ -127,9 +138,17 @@ export async function listPeerEvaluations(
 export async function getPeerEvaluationById(
   tenantDb: Knex,
   id: string,
+  access: { requesterUserId: string; canManage: boolean },
 ): Promise<PeerEvaluationWithUsers | null> {
   const row = await tenantDb('peer_evaluations').where({ id }).first();
   if (!row) return null;
+  if (!access.canManage) {
+    const requesterUserId = access.requesterUserId;
+    const isRequesterRelated = row.evaluator_user_id === requesterUserId || row.evaluated_user_id === requesterUserId;
+    if (!isRequesterRelated) {
+      return null;
+    }
+  }
 
   const [hydrated] = await hydrateRows([row as PeerEvaluationRow]);
   return hydrated ?? null;

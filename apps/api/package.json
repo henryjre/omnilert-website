@@ -7,6 +7,9 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
+    "permissions:audit": "tsx src/scripts/permissions-audit.ts",
+    "permissions:probe": "tsx src/scripts/permissions-runtime-probe.ts",
+    "permissions:verify": "pnpm run permissions:audit && pnpm run permissions:probe",
     "migrate:master": "tsx --no-cache ./node_modules/knex/bin/cli.js migrate:latest --knexfile knexfile.ts --env master",
     "migrate:master:rollback": "tsx --no-cache ./node_modules/knex/bin/cli.js migrate:rollback --knexfile knexfile.ts --env master",
     "migrate:tenant": "tsx src/scripts/migrate-tenants.ts",
@@ -50,6 +53,7 @@
     "@types/uuid": "^10.0.0",
     "@types/web-push": "^3.6.4",
     "rimraf": "^6.0.0",
+    "socket.io-client": "^4.8.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
   }

@@ -49,11 +49,7 @@ export const router = createBrowserRouter([
           },
           {
             path: 'dashboard',
-            element: (
-              <PermissionGuard permission={PERMISSIONS.DASHBOARD_VIEW}>
-                <DashboardPage />
-              </PermissionGuard>
-            ),
+            element: <DashboardPage />,
           },
           {
             path: 'account',
@@ -61,7 +57,11 @@ export const router = createBrowserRouter([
           },
           {
             path: 'account/schedule',
-            element: <ScheduleTab />,
+            element: (
+              <PermissionGuard permission={PERMISSIONS.ACCOUNT_VIEW_SCHEDULE}>
+                <ScheduleTab />
+              </PermissionGuard>
+            ),
           },
           {
             path: 'account/payslip',
@@ -89,7 +89,11 @@ export const router = createBrowserRouter([
           },
           {
             path: 'account/notifications',
-            element: <EmployeeNotificationsTab />,
+            element: (
+              <PermissionGuard permission={PERMISSIONS.ACCOUNT_VIEW_NOTIFICATIONS}>
+                <EmployeeNotificationsTab />
+              </PermissionGuard>
+            ),
           },
           {
             path: 'account/settings',
@@ -97,7 +101,11 @@ export const router = createBrowserRouter([
           },
           {
             path: 'account/profile',
-            element: <EmploymentTab />,
+            element: (
+              <PermissionGuard permission={PERMISSIONS.EMPLOYEE_VIEW_OWN_PROFILE}>
+                <EmploymentTab />
+              </PermissionGuard>
+            ),
           },
           {
             path: 'account/employment',
@@ -192,7 +200,7 @@ export const router = createBrowserRouter([
           {
             path: 'workplace-relations',
             element: (
-              <PermissionGuard permission={PERMISSIONS.PEER_EVALUATION_VIEW}>
+              <PermissionGuard anyPermission={[PERMISSIONS.PEER_EVALUATION_VIEW, PERMISSIONS.PEER_EVALUATION_MANAGE]}>
                 <PeerEvaluationsPage />
               </PermissionGuard>
             ),

@@ -1,0 +1,254 @@
+{
+  "generatedAt": "2026-03-17T17:35:01.796Z",
+  "apiBaseUrl": "http://localhost:3001/api",
+  "socketOrigin": "http://localhost:3001",
+  "company": {
+    "id": "51e8108f-bfff-4ab3-bb4e-5c02e06bfbe7",
+    "slug": "famous-belgian-waffles",
+    "dbName": "omnilert_famous_belgian_waffles"
+  },
+  "assignedBranchId": "14ace800-fe7d-4131-9b1c-9b1192e03261",
+  "otherBranchId": "a5f42f92-2bf1-447e-af0f-8f87f177260a",
+  "results": [
+    {
+      "id": "http.peer-evaluations.pending-mine",
+      "kind": "http",
+      "passed": false,
+      "expected": "Negative token => 403, Positive token => non-403/non-401",
+      "actual": "probe error: fetch failed",
+      "request": {
+        "method": "GET",
+        "path": "/peer-evaluations/pending-mine",
+        "query": {},
+        "requiredAny": [
+          "peer_evaluation.view",
+          "peer_evaluation.manage"
+        ]
+      }
+    },
+    {
+      "id": "http.employee-shifts.list",
+      "kind": "http",
+      "passed": false,
+      "expected": "Negative token => 403, Positive token => non-403/non-401",
+      "actual": "probe error: fetch failed",
+      "request": {
+        "method": "GET",
+        "path": "/employee-shifts",
+        "query": {},
+        "requiredAny": [
+          "shift.view_all"
+        ]
+      }
+    },
+    {
+      "id": "http.pos-sessions.list",
+      "kind": "http",
+      "passed": false,
+      "expected": "Negative token => 403, Positive token => non-403/non-401",
+      "actual": "probe error: fetch failed",
+      "request": {
+        "method": "GET",
+        "path": "/pos-sessions",
+        "query": {},
+        "requiredAny": [
+          "pos_session.view"
+        ]
+      }
+    },
+    {
+      "id": "http.pos-verifications.list",
+      "kind": "http",
+      "passed": false,
+      "expected": "Negative token => 403, Positive token => non-403/non-401",
+      "actual": "probe error: fetch failed",
+      "request": {
+        "method": "GET",
+        "path": "/pos-verifications",
+        "query": {},
+        "requiredAny": [
+          "pos_verification.view"
+        ]
+      }
+    },
+    {
+      "id": "http.account.profile",
+      "kind": "http",
+      "passed": false,
+      "expected": "Negative token => 403, Positive token => non-403/non-401",
+      "actual": "probe error: fetch failed",
+      "request": {
+        "method": "GET",
+        "path": "/account/profile",
+        "query": {},
+        "requiredAny": [
+          "employee.view_own_profile"
+        ]
+      }
+    },
+    {
+      "id": "http.account.notifications.count",
+      "kind": "http",
+      "passed": false,
+      "expected": "Negative token => 403, Positive token => non-403/non-401",
+      "actual": "probe error: fetch failed",
+      "request": {
+        "method": "GET",
+        "path": "/account/notifications/count",
+        "query": {},
+        "requiredAny": [
+          "account.view_notifications"
+        ]
+      }
+    },
+    {
+      "id": "http.account.schedule",
+      "kind": "http",
+      "passed": false,
+      "expected": "Negative token => 403, Positive token => non-403/non-401",
+      "actual": "probe error: fetch failed",
+      "request": {
+        "method": "GET",
+        "path": "/account/schedule",
+        "query": {},
+        "requiredAny": [
+          "account.view_schedule"
+        ]
+      }
+    },
+    {
+      "id": "branch.scope.probe",
+      "kind": "branch-scope",
+      "passed": false,
+      "expected": "Branch-scope probes complete",
+      "actual": "probe error: fetch failed",
+      "request": {
+        "paths": [
+          "/branches",
+          "/employee-shifts"
+        ],
+        "assignedBranchId": "14ace800-fe7d-4131-9b1c-9b1192e03261",
+        "otherBranchId": "a5f42f92-2bf1-447e-af0f-8f87f177260a"
+      }
+    },
+    {
+      "id": "socket.pos-verification",
+      "kind": "socket",
+      "passed": false,
+      "expected": "Negative token fails socket auth, positive token connects",
+      "actual": "negative=websocket error, positive=websocket error",
+      "request": {
+        "namespace": "/pos-verification",
+        "requiredAny": [
+          "pos_verification.view"
+        ]
+      }
+    },
+    {
+      "id": "socket.pos-session",
+      "kind": "socket",
+      "passed": false,
+      "expected": "Negative token fails socket auth, positive token connects",
+      "actual": "negative=websocket error, positive=websocket error",
+      "request": {
+        "namespace": "/pos-session",
+        "requiredAny": [
+          "pos_session.view"
+        ]
+      }
+    },
+    {
+      "id": "socket.employee-shifts",
+      "kind": "socket",
+      "passed": false,
+      "expected": "Negative token fails socket auth, positive token connects",
+      "actual": "negative=websocket error, positive=websocket error",
+      "request": {
+        "namespace": "/employee-shifts",
+        "requiredAny": [
+          "shift.view_all",
+          "account.view_schedule"
+        ]
+      }
+    },
+    {
+      "id": "socket.employee-verifications",
+      "kind": "socket",
+      "passed": false,
+      "expected": "Negative token fails socket auth, positive token connects",
+      "actual": "negative=websocket error, positive=websocket error",
+      "request": {
+        "namespace": "/employee-verifications",
+        "requiredAny": [
+          "employee_verification.view"
+        ]
+      }
+    },
+    {
+      "id": "socket.store-audits",
+      "kind": "socket",
+      "passed": false,
+      "expected": "Negative token fails socket auth, positive token connects",
+      "actual": "negative=websocket error, positive=websocket error",
+      "request": {
+        "namespace": "/store-audits",
+        "requiredAny": [
+          "store_audit.view"
+        ]
+      }
+    },
+    {
+      "id": "socket.case-reports",
+      "kind": "socket",
+      "passed": false,
+      "expected": "Negative token fails socket auth, positive token connects",
+      "actual": "negative=websocket error, positive=websocket error",
+      "request": {
+        "namespace": "/case-reports",
+        "requiredAny": [
+          "case_report.view"
+        ]
+      }
+    },
+    {
+      "id": "socket.violation-notices",
+      "kind": "socket",
+      "passed": false,
+      "expected": "Negative token fails socket auth, positive token connects",
+      "actual": "negative=websocket error, positive=websocket error",
+      "request": {
+        "namespace": "/violation-notices",
+        "requiredAny": [
+          "violation_notice.view"
+        ]
+      }
+    },
+    {
+      "id": "socket.employee-requirements",
+      "kind": "socket",
+      "passed": false,
+      "expected": "Negative token fails socket auth, positive token connects",
+      "actual": "negative=websocket error, positive=websocket error",
+      "request": {
+        "namespace": "/employee-requirements",
+        "requiredAny": [
+          "shift.view_all"
+        ]
+      }
+    },
+    {
+      "id": "socket.peer-evaluations",
+      "kind": "socket",
+      "passed": false,
+      "expected": "Negative token fails socket auth, positive token connects",
+      "actual": "negative=websocket error, positive=websocket error",
+      "request": {
+        "namespace": "/peer-evaluations",
+        "requiredAny": [
+          "peer_evaluation.view",
+          "peer_evaluation.manage"
+        ]
+      }
+    }
+  ]
+}

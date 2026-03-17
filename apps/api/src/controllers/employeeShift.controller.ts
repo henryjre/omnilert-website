@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
+import { PERMISSIONS } from '@omnilert/shared';
 import { AppError } from '../middleware/errorHandler.js';
 import { getIO } from '../config/socket.js';
 import { db } from '../config/database.js';
@@ -22,11 +23,11 @@ export async function list(req: Request, res: Response, next: NextFunction) {
     let query = tenantDb('employee_shifts');
 
     if (requestedIds && requestedIds.length > 0) {
-      const allowed = user.permissions.includes('admin.view_all_branches')
+      const allowed = user.permissions.includes(PERMISSIONS.ADMIN_VIEW_ALL_BRANCHES)
         ? requestedIds
         : requestedIds.filter((id) => user.branchIds.includes(id));
       query = query.whereIn('branch_id', allowed);
-    } else if (!user.permissions.includes('admin.view_all_branches')) {
+    } else if (!user.permissions.includes(PERMISSIONS.ADMIN_VIEW_ALL_BRANCHES)) {
       query = query.whereIn('branch_id', user.branchIds);
     }
 

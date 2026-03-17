@@ -1,0 +1,2506 @@
+{
+  "generatedAt": "2026-03-17T17:43:01.725Z",
+  "totals": {
+    "permissions": 50,
+    "aliases": 5,
+    "literalViolations": 0
+  },
+  "rows": [
+    {
+      "constantKey": "ACCOUNT_SUBMIT_CASH_REQUEST",
+      "permission": "account.submit_cash_request",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/account.routes.ts",
+          "line": 68,
+          "context": "POST /account/cash-requests"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/features/account/components/CashRequestsTab.tsx",
+          "line": 229,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 34,
+          "context": "migration/seed grant"
+        },
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 436,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "ACCOUNT_SUBMIT_PRIVATE_AUTH_REQUEST",
+      "permission": "account.submit_private_auth_request",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/account.routes.ts",
+          "line": 57,
+          "context": "POST /account/authorization-requests"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/features/account/components/AuthorizationRequestsTab.tsx",
+          "line": 194,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 31,
+          "context": "migration/seed grant"
+        },
+        {
+          "file": "apps/api/src/scripts/migration.ts",
+          "line": 412,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "ACCOUNT_SUBMIT_PUBLIC_AUTH_REQUEST",
+      "permission": "account.submit_public_auth_request",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/shiftAuthorization.routes.ts",
+          "line": 15,
+          "context": "POST /shift-authorizations/:id/reason"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/features/account/components/ScheduleTab.tsx",
+          "line": 843,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/employee-shifts/pages/EmployeeShiftsPage.tsx",
+          "line": 914,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 32,
+          "context": "migration/seed grant"
+        },
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 434,
+          "context": "migration/seed grant"
+        },
+        {
+          "file": "apps/api/src/scripts/migration.ts",
+          "line": 413,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "ACCOUNT_VIEW_AUTH_REQUESTS",
+      "permission": "account.view_auth_requests",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/account.routes.ts",
+          "line": 52,
+          "context": "GET /account/authorization-requests"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/app/router.tsx",
+          "line": 77,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/dashboard/components/Sidebar.tsx",
+          "line": 270,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 30,
+          "context": "migration/seed grant"
+        },
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 433,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "ACCOUNT_VIEW_CASH_REQUESTS",
+      "permission": "account.view_cash_requests",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/account.routes.ts",
+          "line": 63,
+          "context": "GET /account/cash-requests"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/app/router.tsx",
+          "line": 85,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/dashboard/components/Sidebar.tsx",
+          "line": 276,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 33,
+          "context": "migration/seed grant"
+        },
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 435,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "ACCOUNT_VIEW_NOTIFICATIONS",
+      "permission": "account.view_notifications",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/account.routes.ts",
+          "line": 117,
+          "context": "GET /account/notifications"
+        },
+        {
+          "file": "apps/api/src/routes/account.routes.ts",
+          "line": 122,
+          "context": "GET /account/notifications/count"
+        },
+        {
+          "file": "apps/api/src/routes/account.routes.ts",
+          "line": 127,
+          "context": "PUT /account/notifications/read-all"
+        },
+        {
+          "file": "apps/api/src/routes/account.routes.ts",
+          "line": 132,
+          "context": "PUT /account/notifications/:id/read"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/app/router.tsx",
+          "line": 93,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/dashboard/components/Sidebar.tsx",
+          "line": 282,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 35,
+          "context": "migration/seed grant"
+        },
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 437,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "ACCOUNT_VIEW_SCHEDULE",
+      "permission": "account.view_schedule",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/shiftExchange.routes.ts",
+          "line": 14,
+          "context": "GET /shift-exchanges/options"
+        },
+        {
+          "file": "apps/api/src/routes/shiftExchange.routes.ts",
+          "line": 19,
+          "context": "POST /shift-exchanges"
+        },
+        {
+          "file": "apps/api/src/routes/account.routes.ts",
+          "line": 36,
+          "context": "GET /account/schedule"
+        },
+        {
+          "file": "apps/api/src/routes/account.routes.ts",
+          "line": 41,
+          "context": "GET /account/schedule-branches"
+        },
+        {
+          "file": "apps/api/src/routes/account.routes.ts",
+          "line": 46,
+          "context": "GET /account/schedule/:id"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [
+        {
+          "file": "apps/api/src/config/socket.ts",
+          "line": 112,
+          "context": "socket namespace/branch guard"
+        }
+      ],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/app/router.tsx",
+          "line": 61,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/dashboard/components/Sidebar.tsx",
+          "line": 258,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 29,
+          "context": "migration/seed grant"
+        },
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 432,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "ADMIN_MANAGE_BRANCHES",
+      "permission": "admin.manage_branches",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/branch.routes.ts",
+          "line": 13,
+          "context": "POST /branches"
+        },
+        {
+          "file": "apps/api/src/routes/branch.routes.ts",
+          "line": 14,
+          "context": "PUT /branches/:id"
+        },
+        {
+          "file": "apps/api/src/routes/branch.routes.ts",
+          "line": 15,
+          "context": "DELETE /branches/:id"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/app/router.tsx",
+          "line": 239,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/dashboard/components/Sidebar.tsx",
+          "line": 455,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 18,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "ADMIN_MANAGE_ROLES",
+      "permission": "admin.manage_roles",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/role.routes.ts",
+          "line": 16,
+          "context": "POST /roles"
+        },
+        {
+          "file": "apps/api/src/routes/role.routes.ts",
+          "line": 22,
+          "context": "PUT /roles/:id"
+        },
+        {
+          "file": "apps/api/src/routes/role.routes.ts",
+          "line": 26,
+          "context": "DELETE /roles/:id"
+        },
+        {
+          "file": "apps/api/src/routes/role.routes.ts",
+          "line": 28,
+          "context": "GET /roles/:id/permissions"
+        },
+        {
+          "file": "apps/api/src/routes/role.routes.ts",
+          "line": 31,
+          "context": "PUT /roles/:id/permissions"
+        },
+        {
+          "file": "apps/api/src/routes/user.routes.ts",
+          "line": 58,
+          "context": "PUT /users/:id/roles"
+        },
+        {
+          "file": "apps/api/src/routes/index.ts",
+          "line": 56,
+          "context": "USE /permissions"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/app/router.tsx",
+          "line": 223,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/dashboard/components/Sidebar.tsx",
+          "line": 449,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 16,
+          "context": "migration/seed grant"
+        },
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 422,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "ADMIN_MANAGE_USERS",
+      "permission": "admin.manage_users",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/user.routes.ts",
+          "line": 39,
+          "context": "GET /users"
+        },
+        {
+          "file": "apps/api/src/routes/user.routes.ts",
+          "line": 40,
+          "context": "GET /users/assignment-options"
+        },
+        {
+          "file": "apps/api/src/routes/user.routes.ts",
+          "line": 43,
+          "context": "POST /users"
+        },
+        {
+          "file": "apps/api/src/routes/user.routes.ts",
+          "line": 49,
+          "context": "PUT /users/:id"
+        },
+        {
+          "file": "apps/api/src/routes/user.routes.ts",
+          "line": 53,
+          "context": "DELETE /users/:id"
+        },
+        {
+          "file": "apps/api/src/routes/user.routes.ts",
+          "line": 54,
+          "context": "DELETE /users/:id/permanent"
+        },
+        {
+          "file": "apps/api/src/routes/user.routes.ts",
+          "line": 64,
+          "context": "PUT /users/:id/branches"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/app/router.tsx",
+          "line": 231,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/app/router.tsx",
+          "line": 247,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/dashboard/components/Sidebar.tsx",
+          "line": 443,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/dashboard/components/Sidebar.tsx",
+          "line": 461,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/pos-verification/pages/PosVerificationPage.tsx",
+          "line": 429,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/pos-verification/pages/PosVerificationPage.tsx",
+          "line": 434,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/pos-verification/pages/PosVerificationPage.tsx",
+          "line": 439,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/pos-verification/pages/PosVerificationPage.tsx",
+          "line": 444,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/pos-verification/pages/PosVerificationPage.tsx",
+          "line": 449,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/pos-verification/pages/PosVerificationPage.tsx",
+          "line": 454,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 17,
+          "context": "migration/seed grant"
+        },
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 422,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "ADMIN_VIEW_ALL_BRANCHES",
+      "permission": "admin.view_all_branches",
+      "apiGuards": [],
+      "apiInlineChecks": [
+        {
+          "file": "apps/api/src/controllers/branch.controller.ts",
+          "line": 18,
+          "context": "permissions.includes / userPermissions.has"
+        },
+        {
+          "file": "apps/api/src/controllers/employeeShift.controller.ts",
+          "line": 26,
+          "context": "permissions.includes / userPermissions.has"
+        },
+        {
+          "file": "apps/api/src/controllers/employeeShift.controller.ts",
+          "line": 30,
+          "context": "permissions.includes / userPermissions.has"
+        },
+        {
+          "file": "apps/api/src/controllers/posSession.controller.ts",
+          "line": 27,
+          "context": "permissions.includes / userPermissions.has"
+        },
+        {
+          "file": "apps/api/src/controllers/posSession.controller.ts",
+          "line": 31,
+          "context": "permissions.includes / userPermissions.has"
+        },
+        {
+          "file": "apps/api/src/controllers/posVerification.controller.ts",
+          "line": 43,
+          "context": "permissions.includes / userPermissions.has"
+        },
+        {
+          "file": "apps/api/src/controllers/posVerification.controller.ts",
+          "line": 47,
+          "context": "permissions.includes / userPermissions.has"
+        }
+      ],
+      "socketGuards": [
+        {
+          "file": "apps/api/src/config/socket.ts",
+          "line": 58,
+          "context": "socket namespace/branch guard"
+        },
+        {
+          "file": "apps/api/src/config/socket.ts",
+          "line": 91,
+          "context": "socket namespace/branch guard"
+        },
+        {
+          "file": "apps/api/src/config/socket.ts",
+          "line": 253,
+          "context": "socket namespace/branch guard"
+        }
+      ],
+      "uiGuards": [],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 19,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "partially enforced",
+      "notes": "Permission is referenced, but one or more layers (backend/UI/grants) are missing."
+    },
+    {
+      "constantKey": "AUTH_REQUEST_APPROVE_MANAGEMENT",
+      "permission": "auth_request.approve_management",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/authorizationRequest.routes.ts",
+          "line": 14,
+          "context": "GET /authorization-requests"
+        },
+        {
+          "file": "apps/api/src/routes/authorizationRequest.routes.ts",
+          "line": 24,
+          "context": "POST /authorization-requests/:id/approve"
+        },
+        {
+          "file": "apps/api/src/routes/authorizationRequest.routes.ts",
+          "line": 30,
+          "context": "POST /authorization-requests/:id/reject"
+        }
+      ],
+      "apiInlineChecks": [
+        {
+          "file": "apps/api/src/controllers/authorizationRequest.controller.ts",
+          "line": 31,
+          "context": "permissions.includes / userPermissions.has"
+        }
+      ],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/app/router.tsx",
+          "line": 142,
+          "context": "frontend anyPermission/hasAnyPermission"
+        },
+        {
+          "file": "apps/web/src/features/authorization-requests/pages/AuthorizationRequestsPage.tsx",
+          "line": 694,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 43,
+          "context": "migration/seed grant"
+        },
+        {
+          "file": "apps/api/src/scripts/migration.ts",
+          "line": 353,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "AUTH_REQUEST_APPROVE_SERVICE_CREW",
+      "permission": "auth_request.approve_service_crew",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/authorizationRequest.routes.ts",
+          "line": 14,
+          "context": "GET /authorization-requests"
+        }
+      ],
+      "apiInlineChecks": [
+        {
+          "file": "apps/api/src/controllers/authorizationRequest.controller.ts",
+          "line": 43,
+          "context": "permissions.includes / userPermissions.has"
+        }
+      ],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/app/router.tsx",
+          "line": 142,
+          "context": "frontend anyPermission/hasAnyPermission"
+        },
+        {
+          "file": "apps/web/src/features/authorization-requests/pages/AuthorizationRequestsPage.tsx",
+          "line": 699,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 45,
+          "context": "migration/seed grant"
+        },
+        {
+          "file": "apps/api/src/scripts/migration.ts",
+          "line": 355,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "AUTH_REQUEST_VIEW_ALL",
+      "permission": "auth_request.view_all",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/authorizationRequest.routes.ts",
+          "line": 14,
+          "context": "GET /authorization-requests"
+        }
+      ],
+      "apiInlineChecks": [
+        {
+          "file": "apps/api/src/controllers/authorizationRequest.controller.ts",
+          "line": 42,
+          "context": "permissions.includes / userPermissions.has"
+        }
+      ],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/app/router.tsx",
+          "line": 142,
+          "context": "frontend anyPermission/hasAnyPermission"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 44,
+          "context": "migration/seed grant"
+        },
+        {
+          "file": "apps/api/src/scripts/migration.ts",
+          "line": 354,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "BANK_INFORMATION_APPROVE",
+      "permission": "bank_information.approve",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/employeeVerification.routes.ts",
+          "line": 70,
+          "context": "POST /employee-verifications/bank-information/:id/approve"
+        },
+        {
+          "file": "apps/api/src/routes/employeeVerification.routes.ts",
+          "line": 75,
+          "context": "POST /employee-verifications/bank-information/:id/reject"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/features/employee-verifications/pages/EmployeeVerificationsPage.tsx",
+          "line": 327,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 52,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "CASE_REPORT_CLOSE",
+      "permission": "case_report.close",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/caseReport.routes.ts",
+          "line": 80,
+          "context": "POST /case-reports/:id/close"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/features/case-reports/pages/CaseReportsPage.tsx",
+          "line": 87,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/011_case_report_permissions.ts",
+          "line": 11,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "CASE_REPORT_CREATE",
+      "permission": "case_report.create",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/caseReport.routes.ts",
+          "line": 66,
+          "context": "POST /case-reports"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/features/case-reports/pages/CaseReportsPage.tsx",
+          "line": 86,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/011_case_report_permissions.ts",
+          "line": 10,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "CASE_REPORT_MANAGE",
+      "permission": "case_report.manage",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/caseReport.routes.ts",
+          "line": 81,
+          "context": "POST /case-reports/:id/request-vn"
+        }
+      ],
+      "apiInlineChecks": [
+        {
+          "file": "apps/api/src/services/caseReport.service.ts",
+          "line": 86,
+          "context": "permissions.includes / userPermissions.has"
+        }
+      ],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/features/case-reports/pages/CaseReportsPage.tsx",
+          "line": 88,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/011_case_report_permissions.ts",
+          "line": 12,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "CASE_REPORT_VIEW",
+      "permission": "case_report.view",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/caseReport.routes.ts",
+          "line": 64,
+          "context": "GET /case-reports/mentionables"
+        },
+        {
+          "file": "apps/api/src/routes/caseReport.routes.ts",
+          "line": 65,
+          "context": "GET /case-reports"
+        },
+        {
+          "file": "apps/api/src/routes/caseReport.routes.ts",
+          "line": 67,
+          "context": "GET /case-reports/:id"
+        },
+        {
+          "file": "apps/api/src/routes/caseReport.routes.ts",
+          "line": 70,
+          "context": "PATCH /case-reports/:id/corrective-action"
+        },
+        {
+          "file": "apps/api/src/routes/caseReport.routes.ts",
+          "line": 76,
+          "context": "PATCH /case-reports/:id/resolution"
+        },
+        {
+          "file": "apps/api/src/routes/caseReport.routes.ts",
+          "line": 84,
+          "context": "POST /case-reports/:id/attachments"
+        },
+        {
+          "file": "apps/api/src/routes/caseReport.routes.ts",
+          "line": 88,
+          "context": "DELETE /case-reports/:id/attachments/:attachmentId"
+        },
+        {
+          "file": "apps/api/src/routes/caseReport.routes.ts",
+          "line": 89,
+          "context": "GET /case-reports/:id/messages"
+        },
+        {
+          "file": "apps/api/src/routes/caseReport.routes.ts",
+          "line": 92,
+          "context": "POST /case-reports/:id/messages"
+        },
+        {
+          "file": "apps/api/src/routes/caseReport.routes.ts",
+          "line": 98,
+          "context": "POST /case-reports/:id/messages/:messageId/reactions"
+        },
+        {
+          "file": "apps/api/src/routes/caseReport.routes.ts",
+          "line": 104,
+          "context": "PATCH /case-reports/:id/messages/:messageId"
+        },
+        {
+          "file": "apps/api/src/routes/caseReport.routes.ts",
+          "line": 110,
+          "context": "DELETE /case-reports/:id/messages/:messageId"
+        },
+        {
+          "file": "apps/api/src/routes/caseReport.routes.ts",
+          "line": 113,
+          "context": "POST /case-reports/:id/leave"
+        },
+        {
+          "file": "apps/api/src/routes/caseReport.routes.ts",
+          "line": 114,
+          "context": "POST /case-reports/:id/mute"
+        },
+        {
+          "file": "apps/api/src/routes/caseReport.routes.ts",
+          "line": 115,
+          "context": "POST /case-reports/:id/read"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [
+        {
+          "file": "apps/api/src/config/socket.ts",
+          "line": 180,
+          "context": "socket namespace/branch guard"
+        }
+      ],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/app/router.tsx",
+          "line": 187,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/dashboard/components/Sidebar.tsx",
+          "line": 331,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/011_case_report_permissions.ts",
+          "line": 9,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "CASH_REQUEST_APPROVE",
+      "permission": "cash_request.approve",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/cashRequest.routes.ts",
+          "line": 42,
+          "context": "POST /cash-requests/:id/approve"
+        },
+        {
+          "file": "apps/api/src/routes/cashRequest.routes.ts",
+          "line": 47,
+          "context": "POST /cash-requests/:id/reject"
+        },
+        {
+          "file": "apps/api/src/routes/cashRequest.routes.ts",
+          "line": 52,
+          "context": "POST /cash-requests/:id/disburse"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/features/cash-requests/pages/CashRequestsPage.tsx",
+          "line": 375,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 47,
+          "context": "migration/seed grant"
+        },
+        {
+          "file": "apps/api/src/scripts/migration.ts",
+          "line": 384,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "CASH_REQUEST_VIEW_ALL",
+      "permission": "cash_request.view_all",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/cashRequest.routes.ts",
+          "line": 35,
+          "context": "GET /cash-requests"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/app/router.tsx",
+          "line": 155,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/dashboard/components/Sidebar.tsx",
+          "line": 394,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 46,
+          "context": "migration/seed grant"
+        },
+        {
+          "file": "apps/api/src/scripts/migration.ts",
+          "line": 383,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "DASHBOARD_VIEW_PAYSLIP",
+      "permission": "dashboard.view_payslip",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/dashboard.routes.ts",
+          "line": 20,
+          "context": "GET /dashboard/payslip"
+        },
+        {
+          "file": "apps/api/src/routes/dashboard.routes.ts",
+          "line": 26,
+          "context": "GET /dashboard/payslip-branches"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/app/router.tsx",
+          "line": 69,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/dashboard/components/Sidebar.tsx",
+          "line": 264,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 23,
+          "context": "migration/seed grant"
+        },
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 426,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "DASHBOARD_VIEW_PERFORMANCE_INDEX",
+      "permission": "dashboard.view_performance_index",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/dashboard.routes.ts",
+          "line": 14,
+          "context": "GET /dashboard/performance-index"
+        },
+        {
+          "file": "apps/api/src/routes/dashboard.routes.ts",
+          "line": 32,
+          "context": "GET /dashboard/epi-leaderboard"
+        },
+        {
+          "file": "apps/api/src/routes/dashboard.routes.ts",
+          "line": 38,
+          "context": "GET /dashboard/epi"
+        },
+        {
+          "file": "apps/api/src/routes/dashboard.routes.ts",
+          "line": 44,
+          "context": "GET /dashboard/epi/leaderboard"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/features/dashboard/pages/DashboardPage.tsx",
+          "line": 19,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/dashboard/pages/DashboardPage.tsx",
+          "line": 51,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 22,
+          "context": "migration/seed grant"
+        },
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 427,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "EMPLOYEE_REQUIREMENTS_APPROVE",
+      "permission": "employee_requirements.approve",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/employeeVerification.routes.ts",
+          "line": 58,
+          "context": "POST /employee-verifications/employment-requirements/:id/approve"
+        },
+        {
+          "file": "apps/api/src/routes/employeeVerification.routes.ts",
+          "line": 63,
+          "context": "POST /employee-verifications/employment-requirements/:id/reject"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/app/router.tsx",
+          "line": 215,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/dashboard/components/Sidebar.tsx",
+          "line": 353,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/dashboard/components/Sidebar.tsx",
+          "line": 373,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/employee-verifications/pages/EmployeeVerificationsPage.tsx",
+          "line": 326,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 51,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "EMPLOYEE_VERIFICATION_VIEW",
+      "permission": "employee_verification.view",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/employeeVerification.routes.ts",
+          "line": 20,
+          "context": "GET /employee-verifications"
+        },
+        {
+          "file": "apps/api/src/routes/registrationRequest.routes.ts",
+          "line": 19,
+          "context": "GET /registration-requests"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [
+        {
+          "file": "apps/api/src/config/socket.ts",
+          "line": 130,
+          "context": "socket namespace/branch guard"
+        }
+      ],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/app/router.tsx",
+          "line": 163,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/dashboard/components/Sidebar.tsx",
+          "line": 325,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 48,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "EMPLOYEE_EDIT_OWN_PROFILE",
+      "permission": "employee.edit_own_profile",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/account.routes.ts",
+          "line": 75,
+          "context": "POST /account/personal-information/verifications"
+        },
+        {
+          "file": "apps/api/src/routes/account.routes.ts",
+          "line": 88,
+          "context": "PATCH /account/email"
+        },
+        {
+          "file": "apps/api/src/routes/account.routes.ts",
+          "line": 95,
+          "context": "POST /account/valid-id"
+        },
+        {
+          "file": "apps/api/src/routes/account.routes.ts",
+          "line": 102,
+          "context": "POST /account/bank-information/verifications"
+        },
+        {
+          "file": "apps/api/src/routes/account.routes.ts",
+          "line": 110,
+          "context": "POST /account/employment/requirements/:requirementCode/submit"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/features/account/components/EmploymentTab.tsx",
+          "line": 239,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 37,
+          "context": "migration/seed grant"
+        },
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 439,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "EMPLOYEE_EDIT_WORK_PROFILE",
+      "permission": "employee.edit_work_profile",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/employeeProfile.routes.ts",
+          "line": 30,
+          "context": "PATCH /employee-profiles/:userId/work-information"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/features/employee-profiles/pages/EmployeeProfilesPage.tsx",
+          "line": 349,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 39,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "EMPLOYEE_VIEW_ALL_PROFILES",
+      "permission": "employee.view_all_profiles",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/employeeProfile.routes.ts",
+          "line": 15,
+          "context": "GET /employee-profiles"
+        },
+        {
+          "file": "apps/api/src/routes/employeeProfile.routes.ts",
+          "line": 20,
+          "context": "GET /employee-profiles/filter-options"
+        },
+        {
+          "file": "apps/api/src/routes/employeeProfile.routes.ts",
+          "line": 25,
+          "context": "GET /employee-profiles/:userId"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/app/router.tsx",
+          "line": 171,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/dashboard/components/Sidebar.tsx",
+          "line": 351,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/dashboard/components/Sidebar.tsx",
+          "line": 361,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 38,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "EMPLOYEE_VIEW_OWN_PROFILE",
+      "permission": "employee.view_own_profile",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/account.routes.ts",
+          "line": 82,
+          "context": "GET /account/profile"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/app/router.tsx",
+          "line": 105,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/dashboard/components/Sidebar.tsx",
+          "line": 288,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 36,
+          "context": "migration/seed grant"
+        },
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 438,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "PEER_EVALUATION_MANAGE",
+      "permission": "peer_evaluation.manage",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/peerEvaluation.routes.ts",
+          "line": 24,
+          "context": "GET /peer-evaluations/pending-mine"
+        },
+        {
+          "file": "apps/api/src/routes/peerEvaluation.routes.ts",
+          "line": 29,
+          "context": "GET /peer-evaluations"
+        },
+        {
+          "file": "apps/api/src/routes/peerEvaluation.routes.ts",
+          "line": 34,
+          "context": "GET /peer-evaluations/:id"
+        },
+        {
+          "file": "apps/api/src/routes/peerEvaluation.routes.ts",
+          "line": 39,
+          "context": "POST /peer-evaluations/:id/submit"
+        }
+      ],
+      "apiInlineChecks": [
+        {
+          "file": "apps/api/src/controllers/peerEvaluation.controller.ts",
+          "line": 9,
+          "context": "permissions.includes / userPermissions.has"
+        },
+        {
+          "file": "apps/api/src/controllers/peerEvaluation.controller.ts",
+          "line": 33,
+          "context": "permissions.includes / userPermissions.has"
+        }
+      ],
+      "socketGuards": [
+        {
+          "file": "apps/api/src/config/socket.ts",
+          "line": 275,
+          "context": "socket namespace/branch guard"
+        }
+      ],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/app/router.tsx",
+          "line": 203,
+          "context": "frontend anyPermission/hasAnyPermission"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/014_peer_evaluation_permissions.ts",
+          "line": 11,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "PEER_EVALUATION_VIEW",
+      "permission": "peer_evaluation.view",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/peerEvaluation.routes.ts",
+          "line": 24,
+          "context": "GET /peer-evaluations/pending-mine"
+        },
+        {
+          "file": "apps/api/src/routes/peerEvaluation.routes.ts",
+          "line": 29,
+          "context": "GET /peer-evaluations"
+        },
+        {
+          "file": "apps/api/src/routes/peerEvaluation.routes.ts",
+          "line": 34,
+          "context": "GET /peer-evaluations/:id"
+        },
+        {
+          "file": "apps/api/src/routes/peerEvaluation.routes.ts",
+          "line": 39,
+          "context": "POST /peer-evaluations/:id/submit"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [
+        {
+          "file": "apps/api/src/config/socket.ts",
+          "line": 274,
+          "context": "socket namespace/branch guard"
+        }
+      ],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/app/router.tsx",
+          "line": 203,
+          "context": "frontend anyPermission/hasAnyPermission"
+        },
+        {
+          "file": "apps/web/src/features/dashboard/components/Sidebar.tsx",
+          "line": 355,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/dashboard/components/Sidebar.tsx",
+          "line": 385,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/014_peer_evaluation_permissions.ts",
+          "line": 10,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "PERSONAL_INFORMATION_APPROVE",
+      "permission": "personal_information.approve",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/employeeVerification.routes.ts",
+          "line": 45,
+          "context": "POST /employee-verifications/personal-information/:id/approve"
+        },
+        {
+          "file": "apps/api/src/routes/employeeVerification.routes.ts",
+          "line": 51,
+          "context": "POST /employee-verifications/personal-information/:id/reject"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/features/employee-verifications/pages/EmployeeVerificationsPage.tsx",
+          "line": 325,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 50,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "POS_SESSION_AUDIT_COMPLETE",
+      "permission": "pos_session.audit_complete",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/posVerification.routes.ts",
+          "line": 65,
+          "context": "POST /pos-verifications/:id/audit"
+        },
+        {
+          "file": "apps/api/src/routes/posSession.routes.ts",
+          "line": 16,
+          "context": "POST /pos-sessions/:id/audit-complete"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/features/pos-session/pages/PosSessionPage.tsx",
+          "line": 431,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/pos-session/pages/PosSessionPage.tsx",
+          "line": 766,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/pos-session/pages/PosSessionPage.tsx",
+          "line": 907,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 28,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "POS_SESSION_VIEW",
+      "permission": "pos_session.view",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/posSession.routes.ts",
+          "line": 12,
+          "context": "GET /pos-sessions"
+        },
+        {
+          "file": "apps/api/src/routes/posSession.routes.ts",
+          "line": 13,
+          "context": "GET /pos-sessions/:id"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [
+        {
+          "file": "apps/api/src/config/socket.ts",
+          "line": 77,
+          "context": "socket namespace/branch guard"
+        }
+      ],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/app/router.tsx",
+          "line": 125,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/dashboard/components/Sidebar.tsx",
+          "line": 425,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 27,
+          "context": "migration/seed grant"
+        },
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 431,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "POS_VERIFICATION_CONFIRM_REJECT",
+      "permission": "pos_verification.confirm_reject",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/posVerification.routes.ts",
+          "line": 44,
+          "context": "POST /pos-verifications/:id/confirm"
+        },
+        {
+          "file": "apps/api/src/routes/posVerification.routes.ts",
+          "line": 51,
+          "context": "POST /pos-verifications/:id/reject"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/features/pos-verification/pages/PosVerificationPage.tsx",
+          "line": 1023,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/pos-verification/pages/PosVerificationPage.tsx",
+          "line": 1032,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/pos-verification/pages/PosVerificationPage.tsx",
+          "line": 1043,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/pos-verification/pages/PosVerificationPage.tsx",
+          "line": 1059,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 25,
+          "context": "migration/seed grant"
+        },
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 429,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "POS_VERIFICATION_UPLOAD_IMAGE",
+      "permission": "pos_verification.upload_image",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/posVerification.routes.ts",
+          "line": 37,
+          "context": "POST /pos-verifications/:id/images"
+        },
+        {
+          "file": "apps/api/src/routes/posVerification.routes.ts",
+          "line": 58,
+          "context": "PUT /pos-verifications/:id/breakdown"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/features/pos-verification/pages/PosVerificationPage.tsx",
+          "line": 924,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/pos-verification/pages/PosVerificationPage.tsx",
+          "line": 1001,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 26,
+          "context": "migration/seed grant"
+        },
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 430,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "POS_VERIFICATION_VIEW",
+      "permission": "pos_verification.view",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/posVerification.routes.ts",
+          "line": 32,
+          "context": "GET /pos-verifications"
+        },
+        {
+          "file": "apps/api/src/routes/posVerification.routes.ts",
+          "line": 33,
+          "context": "GET /pos-verifications/:id"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [
+        {
+          "file": "apps/api/src/config/socket.ts",
+          "line": 44,
+          "context": "socket namespace/branch guard"
+        }
+      ],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/app/router.tsx",
+          "line": 117,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/dashboard/components/Sidebar.tsx",
+          "line": 414,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 24,
+          "context": "migration/seed grant"
+        },
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 428,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "REGISTRATION_APPROVE",
+      "permission": "registration.approve",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/employeeVerification.routes.ts",
+          "line": 26,
+          "context": "POST /employee-verifications/registration/:id/approve"
+        },
+        {
+          "file": "apps/api/src/routes/employeeVerification.routes.ts",
+          "line": 32,
+          "context": "POST /employee-verifications/registration/:id/reject"
+        },
+        {
+          "file": "apps/api/src/routes/employeeVerification.routes.ts",
+          "line": 39,
+          "context": "GET /employee-verifications/registration/assignment-options"
+        },
+        {
+          "file": "apps/api/src/routes/registrationRequest.routes.ts",
+          "line": 25,
+          "context": "GET /registration-requests/assignment-options"
+        },
+        {
+          "file": "apps/api/src/routes/registrationRequest.routes.ts",
+          "line": 31,
+          "context": "POST /registration-requests/:id/approve"
+        },
+        {
+          "file": "apps/api/src/routes/registrationRequest.routes.ts",
+          "line": 38,
+          "context": "POST /registration-requests/:id/reject"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/features/employee-verifications/pages/EmployeeVerificationsPage.tsx",
+          "line": 324,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/registration-requests/pages/RegistrationRequestsPage.tsx",
+          "line": 64,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 49,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "SHIFT_APPROVE_AUTHORIZATIONS",
+      "permission": "shift.approve_authorizations",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/shiftAuthorization.routes.ts",
+          "line": 22,
+          "context": "POST /shift-authorizations/:id/approve"
+        },
+        {
+          "file": "apps/api/src/routes/shiftAuthorization.routes.ts",
+          "line": 29,
+          "context": "POST /shift-authorizations/:id/reject"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/features/account/components/ScheduleTab.tsx",
+          "line": 842,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/employee-shifts/pages/EmployeeShiftsPage.tsx",
+          "line": 912,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 41,
+          "context": "migration/seed grant"
+        },
+        {
+          "file": "apps/api/src/scripts/migration.ts",
+          "line": 351,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "SHIFT_END_SHIFT",
+      "permission": "shift.end_shift",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/employeeShift.routes.ts",
+          "line": 14,
+          "context": "POST /employee-shifts/:id/end"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/features/employee-shifts/pages/EmployeeShiftsPage.tsx",
+          "line": 913,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 42,
+          "context": "migration/seed grant"
+        },
+        {
+          "file": "apps/api/src/scripts/migration.ts",
+          "line": 352,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "SHIFT_VIEW_ALL",
+      "permission": "shift.view_all",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/employeeShift.routes.ts",
+          "line": 12,
+          "context": "GET /employee-shifts"
+        },
+        {
+          "file": "apps/api/src/routes/employeeShift.routes.ts",
+          "line": 13,
+          "context": "GET /employee-shifts/:id"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [
+        {
+          "file": "apps/api/src/config/socket.ts",
+          "line": 111,
+          "context": "socket namespace/branch guard"
+        },
+        {
+          "file": "apps/api/src/config/socket.ts",
+          "line": 230,
+          "context": "socket namespace/branch guard"
+        },
+        {
+          "file": "apps/api/src/config/socket.ts",
+          "line": 252,
+          "context": "socket namespace/branch guard"
+        }
+      ],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/app/router.tsx",
+          "line": 133,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/dashboard/components/Sidebar.tsx",
+          "line": 352,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/dashboard/components/Sidebar.tsx",
+          "line": 367,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 40,
+          "context": "migration/seed grant"
+        },
+        {
+          "file": "apps/api/src/scripts/migration.ts",
+          "line": 350,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "STORE_AUDIT_PROCESS",
+      "permission": "store_audit.process",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/storeAudit.routes.ts",
+          "line": 38,
+          "context": "POST /store-audits/:id/process"
+        },
+        {
+          "file": "apps/api/src/routes/storeAudit.routes.ts",
+          "line": 41,
+          "context": "POST /store-audits/:id/complete"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/features/store-audits/pages/StoreAuditsPage.tsx",
+          "line": 32,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/010_add_audit_result_columns.ts",
+          "line": 13,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "STORE_AUDIT_VIEW",
+      "permission": "store_audit.view",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/storeAudit.routes.ts",
+          "line": 36,
+          "context": "GET /store-audits"
+        },
+        {
+          "file": "apps/api/src/routes/storeAudit.routes.ts",
+          "line": 37,
+          "context": "GET /store-audits/:id"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [
+        {
+          "file": "apps/api/src/config/socket.ts",
+          "line": 155,
+          "context": "socket namespace/branch guard"
+        }
+      ],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/app/router.tsx",
+          "line": 179,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/dashboard/components/Sidebar.tsx",
+          "line": 338,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/010_add_audit_result_columns.ts",
+          "line": 12,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "VIOLATION_NOTICE_COMPLETE",
+      "permission": "violation_notice.complete",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/violationNotice.routes.ts",
+          "line": 112,
+          "context": "POST /violation-notices/:id/disciplinary-upload"
+        },
+        {
+          "file": "apps/api/src/routes/violationNotice.routes.ts",
+          "line": 116,
+          "context": "POST /violation-notices/:id/complete"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/features/violation-notices/pages/ViolationNoticesPage.tsx",
+          "line": 92,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/012_violation_notice_permissions.ts",
+          "line": 15,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "VIOLATION_NOTICE_CONFIRM",
+      "permission": "violation_notice.confirm",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/violationNotice.routes.ts",
+          "line": 95,
+          "context": "POST /violation-notices/:id/confirm"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/features/violation-notices/pages/ViolationNoticesPage.tsx",
+          "line": 89,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/012_violation_notice_permissions.ts",
+          "line": 12,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "VIOLATION_NOTICE_CREATE",
+      "permission": "violation_notice.create",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/violationNotice.routes.ts",
+          "line": 76,
+          "context": "GET /violation-notices/grouped-users"
+        },
+        {
+          "file": "apps/api/src/routes/violationNotice.routes.ts",
+          "line": 80,
+          "context": "POST /violation-notices/from-case-report"
+        },
+        {
+          "file": "apps/api/src/routes/violationNotice.routes.ts",
+          "line": 86,
+          "context": "POST /violation-notices/from-store-audit"
+        },
+        {
+          "file": "apps/api/src/routes/violationNotice.routes.ts",
+          "line": 91,
+          "context": "POST /violation-notices"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/features/store-audits/pages/StoreAuditsPage.tsx",
+          "line": 33,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/violation-notices/pages/ViolationNoticesPage.tsx",
+          "line": 88,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/012_violation_notice_permissions.ts",
+          "line": 11,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "VIOLATION_NOTICE_ISSUE",
+      "permission": "violation_notice.issue",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/violationNotice.routes.ts",
+          "line": 102,
+          "context": "POST /violation-notices/:id/issue"
+        },
+        {
+          "file": "apps/api/src/routes/violationNotice.routes.ts",
+          "line": 105,
+          "context": "POST /violation-notices/:id/issuance-upload"
+        },
+        {
+          "file": "apps/api/src/routes/violationNotice.routes.ts",
+          "line": 109,
+          "context": "POST /violation-notices/:id/confirm-issuance"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/features/violation-notices/pages/ViolationNoticesPage.tsx",
+          "line": 91,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/012_violation_notice_permissions.ts",
+          "line": 14,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "VIOLATION_NOTICE_MANAGE",
+      "permission": "violation_notice.manage",
+      "apiGuards": [],
+      "apiInlineChecks": [
+        {
+          "file": "apps/api/src/services/violationNotice.service.ts",
+          "line": 1161,
+          "context": "permissions.includes / userPermissions.has"
+        }
+      ],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/features/violation-notices/pages/ViolationNoticesPage.tsx",
+          "line": 93,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/012_violation_notice_permissions.ts",
+          "line": 16,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "VIOLATION_NOTICE_REJECT",
+      "permission": "violation_notice.reject",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/violationNotice.routes.ts",
+          "line": 98,
+          "context": "POST /violation-notices/:id/reject"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/features/violation-notices/pages/ViolationNoticesPage.tsx",
+          "line": 90,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/012_violation_notice_permissions.ts",
+          "line": 13,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    },
+    {
+      "constantKey": "VIOLATION_NOTICE_VIEW",
+      "permission": "violation_notice.view",
+      "apiGuards": [
+        {
+          "file": "apps/api/src/routes/violationNotice.routes.ts",
+          "line": 77,
+          "context": "GET /violation-notices/mentionables"
+        },
+        {
+          "file": "apps/api/src/routes/violationNotice.routes.ts",
+          "line": 90,
+          "context": "GET /violation-notices"
+        },
+        {
+          "file": "apps/api/src/routes/violationNotice.routes.ts",
+          "line": 94,
+          "context": "GET /violation-notices/:id"
+        },
+        {
+          "file": "apps/api/src/routes/violationNotice.routes.ts",
+          "line": 117,
+          "context": "GET /violation-notices/:id/messages"
+        },
+        {
+          "file": "apps/api/src/routes/violationNotice.routes.ts",
+          "line": 120,
+          "context": "POST /violation-notices/:id/messages"
+        },
+        {
+          "file": "apps/api/src/routes/violationNotice.routes.ts",
+          "line": 126,
+          "context": "PATCH /violation-notices/:id/messages/:messageId"
+        },
+        {
+          "file": "apps/api/src/routes/violationNotice.routes.ts",
+          "line": 132,
+          "context": "DELETE /violation-notices/:id/messages/:messageId"
+        },
+        {
+          "file": "apps/api/src/routes/violationNotice.routes.ts",
+          "line": 137,
+          "context": "POST /violation-notices/:id/messages/:messageId/reactions"
+        },
+        {
+          "file": "apps/api/src/routes/violationNotice.routes.ts",
+          "line": 141,
+          "context": "POST /violation-notices/:id/read"
+        },
+        {
+          "file": "apps/api/src/routes/violationNotice.routes.ts",
+          "line": 142,
+          "context": "POST /violation-notices/:id/leave"
+        },
+        {
+          "file": "apps/api/src/routes/violationNotice.routes.ts",
+          "line": 143,
+          "context": "POST /violation-notices/:id/mute"
+        }
+      ],
+      "apiInlineChecks": [],
+      "socketGuards": [
+        {
+          "file": "apps/api/src/config/socket.ts",
+          "line": 205,
+          "context": "socket namespace/branch guard"
+        }
+      ],
+      "uiGuards": [
+        {
+          "file": "apps/web/src/app/router.tsx",
+          "line": 195,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/dashboard/components/Sidebar.tsx",
+          "line": 354,
+          "context": "frontend guard"
+        },
+        {
+          "file": "apps/web/src/features/dashboard/components/Sidebar.tsx",
+          "line": 379,
+          "context": "frontend guard"
+        }
+      ],
+      "roleGrants": [
+        {
+          "file": "apps/api/src/migrations/master/012_violation_notice_permissions.ts",
+          "line": 10,
+          "context": "migration/seed grant"
+        }
+      ],
+      "status": "enforced",
+      "notes": "Backend, socket/UI checks, and grants are present."
+    }
+  ],
+  "aliases": [
+    {
+      "alias": "admin.toggle_branch",
+      "status": "legacy-alias",
+      "occurrences": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 20,
+          "context": "migration legacy alias"
+        },
+        {
+          "file": "apps/api/src/migrations/master/018_remove_dashboard_and_toggle_permissions.ts",
+          "line": 9,
+          "context": "migration legacy alias"
+        }
+      ],
+      "notes": "Unknown permission-like alias found in grants/migrations."
+    },
+    {
+      "alias": "auth_request.create_management",
+      "status": "legacy-alias",
+      "occurrences": [
+        {
+          "file": "apps/api/src/scripts/migration.ts",
+          "line": 441,
+          "context": "migration legacy alias"
+        }
+      ],
+      "notes": "Unknown permission-like alias found in grants/migrations."
+    },
+    {
+      "alias": "auth_request.view_service_crew",
+      "status": "legacy-alias",
+      "occurrences": [
+        {
+          "file": "apps/api/src/scripts/migration.ts",
+          "line": 442,
+          "context": "migration legacy alias"
+        }
+      ],
+      "notes": "Legacy alias remains in migration history; map to canonical key before cleanup."
+    },
+    {
+      "alias": "dashboard.view",
+      "status": "legacy-alias",
+      "occurrences": [
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 21,
+          "context": "migration legacy alias"
+        },
+        {
+          "file": "apps/api/src/migrations/master/006_global_users_and_registration.ts",
+          "line": 425,
+          "context": "migration legacy alias"
+        },
+        {
+          "file": "apps/api/src/migrations/master/018_remove_dashboard_and_toggle_permissions.ts",
+          "line": 15,
+          "context": "migration legacy alias"
+        }
+      ],
+      "notes": "Unknown permission-like alias found in grants/migrations."
+    },
+    {
+      "alias": "registration.view",
+      "status": "legacy-alias",
+      "occurrences": [
+        {
+          "file": "apps/api/src/migrations/tenant/004_add_registration_requests_and_employee_number.ts",
+          "line": 8,
+          "context": "migration legacy alias"
+        },
+        {
+          "file": "apps/api/src/migrations/tenant/005_employee_verifications_expansion.ts",
+          "line": 12,
+          "context": "migration legacy alias"
+        }
+      ],
+      "notes": "Unknown permission-like alias found in grants/migrations."
+    }
+  ],
+  "literalViolations": [],
+  "remediationTasks": [
+    "Close enforcement gap for `admin.view_all_branches` (missing one of backend/UI/grants).",
+    "Replace legacy alias `admin.toggle_branch` with shared constants and remove alias grants when migrated.",
+    "Replace legacy alias `auth_request.create_management` with shared constants and remove alias grants when migrated.",
+    "Replace legacy alias `auth_request.view_service_crew` with shared constants and remove alias grants when migrated.",
+    "Replace legacy alias `dashboard.view` with shared constants and remove alias grants when migrated.",
+    "Replace legacy alias `registration.view` with shared constants and remove alias grants when migrated."
+  ]
+}

@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
+import { PERMISSIONS } from '@omnilert/shared';
 import { AppError } from '../middleware/errorHandler.js';
 import { db } from '../config/database.js';
 import { createAndDispatchNotification } from '../services/notification.service.js';
@@ -27,7 +28,7 @@ export async function list(req: Request, res: Response, next: NextFunction) {
 
     // Management-level requests
     let managementRequests: any[] = [];
-    if (userPermissions.has('auth_request.approve_management')) {
+    if (userPermissions.has(PERMISSIONS.AUTH_REQUEST_APPROVE_MANAGEMENT)) {
       let q = tenantDb('authorization_requests')
         .whereIn('branch_id', allBranchIds)
         .where('level', 'management');
@@ -38,9 +39,8 @@ export async function list(req: Request, res: Response, next: NextFunction) {
     // Service-crew requests (shift_authorizations)
     let serviceCrewRequests: any[] = [];
     if (
-      userPermissions.has('auth_request.view_all') ||
-      userPermissions.has('auth_request.view_service_crew') ||
-      userPermissions.has('auth_request.approve_service_crew')
+      userPermissions.has(PERMISSIONS.AUTH_REQUEST_VIEW_ALL) ||
+      userPermissions.has(PERMISSIONS.AUTH_REQUEST_APPROVE_SERVICE_CREW)
     ) {
       let q = tenantDb('shift_authorizations')
         .whereIn('shift_authorizations.branch_id', allBranchIds)

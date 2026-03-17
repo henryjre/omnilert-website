@@ -33,7 +33,7 @@ const DEFAULT_FILTERS: PeerEvalFilters = { sort_order: 'desc' };
 
 export function PeerEvaluationsPage() {
   const socket = useSocket('/peer-evaluations');
-  const { hasPermission } = usePermission();
+  const { hasAnyPermission } = usePermission();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [evaluations, setEvaluations] = useState<PeerEvaluation[]>([]);
@@ -49,7 +49,7 @@ export function PeerEvaluationsPage() {
   const [groupedUsers, setGroupedUsers] = useState<GroupedUsersResponse | null>(null);
   const [loadingGroupedUsers, setLoadingGroupedUsers] = useState(false);
 
-  const canView = hasPermission(PERMISSIONS.PEER_EVALUATION_VIEW);
+  const canView = hasAnyPermission(PERMISSIONS.PEER_EVALUATION_VIEW, PERMISSIONS.PEER_EVALUATION_MANAGE);
 
   const hasActiveFilters =
     !!filters.date_from ||

@@ -142,6 +142,7 @@ function AuthorizationCard({
   auth,
   currentUserId,
   canApprove,
+  canSubmitPublicAuthRequest,
   onReasonSubmit,
   onApprove,
   onReject,
@@ -149,6 +150,7 @@ function AuthorizationCard({
   auth: any;
   currentUserId: string;
   canApprove: boolean;
+  canSubmitPublicAuthRequest: boolean;
   onReasonSubmit: (id: string, reason: string) => Promise<void>;
   onApprove: (id: string, overtimeType?: string) => Promise<void>;
   onReject: (id: string, reason: string) => Promise<void>;
@@ -167,6 +169,8 @@ function AuthorizationCard({
   const isOwner = auth.user_id === currentUserId;
   const needsReason = auth.needs_employee_reason && !auth.employee_reason;
   const canManagerAct = canApprove && auth.status === 'pending' && (!auth.needs_employee_reason || auth.employee_reason);
+  const canSubmitReason = auth.status === 'pending' && isOwner && needsReason && canSubmitPublicAuthRequest;
+  const showSubmitReasonPermissionHint = auth.status === 'pending' && isOwner && needsReason && !canSubmitPublicAuthRequest;
 
   const iconColorCls: Record<string, string> = {
     blue: 'bg-blue-100 text-blue-600',
@@ -198,7 +202,7 @@ function AuthorizationCard({
         <p className="text-xs text-orange-600">Awaiting employee reason before approval</p>
       )}
 
-      {auth.status === 'pending' && isOwner && needsReason && (
+      {canSubmitReason && (
         <div className="space-y-2">
           <textarea
             rows={2}
@@ -220,6 +224,12 @@ function AuthorizationCard({
             {reasonLoading ? 'Submitting...' : 'Submit Reason'}
           </Button>
         </div>
+      )}
+
+      {showSubmitReasonPermissionHint && (
+        <p className="text-xs text-amber-700">
+          You do not have permission to submit a reason for this request.
+        </p>
       )}
 
       {auth.employee_reason && (
@@ -498,6 +508,7 @@ function ShiftDetailPanel({
   branchName,
   currentUserId,
   canApprove,
+  canSubmitPublicAuthRequest,
   onClose,
   onAuthorizationUpdate,
 }: {
@@ -505,6 +516,7 @@ function ShiftDetailPanel({
   branchName?: string;
   currentUserId: string;
   canApprove: boolean;
+  canSubmitPublicAuthRequest: boolean;
   onClose: () => void;
   onAuthorizationUpdate: (updatedAuth: any) => void;
 }) {
@@ -613,6 +625,7 @@ function ShiftDetailPanel({
                   auth={auth}
                   currentUserId={currentUserId}
                   canApprove={canApprove}
+                  canSubmitPublicAuthRequest={canSubmitPublicAuthRequest}
                   onReasonSubmit={handleReasonSubmit}
                   onApprove={handleApprove}
                   onReject={handleReject}
@@ -827,6 +840,7 @@ export function ScheduleTab() {
   const currentUser = useAuthStore((s) => s.user);
   const { hasPermission } = usePermission();
   const canApprove = hasPermission(PERMISSIONS.SHIFT_APPROVE_AUTHORIZATIONS);
+  const canSubmitPublicAuthRequest = hasPermission(PERMISSIONS.ACCOUNT_SUBMIT_PUBLIC_AUTH_REQUEST);
 
   useEffect(() => {
     api
@@ -1393,6 +1407,7 @@ export function ScheduleTab() {
                 branchName={selectedShift.branch_name ?? 'Unknown Branch'}
                 currentUserId={currentUser?.id ?? ''}
                 canApprove={canApprove}
+                canSubmitPublicAuthRequest={canSubmitPublicAuthRequest}
                 onClose={() => setSelectedShift(null)}
                 onAuthorizationUpdate={(updatedAuth) => {
                   setSelectedShift((prev: any) => {
