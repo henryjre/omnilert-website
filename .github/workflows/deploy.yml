@@ -69,8 +69,10 @@ jobs:
             fi
             git fetch origin main
             git reset --hard origin/main
-            git clean -fd
+            git clean -fdx
             pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+            # Rebuild shared runtime artifacts before migrations import the workspace package.
+            pnpm --filter @omnilert/shared build
             pnpm -C apps/api migrate:master
             pnpm -C apps/api migrate:tenant
             TURBO_CONCURRENCY=1 pnpm build

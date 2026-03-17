@@ -1,5 +1,16 @@
 import type { Knex } from 'knex';
-import { PERMISSIONS, SYSTEM_ROLES } from '@omnilert/shared';
+
+const SYSTEM_ROLES = {
+  ADMINISTRATOR: 'Administrator',
+  MANAGEMENT: 'Management',
+} as const;
+
+const PERMISSIONS = {
+  CASE_REPORT_VIEW: 'case_report.view',
+  CASE_REPORT_CREATE: 'case_report.create',
+  CASE_REPORT_CLOSE: 'case_report.close',
+  CASE_REPORT_MANAGE: 'case_report.manage',
+} as const;
 
 const PERMISSION_KEYS = [
   PERMISSIONS.CASE_REPORT_VIEW,

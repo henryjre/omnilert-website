@@ -1,5 +1,15 @@
 import type { Knex } from 'knex';
-import { PERMISSIONS, SYSTEM_ROLES } from '@omnilert/shared';
+
+const SYSTEM_ROLES = {
+  ADMINISTRATOR: 'Administrator',
+  MANAGEMENT: 'Management',
+  SERVICE_CREW: 'Service Crew',
+} as const;
+
+const PERMISSIONS = {
+  PEER_EVALUATION_VIEW: 'peer_evaluation.view',
+  PEER_EVALUATION_MANAGE: 'peer_evaluation.manage',
+} as const;
 
 const PERMISSION_KEYS = [
   PERMISSIONS.PEER_EVALUATION_VIEW,

@@ -1,5 +1,20 @@
 import type { Knex } from 'knex';
-import { PERMISSIONS, SYSTEM_ROLES } from '@omnilert/shared';
+
+const SYSTEM_ROLES = {
+  ADMINISTRATOR: 'Administrator',
+  MANAGEMENT: 'Management',
+  SERVICE_CREW: 'Service Crew',
+} as const;
+
+const PERMISSIONS = {
+  VIOLATION_NOTICE_VIEW: 'violation_notice.view',
+  VIOLATION_NOTICE_CREATE: 'violation_notice.create',
+  VIOLATION_NOTICE_CONFIRM: 'violation_notice.confirm',
+  VIOLATION_NOTICE_REJECT: 'violation_notice.reject',
+  VIOLATION_NOTICE_ISSUE: 'violation_notice.issue',
+  VIOLATION_NOTICE_COMPLETE: 'violation_notice.complete',
+  VIOLATION_NOTICE_MANAGE: 'violation_notice.manage',
+} as const;
 
 const PERMISSION_KEYS = [
   PERMISSIONS.VIOLATION_NOTICE_VIEW,
