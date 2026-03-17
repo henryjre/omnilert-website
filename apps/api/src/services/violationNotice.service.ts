@@ -920,6 +920,7 @@ async function appendViolationNoticeToTargetUsers(input: {
   vnNumber: number;
   description: string;
   completedAt: Date;
+  epiDecrease: number;
 }): Promise<void> {
   const targets = await input.tenantDb('violation_notice_targets')
     .where({ violation_notice_id: input.vnId })
@@ -933,6 +934,7 @@ async function appendViolationNoticeToTargetUsers(input: {
     company_id: input.companyId,
     description: input.description,
     completed_at: input.completedAt.toISOString(),
+    epi_decrease: input.epiDecrease,
   }]);
 
   for (const target of targets) {
@@ -953,6 +955,7 @@ export async function completeViolationNotice(input: {
   companyId: string;
   userId: string;
   vnId: string;
+  epiDecrease: number;
 }): Promise<ViolationNotice> {
   const record = await getVNOrThrow(input.tenantDb, input.vnId);
   if (record.status !== 'disciplinary_meeting') {
@@ -966,6 +969,7 @@ export async function completeViolationNotice(input: {
     await trx('violation_notices').where({ id: input.vnId }).update({
       status: 'completed',
       completed_by: input.userId,
+      epi_decrease: input.epiDecrease,
       updated_at: completedAt,
     });
     await createSystemMessage(
@@ -989,6 +993,7 @@ export async function completeViolationNotice(input: {
       vnNumber: record.vn_number,
       description: record.description,
       completedAt,
+      epiDecrease: input.epiDecrease,
     });
   } catch (err) {
     logger.error({ err, vnId: input.vnId }, 'Failed to append VN to target users in master DB');

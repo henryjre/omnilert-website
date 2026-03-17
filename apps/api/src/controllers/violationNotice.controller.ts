@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import * as violationNoticeService from '../services/violationNotice.service.js';
 import { getIO } from '../config/socket.js';
+import { AppError } from '../middleware/errorHandler.js';
 
 function getUploadedFiles(req: Request): Express.Multer.File[] {
   const files = (req as Request & { files?: Express.Multer.File[] | Record<string, Express.Multer.File[]> }).files;
@@ -163,11 +164,16 @@ export async function uploadDisciplinaryFile(req: Request, res: Response, next: 
 
 export async function complete(req: Request, res: Response, next: NextFunction) {
   try {
+    const epiDecrease = Number(req.body.epiDecrease ?? 0);
+    if (isNaN(epiDecrease) || epiDecrease < 0 || epiDecrease > 5) {
+      throw new AppError(400, 'epiDecrease must be a number between 0 and 5');
+    }
     const data = await violationNoticeService.completeViolationNotice({
       tenantDb: req.tenantDb!,
       companyId: req.user!.companyId,
       userId: req.user!.sub,
       vnId: req.params.id as string,
+      epiDecrease,
     });
     res.json({ success: true, data });
   } catch (error) {

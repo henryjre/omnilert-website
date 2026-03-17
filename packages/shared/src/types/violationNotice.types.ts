@@ -79,6 +79,7 @@ export interface ViolationNotice {
   issued_by_name?: string | null;
   completed_by: string | null;
   completed_by_name?: string | null;
+  epi_decrease: number | null;
   rejected_by: string | null;
   rejected_by_name?: string | null;
   rejection_reason: string | null;
