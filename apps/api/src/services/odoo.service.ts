@@ -2016,6 +2016,7 @@ export async function createAuditSalaryAttachment(input: {
       description: input.description,
       other_input_type_id: 19,
       total_amount: input.totalAmount,
+      monthly_amount: input.totalAmount,
     }]);
 
     logger.info({ employeeId, description: input.description }, 'createAuditSalaryAttachment: created');
