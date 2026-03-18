@@ -4,6 +4,7 @@ import { Spinner } from '@/shared/components/ui/Spinner';
 import { api } from '@/shared/services/api.client';
 import { AlertTriangle, Check, Clock3, ExternalLink, Users, X } from 'lucide-react';
 import { useSocket } from '@/shared/hooks/useSocket';
+import { useAppToast } from '@/shared/hooks/useAppToast';
 
 type RequirementStatus = 'complete' | 'rejected' | 'verification' | 'pending';
 
@@ -98,9 +99,9 @@ function getInitials(firstName: string, lastName: string): string {
 
 export function EmployeeRequirementsPage() {
   const EMPLOYEE_PAGE_SIZE = 4;
+  const { error: showErrorToast } = useAppToast();
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [error, setError] = useState('');
   const [employees, setEmployees] = useState<EmployeeSummary[]>([]);
   const [employeePage, setEmployeePage] = useState(1);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
@@ -121,7 +122,6 @@ export function EmployeeRequirementsPage() {
 
   const fetchEmployees = useCallback(async (options?: { silent?: boolean }) => {
     if (!options?.silent) setLoading(true);
-    setError('');
     try {
       const res = await api.get('/employee-requirements');
       const rows: EmployeeSummary[] = res.data.data || [];
@@ -136,25 +136,26 @@ export function EmployeeRequirementsPage() {
         setDetail(null);
       }
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to load employee requirements');
+      if (!options?.silent) {
+        showErrorToast(err.response?.data?.error || 'Failed to load employee requirements');
+      }
     } finally {
       if (!options?.silent) setLoading(false);
     }
-  }, [selectedUserId]);
+  }, [selectedUserId, showErrorToast]);
 
   const fetchDetail = useCallback(async (userId: string) => {
     setDetailLoading(true);
-    setError('');
     try {
       const res = await api.get(`/employee-requirements/${userId}`);
       setDetail(res.data.data || null);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to load employee requirement details');
+      showErrorToast(err.response?.data?.error || 'Failed to load employee requirement details');
       setDetail(null);
     } finally {
       setDetailLoading(false);
     }
-  }, []);
+  }, [showErrorToast]);
 
   useEffect(() => {
     fetchEmployees();
@@ -208,8 +209,6 @@ export function EmployeeRequirementsPage() {
         <Users className="h-6 w-6 text-primary-600" />
         <h1 className="text-2xl font-bold text-gray-900">Employee Requirements</h1>
       </div>
-
-      {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>}
 
       {employees.length === 0 ? (
         <Card>

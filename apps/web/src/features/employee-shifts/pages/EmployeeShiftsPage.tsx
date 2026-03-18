@@ -8,6 +8,7 @@ import { useSocket } from '@/shared/hooks/useSocket';
 import { useBranchStore } from '@/shared/store/branchStore';
 import { useAuthStore } from '@/features/auth/store/authSlice';
 import { usePermission } from '@/shared/hooks/usePermission';
+import { useAppToast } from '@/shared/hooks/useAppToast';
 import { api } from '@/shared/services/api.client';
 import { ShiftExchangeFlowModal } from '@/features/shift-exchange/components/ShiftExchangeFlowModal';
 import { PERMISSIONS } from '@omnilert/shared';
@@ -140,6 +141,7 @@ function AuthorizationCard({
   onReject: (id: string, reason: string) => Promise<void>;
 }) {
   const config = AUTH_TYPE_CONFIG[auth.auth_type] ?? { label: auth.auth_type, color: 'gray', Icon: Clock, diffLabel: '' };
+  const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const { Icon } = config;
 
   const [reasonText, setReasonText] = useState('');
@@ -205,9 +207,15 @@ function AuthorizationCard({
             disabled={!reasonText.trim() || reasonLoading}
             onClick={async () => {
               setReasonLoading(true);
-              await onReasonSubmit(auth.id, reasonText);
-              setReasonText('');
-              setReasonLoading(false);
+              try {
+                await onReasonSubmit(auth.id, reasonText);
+                setReasonText('');
+                showSuccessToast('Reason submitted.');
+              } catch (err: any) {
+                showErrorToast(err?.response?.data?.error || 'Failed to submit reason.');
+              } finally {
+                setReasonLoading(false);
+              }
             }}
           >
             {reasonLoading ? 'Submitting...' : 'Submit Reason'}
@@ -272,8 +280,14 @@ function AuthorizationCard({
                 message: 'Confirm approval of this overtime request?',
                 onConfirm: async () => {
                   setApproveLoading(true);
-                  await onApprove(auth.id, selectedOvertimeType);
-                  setApproveLoading(false);
+                  try {
+                    await onApprove(auth.id, selectedOvertimeType);
+                    showSuccessToast('Authorization approved.');
+                  } catch (err: any) {
+                    showErrorToast(err?.response?.data?.error || 'Failed to approve request.');
+                  } finally {
+                    setApproveLoading(false);
+                  }
                 },
               })}
             >
@@ -297,8 +311,14 @@ function AuthorizationCard({
               message: 'Confirm approval of this request?',
               onConfirm: async () => {
                 setApproveLoading(true);
-                await onApprove(auth.id);
-                setApproveLoading(false);
+                try {
+                  await onApprove(auth.id);
+                  showSuccessToast('Authorization approved.');
+                } catch (err: any) {
+                  showErrorToast(err?.response?.data?.error || 'Failed to approve request.');
+                } finally {
+                  setApproveLoading(false);
+                }
               },
             })}
           >
@@ -330,10 +350,16 @@ function AuthorizationCard({
                 message: `Reject with reason: "${rejectText}"?`,
                 onConfirm: async () => {
                   setRejectLoading(true);
-                  await onReject(auth.id, rejectText);
-                  setRejectText('');
-                  setRejectMode(false);
-                  setRejectLoading(false);
+                  try {
+                    await onReject(auth.id, rejectText);
+                    setRejectText('');
+                    setRejectMode(false);
+                    showSuccessToast('Authorization rejected.');
+                  } catch (err: any) {
+                    showErrorToast(err?.response?.data?.error || 'Failed to reject request.');
+                  } finally {
+                    setRejectLoading(false);
+                  }
                 },
               })}
             >
@@ -887,6 +913,7 @@ const DEFAULT_FILTERS: Filters = {
 };
 
 export function EmployeeShiftsPage() {
+  const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const [shifts, setShifts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedShift, setSelectedShift] = useState<any | null>(null);
@@ -942,16 +969,19 @@ export function EmployeeShiftsPage() {
     api
       .get('/employee-shifts', { params })
       .then((res) => setShifts(res.data.data || []))
+      .catch((err: any) => {
+        showErrorToast(err?.response?.data?.error || 'Failed to load employee shifts');
+      })
       .finally(() => setLoading(false));
-  }, [selectedBranchIds, activeTab, filters]);
+  }, [selectedBranchIds, activeTab, filters, showErrorToast]);
 
   const openDetail = async (shiftId: string) => {
     setDetailLoading(true);
     try {
       const res = await api.get(`/employee-shifts/${shiftId}`);
       setSelectedShift(res.data.data);
-    } catch (err) {
-      console.error('Failed to load shift detail:', err);
+    } catch (err: any) {
+      showErrorToast(err?.response?.data?.error || 'Failed to load shift detail');
     } finally {
       setDetailLoading(false);
     }
@@ -965,8 +995,9 @@ export function EmployeeShiftsPage() {
           (s) => activeTab === 'all' || s.status === activeTab,
         ),
       );
-    } catch (err) {
-      console.error('Failed to end shift:', err);
+      showSuccessToast('Shift ended successfully.');
+    } catch (err: any) {
+      showErrorToast(err?.response?.data?.error || 'Failed to end shift');
     }
   };
 

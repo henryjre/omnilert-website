@@ -5,6 +5,7 @@ import { Input } from '@/shared/components/ui/Input';
 import { Spinner } from '@/shared/components/ui/Spinner';
 import { api } from '@/shared/services/api.client';
 import { usePermission } from '@/shared/hooks/usePermission';
+import { useAppToast } from '@/shared/hooks/useAppToast';
 import { PERMISSIONS } from '@omnilert/shared';
 import { BadgeCheck, ChevronDown, ChevronUp, Filter, Phone, Users, X } from 'lucide-react';
 
@@ -346,14 +347,12 @@ export function EmployeeProfilesPage() {
   };
   const PANEL_ANIMATION_MS = 300;
   const { hasPermission } = usePermission();
+  const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const canEditWorkProfile = hasPermission(PERMISSIONS.EMPLOYEE_EDIT_WORK_PROFILE);
 
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [savingWork, setSavingWork] = useState(false);
-  const [error, setError] = useState('');
-  const [workUpdateSuccess, setWorkUpdateSuccess] = useState('');
-  const [workUpdateError, setWorkUpdateError] = useState('');
   const [status, setStatus] = useState<StatusFilter>('all');
   const [search, setSearch] = useState('');
   const [draftSearch, setDraftSearch] = useState('');
@@ -458,7 +457,6 @@ export function EmployeeProfilesPage() {
     if (!options?.silent) {
       setLoading(true);
     }
-    setError('');
     try {
       const res = await api.get('/employee-profiles', {
         params: {
@@ -494,13 +492,15 @@ export function EmployeeProfilesPage() {
         setDetail(null);
       }
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to load employee profiles');
+      if (!options?.silent) {
+        showErrorToast(err.response?.data?.error || 'Failed to load employee profiles');
+      }
     } finally {
       if (!options?.silent) {
         setLoading(false);
       }
     }
-  }, [appliedFilters, page, pageSize, search, status]);
+  }, [appliedFilters, page, pageSize, search, showErrorToast, status]);
 
   const fetchDetail = useCallback(async (userId: string, options?: { silentError?: boolean }) => {
     const requestId = ++activeDetailRequestRef.current;
@@ -512,9 +512,6 @@ export function EmployeeProfilesPage() {
       applyDetailToState(buildDetailFromCard(card));
     }
     setDetailLoading(true);
-    if (!options?.silentError) {
-      setError('');
-    }
     try {
       const res = await api.get(`/employee-profiles/${userId}`);
       const payload = res.data.data as EmployeeDetail;
@@ -524,14 +521,14 @@ export function EmployeeProfilesPage() {
       }
     } catch (err: any) {
       if (!options?.silentError) {
-        setError(err.response?.data?.error || 'Failed to load employee profile details');
+        showErrorToast(err.response?.data?.error || 'Failed to load employee profile details');
       }
     } finally {
       if (activeDetailRequestRef.current === requestId) {
         setDetailLoading(false);
       }
     }
-  }, [applyDetailToState, buildDetailFromCard, items]);
+  }, [applyDetailToState, buildDetailFromCard, items, showErrorToast]);
 
   useEffect(() => {
     fetchList();
@@ -576,12 +573,6 @@ export function EmployeeProfilesPage() {
   useEffect(() => {
     setPage(1);
   }, [appliedFilters.departmentId, appliedFilters.roleIds, appliedFilters.sortBy, appliedFilters.sortDirection]);
-
-  useEffect(() => {
-    if (!workUpdateSuccess) return;
-    const timer = window.setTimeout(() => setWorkUpdateSuccess(''), 2500);
-    return () => window.clearTimeout(timer);
-  }, [workUpdateSuccess]);
 
   const selectedCard = useMemo(
     () => items.find((item) => item.id === selectedUserId) ?? null,
@@ -710,8 +701,6 @@ export function EmployeeProfilesPage() {
     setPanelOpen(false);
     setDetailLoading(false);
     workEditModeRef.current = false; setWorkEditMode(false);
-    setWorkUpdateSuccess('');
-    setWorkUpdateError('');
     closeTimerRef.current = window.setTimeout(() => {
       selectedUserIdRef.current = null;
       setSelectedUserId(null);
@@ -732,24 +721,21 @@ export function EmployeeProfilesPage() {
   const saveWorkInformation = async () => {
     if (!detail) return;
     if (editCompanyAssignments.length === 0) {
-      setWorkUpdateError('Select at least one company assignment.');
+      showErrorToast('Select at least one company assignment.');
       return;
     }
     const missingBranches = editCompanyAssignments.find((item) => item.branchIds.length === 0);
     if (missingBranches) {
       const companyName = assignmentOptions.find((company) => company.id === missingBranches.companyId)?.name ?? 'selected company';
-      setWorkUpdateError(`Select at least one branch for ${companyName}.`);
+      showErrorToast(`Select at least one branch for ${companyName}.`);
       return;
     }
     const residentCompany = editCompanyAssignments.find((item) => item.companyId === workForm.residentCompanyId);
     if (!workForm.residentCompanyId || !workForm.residentBranchId || !residentCompany?.branchIds.includes(workForm.residentBranchId)) {
-      setWorkUpdateError('Select a resident branch from the assigned branches.');
+      showErrorToast('Select a resident branch from the assigned branches.');
       return;
     }
     setSavingWork(true);
-    setError('');
-    setWorkUpdateSuccess('');
-    setWorkUpdateError('');
     try {
       const res = await api.patch(`/employee-profiles/${detail.id}/work-information`, {
         departmentId: workForm.departmentId || null,
@@ -797,13 +783,13 @@ export function EmployeeProfilesPage() {
           days_of_employment: payload.work_information.days_of_employment,
         };
       }));
-      setWorkUpdateSuccess('Work information updated.');
+      showSuccessToast('Work information updated.');
       workEditModeRef.current = false; setWorkEditMode(false);
       setShowOdooConfirm(false);
       void fetchDetail(payload.id, { silentError: true });
       await fetchList({ silent: true });
     } catch (err: any) {
-      setWorkUpdateError(err.response?.data?.error || 'Failed to update work information');
+      showErrorToast(err.response?.data?.error || 'Failed to update work information');
     } finally {
       setSavingWork(false);
     }
@@ -912,7 +898,6 @@ export function EmployeeProfilesPage() {
 
   const enterWorkEditMode = useCallback(async () => {
     if (!detail || assignmentOptionsLoading) return;
-    setWorkUpdateError('');
     setAssignmentOptionsLoading(true);
     try {
       if (assignmentOptions.length === 0) {
@@ -940,11 +925,11 @@ export function EmployeeProfilesPage() {
       }));
       workEditModeRef.current = true; setWorkEditMode(true);
     } catch (err: any) {
-      setWorkUpdateError(err.response?.data?.error || 'Failed to load assignment options');
+      showErrorToast(err.response?.data?.error || 'Failed to load assignment options');
     } finally {
       setAssignmentOptionsLoading(false);
     }
-  }, [assignmentOptions.length, assignmentOptionsLoading, detail]);
+  }, [assignmentOptions.length, assignmentOptionsLoading, detail, showErrorToast]);
 
   const handleSaveWorkInformation = () => {
     if (!detail) return;
@@ -976,8 +961,6 @@ export function EmployeeProfilesPage() {
           <Users className="h-6 w-6 text-primary-600" />
           <h1 className="text-2xl font-bold text-gray-900">Employee Profiles</h1>
         </div>
-
-        {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>}
 
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="mx-auto flex w-full items-center justify-center gap-1 rounded-lg bg-gray-100 p-1 sm:mx-0 sm:w-fit sm:justify-start">
@@ -1430,17 +1413,6 @@ export function EmployeeProfilesPage() {
                           </Button>
                         )}
                       </div>
-                      {workUpdateSuccess && (
-                        <div className="mb-2 rounded bg-green-50 px-3 py-2 text-xs text-green-700">
-                          {workUpdateSuccess}
-                        </div>
-                      )}
-                      {workUpdateError && (
-                        <div className="mb-2 rounded bg-red-50 px-3 py-2 text-xs text-red-700">
-                          {workUpdateError}
-                        </div>
-                      )}
-
                       {!workEditMode ? (
                         <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                           <div className="col-span-2">

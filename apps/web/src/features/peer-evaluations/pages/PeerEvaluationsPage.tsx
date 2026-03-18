@@ -9,6 +9,7 @@ import { DateRangePicker } from '@/shared/components/ui/DateRangePicker';
 import { Spinner } from '@/shared/components/ui/Spinner';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useSocket } from '@/shared/hooks/useSocket';
+import { useAppToast } from '@/shared/hooks/useAppToast';
 import { getGroupedUsers } from '@/features/violation-notices/services/violationNotice.api';
 import { GroupedUserSelect } from '@/features/violation-notices/components/GroupedUserSelect';
 import {
@@ -34,12 +35,12 @@ const DEFAULT_FILTERS: PeerEvalFilters = { sort_order: 'desc' };
 export function PeerEvaluationsPage() {
   const socket = useSocket('/peer-evaluations');
   const { hasAnyPermission } = usePermission();
+  const { error: showErrorToast } = useAppToast();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [evaluations, setEvaluations] = useState<PeerEvaluation[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [activeStatus, setActiveStatus] = useState<StatusTab>('all');
   const [filters, setFilters] = useState<PeerEvalFilters>(DEFAULT_FILTERS);
   const [draftFilters, setDraftFilters] = useState<PeerEvalFilters>(DEFAULT_FILTERS);
@@ -60,7 +61,6 @@ export function PeerEvaluationsPage() {
 
   const fetchEvaluations = useCallback(async (silent?: boolean) => {
     if (!silent) setLoading(true);
-    setError('');
     try {
       const appliedFilters: PeerEvalFilters = {
         ...filters,
@@ -70,11 +70,13 @@ export function PeerEvaluationsPage() {
       setEvaluations(data.items);
       setTotal(data.total);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to load peer evaluations');
+      if (!silent) {
+        showErrorToast(err.response?.data?.error || 'Failed to load peer evaluations');
+      }
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [filters, activeStatus]);
+  }, [filters, activeStatus, showErrorToast]);
 
   useEffect(() => {
     void fetchEvaluations();
@@ -330,8 +332,6 @@ export function PeerEvaluationsPage() {
           </div>
         </div>
       )}
-
-      {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>}
 
       {/* Card grid */}
       {loading ? (

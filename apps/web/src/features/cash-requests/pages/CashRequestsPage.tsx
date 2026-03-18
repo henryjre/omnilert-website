@@ -7,6 +7,7 @@ import { Spinner } from '@/shared/components/ui/Spinner';
 import { api } from '@/shared/services/api.client';
 import { useBranchStore } from '@/shared/store/branchStore';
 import { usePermission } from '@/shared/hooks/usePermission';
+import { useAppToast } from '@/shared/hooks/useAppToast';
 import { PERMISSIONS } from '@omnilert/shared';
 import { ImageModal } from '@/features/pos-verification/components/ImageModal';
 
@@ -106,10 +107,10 @@ function DetailPanel({
   onUpdated: (updated: any) => void;
   onViewAttachment: (url: string) => void;
 }) {
+  const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const [loading, setLoading] = useState<'approve' | 'reject' | 'disburse' | null>(null);
   const [rejectMode, setRejectMode] = useState(false);
   const [rejectText, setRejectText] = useState('');
-  const [error, setError] = useState('');
   const [confirmModal, setConfirmModal] = useState<{
     action: 'approve' | 'reject' | 'disburse';
     message: string;
@@ -120,41 +121,42 @@ function DetailPanel({
   const canDisburse = canApprove && request.status === 'approved';
 
   async function handleApprove() {
-    setError('');
     setLoading('approve');
     try {
       const res = await api.post(`/cash-requests/${request.id}/approve`);
       onUpdated(res.data.data);
+      showSuccessToast('Cash request approved.');
     } catch (e: any) {
-      setError(e?.response?.data?.error || e?.response?.data?.message || 'Failed to approve.');
+      showErrorToast(e?.response?.data?.error || e?.response?.data?.message || 'Failed to approve.');
     } finally {
       setLoading(null);
     }
   }
 
   async function handleReject() {
-    if (!rejectText.trim()) { setError('Rejection reason is required.'); return; }
-    setError('');
+    if (!rejectText.trim()) { showErrorToast('Rejection reason is required.'); return; }
     setLoading('reject');
     try {
       const res = await api.post(`/cash-requests/${request.id}/reject`, { reason: rejectText });
       onUpdated(res.data.data);
       setRejectMode(false);
+      setRejectText('');
+      showSuccessToast('Cash request rejected.');
     } catch (e: any) {
-      setError(e?.response?.data?.error || e?.response?.data?.message || 'Failed to reject.');
+      showErrorToast(e?.response?.data?.error || e?.response?.data?.message || 'Failed to reject.');
     } finally {
       setLoading(null);
     }
   }
 
   async function handleDisburse() {
-    setError('');
     setLoading('disburse');
     try {
       const res = await api.post(`/cash-requests/${request.id}/disburse`);
       onUpdated(res.data.data);
+      showSuccessToast('Cash request marked as disbursed.');
     } catch (e: any) {
-      setError(e?.response?.data?.error || e?.response?.data?.message || 'Failed to disburse.');
+      showErrorToast(e?.response?.data?.error || e?.response?.data?.message || 'Failed to disburse.');
     } finally {
       setLoading(null);
     }
@@ -249,9 +251,6 @@ function DetailPanel({
           {/* Footer actions */}
           {(canAct || canDisburse) && (
             <div className="border-t border-gray-200 px-6 py-4">
-              {error && (
-                <p className="mb-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
-              )}
               {canAct && !rejectMode && (
                 <div className="flex gap-3">
                   <Button
@@ -293,7 +292,7 @@ function DetailPanel({
                     <Button
                       className="flex-1"
                       variant="secondary"
-                      onClick={() => { setRejectMode(false); setRejectText(''); setError(''); }}
+                      onClick={() => { setRejectMode(false); setRejectText(''); }}
                     >
                       Cancel
                     </Button>
@@ -357,6 +356,7 @@ function DetailPanel({
 // --- Main Page ---
 
 export function CashRequestsPage() {
+  const { error: showErrorToast } = useAppToast();
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusTab, setStatusTab] = useState<StatusTab>('pending');
@@ -374,17 +374,21 @@ export function CashRequestsPage() {
   const { hasPermission } = usePermission();
   const canApprove = hasPermission(PERMISSIONS.CASH_REQUEST_APPROVE);
 
-  const fetchRequests = useCallback(() => {
+  const fetchRequests = useCallback(async () => {
     setLoading(true);
-    api
-      .get('/cash-requests', {
+    try {
+      const res = await api.get('/cash-requests', {
         params: selectedBranchIds.length > 0 ? { branchIds: selectedBranchIds.join(',') } : {},
-      })
-      .then((res) => setRequests(res.data.data || []))
-      .finally(() => setLoading(false));
-  }, [selectedBranchIds]);
+      });
+      setRequests(res.data.data || []);
+    } catch (err: any) {
+      showErrorToast(err?.response?.data?.error || 'Failed to load cash requests');
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedBranchIds, showErrorToast]);
 
-  useEffect(() => { fetchRequests(); }, [fetchRequests]);
+  useEffect(() => { void fetchRequests(); }, [fetchRequests]);
 
   useEffect(() => {
     const media = window.matchMedia('(max-width: 639px)');
