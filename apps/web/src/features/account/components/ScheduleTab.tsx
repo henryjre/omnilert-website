@@ -8,6 +8,7 @@ import { api } from '@/shared/services/api.client';
 import { useAuthStore } from '@/features/auth/store/authSlice';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useSocket } from '@/shared/hooks/useSocket';
+import { useAppToast } from '@/shared/hooks/useAppToast';
 import { ShiftExchangeFlowModal } from '@/features/shift-exchange/components/ShiftExchangeFlowModal';
 import { PERMISSIONS } from '@omnilert/shared';
 import { Calendar, LayoutGrid, X, LogIn, LogOut, RefreshCw, Clock, AlertTriangle, CheckCircle, XCircle, Square, Filter, ChevronDown, ChevronUp, ArrowUp, ArrowDown } from 'lucide-react';
@@ -839,6 +840,7 @@ export function ScheduleTab() {
   const socket = useSocket('/employee-shifts');
   const currentUser = useAuthStore((s) => s.user);
   const { hasPermission } = usePermission();
+  const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const canApprove = hasPermission(PERMISSIONS.SHIFT_APPROVE_AUTHORIZATIONS);
   const canSubmitPublicAuthRequest = hasPermission(PERMISSIONS.ACCOUNT_SUBMIT_PUBLIC_AUTH_REQUEST);
 
@@ -866,8 +868,11 @@ export function ScheduleTab() {
         setShifts(scheduleRes.data.data || []);
         setScheduleBranches(branchesRes.data.data || []);
       })
+      .catch((err: any) => {
+        showErrorToast(err?.response?.data?.error || err?.response?.data?.message || 'Failed to load schedule.');
+      })
       .finally(() => setLoading(false));
-  }, []);
+  }, [showErrorToast]);
 
   useEffect(() => {
     if (!socket) return;
@@ -953,8 +958,8 @@ export function ScheduleTab() {
     try {
       const res = await api.get(`/account/schedule/${shiftId}`);
       setSelectedShift(res.data.data);
-    } catch (err) {
-      console.error('Failed to load shift detail:', err);
+    } catch (err: any) {
+      showErrorToast(err?.response?.data?.error || err?.response?.data?.message || 'Failed to load shift details.');
     } finally {
       setDetailLoading(false);
     }
@@ -967,9 +972,9 @@ export function ScheduleTab() {
       setShifts((prev) =>
         prev.map((s) => (s.id === shiftId ? { ...s, ...updated } : s)),
       );
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error("Failed to end shift:", err);
+      showSuccessToast('Shift ended successfully.');
+    } catch (err: any) {
+      showErrorToast(err?.response?.data?.error || err?.response?.data?.message || 'Failed to end shift.');
     }
   };
 

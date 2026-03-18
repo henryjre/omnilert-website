@@ -6,6 +6,7 @@ import { Spinner } from '@/shared/components/ui/Spinner';
 import { api } from '@/shared/services/api.client';
 import { useBranchStore } from '@/shared/store/branchStore';
 import { usePermission } from '@/shared/hooks/usePermission';
+import { useAppToast } from '@/shared/hooks/useAppToast';
 import { PERMISSIONS } from '@omnilert/shared';
 import { FileText, X, Plus } from 'lucide-react';
 
@@ -51,6 +52,7 @@ interface NewRequestModalProps {
 }
 
 function NewRequestModal({ onClose, onCreated, defaultBranchId }: NewRequestModalProps) {
+  const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const [step, setStep] = useState<'type' | 'form'>('type');
   const [requestType, setRequestType] = useState('');
   const [form, setForm] = useState({
@@ -61,7 +63,6 @@ function NewRequestModal({ onClose, onCreated, defaultBranchId }: NewRequestModa
     accountNumber: '',
   });
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
 
   function handleTypeSelect(type: string) {
     setRequestType(type);
@@ -75,13 +76,12 @@ function NewRequestModal({ onClose, onCreated, defaultBranchId }: NewRequestModa
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError('');
     if (!defaultBranchId) {
-      setError('No active branch selected. Please choose a branch from the top bar and try again.');
+      showErrorToast('No active branch selected. Please choose a branch from the top bar and try again.');
       return;
     }
     if (!form.reference || !form.requestedAmount || !form.bankName || !form.accountName || !form.accountNumber) {
-      setError('All fields are required.');
+      showErrorToast('All fields are required.');
       return;
     }
     setSubmitting(true);
@@ -97,9 +97,10 @@ function NewRequestModal({ onClose, onCreated, defaultBranchId }: NewRequestModa
         accountNumber: form.accountNumber,
       });
       onCreated(res.data.data);
+      showSuccessToast('Authorization request submitted.');
       onClose();
     } catch (err: any) {
-      setError(err?.response?.data?.error || err?.response?.data?.message || 'Failed to submit request.');
+      showErrorToast(err?.response?.data?.error || err?.response?.data?.message || 'Failed to submit request.');
     } finally {
       setSubmitting(false);
     }
@@ -142,9 +143,6 @@ function NewRequestModal({ onClose, onCreated, defaultBranchId }: NewRequestModa
         {/* Step 2: Fill form */}
         {step === 'form' && (
           <form onSubmit={handleSubmit} className="space-y-4 p-6">
-            {error && (
-              <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
-            )}
             {[
               { field: 'reference' as const, label: 'Reference', placeholder: 'Payment reference number' },
               { field: 'requestedAmount' as const, label: 'Requested Amount', placeholder: '0.00', type: 'number' },

@@ -5,6 +5,7 @@ import { Badge } from '@/shared/components/ui/Badge';
 import { Spinner } from '@/shared/components/ui/Spinner';
 import { Button } from '@/shared/components/ui/Button';
 import { api } from '@/shared/services/api.client';
+import { useAppToast } from '@/shared/hooks/useAppToast';
 import { useNotificationStore } from '@/shared/store/notificationStore';
 import { ShiftExchangeDetailModal } from '@/features/shift-exchange/components/ShiftExchangeDetailModal';
 import { PeerEvaluationModal } from '../../peer-evaluations/components/PeerEvaluationModal';
@@ -71,6 +72,7 @@ function getPeerEvaluationId(linkUrl: string | null | undefined): string | null 
 const PAGE_SIZE = 10;
 
 export function EmployeeNotificationsTab() {
+  const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -97,8 +99,11 @@ export function EmployeeNotificationsTab() {
     api
       .get('/account/notifications')
       .then((res) => setNotifications(res.data.data || []))
+      .catch((err: any) => {
+        showErrorToast(err?.response?.data?.error || err?.response?.data?.message || 'Failed to load notifications.');
+      })
       .finally(() => setLoading(false));
-  }, []);
+  }, [showErrorToast]);
 
   // Real-time: prepend new notifications pushed from TopBar via the store
   useEffect(() => {
@@ -147,17 +152,24 @@ export function EmployeeNotificationsTab() {
     }
   }, [location.search]);
 
-  const markAsRead = async (id: string) => {
-    await api.put(`/account/notifications/${id}/read`);
-    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)));
-    decrement();
+  const markAsRead = async (id: string): Promise<boolean> => {
+    try {
+      await api.put(`/account/notifications/${id}/read`);
+      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)));
+      decrement();
+      return true;
+    } catch (err: any) {
+      showErrorToast(err?.response?.data?.error || err?.response?.data?.message || 'Failed to mark notification as read.');
+      return false;
+    }
   };
 
   const handleOpenNotificationLink = async (notification: any) => {
     const linkUrl = typeof notification?.link_url === 'string' ? notification.link_url.trim() : '';
     if (!linkUrl) return;
     if (!notification.is_read) {
-      await markAsRead(notification.id);
+      const didMarkAsRead = await markAsRead(notification.id);
+      if (!didMarkAsRead) return;
     }
     if (linkUrl === '/account/settings') {
       navigate('/account/settings');
@@ -181,6 +193,9 @@ export function EmployeeNotificationsTab() {
     try {
       const res = await api.get(`/account/token-pay/${verificationId}`);
       setTokenPayData(res.data.data);
+    } catch (err: any) {
+      setTokenPayData(null);
+      showErrorToast(err?.response?.data?.error || err?.response?.data?.message || 'Failed to load order verification details.');
     } finally {
       setTokenPayLoading(false);
     }
@@ -202,7 +217,10 @@ export function EmployeeNotificationsTab() {
       await markAsRead(tokenPayModal.notifId);
       setActedNotifIds((prev) => new Set(prev).add(tokenPayModal.notifId));
       setNotifications((prev) => prev.map((n) => n.id === tokenPayModal.notifId ? { ...n, verification_status: 'confirmed' } : n));
+      showSuccessToast('Order verified successfully.');
       closeTokenPayModal();
+    } catch (err: any) {
+      showErrorToast(err?.response?.data?.error || err?.response?.data?.message || 'Failed to verify order.');
     } finally {
       setActionLoading(false);
     }
@@ -218,7 +236,10 @@ export function EmployeeNotificationsTab() {
       await markAsRead(tokenPayModal.notifId);
       setActedNotifIds((prev) => new Set(prev).add(tokenPayModal.notifId));
       setNotifications((prev) => prev.map((n) => n.id === tokenPayModal.notifId ? { ...n, verification_status: 'rejected', verification_rejection_reason: rejectReason } : n));
+      showSuccessToast('Order rejected.');
       closeTokenPayModal();
+    } catch (err: any) {
+      showErrorToast(err?.response?.data?.error || err?.response?.data?.message || 'Failed to reject order.');
     } finally {
       setActionLoading(false);
     }
@@ -610,9 +631,13 @@ export function EmployeeNotificationsTab() {
         requestId={shiftExchangeRequestId}
         onClose={() => setShiftExchangeRequestId(null)}
         onUpdated={() => {
-          void api.get('/account/notifications').then((res) => {
-            setNotifications(res.data.data || []);
-          });
+          void api.get('/account/notifications')
+            .then((res) => {
+              setNotifications(res.data.data || []);
+            })
+            .catch((err: any) => {
+              showErrorToast(err?.response?.data?.error || err?.response?.data?.message || 'Failed to refresh notifications.');
+            });
         }}
       />
 

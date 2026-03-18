@@ -3,14 +3,15 @@ import { Card, CardHeader, CardBody } from '@/shared/components/ui/Card';
 import { Spinner } from '@/shared/components/ui/Spinner';
 import { Button } from '@/shared/components/ui/Button';
 import { api } from '@/shared/services/api.client';
+import { useAppToast } from '@/shared/hooks/useAppToast';
 import { ChevronDown, RefreshCw } from 'lucide-react';
 
 export function PayslipPage() {
+  const { error: showErrorToast } = useAppToast();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [branchesLoading, setBranchesLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState(false);
   const [allBranches, setAllBranches] = useState<any[]>([]);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [cutoffDropdownOpen, setCutoffDropdownOpen] = useState(false);
@@ -42,9 +43,12 @@ export function PayslipPage() {
     api
       .get('/dashboard/payslip-branches')
       .then((res) => setAllBranches(res.data.data || []))
-      .catch(() => setAllBranches([]))
+      .catch((err: any) => {
+        setAllBranches([]);
+        showErrorToast(err?.response?.data?.error || err?.response?.data?.message || 'Failed to load payslip branches.');
+      })
       .finally(() => setBranchesLoading(false));
-  }, []);
+  }, [showErrorToast]);
 
   const fetchPayslip = (isRefresh = false) => {
     if (!selectedBranchOdooId) return;
@@ -53,13 +57,12 @@ export function PayslipPage() {
     } else {
       setLoading(true);
     }
-    setError(false);
     api
       .get('/dashboard/payslip', { params: { companyId: selectedBranchOdooId, cutoff: selectedCutoff } })
       .then((res) => setData(res.data.data))
-      .catch(() => {
+      .catch((err: any) => {
         setData(null);
-        setError(true);
+        showErrorToast(err?.response?.data?.error || err?.response?.data?.message || 'Failed to load payslip data.');
       })
       .finally(() => {
         setLoading(false);
@@ -203,7 +206,7 @@ export function PayslipPage() {
         </div>
       </CardHeader>
       <CardBody>
-        {error || !data ? (
+        {!data ? (
           <p className="text-sm text-gray-500">No payslip data available.</p>
         ) : (
           <>

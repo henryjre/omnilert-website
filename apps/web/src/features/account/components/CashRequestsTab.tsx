@@ -6,6 +6,7 @@ import { Spinner } from '@/shared/components/ui/Spinner';
 import { api } from '@/shared/services/api.client';
 import { useBranchStore } from '@/shared/store/branchStore';
 import { usePermission } from '@/shared/hooks/usePermission';
+import { useAppToast } from '@/shared/hooks/useAppToast';
 import { PERMISSIONS } from '@omnilert/shared';
 import { DollarSign, X, Plus, Paperclip } from 'lucide-react';
 import { ImageModal } from '@/features/pos-verification/components/ImageModal';
@@ -51,12 +52,12 @@ interface NewRequestModalProps {
 }
 
 function NewRequestModal({ onClose, onCreated }: NewRequestModalProps) {
+  const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const [step, setStep] = useState<'choose' | 'form'>('choose');
   const [selectedType, setSelectedType] = useState<RequestTypeKey | null>(null);
   const [form, setForm] = useState({ reference: '', amount: '', bankName: '', accountName: '', accountNumber: '' });
   const [attachment, setAttachment] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const selectedBranchIds = useBranchStore((s) => s.selectedBranchIds);
 
@@ -68,11 +69,15 @@ function NewRequestModal({ onClose, onCreated }: NewRequestModalProps) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedType) return;
-    setError('');
+    const branchId = selectedBranchIds[0];
+    if (!branchId) {
+      showErrorToast('No active branch selected. Please choose a branch from the top bar and try again.');
+      return;
+    }
     setSubmitting(true);
     try {
       const formData = new FormData();
-      formData.append('branchId', selectedBranchIds[0] ?? '');
+      formData.append('branchId', branchId);
       formData.append('requestType', selectedType);
       formData.append('reference', form.reference);
       formData.append('amount', form.amount);
@@ -85,9 +90,10 @@ function NewRequestModal({ onClose, onCreated }: NewRequestModalProps) {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       onCreated(res.data.data);
+      showSuccessToast('Cash request submitted.');
       onClose();
     } catch (err: any) {
-      setError(err?.response?.data?.error || err?.response?.data?.message || 'Failed to submit request.');
+      showErrorToast(err?.response?.data?.error || err?.response?.data?.message || 'Failed to submit request.');
     } finally {
       setSubmitting(false);
     }
@@ -128,8 +134,6 @@ function NewRequestModal({ onClose, onCreated }: NewRequestModalProps) {
         {/* Step 2 — fill form */}
         {step === 'form' && (
           <form onSubmit={handleSubmit} className="space-y-4 p-6">
-            {error && <p className="rounded-lg bg-red-50 px-4 py-2 text-sm text-red-700">{error}</p>}
-
             <div>
               <label className="mb-1 block text-xs font-medium text-gray-700">Reference</label>
               <input
