@@ -127,9 +127,21 @@ function calcCss(cssAudits: Array<{ star_rating: number; audited_at: string }> |
   return { score, impact: cssImpact(score) };
 }
 
-function calcWrs(peerEvaluations: Array<{ average_score: number; submitted_at: string }> | null, from: Date, to: Date): { score: number | null; impact: number } {
+function calcWrs(
+  peerEvaluations: Array<{
+    average_score: number;
+    submitted_at?: string | null;
+    wrs_effective_at?: string | null;
+  }> | null,
+  from: Date,
+  to: Date,
+): { score: number | null; impact: number } {
   if (!Array.isArray(peerEvaluations) || peerEvaluations.length === 0) return { score: null, impact: 0 };
-  const recent = peerEvaluations.filter((e) => dateRangeFilter(e.submitted_at, from, to));
+  const recent = peerEvaluations.filter((e) => {
+    const effectiveAt = e.wrs_effective_at ?? e.submitted_at;
+    if (!effectiveAt) return false;
+    return dateRangeFilter(effectiveAt, from, to);
+  });
   if (recent.length === 0) return { score: null, impact: 0 };
   const avg = recent.reduce((s, e) => s + e.average_score, 0) / recent.length;
   const score = Math.round(avg * 100) / 100;
@@ -309,7 +321,11 @@ export interface UserKpiData {
   userId: string;
   userKey: string;
   cssAudits: Array<{ star_rating: number; audited_at: string }> | null;
-  peerEvaluations: Array<{ average_score: number; submitted_at: string }> | null;
+  peerEvaluations: Array<{
+    average_score: number;
+    submitted_at?: string | null;
+    wrs_effective_at?: string | null;
+  }> | null;
   complianceAudit: Array<{ answers: Record<string, boolean>; audited_at: string }> | null;
   violationNotices: Array<{ epi_decrease?: number | null; completed_at?: string | null }> | null;
 }

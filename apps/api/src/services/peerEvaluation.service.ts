@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto';
 import type { Knex } from 'knex';
 import { AppError } from '../middleware/errorHandler.js';
 import { hydrateUsersByIds } from './globalUser.service.js';
@@ -212,6 +213,10 @@ export async function submitEvaluation(
   // Append snapshot to master users.peer_evaluations for the evaluated user
   const masterDb = db.getMasterDb();
   const averageScore = (completed.q1_score + completed.q2_score + completed.q3_score) / 3;
+  const wrsDelayDays = randomInt(0, 11); // 0..10 inclusive
+  const submittedAt = completed.submitted_at ? new Date(completed.submitted_at) : now;
+  const submittedAtTime = Number.isNaN(submittedAt.getTime()) ? now : submittedAt;
+  const wrsEffectiveAt = new Date(submittedAtTime.getTime() + wrsDelayDays * 24 * 60 * 60 * 1000);
   const entry = {
     id: completed.id,
     company_id: companyId,
@@ -222,7 +227,9 @@ export async function submitEvaluation(
     q3_score: completed.q3_score,
     average_score: Math.round(averageScore * 100) / 100,
     additional_message: completed.additional_message,
-    submitted_at: completed.submitted_at,
+    submitted_at: submittedAtTime.toISOString(),
+    wrs_delay_days: wrsDelayDays,
+    wrs_effective_at: wrsEffectiveAt.toISOString(),
   };
 
   await masterDb('users')
