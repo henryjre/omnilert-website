@@ -10,6 +10,7 @@ import { usePosVerificationStore } from '@/shared/store/posVerificationStore';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import { api } from '@/shared/services/api.client';
+import { useAppToast } from '@/shared/hooks/useAppToast';
 import { PERMISSIONS } from '@omnilert/shared';
 import { useDropzone } from 'react-dropzone';
 import { Upload, Check, X, Image as ImageIcon, ShieldCheck, Layers, Edit } from 'lucide-react';
@@ -108,6 +109,7 @@ function formatBreakdown(items: unknown): string {
 }
 
 export function PosVerificationPage() {
+  const { error: showErrorToast } = useAppToast();
   const [verifications, setVerifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const initialLoadDone = useRef(false);
@@ -126,11 +128,14 @@ export function PosVerificationPage() {
         // Show pending and awaiting_customer verifications
         setVerifications(data.filter((v) => v.status === 'pending' || v.status === 'awaiting_customer'));
       })
+      .catch((err: any) => {
+        showErrorToast(err?.response?.data?.error || 'Failed to load POS verifications');
+      })
       .finally(() => {
         setLoading(false);
         initialLoadDone.current = true;
       });
-  }, [selectedBranchIds]);
+  }, [selectedBranchIds, showErrorToast]);
 
   useEffect(() => {
     initialLoadDone.current = false;
@@ -233,6 +238,7 @@ function VerificationCard({
   onUpdate: () => void;
   userId?: string;
 }) {
+  const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const [uploading, setUploading] = useState(false);
   const [notes, setNotes] = useState('');
   const [rejectMode, setRejectMode] = useState(false);
@@ -282,12 +288,12 @@ function VerificationCard({
         // will update this verification's images without remounting
         // the card, so local breakdown state is preserved.
       } catch (err) {
-        console.error('Upload failed:', err);
+        showErrorToast((err as any)?.response?.data?.error || 'Failed to upload image');
       } finally {
         setUploading(false);
       }
     },
-    [verification.id, onUpdate],
+    [verification.id, onUpdate, showErrorToast],
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -314,9 +320,10 @@ function VerificationCard({
         notes: overrideNotes ?? (action === 'reject' ? rejectReason : notes),
         breakdownItems,
       });
+      showSuccessToast(action === 'confirm' ? 'Verification confirmed.' : 'Verification rejected.');
       onUpdate();
-    } catch (err) {
-      console.error(`${action} failed:`, err);
+    } catch (err: any) {
+      showErrorToast(err?.response?.data?.error || `Failed to ${action} verification`);
     } finally {
       setActionLoading(false);
     }

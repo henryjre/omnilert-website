@@ -5,6 +5,7 @@ import { Input } from '@/shared/components/ui/Input';
 import { Badge } from '@/shared/components/ui/Badge';
 import { Spinner } from '@/shared/components/ui/Spinner';
 import { api } from '@/shared/services/api.client';
+import { useAppToast } from '@/shared/hooks/useAppToast';
 import { Plus, GitBranch, Pencil } from 'lucide-react';
 
 interface Branch {
@@ -27,45 +28,56 @@ interface BranchFormData {
 const initialFormData: BranchFormData = { name: '', address: '', odooBranchId: '', isActive: true, isMainBranch: false };
 
 export function BranchManagementPage() {
+  const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState<BranchFormData>(initialFormData);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  const fetchBranches = () => {
+  const fetchBranches = async () => {
     setLoading(true);
-    api
-      .get('/branches', { params: { includeInactive: true } })
-      .then((res) => setBranches((res.data.data || []) as Branch[]))
-      .finally(() => setLoading(false));
+    try {
+      const res = await api.get('/branches', { params: { includeInactive: true } });
+      setBranches((res.data.data || []) as Branch[]);
+    } catch (err: any) {
+      showErrorToast(err.response?.data?.error || 'Failed to load branches');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
-    fetchBranches();
+    void fetchBranches();
   }, []);
 
   const handleSubmit = async () => {
-    if (editingId) {
-      await api.put(`/branches/${editingId}`, {
-        name: formData.name,
-        address: formData.address,
-        odooBranchId: formData.odooBranchId,
-        isActive: formData.isActive,
-        isMainBranch: formData.isMainBranch,
-      });
-    } else {
-      await api.post('/branches', {
-        name: formData.name,
-        address: formData.address,
-        odooBranchId: formData.odooBranchId,
-        isMainBranch: formData.isMainBranch,
-      });
+    try {
+      if (editingId) {
+        await api.put(`/branches/${editingId}`, {
+          name: formData.name,
+          address: formData.address,
+          odooBranchId: formData.odooBranchId,
+          isActive: formData.isActive,
+          isMainBranch: formData.isMainBranch,
+        });
+        showSuccessToast('Branch updated successfully.');
+      } else {
+        await api.post('/branches', {
+          name: formData.name,
+          address: formData.address,
+          odooBranchId: formData.odooBranchId,
+          isMainBranch: formData.isMainBranch,
+        });
+        showSuccessToast('Branch created successfully.');
+      }
+      setShowForm(false);
+      setEditingId(null);
+      setFormData(initialFormData);
+      await fetchBranches();
+    } catch (err: any) {
+      showErrorToast(err.response?.data?.error || 'Failed to save branch');
     }
-    setShowForm(false);
-    setEditingId(null);
-    setFormData(initialFormData);
-    fetchBranches();
   };
 
   const startEdit = (branch: Branch) => {

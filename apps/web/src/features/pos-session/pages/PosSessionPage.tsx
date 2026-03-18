@@ -7,6 +7,7 @@ import { useSocket } from '@/shared/hooks/useSocket';
 import { useBranchStore } from '@/shared/store/branchStore';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { api } from '@/shared/services/api.client';
+import { useAppToast } from '@/shared/hooks/useAppToast';
 import { PERMISSIONS } from '@omnilert/shared';
 import { Monitor, CheckCircle, Image as ImageIcon, Clock, DollarSign, X, Layers, ChevronRight, Star } from 'lucide-react';
 import { ImageModal } from '@/features/pos-verification/components/ImageModal';
@@ -115,6 +116,7 @@ function verStatusVariant(status: string) {
 const PAGE_SIZE = 10;
 
 export function PosSessionPage() {
+  const { error: showErrorToast } = useAppToast();
   const [sessions, setSessions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -130,8 +132,11 @@ export function PosSessionPage() {
     api
       .get('/pos-sessions', { params: { branchIds: selectedBranchIds.join(',') } })
       .then((res) => setSessions(res.data.data || []))
+      .catch((err: any) => {
+        showErrorToast(err?.response?.data?.error || 'Failed to load POS sessions');
+      })
       .finally(() => setLoading(false));
-  }, [selectedBranchIds]);
+  }, [selectedBranchIds, showErrorToast]);
 
   useEffect(() => {
     fetchSessions();
@@ -193,8 +198,8 @@ export function PosSessionPage() {
     try {
       const res = await api.get(`/pos-sessions/${sessionId}`);
       setSelectedSession(res.data.data);
-    } catch (err) {
-      console.error('Failed to load session detail:', err);
+    } catch (err: any) {
+      showErrorToast(err?.response?.data?.error || 'Failed to load session detail');
     } finally {
       setDetailLoading(false);
     }
@@ -310,6 +315,7 @@ function SessionCard({
   onUpdate: () => void;
   onOpenDetail: () => void;
 }) {
+  const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const [actionLoading, setActionLoading] = useState(false);
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const { hasPermission } = usePermission();
@@ -329,9 +335,10 @@ function SessionCard({
     setActionLoading(true);
     try {
       await api.post(`/pos-sessions/${session.id}/audit-complete`);
+      showSuccessToast('Session marked as audit complete.');
       onUpdate();
-    } catch (err) {
-      console.error('Audit complete failed:', err);
+    } catch (err: any) {
+      showErrorToast(err?.response?.data?.error || 'Failed to complete session audit');
     } finally {
       setActionLoading(false);
     }
@@ -487,6 +494,7 @@ function SessionDetailPanel({
   onClose: () => void;
   onUpdate: () => void;
 }) {
+  const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const [actionLoading, setActionLoading] = useState(false);
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const { hasPermission } = usePermission();
@@ -508,9 +516,10 @@ function SessionDetailPanel({
     setActionLoading(true);
     try {
       await api.post(`/pos-sessions/${session.id}/audit-complete`);
+      showSuccessToast('Session marked as audit complete.');
       onUpdate();
-    } catch (err) {
-      console.error('Audit complete failed:', err);
+    } catch (err: any) {
+      showErrorToast(err?.response?.data?.error || 'Failed to complete session audit');
     } finally {
       setActionLoading(false);
     }
@@ -817,6 +826,7 @@ function AuditRatingModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const [rating, setRating] = useState(0);
   const [hover, setHover] = useState(0);
   const [details, setDetails] = useState('');
@@ -827,10 +837,11 @@ function AuditRatingModal({
     setSaving(true);
     try {
       await api.post(`/pos-verifications/${verificationId}/audit`, { rating, details: details || undefined });
+      showSuccessToast('Audit rating submitted.');
       onSaved();
       onClose();
-    } catch (err) {
-      console.error('Audit rating failed:', err);
+    } catch (err: any) {
+      showErrorToast(err?.response?.data?.error || 'Failed to submit audit rating');
     } finally {
       setSaving(false);
     }

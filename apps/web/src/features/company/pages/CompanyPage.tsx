@@ -5,7 +5,7 @@ import { Input } from '@/shared/components/ui/Input';
 import { Button } from '@/shared/components/ui/Button';
 import { Spinner } from '@/shared/components/ui/Spinner';
 import { api } from '@/shared/services/api.client';
-import { toast } from 'sonner';
+import { useAppToast } from '@/shared/hooks/useAppToast';
 import { applyCompanyThemeFromHex, DEFAULT_THEME_COLOR, isValidHexColor } from '@/shared/utils/theme';
 import { useAuthStore } from '@/features/auth/store/authSlice';
 
@@ -26,13 +26,16 @@ interface CompanyResponse {
 
 export function CompanyPage() {
   const navigate = useNavigate();
+  const {
+    success: showSuccessToast,
+    error: showErrorToast,
+    warning: showWarningToast,
+  } = useAppToast();
   const setCompanyThemeColor = useAuthStore((state) => state.setCompanyThemeColor);
   const clearAuth = useAuthStore((state) => state.logout);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
   const [deleteError, setDeleteError] = useState('');
   const [name, setName] = useState('');
   const [companyNameForDelete, setCompanyNameForDelete] = useState('');
@@ -51,8 +54,6 @@ export function CompanyPage() {
     themeColor: '#2563EB',
   });
   const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState('');
-  const [createSuccess, setCreateSuccess] = useState('');
   const [createConfirmOpen, setCreateConfirmOpen] = useState(false);
   const [createConfirmEmail, setCreateConfirmEmail] = useState('');
   const [createConfirmPassword, setCreateConfirmPassword] = useState('');
@@ -73,26 +74,23 @@ export function CompanyPage() {
         applyCompanyThemeFromHex(nextTheme);
         setCompanyThemeColor(nextTheme);
       })
-      .catch((err) => setError(err.response?.data?.error || 'Failed to load company details'))
+      .catch((err) => showErrorToast(err.response?.data?.error || 'Failed to load company details'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [setCompanyThemeColor, showErrorToast]);
 
   const handleSave = async () => {
-    setError('');
-    setSuccess('');
-
     if (!name.trim()) {
-      setError('Company name is required');
+      showErrorToast('Company name is required');
       return;
     }
 
     if (!isValidHexColor(themeColor)) {
-      setError('Theme color must be a valid hex color (#RRGGBB)');
+      showErrorToast('Theme color must be a valid hex color (#RRGGBB)');
       return;
     }
 
     if (!COMPANY_CODE_RE.test(companyCode.trim().toUpperCase())) {
-      setError('Company code must be 2-10 uppercase letters/numbers');
+      showErrorToast('Company code must be 2-10 uppercase letters/numbers');
       return;
     }
 
@@ -111,9 +109,9 @@ export function CompanyPage() {
       if (updated.name) {
         setCompanyNameForDelete(updated.name);
       }
-      setSuccess('Company settings updated successfully.');
+      showSuccessToast('Company settings updated successfully.');
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to save company settings');
+      showErrorToast(err.response?.data?.error || 'Failed to save company settings');
     } finally {
       setSaving(false);
     }
@@ -147,9 +145,9 @@ export function CompanyPage() {
 
       const warnings: string[] = Array.isArray(res.data?.data?.warnings) ? res.data.data.warnings : [];
       if (warnings.length > 0) {
-        toast.warning(warnings.join(' '));
+        showWarningToast(warnings.join(' '));
       } else {
-        toast.success('Company deleted successfully.');
+        showSuccessToast('Company deleted successfully.');
       }
 
       const defaultTheme = applyCompanyThemeFromHex(DEFAULT_THEME_COLOR);
@@ -164,19 +162,16 @@ export function CompanyPage() {
   };
 
   const handleCreate = () => {
-    setCreateError('');
-    setCreateSuccess('');
-
     if (!createForm.name.trim()) {
-      setCreateError('Company name is required.');
+      showErrorToast('Company name is required.');
       return;
     }
     if (!COMPANY_CODE_RE_CREATE.test(createForm.companyCode)) {
-      setCreateError('Company code must be 2–10 uppercase letters or numbers (e.g. FBW, OMNI01).');
+      showErrorToast('Company code must be 2-10 uppercase letters or numbers (e.g. FBW, OMNI01).');
       return;
     }
     if (!isValidHexColor(createForm.themeColor)) {
-      setCreateError('Theme color must be a valid 6-digit hex color (e.g. #2563EB).');
+      showErrorToast('Theme color must be a valid 6-digit hex color (e.g. #2563EB).');
       return;
     }
 
@@ -239,7 +234,7 @@ export function CompanyPage() {
         return;
       }
 
-      setCreateSuccess(`Company "${createForm.name.trim()}" created successfully.`);
+      showSuccessToast(`Company "${createForm.name.trim()}" created successfully.`);
       setCreateForm({
         name: '',
         companyCode: '',
@@ -329,9 +324,6 @@ export function CompanyPage() {
             </div>
           </div>
 
-          {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>}
-          {success && <div className="rounded-lg bg-green-50 p-3 text-sm text-green-700">{success}</div>}
-
           <div className="flex justify-end">
             <Button variant="success" onClick={handleSave} disabled={saving}>
               {saving ? 'Saving...' : 'Save Changes'}
@@ -345,13 +337,6 @@ export function CompanyPage() {
           <h2 className="font-semibold text-gray-900">Create New Company</h2>
         </CardHeader>
         <CardBody className="space-y-4">
-          {createError && (
-            <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{createError}</div>
-          )}
-          {createSuccess && (
-            <div className="rounded-lg bg-green-50 p-3 text-sm text-green-700">{createSuccess}</div>
-          )}
-
           <Input
             label="Company Name"
             value={createForm.name}
@@ -365,7 +350,7 @@ export function CompanyPage() {
             onChange={(e) =>
               setCreateForm((prev) => ({ ...prev, companyCode: e.target.value.toUpperCase() }))
             }
-            placeholder="2–10 uppercase letters/numbers (e.g. FBW)"
+            placeholder="2-10 uppercase letters/numbers (e.g. FBW)"
             maxLength={10}
           />
 

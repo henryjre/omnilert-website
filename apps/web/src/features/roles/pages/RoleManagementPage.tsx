@@ -5,10 +5,12 @@ import { Badge } from '@/shared/components/ui/Badge';
 import { Input } from '@/shared/components/ui/Input';
 import { Spinner } from '@/shared/components/ui/Spinner';
 import { api } from '@/shared/services/api.client';
+import { useAppToast } from '@/shared/hooks/useAppToast';
 import { PERMISSION_CATEGORIES } from '@omnilert/shared';
 import { Plus, Shield, Trash2 } from 'lucide-react';
 
 export function RoleManagementPage() {
+  const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const [roles, setRoles] = useState<any[]>([]);
   const [permissions, setPermissions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -26,19 +28,25 @@ export function RoleManagementPage() {
       ]);
       setRoles(rolesRes.data.data || []);
       setPermissions(permsRes.data.data || []);
+    } catch (err: any) {
+      showErrorToast(err.response?.data?.error || 'Failed to load roles and permissions');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchData();
+    void fetchData();
   }, []);
 
   const selectRole = async (role: any) => {
-    setSelectedRole(role);
-    const res = await api.get(`/roles/${role.id}/permissions`);
-    setRolePermissions((res.data.data || []).map((p: any) => p.id));
+    try {
+      setSelectedRole(role);
+      const res = await api.get(`/roles/${role.id}/permissions`);
+      setRolePermissions((res.data.data || []).map((p: any) => p.id));
+    } catch (err: any) {
+      showErrorToast(err.response?.data?.error || 'Failed to load role permissions');
+    }
   };
 
   const togglePermission = (permId: string) => {
@@ -49,28 +57,43 @@ export function RoleManagementPage() {
 
   const savePermissions = async () => {
     if (!selectedRole) return;
-    await api.put(`/roles/${selectedRole.id}/permissions`, {
-      permissionIds: rolePermissions,
-    });
-    fetchData();
+    try {
+      await api.put(`/roles/${selectedRole.id}/permissions`, {
+        permissionIds: rolePermissions,
+      });
+      showSuccessToast('Role permissions updated.');
+      void fetchData();
+    } catch (err: any) {
+      showErrorToast(err.response?.data?.error || 'Failed to save role permissions');
+    }
   };
 
   const createRole = async () => {
-    // Need at least one permission
-    await api.post('/roles', {
-      ...newRole,
-      permissionIds: rolePermissions.length > 0 ? rolePermissions : [permissions[0]?.id],
-    });
-    setShowCreateForm(false);
-    setNewRole({ name: '', color: '#3498db', priority: 10 });
-    fetchData();
+    try {
+      // Need at least one permission
+      await api.post('/roles', {
+        ...newRole,
+        permissionIds: rolePermissions.length > 0 ? rolePermissions : [permissions[0]?.id],
+      });
+      setShowCreateForm(false);
+      setNewRole({ name: '', color: '#3498db', priority: 10 });
+      showSuccessToast('Role created successfully.');
+      void fetchData();
+    } catch (err: any) {
+      showErrorToast(err.response?.data?.error || 'Failed to create role');
+    }
   };
 
   const deleteRole = async (id: string) => {
     if (!confirm('Are you sure you want to delete this role?')) return;
-    await api.delete(`/roles/${id}`);
-    if (selectedRole?.id === id) setSelectedRole(null);
-    fetchData();
+    try {
+      await api.delete(`/roles/${id}`);
+      if (selectedRole?.id === id) setSelectedRole(null);
+      showSuccessToast('Role deleted successfully.');
+      void fetchData();
+    } catch (err: any) {
+      showErrorToast(err.response?.data?.error || 'Failed to delete role');
+    }
   };
 
   if (loading) {

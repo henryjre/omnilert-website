@@ -5,6 +5,7 @@ import { Input } from '@/shared/components/ui/Input';
 import { Spinner } from '@/shared/components/ui/Spinner';
 import { Building2, Pencil, Plus, Users } from 'lucide-react';
 import { api } from '@/shared/services/api.client';
+import { useAppToast } from '@/shared/hooks/useAppToast';
 
 interface MemberOption {
   id: string;
@@ -46,10 +47,9 @@ function getFullName(user: { first_name: string | null; last_name: string | null
 }
 
 export function DepartmentManagementPage() {
+  const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
   const [departments, setDepartments] = useState<Department[]>([]);
   const [members, setMembers] = useState<MemberOption[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -63,7 +63,6 @@ export function DepartmentManagementPage() {
 
   const fetchData = async () => {
     setLoading(true);
-    setError('');
     try {
       const [departmentsRes, membersRes] = await Promise.all([
         api.get('/departments'),
@@ -72,7 +71,7 @@ export function DepartmentManagementPage() {
       setDepartments(departmentsRes.data.data || []);
       setMembers(membersRes.data.data || []);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to load departments');
+      showErrorToast(err.response?.data?.error || 'Failed to load departments');
     } finally {
       setLoading(false);
     }
@@ -89,16 +88,12 @@ export function DepartmentManagementPage() {
   };
 
   const startCreate = () => {
-    setError('');
-    setSuccess('');
     setEditingDepartmentId(null);
     setForm(INITIAL_FORM);
     setShowForm(true);
   };
 
   const startEdit = (department: Department) => {
-    setError('');
-    setSuccess('');
     setEditingDepartmentId(department.id);
     setForm({
       name: department.name,
@@ -124,16 +119,13 @@ export function DepartmentManagementPage() {
   };
 
   const handleSubmit = async () => {
-    setError('');
-    setSuccess('');
-
     if (!form.name.trim()) {
-      setError('Department name is required');
+      showErrorToast('Department name is required');
       return;
     }
 
     if (form.headUserId && !form.memberUserIds.includes(form.headUserId)) {
-      setError('Department head must be selected as a department member');
+      showErrorToast('Department head must be selected as a department member');
       return;
     }
 
@@ -147,16 +139,16 @@ export function DepartmentManagementPage() {
 
       if (editingDepartmentId) {
         await api.put(`/departments/${editingDepartmentId}`, payload);
-        setSuccess('Department updated successfully.');
+        showSuccessToast('Department updated successfully.');
       } else {
         await api.post('/departments', payload);
-        setSuccess('Department created successfully.');
+        showSuccessToast('Department created successfully.');
       }
 
       await fetchData();
       resetForm();
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to save department');
+      showErrorToast(err.response?.data?.error || 'Failed to save department');
     } finally {
       setSaving(false);
     }
@@ -179,9 +171,6 @@ export function DepartmentManagementPage() {
           New Department
         </Button>
       </div>
-
-      {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>}
-      {success && <div className="rounded-lg bg-green-50 p-3 text-sm text-green-700">{success}</div>}
 
       {showForm && (
         <Card>
