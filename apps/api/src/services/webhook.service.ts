@@ -5,6 +5,8 @@ import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import { createAndDispatchNotification } from './notification.service.js';
 
+const DISABLED_AUDIT_ODOO_COMPANY_IDS = new Set<number>([2]);
+
 export async function resolveCompanyByOdooBranchId(odooCompanyId: number) {
   const masterDb = db.getMasterDb();
   const companies = await masterDb('companies').where({ is_active: true });
@@ -1332,6 +1334,14 @@ export async function createCssAudit(payload: {
     amount: number;
   }>;
 }): Promise<void> {
+  if (DISABLED_AUDIT_ODOO_COMPANY_IDS.has(Number(payload.company_id))) {
+    logger.info(
+      { odooCompanyId: payload.company_id, posReference: payload.pos_reference },
+      'Skipping CSS audit creation for temporarily disabled Odoo company',
+    );
+    return;
+  }
+
   const company = await resolveCompanyByOdooBranchId(payload.company_id);
   const tenantDb = await db.getTenantDb(company.db_name);
 

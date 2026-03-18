@@ -5,8 +5,8 @@ import { Button } from '@/shared/components/ui/Button';
 import { Spinner } from '@/shared/components/ui/Spinner';
 import { api } from '@/shared/services/api.client';
 import { useBranchStore } from '@/shared/store/branchStore';
-import { useAuthStore } from '@/features/auth/store/authSlice';
 import { usePermission } from '@/shared/hooks/usePermission';
+import { useAppToast } from '@/shared/hooks/useAppToast';
 import { PERMISSIONS } from '@omnilert/shared';
 import { ShiftExchangeDetailModal } from '@/features/shift-exchange/components/ShiftExchangeDetailModal';
 import {
@@ -78,37 +78,38 @@ function ManagementDetailPanel({
   onClose: () => void;
   onUpdated: (updated: any) => void;
 }) {
+  const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const [rejectMode, setRejectMode] = useState(false);
   const [rejectText, setRejectText] = useState('');
   const [loading, setLoading] = useState<'approve' | 'reject' | null>(null);
-  const [error, setError] = useState('');
   const [confirmModal, setConfirmModal] = useState<{ action: 'approve' | 'reject'; message: string; onConfirm: () => Promise<void> } | null>(null);
 
   const canAct = canApprove && request.status === 'pending';
 
   async function handleApprove() {
-    setError('');
     setLoading('approve');
     try {
       const res = await api.post(`/authorization-requests/${request.id}/approve`);
       onUpdated(res.data.data);
+      showSuccessToast('Request approved.');
     } catch (e: any) {
-      setError(e?.response?.data?.error || e?.response?.data?.message || 'Failed to approve.');
+      showErrorToast(e?.response?.data?.error || e?.response?.data?.message || 'Failed to approve.');
     } finally {
       setLoading(null);
     }
   }
 
   async function handleReject() {
-    if (!rejectText.trim()) { setError('Rejection reason is required.'); return; }
-    setError('');
+    if (!rejectText.trim()) { showErrorToast('Rejection reason is required.'); return; }
     setLoading('reject');
     try {
       const res = await api.post(`/authorization-requests/${request.id}/reject`, { reason: rejectText });
       onUpdated(res.data.data);
       setRejectMode(false);
+      setRejectText('');
+      showSuccessToast('Request rejected.');
     } catch (e: any) {
-      setError(e?.response?.data?.error || e?.response?.data?.message || 'Failed to reject.');
+      showErrorToast(e?.response?.data?.error || e?.response?.data?.message || 'Failed to reject.');
     } finally {
       setLoading(null);
     }
@@ -193,9 +194,6 @@ function ManagementDetailPanel({
       {/* Footer actions */}
       {canAct && (
         <div className="border-t border-gray-200 px-6 py-4">
-          {error && (
-            <p className="mb-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
-          )}
           {!rejectMode ? (
             <div className="flex gap-3">
               <Button
@@ -243,7 +241,7 @@ function ManagementDetailPanel({
                 <Button
                   className="flex-1"
                   variant="secondary"
-                  onClick={() => { setRejectMode(false); setRejectText(''); setError(''); }}
+                  onClick={() => { setRejectMode(false); setRejectText(''); }}
                 >
                   Cancel
                 </Button>
@@ -302,6 +300,7 @@ function ServiceCrewDetailPanel({
   onUpdated: (updated: any) => void;
 }) {
   const config = AUTH_TYPE_CONFIG[auth.auth_type] ?? { label: auth.auth_type, color: 'gray', Icon: Clock, diffLabel: '' };
+  const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const { Icon } = config;
   const [rejectMode, setRejectMode] = useState(false);
   const [rejectText, setRejectText] = useState('');
@@ -327,17 +326,27 @@ function ServiceCrewDetailPanel({
       const body = isOvertime && selectedOvertimeType ? { overtimeType: selectedOvertimeType } : {};
       const res = await api.post(`/shift-authorizations/${auth.id}/approve`, body);
       onUpdated(res.data.data);
+      showSuccessToast('Request approved.');
+    } catch (e: any) {
+      showErrorToast(e?.response?.data?.error || e?.response?.data?.message || 'Failed to approve.');
     } finally {
       setLoading(null);
     }
   }
 
   async function handleReject() {
-    if (!rejectText.trim()) return;
+    if (!rejectText.trim()) {
+      showErrorToast('Rejection reason is required.');
+      return;
+    }
     setLoading('reject');
     try {
       const res = await api.post(`/shift-authorizations/${auth.id}/reject`, { reason: rejectText });
       onUpdated(res.data.data);
+      setRejectText('');
+      showSuccessToast('Request rejected.');
+    } catch (e: any) {
+      showErrorToast(e?.response?.data?.error || e?.response?.data?.message || 'Failed to reject.');
     } finally {
       setLoading(null);
       setRejectMode(false);
@@ -666,6 +675,7 @@ function ServiceCrewRequestCard({ auth, onClick }: { auth: any; onClick: () => v
 type DetailItem = { type: 'management' | 'service_crew' | 'shift_exchange'; data: any };
 
 export function AuthorizationRequestsPage() {
+  const { error: showErrorToast } = useAppToast();
   const [managementRequests, setManagementRequests] = useState<any[]>([]);
   const [serviceCrewRequests, setServiceCrewRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -706,18 +716,23 @@ export function AuthorizationRequestsPage() {
   const pagedManagement = filteredManagement.slice((mgmtPage - 1) * pageSize, mgmtPage * pageSize);
   const pagedServiceCrew = filteredServiceCrew.slice((crewPage - 1) * pageSize, crewPage * pageSize);
 
-  const fetchRequests = useCallback(() => {
+  const fetchRequests = useCallback(async () => {
     setLoading(true);
-    api
-      .get('/authorization-requests', { params: selectedBranchIds.length > 0 ? { branchIds: selectedBranchIds.join(',') } : {} })
-      .then((res) => {
-        setManagementRequests(res.data.data?.managementRequests || []);
-        setServiceCrewRequests(res.data.data?.serviceCrewRequests || []);
-      })
-      .finally(() => setLoading(false));
-  }, [selectedBranchIds]);
+    try {
+      const res = await api.get(
+        '/authorization-requests',
+        { params: selectedBranchIds.length > 0 ? { branchIds: selectedBranchIds.join(',') } : {} },
+      );
+      setManagementRequests(res.data.data?.managementRequests || []);
+      setServiceCrewRequests(res.data.data?.serviceCrewRequests || []);
+    } catch (err: any) {
+      showErrorToast(err?.response?.data?.error || 'Failed to load authorization requests');
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedBranchIds, showErrorToast]);
 
-  useEffect(() => { fetchRequests(); }, [fetchRequests]);
+  useEffect(() => { void fetchRequests(); }, [fetchRequests]);
 
   useEffect(() => {
     const media = window.matchMedia('(max-width: 639px)');

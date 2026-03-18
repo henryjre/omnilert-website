@@ -11,6 +11,7 @@ import { Card, CardBody } from '@/shared/components/ui/Card';
 import { Spinner } from '@/shared/components/ui/Spinner';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useSocket } from '@/shared/hooks/useSocket';
+import { useAppToast } from '@/shared/hooks/useAppToast';
 import {
   closeCase,
   createCaseReport,
@@ -55,10 +56,10 @@ const STATUS_TABS: { key: StatusTab; label: string }[] = [
 export function CaseReportsPage() {
   const socket = useSocket('/case-reports');
   const { hasPermission } = usePermission();
+  const { error: showErrorToast } = useAppToast();
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [reports, setReports] = useState<CaseReport[]>([]);
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(() => searchParams.get('caseId'));
   const [initialFlashMessageId, setInitialFlashMessageId] = useState<string | null>(() => searchParams.get('messageId'));
@@ -101,16 +102,17 @@ export function CaseReportsPage() {
 
   const fetchReports = useCallback(async (silent?: boolean) => {
     if (!silent) setLoading(true);
-    setError('');
     try {
       const data = await listCaseReports(appliedFilters);
       setReports(data.items);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to load case reports');
+      if (!silent) {
+        showErrorToast(err.response?.data?.error || 'Failed to load case reports');
+      }
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [appliedFilters]);
+  }, [appliedFilters, showErrorToast]);
 
   const fetchDetail = useCallback(async (caseId: string) => {
     try {
@@ -121,9 +123,9 @@ export function CaseReportsPage() {
       // Clear the unread badges immediately in the local list
       setReports((prev) => prev.map((r) => r.id === caseId ? { ...r, unread_count: 0, unread_reply_count: 0 } : r));
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to load case detail');
+      showErrorToast(err.response?.data?.error || 'Failed to load case detail');
     }
-  }, []);
+  }, [showErrorToast]);
 
   useEffect(() => {
     void fetchReports();
@@ -379,8 +381,6 @@ export function CaseReportsPage() {
             </div>
           </div>
         )}
-
-        {error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p>}
 
         {/* Card list */}
         {loading ? (

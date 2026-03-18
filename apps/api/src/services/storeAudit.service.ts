@@ -24,6 +24,17 @@ function parseJsonField<T>(value: unknown, fallback: T): T {
   return value as T;
 }
 
+function formatDescriptionTimestamp(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const year = String(date.getFullYear()).slice(-2);
+  const hours24 = date.getHours();
+  const hours12 = hours24 % 12 || 12;
+  const minute = String(date.getMinutes()).padStart(2, '0');
+  const meridiem = hours24 >= 12 ? 'PM' : 'AM';
+  return `${month}/${day}/${year} ${hours12}:${minute} ${meridiem}`;
+}
+
 function normalizeRow(row: any): StoreAuditRow {
   return {
     ...row,
@@ -208,6 +219,15 @@ async function updateComplianceAuditResult(odooEmployeeId: number, payload: {
     });
 }
 
+async function getWebsiteKeyByUserId(userId: string): Promise<string | null> {
+  const row = await db.getMasterDb()('users')
+    .where({ id: userId })
+    .first('user_key');
+
+  const key = String(row?.user_key ?? '').trim();
+  return key || null;
+}
+
 export async function listStoreAudits(input: {
   tenantDb: Knex;
   userId: string;
@@ -331,6 +351,25 @@ export async function completeStoreAudit(input: {
     throw new AppError(403, 'You can only complete your own processing audit');
   }
 
+  const createSalaryAttachmentForAuditor = async (description: string, totalAmount: number): Promise<void> => {
+    if (totalAmount <= 0) return;
+
+    const auditorWebsiteKey = await getWebsiteKeyByUserId(input.userId);
+    if (!auditorWebsiteKey) {
+      logger.warn(
+        { auditId: input.auditId, userId: input.userId },
+        'completeStoreAudit: auditor has no website key, skipping salary attachment',
+      );
+      return;
+    }
+
+    void createAuditSalaryAttachment({
+      websiteUserKey: auditorWebsiteKey,
+      description,
+      totalAmount,
+    });
+  };
+
   const completedAt = new Date();
   let updated: any;
 
@@ -365,12 +404,8 @@ export async function completeStoreAudit(input: {
 
       const monetaryReward = Number(audit.monetary_reward ?? 0);
       if (monetaryReward > 0) {
-        const description = `CSS Audit ${input.auditId} – ${completedAt.toISOString()}`;
-        void createAuditSalaryAttachment({
-          websiteUserKey: String(audit.css_cashier_user_key),
-          description,
-          totalAmount: monetaryReward,
-        });
+        const description = `CSS Audit ${input.auditId} - ${formatDescriptionTimestamp(completedAt)}`;
+        await createSalaryAttachmentForAuditor(description, monetaryReward);
       }
     }
   } else {
@@ -407,15 +442,8 @@ export async function completeStoreAudit(input: {
 
       const monetaryReward = Number(audit.monetary_reward ?? 0);
       if (monetaryReward > 0) {
-        const websiteKey = await getEmployeeWebsiteKeyByEmployeeId(Number(audit.comp_odoo_employee_id));
-        if (websiteKey) {
-          const description = `Compliance Audit ${input.auditId} – ${completedAt.toISOString()}`;
-          void createAuditSalaryAttachment({
-            websiteUserKey: websiteKey,
-            description,
-            totalAmount: monetaryReward,
-          });
-        }
+        const description = `Compliance Audit ${input.auditId} - ${formatDescriptionTimestamp(completedAt)}`;
+        await createSalaryAttachmentForAuditor(description, monetaryReward);
       }
     }
   }

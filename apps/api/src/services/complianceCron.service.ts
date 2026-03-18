@@ -5,9 +5,20 @@ import { getActiveAttendances } from './odoo.service.js';
 import { resolveCompanyByOdooBranchId } from './webhook.service.js';
 
 let cronHandle: NodeJS.Timeout | null = null;
+let cronAlignHandle: NodeJS.Timeout | null = null;
+const DISABLED_AUDIT_ODOO_COMPANY_IDS = new Set<number>([2]);
 
 function randomReward(): number {
   return Math.round((15 + Math.random() * 15) * 100) / 100;
+}
+
+function msUntilNextTopOfHour(now: Date = new Date()): number {
+  const msIntoHour =
+    (now.getMinutes() * 60 * 1000)
+    + (now.getSeconds() * 1000)
+    + now.getMilliseconds();
+  if (msIntoHour === 0) return 0;
+  return (60 * 60 * 1000) - msIntoHour;
 }
 
 export async function runComplianceCron(): Promise<void> {
@@ -15,9 +26,12 @@ export async function runComplianceCron(): Promise<void> {
     // hr.attendance field availability can vary across Odoo setups.
     // We currently rely on id, employee_id, company_id, and check_in from search_read.
     const attendances = await getActiveAttendances();
-    if (attendances.length === 0) return;
+    const eligibleAttendances = attendances.filter(
+      (attendance) => !DISABLED_AUDIT_ODOO_COMPANY_IDS.has(Number(attendance.company_id)),
+    );
+    if (eligibleAttendances.length === 0) return;
 
-    const chosen = attendances[Math.floor(Math.random() * attendances.length)];
+    const chosen = eligibleAttendances[Math.floor(Math.random() * eligibleAttendances.length)];
     if (!chosen) return;
 
     const company = await resolveCompanyByOdooBranchId(chosen.company_id);
@@ -71,14 +85,27 @@ export async function runComplianceCron(): Promise<void> {
 }
 
 export async function initComplianceCron(): Promise<void> {
-  if (cronHandle) return;
-  cronHandle = setInterval(() => {
+  if (cronHandle || cronAlignHandle) return;
+
+  const delayMs = msUntilNextTopOfHour();
+  const firstRunAt = new Date(Date.now() + delayMs).toISOString();
+
+  cronAlignHandle = setTimeout(() => {
+    cronAlignHandle = null;
     void runComplianceCron();
-  }, 60 * 60 * 1000);
-  logger.info('Compliance cron initialized (hourly)');
+    cronHandle = setInterval(() => {
+      void runComplianceCron();
+    }, 60 * 60 * 1000);
+  }, delayMs);
+
+  logger.info({ firstRunAt }, 'Compliance cron initialized (hourly at :00)');
 }
 
 export async function stopComplianceCron(): Promise<void> {
+  if (cronAlignHandle) {
+    clearTimeout(cronAlignHandle);
+    cronAlignHandle = null;
+  }
   if (!cronHandle) return;
   clearInterval(cronHandle);
   cronHandle = null;

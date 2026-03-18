@@ -685,7 +685,7 @@ export function EmployeeVerificationsPage() {
       closePanel();
       await fetchData();
     } catch (err: any) {
-      setPanelError(err.response?.data?.error || 'Failed to approve verification');
+      showErrorToast(err.response?.data?.error || 'Failed to approve verification');
       if (currentType === 'registration') {
         setApprovalLogs((prev) => [
           ...prev,
@@ -736,7 +736,7 @@ export function EmployeeVerificationsPage() {
       closePanel();
       await fetchData();
     } catch (err: any) {
-      setPanelError(err.response?.data?.error || 'Failed to reject verification');
+      showErrorToast(err.response?.data?.error || 'Failed to reject verification');
     } finally {
       setSaving(false);
     }

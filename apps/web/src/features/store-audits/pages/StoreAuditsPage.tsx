@@ -8,6 +8,7 @@ import { Card, CardBody } from '@/shared/components/ui/Card';
 import { Spinner } from '@/shared/components/ui/Spinner';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useSocket } from '@/shared/hooks/useSocket';
+import { useAppToast } from '@/shared/hooks/useAppToast';
 import { api } from '@/shared/services/api.client';
 import { useAuthStore } from '@/features/auth/store/authSlice';
 import { getGroupedUsers } from '@/features/violation-notices/services/violationNotice.api';
@@ -28,14 +29,13 @@ function statusBadge(status: StoreAuditStatus) {
 export function StoreAuditsPage() {
   const socket = useSocket('/store-audits');
   const { hasPermission } = usePermission();
+  const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const currentUserId = useAuthStore((state) => state.user?.id ?? null);
   const canProcessAudit = hasPermission(PERMISSIONS.STORE_AUDIT_PROCESS);
   const canRequestVN = hasPermission(PERMISSIONS.VIOLATION_NOTICE_CREATE);
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [panelError, setPanelError] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
   const [category, setCategory] = useState<CategoryTab>('all');
   const [status, setStatus] = useState<StoreAuditStatus>(
@@ -57,7 +57,6 @@ export function StoreAuditsPage() {
 
   const fetchAudits = useCallback(async (options?: { silent?: boolean }) => {
     if (!options?.silent) setLoading(true);
-    setError('');
     try {
       const response = await api.get('/store-audits', {
         params: {
@@ -74,11 +73,13 @@ export function StoreAuditsPage() {
       setAudits(data.items ?? []);
       setProcessingAuditId(data.processingAuditId ?? null);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to load store audits');
+      if (!options?.silent) {
+        showErrorToast(err.response?.data?.error || 'Failed to load store audits');
+      }
     } finally {
       if (!options?.silent) setLoading(false);
     }
-  }, [category, status]);
+  }, [category, status, showErrorToast]);
 
   useEffect(() => {
     void fetchAudits();
@@ -139,12 +140,12 @@ export function StoreAuditsPage() {
 
   const handleProcess = async (auditId: string) => {
     setActionLoading(true);
-    setPanelError('');
     try {
       await api.post(`/store-audits/${auditId}/process`);
+      showSuccessToast('Audit moved to processing.');
       await fetchAudits({ silent: true });
     } catch (err: any) {
-      setPanelError(err.response?.data?.error || 'Failed to process audit');
+      showErrorToast(err.response?.data?.error || 'Failed to process audit');
     } finally {
       setActionLoading(false);
     }
@@ -157,12 +158,12 @@ export function StoreAuditsPage() {
       | { productivity_rate: boolean; uniform: boolean; hygiene: boolean; sop: boolean },
   ) => {
     setActionLoading(true);
-    setPanelError('');
     try {
       await api.post(`/store-audits/${auditId}/complete`, payload);
+      showSuccessToast('Audit completed successfully.');
       await fetchAudits({ silent: true });
     } catch (err: any) {
-      setPanelError(err.response?.data?.error || 'Failed to complete audit');
+      showErrorToast(err.response?.data?.error || 'Failed to complete audit');
     } finally {
       setActionLoading(false);
     }
@@ -209,7 +210,6 @@ export function StoreAuditsPage() {
               onClick={() => {
                 setCategory(tab.key);
                 setSelectedAuditId(null);
-                setPanelError('');
               }}
               className={`flex items-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
                 category === tab.key
@@ -231,7 +231,6 @@ export function StoreAuditsPage() {
               onClick={() => {
                 setStatus(tab);
                 setSelectedAuditId(null);
-                setPanelError('');
               }}
               className={`flex-1 rounded-md px-4 py-1.5 text-center text-sm font-medium capitalize transition-colors sm:flex-none ${
                 status === tab
@@ -243,10 +242,6 @@ export function StoreAuditsPage() {
             </button>
           ))}
         </div>
-
-        {error && (
-          <p className="rounded bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>
-        )}
 
         {loading ? (
           <div className="flex justify-center py-12">
@@ -268,7 +263,6 @@ export function StoreAuditsPage() {
                   selected={audit.id === selectedAuditId}
                   onSelect={() => {
                     setSelectedAuditId(audit.id);
-                    setPanelError('');
                   }}
                 />
               ) : (
@@ -278,7 +272,6 @@ export function StoreAuditsPage() {
                   selected={audit.id === selectedAuditId}
                   onSelect={() => {
                     setSelectedAuditId(audit.id);
-                    setPanelError('');
                   }}
                 />
               )
@@ -328,7 +321,7 @@ export function StoreAuditsPage() {
                 }
                 canRequestVN={canRequestVN && selectedAudit.status === 'completed' && !selectedAudit.vn_requested}
                 actionLoading={actionLoading}
-                panelError={panelError}
+                panelError=""
                 onProcess={() => void handleProcess(selectedAudit.id)}
                 onComplete={(payload) => void handleComplete(selectedAudit.id, payload)}
                 onRequestVN={() => setShowRequestVNModal(true)}
@@ -344,7 +337,7 @@ export function StoreAuditsPage() {
                 }
                 canRequestVN={canRequestVN && selectedAudit.status === 'completed' && !selectedAudit.vn_requested}
                 actionLoading={actionLoading}
-                panelError={panelError}
+                panelError=""
                 onProcess={() => void handleProcess(selectedAudit.id)}
                 onComplete={(payload) => void handleComplete(selectedAudit.id, payload)}
                 onRequestVN={() => setShowRequestVNModal(true)}
