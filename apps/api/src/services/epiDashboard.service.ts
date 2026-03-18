@@ -1,5 +1,6 @@
 import { db } from '../config/database.js';
-import type { KpiBreakdown } from './epiCalculation.service.js';
+import { logger } from '../utils/logger.js';
+import { calculateKpiScores, type KpiBreakdown, type UserKpiData } from './epiCalculation.service.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -17,6 +18,7 @@ export interface EpiHistoryEntry {
 export interface EpiDashboardResponse {
   epiScore: number;
   epiHistory: EpiHistoryEntry[];
+  currentThirtyDay: CurrentThirtyDaySnapshot | null;
 }
 
 export interface LeaderboardEntry {
@@ -27,26 +29,86 @@ export interface LeaderboardEntry {
   rank: number;
 }
 
+export interface CurrentThirtyDaySnapshot {
+  asOfDate: string;
+  epiProjected: number;
+  delta: number;
+  raw_delta: number;
+  capped: boolean;
+  kpi_breakdown: KpiBreakdown;
+}
+
+interface EpiDashboardUserRow {
+  epi_score: number | null;
+  epi_history: unknown;
+  user_key: string | null;
+  css_audits: unknown;
+  peer_evaluations: unknown;
+  compliance_audit: unknown;
+  violation_notices: unknown;
+}
+
+function getManilaDateString(): string {
+  const manilaNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
+  const year = manilaNow.getFullYear();
+  const month = String(manilaNow.getMonth() + 1).padStart(2, '0');
+  const day = String(manilaNow.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // ─── Service Functions ─────────────────────────────────────────────────────────
 
 export async function getEpiDashboard(userId: string): Promise<EpiDashboardResponse> {
   const masterDb = db.getMasterDb();
 
-  const user = await masterDb('users')
+  const user = (await masterDb('users')
     .where({ id: userId })
-    .select('epi_score', 'epi_history')
-    .first();
+    .select(
+      'epi_score',
+      'epi_history',
+      'user_key',
+      'css_audits',
+      'peer_evaluations',
+      'compliance_audit',
+      'violation_notices',
+    )
+    .first()) as EpiDashboardUserRow | undefined;
 
   if (!user) {
-    return { epiScore: 100, epiHistory: [] };
+    return { epiScore: 100, epiHistory: [], currentThirtyDay: null };
   }
 
   const epiScore = Number(user.epi_score ?? 100);
   const epiHistory: EpiHistoryEntry[] = Array.isArray(user.epi_history)
     ? (user.epi_history as EpiHistoryEntry[])
     : [];
+  let currentThirtyDay: CurrentThirtyDaySnapshot | null = null;
 
-  return { epiScore, epiHistory };
+  if (user.user_key) {
+    try {
+      const { breakdown, delta, raw_delta, capped } = await calculateKpiScores({
+        userId,
+        userKey: user.user_key,
+        cssAudits: (user.css_audits as UserKpiData['cssAudits']) ?? null,
+        peerEvaluations: (user.peer_evaluations as UserKpiData['peerEvaluations']) ?? null,
+        complianceAudit: (user.compliance_audit as UserKpiData['complianceAudit']) ?? null,
+        violationNotices: (user.violation_notices as UserKpiData['violationNotices']) ?? null,
+      });
+
+      currentThirtyDay = {
+        asOfDate: getManilaDateString(),
+        epiProjected: Math.round((epiScore + delta) * 10) / 10,
+        delta,
+        raw_delta,
+        capped,
+        kpi_breakdown: breakdown,
+      };
+    } catch (err) {
+      logger.error({ err, userId }, 'Failed to compute rolling 30-day dashboard snapshot');
+    }
+  }
+
+  return { epiScore, epiHistory, currentThirtyDay };
 }
 
 export async function getEpiLeaderboard(companyId: string): Promise<LeaderboardEntry[]> {

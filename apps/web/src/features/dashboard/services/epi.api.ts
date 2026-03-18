@@ -32,6 +32,16 @@ interface BackendEpiHistoryEntry {
 interface BackendEpiDashboardResponse {
   epiScore: number;
   epiHistory: BackendEpiHistoryEntry[];
+  currentThirtyDay: BackendCurrentThirtyDaySnapshot | null;
+}
+
+interface BackendCurrentThirtyDaySnapshot {
+  asOfDate: string; // YYYY-MM-DD
+  epiProjected: number;
+  delta: number;
+  raw_delta: number;
+  capped: boolean;
+  kpi_breakdown: KpiBreakdown;
 }
 
 interface BackendLeaderboardEntry {
@@ -90,6 +100,23 @@ function historyEntriesToMonthEntries(entries: BackendEpiHistoryEntry[]): EpiMon
     });
 }
 
+function sortMonthEntries(entries: EpiMonthEntry[]): EpiMonthEntry[] {
+  return [...entries].sort((a, b) => {
+    if (a.year !== b.year) return a.year - b.year;
+    return MONTH_NAMES.indexOf(a.month) - MONTH_NAMES.indexOf(b.month);
+  });
+}
+
+function upsertMonthEntry(history: EpiMonthEntry[], nextEntry: EpiMonthEntry): EpiMonthEntry[] {
+  const idx = history.findIndex((entry) => entry.month === nextEntry.month && entry.year === nextEntry.year);
+  if (idx === -1) {
+    return sortMonthEntries([...history, nextEntry]);
+  }
+  const next = [...history];
+  next[idx] = nextEntry;
+  return sortMonthEntries(next);
+}
+
 function buildEmptyDashboard(epiScore: number): EpiDashboardData {
   const now = new Date();
   const emptyCriteria: EpiCriteria = {
@@ -131,23 +158,51 @@ export async function fetchEpiDashboard(): Promise<EpiDashboardData> {
   const res = await api.get<{ success: boolean; data: BackendEpiDashboardResponse }>('/dashboard/epi');
   const backend = res.data.data;
 
-  if (!backend || backend.epiHistory.length === 0) {
-    return buildEmptyDashboard(backend?.epiScore ?? 100);
+  if (!backend) {
+    return buildEmptyDashboard(100);
   }
 
-  const history = historyEntriesToMonthEntries(backend.epiHistory);
-  const latestEntry = backend.epiHistory[backend.epiHistory.length - 1];
-  const criteria = kpiBreakdownToCriteria(latestEntry.kpi_breakdown);
-  const now = new Date();
+  let history = historyEntriesToMonthEntries(backend.epiHistory ?? []);
+  let epiScore = backend.epiScore;
+  let epiDelta = 0;
+  let criteria: EpiCriteria | null = null;
+  let currentDate = new Date();
 
-  // Calculate current week's delta (last weekly entry)
-  const lastWeekly = [...backend.epiHistory].reverse().find((e) => e.type === 'weekly');
-  const epiDelta = lastWeekly?.delta ?? 0;
+  if (backend.currentThirtyDay) {
+    const parsedDate = new Date(backend.currentThirtyDay.asOfDate);
+    currentDate = Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
+
+    const rollingCriteria = kpiBreakdownToCriteria(backend.currentThirtyDay.kpi_breakdown);
+    const rollingEntry: EpiMonthEntry = {
+      month: MONTH_NAMES[currentDate.getMonth()],
+      year: currentDate.getFullYear(),
+      score: backend.currentThirtyDay.epiProjected,
+      criteria: rollingCriteria,
+    };
+
+    history = upsertMonthEntry(history, rollingEntry);
+    criteria = rollingCriteria;
+    epiScore = backend.currentThirtyDay.epiProjected;
+    epiDelta = backend.currentThirtyDay.delta;
+  } else if (backend.epiHistory.length > 0) {
+    const latestEntry = backend.epiHistory[backend.epiHistory.length - 1];
+    criteria = kpiBreakdownToCriteria(latestEntry.kpi_breakdown);
+    const lastWeekly = [...backend.epiHistory].reverse().find((e) => e.type === 'weekly');
+    epiDelta = lastWeekly?.delta ?? 0;
+  }
+
+  if (history.length === 0) {
+    return buildEmptyDashboard(epiScore);
+  }
+
+  if (!criteria) {
+    criteria = history[history.length - 1].criteria;
+  }
 
   return {
-    epiScore: backend.epiScore,
+    epiScore,
     epiDelta,
-    currentMonth: MONTH_NAMES[now.getMonth()],
+    currentMonth: MONTH_NAMES[currentDate.getMonth()],
     goalTarget: 105,
     history,
     criteria,

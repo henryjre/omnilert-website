@@ -37,10 +37,21 @@ let monthlyHandle: NodeJS.Timeout | null = null;
 /**
  * Returns the current time in Asia/Manila timezone broken into components.
  */
-function getManilaTime(): { dayOfWeek: number; hour: number; minute: number; dayOfMonth: number } {
+function getManilaNow(): Date {
   const now = new Date();
   const manilaStr = now.toLocaleString('en-US', { timeZone: 'Asia/Manila' });
-  const manila = new Date(manilaStr);
+  return new Date(manilaStr);
+}
+
+function formatDateYYYYMMDD(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getManilaTime(): { dayOfWeek: number; hour: number; minute: number; dayOfMonth: number } {
+  const manila = getManilaNow();
   return {
     dayOfWeek: manila.getDay(),   // 0=Sun, 1=Mon, ... 6=Sat
     hour: manila.getHours(),
@@ -60,7 +71,14 @@ function isMonthlySnapshotTime(): boolean {
 }
 
 function getManilaDateString(): string {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }); // YYYY-MM-DD
+  return formatDateYYYYMMDD(getManilaNow());
+}
+
+function getPreviousMonthDateString(): string {
+  const manilaNow = getManilaNow();
+  // If snapshot runs on the 1st, this stamps the monthly record to the previous month.
+  const previousMonthLastDay = new Date(manilaNow.getFullYear(), manilaNow.getMonth(), 0);
+  return formatDateYYYYMMDD(previousMonthLastDay);
 }
 
 // ─── Snapshot Runners ─────────────────────────────────────────────────────────
@@ -254,7 +272,7 @@ export async function runMonthlyEpiSnapshot(): Promise<void> {
     .distinct('u.id')
     .orderBy('u.id') as MasterUserRow[];
 
-  const snapshotDate = getManilaDateString();
+  const snapshotDate = getPreviousMonthDateString();
 
   for (const user of users) {
     try {
