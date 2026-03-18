@@ -21,6 +21,33 @@ export interface StoreAuditPayment {
   amount: number;
 }
 
+export interface StoreAuditAttachment {
+  id: string;
+  store_audit_id: string;
+  message_id: string | null;
+  uploaded_by: string;
+  file_url: string;
+  file_name: string;
+  file_size: number;
+  content_type: string;
+  created_at: string;
+}
+
+export interface StoreAuditMessage {
+  id: string;
+  store_audit_id: string;
+  user_id: string;
+  user_name?: string;
+  user_avatar?: string;
+  content: string;
+  is_deleted: boolean;
+  deleted_by: string | null;
+  attachments: StoreAuditAttachment[];
+  created_at: string;
+  updated_at: string;
+  is_edited: boolean;
+}
+
 export interface StoreAudit {
   id: string;
   type: StoreAuditType;
@@ -60,6 +87,7 @@ export interface StoreAudit {
   comp_uniform: boolean | null;
   comp_hygiene: boolean | null;
   comp_sop: boolean | null;
+  comp_ai_report?: string | null;
 }
 
 export interface ListStoreAuditsResponse {

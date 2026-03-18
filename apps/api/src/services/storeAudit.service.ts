@@ -1,15 +1,63 @@
 import type { Knex } from 'knex';
-import type { CssCriteriaScores, StoreAudit, StoreAuditStatus, StoreAuditType } from '@omnilert/shared';
+import type {
+  CssCriteriaScores,
+  StoreAudit,
+  StoreAuditAttachment,
+  StoreAuditMessage,
+  StoreAuditStatus,
+  StoreAuditType,
+} from '@omnilert/shared';
 import { db } from '../config/database.js';
 import { env } from '../config/env.js';
 import { getIO } from '../config/socket.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
+import { hydrateUsersByIds } from './globalUser.service.js';
 import { createAuditSalaryAttachment, getEmployeeWebsiteKeyByEmployeeId } from './odoo.service.js';
+import { buildTenantStoragePrefix, deleteFile, uploadFile } from './storage.service.js';
 
 type StoreAuditRow = StoreAudit & {
   branch_name?: string | null;
   auditor_name?: string | null;
+};
+
+type StoreAuditMessageRow = {
+  id: string;
+  store_audit_id: string;
+  user_id: string;
+  content: string;
+  is_deleted: boolean;
+  deleted_by: string | null;
+  created_at: Date | string;
+  updated_at: Date | string;
+};
+
+type StoreAuditAttachmentRow = {
+  id: string;
+  store_audit_id: string;
+  message_id: string | null;
+  uploaded_by: string;
+  file_url: string;
+  file_name: string;
+  file_size: number;
+  content_type: string;
+  created_at: Date | string;
+};
+
+type AuditReportSections = {
+  criteria_summary: string[];
+  audit_trail_findings: string[];
+  strengths: string[];
+  risks: string[];
+  coaching_recommendations: string[];
+};
+
+const EMPTY_AUDIT_REPORT_SECTIONS: AuditReportSections = {
+  criteria_summary: ['Insufficient evidence from provided criteria.'],
+  audit_trail_findings: ['Insufficient evidence from provided audit trail.'],
+  strengths: ['No clear strengths evidenced in the provided data.'],
+  risks: ['No material risks evidenced in the provided data.'],
+  coaching_recommendations: ['No coaching recommendation can be made without stronger evidence.'],
 };
 
 function parseJsonField<T>(value: unknown, fallback: T): T {
@@ -92,7 +140,7 @@ function isUniqueViolation(error: unknown): boolean {
 
 function emitStoreAuditEvent(
   companyId: string,
-  event: 'store-audit:new' | 'store-audit:claimed' | 'store-audit:completed',
+  event: 'store-audit:new' | 'store-audit:claimed' | 'store-audit:completed' | 'store-audit:updated',
   payload: unknown,
 ): void {
   try {
@@ -116,6 +164,63 @@ async function analyzeCssAudit(auditLog: string, criteriaScores: CssCriteriaScor
     .join('\n');
 
   const userContent = `Criteria Scores:\n${scoresPreamble}\n\nAudit Log:\n${auditLog}`;
+  return analyzeAuditWithAI({
+    systemPrompt:
+      'You summarize cashier performance audits. Return concise actionable findings, strengths, risks, and coaching recommendations.',
+    userContent,
+  });
+}
+
+async function analyzeComplianceAudit(
+  auditLog: string,
+  answers: {
+    productivity_rate: boolean;
+    uniform: boolean;
+    hygiene: boolean;
+    sop: boolean;
+  },
+): Promise<string> {
+  const labels: Array<{ key: keyof typeof answers; label: string }> = [
+    { key: 'productivity_rate', label: 'Productivity Rate' },
+    { key: 'uniform', label: 'Uniform Compliance' },
+    { key: 'hygiene', label: 'Hygiene Compliance' },
+    { key: 'sop', label: 'SOP Compliance' },
+  ];
+
+  const answersPreamble = labels
+    .map(({ key, label }) => `- ${label}: ${answers[key] ? 'Yes' : 'No'}`)
+    .join('\n');
+
+  const userContent = `Compliance Answers:\n${answersPreamble}\n\nAudit Log:\n${auditLog}`;
+  return analyzeAuditWithAI({
+    systemPrompt:
+      'You summarize compliance audits for retail/food-service operations. Return concise findings, risks, and clear corrective actions.',
+    userContent,
+  });
+}
+
+async function analyzeAuditWithAI(input: {
+  systemPrompt: string;
+  userContent: string;
+}): Promise<string> {
+  const systemPrompt = `${input.systemPrompt}
+
+You are a neutral, data-driven audit analyst.
+Interpret mixed-language and noisy audit notes (English/Filipino/Tagalog/Taglish, shorthand, typos) as faithfully as possible.
+Do not fabricate facts. Do not add assumptions that are not supported by the provided data.
+If evidence is weak or unclear, explicitly state insufficient evidence.
+
+Return STRICT JSON only with these exact keys:
+- criteria_summary (array of strings)
+- audit_trail_findings (array of strings)
+- strengths (array of strings)
+- risks (array of strings)
+- coaching_recommendations (array of strings)
+
+Rules:
+- Every item must be evidence-based and concise.
+- Keep tone unbiased, factual, and professional.
+- No markdown, no extra keys, no wrapper text.`;
 
   const response = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
@@ -131,12 +236,11 @@ async function analyzeCssAudit(auditLog: string, criteriaScores: CssCriteriaScor
       input: [
         {
           role: 'system',
-          content:
-            'You summarize cashier performance audits. Return concise actionable findings, strengths, risks, and coaching recommendations.',
+          content: systemPrompt,
         },
         {
           role: 'user',
-          content: userContent,
+          content: input.userContent,
         },
       ],
     }),
@@ -154,6 +258,17 @@ async function analyzeCssAudit(auditLog: string, criteriaScores: CssCriteriaScor
     }>;
   };
 
+  const rawText = extractAIOutputText(payload);
+  const parsed = parseAuditReportSections(rawText);
+  return formatAuditReportSections(parsed);
+}
+
+function extractAIOutputText(payload: {
+  output_text?: string;
+  output?: Array<{
+    content?: Array<{ type?: string; text?: string }>;
+  }>;
+}): string {
   if (typeof payload.output_text === 'string' && payload.output_text.trim()) {
     return payload.output_text.trim();
   }
@@ -168,6 +283,74 @@ async function analyzeCssAudit(auditLog: string, criteriaScores: CssCriteriaScor
 
   if (textFromOutput) return textFromOutput;
   throw new AppError(502, 'AI report generation returned an empty response');
+}
+
+function parseAuditReportSections(rawText: string): AuditReportSections {
+  const parsed = parseJsonObject(rawText);
+  if (!parsed || typeof parsed !== 'object') {
+    return {
+      ...EMPTY_AUDIT_REPORT_SECTIONS,
+      audit_trail_findings: [rawText.trim() || EMPTY_AUDIT_REPORT_SECTIONS.audit_trail_findings[0]],
+    };
+  }
+
+  const obj = parsed as Record<string, unknown>;
+  return {
+    criteria_summary: sanitizeStringArray(obj.criteria_summary, EMPTY_AUDIT_REPORT_SECTIONS.criteria_summary[0]),
+    audit_trail_findings: sanitizeStringArray(
+      obj.audit_trail_findings,
+      EMPTY_AUDIT_REPORT_SECTIONS.audit_trail_findings[0],
+    ),
+    strengths: sanitizeStringArray(obj.strengths, EMPTY_AUDIT_REPORT_SECTIONS.strengths[0]),
+    risks: sanitizeStringArray(obj.risks, EMPTY_AUDIT_REPORT_SECTIONS.risks[0]),
+    coaching_recommendations: sanitizeStringArray(
+      obj.coaching_recommendations,
+      EMPTY_AUDIT_REPORT_SECTIONS.coaching_recommendations[0],
+    ),
+  };
+}
+
+function parseJsonObject(rawText: string): unknown {
+  try {
+    return JSON.parse(rawText);
+  } catch {
+    const start = rawText.indexOf('{');
+    const end = rawText.lastIndexOf('}');
+    if (start < 0 || end <= start) return null;
+    const candidate = rawText.slice(start, end + 1);
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      return null;
+    }
+  }
+}
+
+function sanitizeStringArray(value: unknown, fallback: string): string[] {
+  if (!Array.isArray(value)) return [fallback];
+  const cleaned = value
+    .map((item) => String(item ?? '').trim())
+    .filter(Boolean);
+  if (cleaned.length === 0) return [fallback];
+  return cleaned;
+}
+
+function formatAuditReportSections(sections: AuditReportSections): string {
+  const toLines = (title: string, items: string[]) => (
+    [
+      `**${title}**`,
+      ...items.map((item) => `- ${item}`),
+      '',
+    ].join('\n')
+  );
+
+  return [
+    toLines('Criteria Summary', sections.criteria_summary),
+    toLines('Audit Trail Findings', sections.audit_trail_findings),
+    toLines('Strengths', sections.strengths),
+    toLines('Risks', sections.risks),
+    toLines('Coaching Recommendations', sections.coaching_recommendations),
+  ].join('\n').trim();
 }
 
 async function appendCssAuditResult(userKey: string, payload: {
@@ -228,6 +411,108 @@ async function getWebsiteKeyByUserId(userId: string): Promise<string | null> {
   return key || null;
 }
 
+function isAllowedStoreAuditMessageAttachment(contentType: string): boolean {
+  return contentType.startsWith('image/') || contentType.startsWith('video/');
+}
+
+async function getStoreAuditOrThrow(tenantDb: Knex, auditId: string): Promise<any> {
+  const audit = await tenantDb('store_audits').where({ id: auditId }).first();
+  if (!audit) throw new AppError(404, 'Store audit not found');
+  return audit;
+}
+
+function assertStoreAuditMessagesSupported(audit: any): void {
+  if (audit.type !== 'customer_service' && audit.type !== 'compliance') {
+    throw new AppError(409, 'Audit messages are not supported for this store audit type');
+  }
+}
+
+async function getMutableStoreAuditForMessages(input: {
+  tenantDb: Knex;
+  auditId: string;
+  userId: string;
+}): Promise<any> {
+  const audit = await getStoreAuditOrThrow(input.tenantDb, input.auditId);
+  assertStoreAuditMessagesSupported(audit);
+  if (audit.status !== 'processing') {
+    throw new AppError(409, 'Store audit must be in processing status');
+  }
+  if (audit.auditor_user_id !== input.userId) {
+    throw new AppError(403, 'Only the assigned auditor can update this audit trail');
+  }
+  return audit;
+}
+
+async function buildStoreAuditMessageList(
+  tenantDb: Knex,
+  auditId: string,
+): Promise<StoreAuditMessage[]> {
+  const messageRows = await tenantDb('store_audit_messages')
+    .where({ store_audit_id: auditId })
+    .orderBy('created_at', 'asc')
+    .select('*') as StoreAuditMessageRow[];
+
+  if (messageRows.length === 0) return [];
+
+  const messageIds = messageRows.map((row) => row.id);
+  const [attachmentRows, userMap] = await Promise.all([
+    tenantDb('store_audit_attachments')
+      .whereIn('message_id', messageIds)
+      .orderBy('created_at', 'asc')
+      .select('*') as Promise<StoreAuditAttachmentRow[]>,
+    hydrateUsersByIds(
+      messageRows.map((row) => row.user_id),
+      ['id', 'first_name', 'last_name', 'avatar_url'],
+    ),
+  ]);
+
+  const attachmentsByMessage = new Map<string, StoreAuditAttachment[]>();
+  for (const row of attachmentRows) {
+    if (!row.message_id) continue;
+    const list = attachmentsByMessage.get(row.message_id) ?? [];
+    list.push({
+      id: row.id,
+      store_audit_id: row.store_audit_id,
+      message_id: row.message_id,
+      uploaded_by: row.uploaded_by,
+      file_url: row.file_url,
+      file_name: row.file_name,
+      file_size: row.file_size,
+      content_type: row.content_type,
+      created_at: new Date(row.created_at).toISOString(),
+    });
+    attachmentsByMessage.set(row.message_id, list);
+  }
+
+  return messageRows.map((row) => {
+    const user = userMap[row.user_id];
+    return {
+      id: row.id,
+      store_audit_id: row.store_audit_id,
+      user_id: row.user_id,
+      user_name: `${user?.first_name ?? ''} ${user?.last_name ?? ''}`.trim() || 'Unknown User',
+      user_avatar: typeof user?.avatar_url === 'string' ? user.avatar_url : undefined,
+      content: row.content,
+      is_deleted: Boolean(row.is_deleted),
+      deleted_by: row.deleted_by,
+      attachments: attachmentsByMessage.get(row.id) ?? [],
+      created_at: new Date(row.created_at).toISOString(),
+      updated_at: new Date(row.updated_at).toISOString(),
+      is_edited:
+        !row.is_deleted && new Date(row.updated_at).getTime() > new Date(row.created_at).getTime(),
+    };
+  });
+}
+
+function buildAuditMessageTranscript(messages: StoreAuditMessage[]): string {
+  return messages
+    .filter((message) => !message.is_deleted)
+    .map((message) => message.content.trim())
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+}
+
 export async function listStoreAudits(input: {
   tenantDb: Knex;
   userId: string;
@@ -247,11 +532,29 @@ export async function listStoreAudits(input: {
     query.where({ status: input.status });
   }
 
+  const sortOrder = (() => {
+    if (input.status === 'completed') {
+      return [
+        { column: 'completed_at', order: 'desc' as const, nulls: 'last' as const },
+        { column: 'created_at', order: 'desc' as const },
+      ];
+    }
+
+    if (input.status === 'processing') {
+      return [
+        { column: 'updated_at', order: 'desc' as const },
+        { column: 'created_at', order: 'desc' as const },
+      ];
+    }
+
+    return [{ column: 'created_at', order: 'desc' as const }];
+  })();
+
   const [countRow, rows, processingAudit] = await Promise.all([
     query.clone().count<{ count: string }>({ count: '*' }).first(),
     query
       .clone()
-      .orderBy('created_at', 'desc')
+      .orderBy(sortOrder as Array<{ column: string; order: 'asc' | 'desc'; nulls?: 'first' | 'last' }>)
       .limit(pageSize)
       .offset((page - 1) * pageSize),
     input.tenantDb('store_audits')
@@ -278,6 +581,179 @@ export async function getStoreAuditById(input: {
   if (!row) throw new AppError(404, 'Store audit not found');
   const [enriched] = await enrichAuditRows(input.tenantDb, [row]);
   return enriched;
+}
+
+export async function listStoreAuditMessages(input: {
+  tenantDb: Knex;
+  auditId: string;
+}): Promise<StoreAuditMessage[]> {
+  const audit = await getStoreAuditOrThrow(input.tenantDb, input.auditId);
+  assertStoreAuditMessagesSupported(audit);
+  return buildStoreAuditMessageList(input.tenantDb, input.auditId);
+}
+
+export async function sendStoreAuditMessage(input: {
+  tenantDb: Knex;
+  companyId: string;
+  companyStorageRoot: string;
+  auditId: string;
+  userId: string;
+  content: string;
+  files: Array<{ buffer: Buffer; originalname: string; mimetype: string; size: number }>;
+}): Promise<StoreAuditMessage> {
+  await getMutableStoreAuditForMessages({
+    tenantDb: input.tenantDb,
+    auditId: input.auditId,
+    userId: input.userId,
+  });
+
+  const trimmedContent = input.content.trim();
+  if (!trimmedContent && input.files.length === 0) {
+    throw new AppError(400, 'Message must have content or at least one attachment');
+  }
+  if (input.files.length > 10) {
+    throw new AppError(400, 'Maximum of 10 attachments is allowed per message');
+  }
+  if (input.files.some((file) => file.size > 50 * 1024 * 1024)) {
+    throw new AppError(400, 'Attachment exceeds 50MB limit');
+  }
+  if (input.files.some((file) => !isAllowedStoreAuditMessageAttachment(file.mimetype))) {
+    throw new AppError(400, 'Only image and video attachments are allowed');
+  }
+
+  let messageId = '';
+  await input.tenantDb.transaction(async (trx) => {
+    const [created] = await trx('store_audit_messages')
+      .insert({
+        store_audit_id: input.auditId,
+        user_id: input.userId,
+        content: trimmedContent,
+      })
+      .returning('*');
+    messageId = String(created.id);
+
+    if (input.files.length > 0) {
+      const folder = buildTenantStoragePrefix(
+        input.companyStorageRoot,
+        'Store Audits',
+        `AUDIT-${input.auditId}`,
+      );
+
+      for (const file of input.files) {
+        const fileUrl = await uploadFile(file.buffer, file.originalname, file.mimetype, folder);
+        if (!fileUrl) throw new AppError(500, 'Failed to upload audit media attachment');
+
+        await trx('store_audit_attachments').insert({
+          store_audit_id: input.auditId,
+          message_id: messageId,
+          uploaded_by: input.userId,
+          file_url: fileUrl,
+          file_name: file.originalname,
+          file_size: file.size,
+          content_type: file.mimetype,
+        });
+      }
+    }
+  });
+
+  const messages = await buildStoreAuditMessageList(input.tenantDb, input.auditId);
+  const found = messages.find((message) => message.id === messageId);
+  if (!found) throw new AppError(500, 'Failed to load saved audit message');
+
+  emitStoreAuditEvent(input.companyId, 'store-audit:updated', { id: input.auditId });
+  return found;
+}
+
+export async function editStoreAuditMessage(input: {
+  tenantDb: Knex;
+  companyId: string;
+  auditId: string;
+  messageId: string;
+  userId: string;
+  content: string;
+}): Promise<StoreAuditMessage> {
+  await getMutableStoreAuditForMessages({
+    tenantDb: input.tenantDb,
+    auditId: input.auditId,
+    userId: input.userId,
+  });
+
+  const nextContent = input.content.trim();
+  if (!nextContent) throw new AppError(400, 'Message content is required');
+
+  const message = await input.tenantDb('store_audit_messages')
+    .where({ id: input.messageId, store_audit_id: input.auditId })
+    .first() as StoreAuditMessageRow | undefined;
+  if (!message) throw new AppError(404, 'Audit message not found');
+  if (message.user_id !== input.userId) {
+    throw new AppError(403, 'You can only edit your own audit messages');
+  }
+  if (message.is_deleted) {
+    throw new AppError(409, 'Deleted messages cannot be edited');
+  }
+
+  await input.tenantDb('store_audit_messages')
+    .where({ id: input.messageId })
+    .update({
+      content: nextContent,
+      updated_at: new Date(),
+    });
+
+  const messages = await buildStoreAuditMessageList(input.tenantDb, input.auditId);
+  const updated = messages.find((item) => item.id === input.messageId);
+  if (!updated) throw new AppError(500, 'Failed to load updated audit message');
+
+  emitStoreAuditEvent(input.companyId, 'store-audit:updated', { id: input.auditId });
+  return updated;
+}
+
+export async function deleteStoreAuditMessage(input: {
+  tenantDb: Knex;
+  companyId: string;
+  auditId: string;
+  messageId: string;
+  userId: string;
+}): Promise<void> {
+  await getMutableStoreAuditForMessages({
+    tenantDb: input.tenantDb,
+    auditId: input.auditId,
+    userId: input.userId,
+  });
+
+  const message = await input.tenantDb('store_audit_messages')
+    .where({ id: input.messageId, store_audit_id: input.auditId })
+    .first() as StoreAuditMessageRow | undefined;
+  if (!message) throw new AppError(404, 'Audit message not found');
+  if (message.user_id !== input.userId) {
+    throw new AppError(403, 'You can only delete your own audit messages');
+  }
+  if (message.is_deleted) {
+    throw new AppError(409, 'Message is already deleted');
+  }
+
+  const attachments = await input.tenantDb('store_audit_attachments')
+    .where({ message_id: input.messageId })
+    .select('file_url') as Array<{ file_url: string }>;
+
+  const users = await hydrateUsersByIds([input.userId], ['id', 'first_name', 'last_name']);
+  const deleter = users[input.userId];
+  const deleterName = `${deleter?.first_name ?? ''} ${deleter?.last_name ?? ''}`.trim() || 'Someone';
+
+  await input.tenantDb.transaction(async (trx) => {
+    await trx('store_audit_messages')
+      .where({ id: input.messageId })
+      .update({
+        content: `${deleterName} deleted this message`,
+        is_deleted: true,
+        deleted_by: input.userId,
+        updated_at: new Date(),
+      });
+
+    await trx('store_audit_attachments').where({ message_id: input.messageId }).delete();
+  });
+
+  await Promise.all(attachments.map((attachment) => deleteFile(attachment.file_url).catch(() => undefined)));
+  emitStoreAuditEvent(input.companyId, 'store-audit:updated', { id: input.auditId });
 }
 
 export async function processStoreAudit(input: {
@@ -336,7 +812,6 @@ export async function completeStoreAudit(input: {
   payload:
   | {
     criteria_scores: CssCriteriaScores;
-    audit_log: string;
   }
   | {
     productivity_rate: boolean;
@@ -374,20 +849,26 @@ export async function completeStoreAudit(input: {
   let updated: any;
 
   if (audit.type === 'customer_service') {
-    const cssPayload = input.payload as { criteria_scores: CssCriteriaScores; audit_log: string };
+    const cssPayload = input.payload as { criteria_scores: CssCriteriaScores };
     const { criteria_scores } = cssPayload;
+    const messages = await buildStoreAuditMessageList(input.tenantDb, input.auditId);
+    const visibleMessages = messages.filter((message) => !message.is_deleted);
+    if (visibleMessages.length === 0) {
+      throw new AppError(400, 'At least one audit message is required before completing this CSS audit');
+    }
+    const generatedAuditLog = buildAuditMessageTranscript(visibleMessages);
     const starRating = Math.round(
       ((criteria_scores.greeting + criteria_scores.order_accuracy + criteria_scores.suggestive_selling
         + criteria_scores.service_efficiency + criteria_scores.professionalism) / 5) * 100,
     ) / 100;
-    const aiReport = await analyzeCssAudit(cssPayload.audit_log, criteria_scores);
+    const aiReport = await analyzeCssAudit(generatedAuditLog, criteria_scores);
     [updated] = await input.tenantDb('store_audits')
       .where({ id: input.auditId })
       .update({
         status: 'completed',
         css_criteria_scores: JSON.stringify(criteria_scores),
         css_star_rating: starRating,
-        css_audit_log: cssPayload.audit_log,
+        css_audit_log: generatedAuditLog,
         css_ai_report: aiReport,
         completed_at: completedAt,
         updated_at: completedAt,
@@ -415,6 +896,13 @@ export async function completeStoreAudit(input: {
       hygiene: boolean;
       sop: boolean;
     };
+    const messages = await buildStoreAuditMessageList(input.tenantDb, input.auditId);
+    const visibleMessages = messages.filter((message) => !message.is_deleted);
+    if (visibleMessages.length === 0) {
+      throw new AppError(400, 'At least one audit message is required before completing this compliance audit');
+    }
+    const generatedAuditLog = buildAuditMessageTranscript(visibleMessages);
+    const aiReport = await analyzeComplianceAudit(generatedAuditLog, compPayload);
     [updated] = await input.tenantDb('store_audits')
       .where({ id: input.auditId })
       .update({
@@ -423,6 +911,7 @@ export async function completeStoreAudit(input: {
         comp_uniform: compPayload.uniform,
         comp_hygiene: compPayload.hygiene,
         comp_sop: compPayload.sop,
+        comp_ai_report: aiReport,
         completed_at: completedAt,
         updated_at: completedAt,
       })

@@ -154,7 +154,7 @@ export function StoreAuditsPage() {
   const handleComplete = async (
     auditId: string,
     payload:
-      | { criteria_scores: CssCriteriaScores; audit_log: string }
+      | { criteria_scores: CssCriteriaScores }
       | { productivity_rate: boolean; uniform: boolean; hygiene: boolean; sop: boolean },
   ) => {
     setActionLoading(true);
@@ -313,6 +313,7 @@ export function StoreAuditsPage() {
             {selectedAudit.type === 'customer_service' ? (
               <CssAuditDetailPanel
                 audit={selectedAudit}
+                currentUserId={currentUserId}
                 canProcess={canClaimAudit && selectedAudit.status === 'pending'}
                 canComplete={
                   canProcessAudit
@@ -329,6 +330,7 @@ export function StoreAuditsPage() {
             ) : (
               <ComplianceAuditDetailPanel
                 audit={selectedAudit}
+                currentUserId={currentUserId}
                 canProcess={canClaimAudit && selectedAudit.status === 'pending'}
                 canComplete={
                   canProcessAudit
