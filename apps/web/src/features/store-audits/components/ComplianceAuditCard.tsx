@@ -54,7 +54,7 @@ export function ComplianceAuditCard({
       </div>
       <div className="mt-1.5 flex items-center justify-between gap-3 text-xs text-gray-600">
         <span className="truncate">Branch: {audit.branch_name || '—'}</span>
-        <span className="shrink-0">{formatDateTime(audit.comp_check_in_time)}</span>
+        <span className="shrink-0">{formatDateTime(audit.created_at)}</span>
       </div>
       <div className="mt-1 flex items-center justify-between text-xs text-gray-500">
         <span>Auditor: {audit.auditor_name ?? '—'}</span>

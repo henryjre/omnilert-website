@@ -23,11 +23,26 @@ export async function runComplianceCron(): Promise<void> {
     const company = await resolveCompanyByOdooBranchId(chosen.company_id);
     const tenantDb = await db.getTenantDb(company.db_name);
 
-    const branch = await tenantDb('branches')
+    const mappedBranch = await tenantDb('branches')
+      .where({
+        odoo_branch_id: String(chosen.company_id),
+        is_active: true,
+      })
+      .first('id');
+
+    const branch = mappedBranch ?? await tenantDb('branches')
       .where({ is_active: true })
       .orderBy([{ column: 'is_main_branch', order: 'desc' }, { column: 'created_at', order: 'asc' }])
       .first('id');
+
     if (!branch) return;
+
+    if (!mappedBranch) {
+      logger.warn(
+        { companyId: company.id, odooBranchId: chosen.company_id },
+        'Compliance cron could not map Odoo branch to tenant branch; using fallback branch',
+      );
+    }
 
     const [audit] = await tenantDb('store_audits')
       .insert({

@@ -127,8 +127,8 @@ export function ComplianceAuditDetailPanel({
           <span className="font-medium text-gray-900">{audit.comp_employee_name || '—'}</span>
           <span className="text-gray-500">Branch</span>
           <span className="font-medium text-gray-900">{audit.branch_name || '—'}</span>
-          <span className="text-gray-500">Check-in</span>
-          <span className="font-medium text-gray-900">{formatDateTime(audit.comp_check_in_time)}</span>
+          <span className="text-gray-500">Created</span>
+          <span className="font-medium text-gray-900">{formatDateTime(audit.created_at)}</span>
         </div>
 
         {(audit.status === 'processing' || audit.status === 'completed') && (
