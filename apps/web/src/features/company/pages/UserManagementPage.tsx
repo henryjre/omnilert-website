@@ -4,6 +4,7 @@ import { Button } from '@/shared/components/ui/Button';
 import { Input } from '@/shared/components/ui/Input';
 import { Spinner } from '@/shared/components/ui/Spinner';
 import { api } from '@/shared/services/api.client';
+import { useAppToast } from '@/shared/hooks/useAppToast';
 import { Plus, Save, X } from 'lucide-react';
 
 type Role = {
@@ -123,8 +124,7 @@ function pillsWithOverflow(
 export function UserManagementPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const [users, setUsers] = useState<UserItem[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [companies, setCompanies] = useState<AssignmentOptionCompany[]>([]);
@@ -148,7 +148,6 @@ export function UserManagementPage() {
 
   const fetchData = async () => {
     setLoading(true);
-    setError('');
     try {
       const [usersRes, optionsRes] = await Promise.all([
         api.get('/users'),
@@ -158,7 +157,7 @@ export function UserManagementPage() {
       setRoles(optionsRes.data.data?.roles || []);
       setCompanies(optionsRes.data.data?.companies || []);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to load users');
+      showErrorToast(err.response?.data?.error || 'Failed to load users');
     } finally {
       setLoading(false);
     }
@@ -167,12 +166,6 @@ export function UserManagementPage() {
   useEffect(() => {
     fetchData();
   }, []);
-
-  useEffect(() => {
-    if (!success) return;
-    const timer = window.setTimeout(() => setSuccess(''), 3000);
-    return () => window.clearTimeout(timer);
-  }, [success]);
 
   const roleMap = useMemo(() => new Map(roles.map((role) => [role.id, role])), [roles]);
   const companyMap = useMemo(() => new Map(companies.map((company) => [company.id, company])), [companies]);
@@ -239,8 +232,6 @@ export function UserManagementPage() {
     setEditCompanyAssignments(groupBranchesByCompany(user));
     setEditUserKey(user.user_key || '');
     setEditEmployeeNumber(user.employee_number ? String(user.employee_number) : '');
-    setError('');
-    setSuccess('');
   };
 
   const closePanel = () => {
@@ -252,15 +243,13 @@ export function UserManagementPage() {
   };
 
   const createUser = async () => {
-    setError('');
-    setSuccess('');
     const assignmentError = validateAssignments(createForm.companyAssignments);
     if (assignmentError) {
-      setError(assignmentError);
+      showErrorToast(assignmentError);
       return;
     }
     if (createForm.roleIds.length === 0) {
-      setError('Select at least one role.');
+      showErrorToast('Select at least one role.');
       return;
     }
 
@@ -279,10 +268,10 @@ export function UserManagementPage() {
       });
       setCreateForm(EMPTY_CREATE_FORM);
       setShowCreate(false);
-      setSuccess('User created.');
+      showSuccessToast('User created.');
       await fetchData();
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to create user');
+      showErrorToast(err.response?.data?.error || 'Failed to create user');
     } finally {
       setSaving(false);
     }
@@ -290,11 +279,9 @@ export function UserManagementPage() {
 
   const saveEdit = async () => {
     if (!selectedUser) return;
-    setError('');
-    setSuccess('');
     const assignmentError = validateAssignments(editCompanyAssignments);
     if (assignmentError) {
-      setError(assignmentError);
+      showErrorToast(assignmentError);
       return;
     }
 
@@ -322,11 +309,11 @@ export function UserManagementPage() {
       }
 
       await Promise.all(updates);
-      setSuccess('User updated.');
+      showSuccessToast('User updated.');
       closePanel();
       await fetchData();
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to update user');
+      showErrorToast(err.response?.data?.error || 'Failed to update user');
     } finally {
       setSaving(false);
     }
@@ -334,19 +321,17 @@ export function UserManagementPage() {
 
   const setUserActive = async (userId: string, isActive: boolean) => {
     setSaving(true);
-    setError('');
-    setSuccess('');
     try {
       if (isActive) {
         await api.put(`/users/${userId}`, { isActive: true });
       } else {
         await api.delete(`/users/${userId}`);
       }
-      setSuccess(isActive ? 'User unarchived.' : 'User archived.');
+      showSuccessToast(isActive ? 'User unarchived.' : 'User archived.');
       if (selectedUserId === userId) closePanel();
       await fetchData();
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to update user status');
+      showErrorToast(err.response?.data?.error || 'Failed to update user status');
     } finally {
       setSaving(false);
     }
@@ -355,15 +340,13 @@ export function UserManagementPage() {
   const deleteUser = async (userId: string) => {
     setDeleteConfirmUserId(null);
     setSaving(true);
-    setError('');
-    setSuccess('');
     try {
       await api.delete(`/users/${userId}/permanent`);
-      setSuccess('User permanently deleted.');
+      showSuccessToast('User permanently deleted.');
       if (selectedUserId === userId) closePanel();
       await fetchData();
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to delete user');
+      showErrorToast(err.response?.data?.error || 'Failed to delete user');
     } finally {
       setSaving(false);
     }
@@ -379,9 +362,6 @@ export function UserManagementPage() {
             New User
           </Button>
         </div>
-
-        {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>}
-        {success && <div className="rounded-lg bg-green-50 p-3 text-sm text-green-700">{success}</div>}
 
         {showCreate && (
           <Card>

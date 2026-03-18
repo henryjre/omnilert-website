@@ -185,7 +185,41 @@ async function runLoginNudges(input: {
   isSuperAdminFallback: boolean;
   companySlug: string;
 }): Promise<void> {
-  if (!input.isSuperAdminFallback && input.resolvedUser.updated !== true) {
+  const clearProfileCompletionReminder = async () => {
+    await input.tenantDb('employee_notifications')
+      .where({
+        user_id: input.resolvedUser.id,
+        title: 'Complete Your Profile',
+        link_url: '/account/profile',
+        is_read: false,
+      })
+      .update({ is_read: true });
+  };
+
+  let latestPersonalVerificationStatus: string | null = null;
+  try {
+    const hasPersonalVerificationsTable = await input.tenantDb.schema.hasTable('personal_information_verifications');
+    if (hasPersonalVerificationsTable) {
+      const latestPersonalVerification = await input.tenantDb('personal_information_verifications')
+        .where({ user_id: input.resolvedUser.id })
+        .orderBy('created_at', 'desc')
+        .first('status');
+      latestPersonalVerificationStatus = latestPersonalVerification?.status ?? null;
+    }
+  } catch (error) {
+    logger.warn(
+      { err: error, userId: input.resolvedUser.id, companySlug: input.companySlug },
+      'Failed to resolve personal verification status during login nudges',
+    );
+  }
+
+  const hasPendingPersonalVerification = latestPersonalVerificationStatus === 'pending';
+  const shouldShowProfileCompletionReminder =
+    !input.isSuperAdminFallback
+    && input.resolvedUser.updated !== true
+    && !hasPendingPersonalVerification;
+
+  if (shouldShowProfileCompletionReminder) {
     await createAndDispatchNotification({
       tenantDb: input.tenantDb,
       userId: input.resolvedUser.id,
@@ -194,6 +228,8 @@ async function runLoginNudges(input: {
       type: 'warning',
       linkUrl: '/account/profile',
     });
+  } else if (!input.isSuperAdminFallback && (input.resolvedUser.updated === true || hasPendingPersonalVerification)) {
+    await clearProfileCompletionReminder();
   }
 
   if (input.isSuperAdminFallback) return;

@@ -720,6 +720,7 @@ export async function assignGlobalCompanyBranches(input: {
       'legal_name',
       'birthday',
       'gender',
+      'marital_status',
       'address',
       'emergency_contact',
       'emergency_phone',
@@ -768,6 +769,7 @@ export async function assignGlobalCompanyBranches(input: {
         legalName: String(user.legal_name ?? ''),
         birthday: user.birthday ? String(user.birthday) : null,
         gender: user.gender ? String(user.gender) : null,
+        maritalStatus: user.marital_status ? String(user.marital_status) : null,
         address: user.address !== undefined ? String(user.address ?? '') : undefined,
         emergencyContact: user.emergency_contact !== undefined
           ? String(user.emergency_contact ?? '')

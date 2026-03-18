@@ -2,6 +2,7 @@ import { RouterProvider } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from 'sonner';
 import { router } from './router';
+import { AppToastViewport } from '@/shared/components/ui/AppToastViewport';
 import { THEME_MODE_STORAGE_KEY } from '@/shared/utils/theme';
 import type { ThemeMode } from '@/shared/utils/theme';
 
@@ -21,6 +22,7 @@ export function App() {
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
       <Toaster position="top-right" richColors theme={toasterTheme} />
+      <AppToastViewport />
     </QueryClientProvider>
   );
 }

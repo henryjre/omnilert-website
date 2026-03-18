@@ -6,6 +6,7 @@ import { Spinner } from '@/shared/components/ui/Spinner';
 import { api } from '@/shared/services/api.client';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useSocket } from '@/shared/hooks/useSocket';
+import { useAppToast } from '@/shared/hooks/useAppToast';
 import { useAuthStore } from '@/features/auth/store/authSlice';
 import { PERMISSIONS } from '@omnilert/shared';
 import { CheckCircle, ClipboardCheck, ExternalLink, IdCard, Landmark, UserRoundPlus, Users, X, XCircle } from 'lucide-react';
@@ -271,8 +272,7 @@ export function EmployeeVerificationsPage() {
   const PAGE_SIZE = 10;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const [activeType, setActiveType] = useState<VerificationType>('registration');
   const [statusFilter, setStatusFilter] = useState<'all' | VerificationStatus>('pending');
   const [page, setPage] = useState(1);
@@ -382,7 +382,6 @@ export function EmployeeVerificationsPage() {
     if (!options?.silent) {
       setLoading(true);
     }
-    setError('');
     try {
       const [verificationsRes, optionsRes] = await Promise.all([
         api.get('/employee-verifications'),
@@ -406,23 +405,17 @@ export function EmployeeVerificationsPage() {
         },
       );
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to load employee verifications');
+      showErrorToast(err.response?.data?.error || 'Failed to load employee verifications');
     } finally {
       if (!options?.silent) {
         setLoading(false);
       }
     }
-  }, [canApproveRegistration]);
+  }, [canApproveRegistration, showErrorToast]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
-
-  useEffect(() => {
-    if (!success) return;
-    const timer = window.setTimeout(() => setSuccess(''), 3000);
-    return () => window.clearTimeout(timer);
-  }, [success]);
 
   useEffect(() => {
     if (!socket) return;
@@ -592,7 +585,6 @@ export function EmployeeVerificationsPage() {
     if (!selectedItem) return;
 
     setPanelError('');
-    setSuccess('');
     setSaving(true);
     const currentType = selectedItem.type;
     const currentId = selectedItem.data.id as string;
@@ -689,7 +681,7 @@ export function EmployeeVerificationsPage() {
         }
       }
 
-      setSuccess('Verification approved.');
+      showSuccessToast('Verification approved.');
       closePanel();
       await fetchData();
     } catch (err: any) {
@@ -716,7 +708,6 @@ export function EmployeeVerificationsPage() {
     }
 
     setPanelError('');
-    setSuccess('');
     setSaving(true);
     try {
       const body = { reason: panelRejectReason.trim() };
@@ -741,7 +732,7 @@ export function EmployeeVerificationsPage() {
         }
       }
 
-      setSuccess('Verification rejected.');
+      showSuccessToast('Verification rejected.');
       closePanel();
       await fetchData();
     } catch (err: any) {
@@ -812,9 +803,6 @@ export function EmployeeVerificationsPage() {
             </button>
           ))}
         </div>
-
-        {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>}
-        {success && <div className="rounded-lg bg-green-50 p-3 text-sm text-green-700">{success}</div>}
 
         <div className="space-y-3">
           {filtered.length === 0 && <p className="text-sm text-gray-500">No records in this filter.</p>}

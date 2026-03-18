@@ -4,7 +4,8 @@ import { Button } from '@/shared/components/ui/Button';
 import { Input } from '@/shared/components/ui/Input';
 import { api } from '@/shared/services/api.client';
 import { useAuthStore } from '@/features/auth/store/authSlice';
-import { AlertCircle, CheckCircle2, Settings as SettingsIcon, Sun, Moon, Monitor } from 'lucide-react';
+import { useAppToast } from '@/shared/hooks/useAppToast';
+import { Settings as SettingsIcon, Sun, Moon, Monitor } from 'lucide-react';
 import {
   getExistingPushSubscription,
   isPushSupported,
@@ -24,8 +25,7 @@ export function SettingsTab() {
   const [changingPassword, setChangingPassword] = useState(false);
   const [updatingPush, setUpdatingPush] = useState(false);
   const [passwordConfirmOpen, setPasswordConfirmOpen] = useState(false);
-  const [successMessage, setSuccessMessage] = useState('');
-  const [errorMessage, setErrorMessage] = useState('');
+  const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const [email, setEmail] = useState('');
   const [pushSupported, setPushSupported] = useState(false);
   const [pushBackendEnabled, setPushBackendEnabled] = useState(false);
@@ -69,41 +69,36 @@ export function SettingsTab() {
   }, []);
 
   const validatePasswordForm = (): boolean => {
-    setSuccessMessage('');
-    setErrorMessage('');
-
     if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
-      setErrorMessage('Please fill out all password fields.');
+      showErrorToast('Please fill out all password fields.');
       return false;
     }
     if (passwordForm.newPassword.length < 6) {
-      setErrorMessage('New password must be at least 6 characters.');
+      showErrorToast('New password must be at least 6 characters.');
       return false;
     }
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      setErrorMessage('New password and confirmation do not match.');
+      showErrorToast('New password and confirmation do not match.');
       return false;
     }
     if (!refreshToken) {
-      setErrorMessage('Session token missing. Please log in again.');
+      showErrorToast('Session token missing. Please log in again.');
       return false;
     }
     return true;
   };
 
   const handleSaveEmail = async () => {
-    setSuccessMessage('');
-    setErrorMessage('');
     setSavingEmail(true);
     try {
       const res = await api.patch('/account/email', { email: email.trim() });
       const nextEmail = res.data.data?.email || email.trim();
       setEmail(nextEmail);
       updateUser({ email: nextEmail });
-      setSuccessMessage('Email updated successfully.');
+      showSuccessToast('Email updated successfully.');
     } catch (err: unknown) {
       const error = err as { response?: { data?: { error?: string; message?: string } } };
-      setErrorMessage(error.response?.data?.error || error.response?.data?.message || 'Failed to update email');
+      showErrorToast(error.response?.data?.error || error.response?.data?.message || 'Failed to update email');
     } finally {
       setSavingEmail(false);
     }
@@ -120,29 +115,26 @@ export function SettingsTab() {
         currentRefreshToken: refreshToken,
       });
       setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
-      setSuccessMessage('Password changed successfully.');
+      showSuccessToast('Password changed successfully.');
     } catch (err: unknown) {
       const error = err as { response?: { data?: { error?: string; message?: string } } };
-      setErrorMessage(error.response?.data?.error || error.response?.data?.message || 'Failed to change password');
+      showErrorToast(error.response?.data?.error || error.response?.data?.message || 'Failed to change password');
     } finally {
       setChangingPassword(false);
     }
   };
 
   const handleEnableDeviceNotifications = async () => {
-    setSuccessMessage('');
-    setErrorMessage('');
-
     if (!pushBackendEnabled) {
-      setErrorMessage('Device notifications are not enabled by your company configuration.');
+      showErrorToast('Device notifications are not enabled by your company configuration.');
       return;
     }
     if (!pushSupported) {
-      setErrorMessage('This browser does not support device push notifications.');
+      showErrorToast('This browser does not support device push notifications.');
       return;
     }
     if (!pushVapidPublicKey) {
-      setErrorMessage('Push configuration is incomplete. Please contact your administrator.');
+      showErrorToast('Push configuration is incomplete. Please contact your administrator.');
       return;
     }
 
@@ -150,13 +142,13 @@ export function SettingsTab() {
     try {
       const permission = await requestNotificationPermission();
       if (permission !== 'granted') {
-        setErrorMessage('Browser notification permission was denied.');
+        showErrorToast('Browser notification permission was denied.');
         return;
       }
 
       const subscription = await subscribeToPush(pushVapidPublicKey);
       if (!subscription) {
-        setErrorMessage('Failed to subscribe this device for notifications.');
+        showErrorToast('Failed to subscribe this device for notifications.');
         return;
       }
 
@@ -165,7 +157,7 @@ export function SettingsTab() {
         keys?: { p256dh?: string; auth?: string };
       };
       if (!payload.endpoint || !payload.keys?.p256dh || !payload.keys?.auth) {
-        setErrorMessage('Push subscription data is incomplete.');
+        showErrorToast('Push subscription data is incomplete.');
         return;
       }
 
@@ -179,18 +171,16 @@ export function SettingsTab() {
       });
       await api.patch('/account/push/preferences', { enabled: true });
       setPushPreferenceEnabled(true);
-      setSuccessMessage('Device notifications enabled.');
+      showSuccessToast('Device notifications enabled.');
     } catch (err: unknown) {
       const error = err as { response?: { data?: { error?: string; message?: string } } };
-      setErrorMessage(error.response?.data?.error || error.response?.data?.message || 'Failed to enable device notifications');
+      showErrorToast(error.response?.data?.error || error.response?.data?.message || 'Failed to enable device notifications');
     } finally {
       setUpdatingPush(false);
     }
   };
 
   const handleDisableDeviceNotifications = async () => {
-    setSuccessMessage('');
-    setErrorMessage('');
     setUpdatingPush(true);
     try {
       const existing = await getExistingPushSubscription();
@@ -206,10 +196,10 @@ export function SettingsTab() {
 
       await api.patch('/account/push/preferences', { enabled: false });
       setPushPreferenceEnabled(false);
-      setSuccessMessage('Device notifications disabled.');
+      showSuccessToast('Device notifications disabled.');
     } catch (err: unknown) {
       const error = err as { response?: { data?: { error?: string; message?: string } } };
-      setErrorMessage(error.response?.data?.error || error.response?.data?.message || 'Failed to disable device notifications');
+      showErrorToast(error.response?.data?.error || error.response?.data?.message || 'Failed to disable device notifications');
     } finally {
       setUpdatingPush(false);
     }
@@ -269,20 +259,6 @@ export function SettingsTab() {
 
       <Card>
       <CardBody className="space-y-6">
-        {successMessage && (
-          <div className="flex items-center gap-2 rounded-lg bg-green-50 p-3 text-sm text-green-700">
-            <CheckCircle2 className="h-4 w-4" />
-            {successMessage}
-          </div>
-        )}
-
-        {errorMessage && (
-          <div className="flex items-center gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700">
-            <AlertCircle className="h-4 w-4" />
-            {errorMessage}
-          </div>
-        )}
-
         <div className="space-y-4">
           <h3 className="text-sm font-semibold text-gray-900">Email Address</h3>
           <p className="text-xs text-gray-500">Email changes are saved immediately.</p>

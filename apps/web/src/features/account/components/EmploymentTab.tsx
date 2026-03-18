@@ -5,12 +5,11 @@ import { Input } from '@/shared/components/ui/Input';
 import { Spinner } from '@/shared/components/ui/Spinner';
 import { api } from '@/shared/services/api.client';
 import { usePermission } from '@/shared/hooks/usePermission';
+import { useAppToast } from '@/shared/hooks/useAppToast';
 import { useAuthStore } from '@/features/auth/store/authSlice';
 import {
-  AlertCircle,
   AlertTriangle,
   Check,
-  CheckCircle2,
   Clock3,
   ExternalLink,
   IdCard,
@@ -170,6 +169,28 @@ const GENDER_OPTIONS = [
   { value: 'other', label: 'Other' },
 ];
 
+const MARITAL_STATUS_OPTIONS = [
+  { value: '', label: 'Select marital status' },
+  { value: 'single', label: 'Single' },
+  { value: 'married', label: 'Married' },
+  { value: 'cohabitant', label: 'Legal Cohabitant' },
+  { value: 'widower', label: 'Widower' },
+  { value: 'divorced', label: 'Divorced' },
+];
+
+const VALID_MARITAL_STATUS_VALUES = new Set(
+  MARITAL_STATUS_OPTIONS
+    .map((option) => option.value)
+    .filter((value) => value.length > 0),
+);
+
+function normalizeMaritalStatusValue(value: unknown): string {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (normalized === 'widowed') return 'widower';
+  if (normalized === 'legal cohabitant') return 'cohabitant';
+  return VALID_MARITAL_STATUS_VALUES.has(normalized) ? normalized : '';
+}
+
 function getUrlPath(url: string): string {
   try {
     return new URL(url).pathname.toLowerCase();
@@ -212,7 +233,7 @@ function normalizeProfileCompareValue(key: string, value: unknown): string {
   const raw = String(value).trim();
   if (!raw) return '';
 
-  if (key === 'email' || key === 'gender') {
+  if (key === 'email' || key === 'gender' || key === 'maritalStatus') {
     return raw.toLowerCase();
   }
 
@@ -245,8 +266,8 @@ export function EmploymentTab() {
   const [submittingRequirement, setSubmittingRequirement] = useState(false);
   const [uploadingValidId, setUploadingValidId] = useState(false);
   const [fetchingPin, setFetchingPin] = useState(false);
-  const [success, setSuccess] = useState('');
-  const [error, setError] = useState('');
+  const [resettingPin, setResettingPin] = useState(false);
+  const { success: showSuccessToast, error: showErrorToast } = useAppToast();
 
   const [profile, setProfile] = useState<ProfilePayload | null>(null);
   const [requirements, setRequirements] = useState<RequirementItem[]>([]);
@@ -276,8 +297,6 @@ export function EmploymentTab() {
 
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const validIdInputRef = useRef<HTMLInputElement>(null);
-  const errorBannerRef = useRef<HTMLDivElement>(null);
-  const successBannerRef = useRef<HTMLDivElement>(null);
 
   const [selectedRequirement, setSelectedRequirement] = useState<RequirementItem | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -357,8 +376,8 @@ export function EmploymentTab() {
     setMaritalStatus(
       isPersonalPending
       && shouldApplyRequestedValue('maritalStatus', requestedChanges.maritalStatus, payload.user.marital_status)
-        ? String(requestedChanges.maritalStatus ?? '')
-        : (payload.user.marital_status || ''),
+        ? normalizeMaritalStatusValue(requestedChanges.maritalStatus)
+        : normalizeMaritalStatusValue(payload.user.marital_status),
     );
     setPin(payload.user.pin || '');
     setAvatarUrl(payload.user.avatar_url || null);
@@ -417,22 +436,10 @@ export function EmploymentTab() {
 
     Promise.all(requests)
       .catch((err: any) => {
-        setError(err.response?.data?.error || 'Failed to load profile');
+        showErrorToast(err.response?.data?.error || 'Failed to load profile');
       })
       .finally(() => setLoading(false));
-  }, [canSubmitEmployeeRequirements]);
-
-  useEffect(() => {
-    if (error && errorBannerRef.current) {
-      errorBannerRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  }, [error]);
-
-  useEffect(() => {
-    if (success && successBannerRef.current) {
-      successBannerRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  }, [success]);
+  }, [canSubmitEmployeeRequirements, showErrorToast]);
 
   const handleMobileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let value = e.target.value.replace(/\D/g, '');
@@ -444,27 +451,36 @@ export function EmploymentTab() {
   };
 
   const handleGetPin = async () => {
-    setError('');
-    setSuccess('');
     setFetchingPin(true);
     try {
       const res = await api.post('/users/me/pin', {});
       setPin(res.data.data.pin || '');
-      setSuccess('PIN code retrieved successfully.');
+      showSuccessToast('PIN code retrieved successfully.');
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to get PIN code');
+      showErrorToast(err.response?.data?.error || 'Failed to get PIN code');
     } finally {
       setFetchingPin(false);
     }
   };
 
+  const handleResetPin = async () => {
+    setResettingPin(true);
+    try {
+      const res = await api.post('/users/me/pin/reset', {});
+      setPin(res.data.data.pin || '');
+      showSuccessToast('PIN code reset successfully.');
+    } catch (err: any) {
+      showErrorToast(err.response?.data?.error || 'Failed to reset PIN code');
+    } finally {
+      setResettingPin(false);
+    }
+  };
+
   const handleUploadValidId = async (file: File) => {
     if (!canEditOwnProfile) {
-      setError('You do not have permission to edit your profile.');
+      showErrorToast('You do not have permission to edit your profile.');
       return;
     }
-    setError('');
-    setSuccess('');
     setUploadingValidId(true);
     try {
       const formData = new FormData();
@@ -484,9 +500,9 @@ export function EmploymentTab() {
       if (canSubmitEmployeeRequirements) {
         await fetchRequirements();
       }
-      setSuccess('Valid ID uploaded successfully.');
+      showSuccessToast('Valid ID uploaded successfully.');
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to upload valid ID');
+      showErrorToast(err.response?.data?.error || 'Failed to upload valid ID');
     } finally {
       setUploadingValidId(false);
     }
@@ -494,11 +510,9 @@ export function EmploymentTab() {
 
   const handleSubmitPersonalVerification = async () => {
     if (!canEditOwnProfile) {
-      setError('You do not have permission to edit your profile.');
+      showErrorToast('You do not have permission to edit your profile.');
       return;
     }
-    setError('');
-    setSuccess('');
     setSubmittingPersonal(true);
     try {
       await api.post('/account/personal-information/verifications', {
@@ -519,9 +533,9 @@ export function EmploymentTab() {
         emergencyRelationship: emergencyRelationship.trim(),
       });
       await fetchProfile();
-      setSuccess('Personal information submitted for verification.');
+      showSuccessToast('Personal information submitted for verification.');
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to submit personal information verification');
+      showErrorToast(err.response?.data?.error || 'Failed to submit personal information verification');
     } finally {
       setSubmittingPersonal(false);
     }
@@ -529,13 +543,11 @@ export function EmploymentTab() {
 
   const handleSubmitBankVerification = async () => {
     if (!canEditOwnProfile) {
-      setError('You do not have permission to edit your profile.');
+      showErrorToast('You do not have permission to edit your profile.');
       return;
     }
-    setError('');
-    setSuccess('');
     if (!bankId || !bankAccountNumber.trim()) {
-      setError('Bank and account number are required.');
+      showErrorToast('Bank and account number are required.');
       return;
     }
 
@@ -546,9 +558,9 @@ export function EmploymentTab() {
         accountNumber: bankAccountNumber.trim(),
       });
       await fetchProfile();
-      setSuccess('Bank information submitted for verification.');
+      showSuccessToast('Bank information submitted for verification.');
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to submit bank information verification');
+      showErrorToast(err.response?.data?.error || 'Failed to submit bank information verification');
     } finally {
       setSubmittingBank(false);
     }
@@ -561,19 +573,17 @@ export function EmploymentTab() {
 
   const submitRequirement = async () => {
     if (!canEditOwnProfile) {
-      setError('You do not have permission to edit your profile.');
+      showErrorToast('You do not have permission to edit your profile.');
       return;
     }
     if (!selectedRequirement) return;
     if (!canSubmitEmployeeRequirements) return;
-    setError('');
-    setSuccess('');
 
     const canUseExistingGovId =
       selectedRequirement.code === 'government_issued_id' && !!selectedRequirement.document_url;
 
     if (!selectedFile && !canUseExistingGovId) {
-      setError('Select a file before submitting this requirement.');
+      showErrorToast('Select a file before submitting this requirement.');
       return;
     }
 
@@ -588,12 +598,12 @@ export function EmploymentTab() {
         `/account/employment/requirements/${selectedRequirement.code}/submit`,
         formData,
       );
-      setSuccess(`${selectedRequirement.label} submitted for verification.`);
+      showSuccessToast(`${selectedRequirement.label} submitted for verification.`);
       closeRequirementModal();
       await fetchRequirements();
       await fetchProfile();
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to submit requirement');
+      showErrorToast(err.response?.data?.error || 'Failed to submit requirement');
     } finally {
       setSubmittingRequirement(false);
     }
@@ -625,25 +635,6 @@ export function EmploymentTab() {
           </p>
         </CardHeader>
         <CardBody className="space-y-6">
-          {success && (
-            <div
-              ref={successBannerRef}
-              className="flex items-center gap-2 rounded-lg bg-green-50 p-3 text-sm text-green-700"
-            >
-              <CheckCircle2 className="h-4 w-4" />
-              {success}
-            </div>
-          )}
-          {error && (
-            <div
-              ref={errorBannerRef}
-              className="flex items-center gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-700"
-            >
-              <AlertCircle className="h-4 w-4" />
-              {error}
-            </div>
-          )}
-
           <div className="space-y-4">
             <div className="flex items-center gap-4">
               <div className="relative h-20 w-20 shrink-0">
@@ -717,13 +708,18 @@ export function EmploymentTab() {
 
                   <div className="space-y-1">
                     <label className="text-sm font-medium text-gray-700">Marital Status</label>
-                    <Input
-                      type="text"
+                    <select
                       value={maritalStatus}
                       onChange={(e) => setMaritalStatus(e.target.value)}
-                      placeholder="Enter marital status"
                       disabled={personalPending}
-                    />
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:bg-gray-50"
+                    >
+                      {MARITAL_STATUS_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div className="space-y-1">
                     <label className="text-sm font-medium text-gray-700">Birthday</label>
@@ -1032,6 +1028,15 @@ export function EmploymentTab() {
                       {fetchingPin ? 'Getting...' : 'Get PIN'}
                     </Button>
                   )}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleResetPin}
+                    disabled={fetchingPin || resettingPin}
+                  >
+                    {resettingPin ? 'Resetting...' : 'Reset PIN'}
+                  </Button>
                 </div>
               </div>
             </div>
@@ -1256,7 +1261,7 @@ export function EmploymentTab() {
         onUploadComplete={(url) => {
           setAvatarUrl(url);
           updateUser({ avatarUrl: url });
-          setSuccess('Profile picture updated successfully.');
+          showSuccessToast('Profile picture updated successfully.');
           void fetchProfile();
         }}
       />

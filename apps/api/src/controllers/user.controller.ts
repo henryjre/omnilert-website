@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { comparePassword, hashPassword } from '../utils/password.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
-import { getCompanyPin, syncAvatarToOdoo } from '../services/odoo.service.js';
+import { getCompanyPin, setPinForEmployeeIdentity, syncAvatarToOdoo } from '../services/odoo.service.js';
 import { buildTenantStoragePrefix, uploadFile, deleteFolder } from '../services/storage.service.js';
 import { verifyRefreshToken } from '../utils/jwt.js';
 import * as globalUserManagementService from '../services/globalUserManagement.service.js';
@@ -284,6 +284,47 @@ export async function setPin(req: Request, res: Response, next: NextFunction) {
     }
 
     // Save pin to user
+    await masterDb('users')
+      .where({ id: userId })
+      .update({ pin, updated_at: new Date() });
+
+    res.json({ success: true, data: { pin } });
+  } catch (err) {
+    next(err);
+  }
+}
+
+function generateFourDigitPin(): string {
+  return crypto.randomInt(0, 10000).toString().padStart(4, '0');
+}
+
+export async function resetPin(req: Request, res: Response, next: NextFunction) {
+  try {
+    const masterDb = db.getMasterDb();
+    const userId = req.user!.sub;
+
+    const user = await masterDb('users')
+      .where({ id: userId })
+      .select('id', 'user_key', 'email')
+      .first();
+
+    if (!user) throw new AppError(404, 'User not found');
+    if (!user.user_key) {
+      throw new AppError(400, 'User key is required before resetting PIN');
+    }
+
+    const pin = generateFourDigitPin();
+
+    const { employeeCount } = await setPinForEmployeeIdentity({
+      websiteUserKey: user.user_key,
+      email: user.email ?? null,
+      pin,
+    });
+
+    if (employeeCount === 0) {
+      throw new AppError(404, 'No employee records found in Odoo for this user');
+    }
+
     await masterDb('users')
       .where({ id: userId })
       .update({ pin, updated_at: new Date() });

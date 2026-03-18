@@ -34,6 +34,7 @@ router.put('/me', userController.updateMe);
 router.post('/me/password', validateBody(changeMyPasswordSchema), userController.changeMyPassword);
 router.get('/me/pin', userController.getPin);
 router.post('/me/pin', userController.setPin);
+router.post('/me/pin/reset', userController.resetPin);
 router.post('/me/avatar', avatarUpload.single('avatar'), userController.uploadAvatar);
 
 router.get('/', requirePermission(PERMISSIONS.ADMIN_MANAGE_USERS), userController.list);

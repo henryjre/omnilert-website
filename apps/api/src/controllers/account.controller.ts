@@ -910,6 +910,15 @@ export async function submitPersonalInformationVerification(req: Request, res: R
       })
       .returning('*');
 
+    await tenantDb('employee_notifications')
+      .where({
+        user_id: userId,
+        title: 'Complete Your Profile',
+        link_url: '/account/profile',
+        is_read: false,
+      })
+      .update({ is_read: true });
+
     await notifyUser(
       tenantDb,
       userId,

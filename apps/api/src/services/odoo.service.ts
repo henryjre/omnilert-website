@@ -1405,7 +1405,7 @@ export async function syncAvatarToOdoo(input: {
  * 1. Finds res.partner by x_website_key (or by email as fallback)
  * 2. Updates partner's email
  * 3. Finds all hr.employee records linked to that partner
- * 4. Updates each employee's work_email, private_email, private_phone, legal_name, birthday, sex
+ * 4. Updates each employee's work_email, private_email, private_phone, legal_name, birthday, sex, marital
  * @param websiteUserKey - The website user ID (UUID string) - optional if email is provided
  * @param profileData - User profile data to sync
  */
@@ -1417,6 +1417,7 @@ export async function syncUserProfileToOdoo(
     legalName: string;
     birthday: string | null;
     gender: string | null;
+    maritalStatus?: string | null;
     address?: string;
     emergencyContact?: string;
     emergencyPhone?: string;
@@ -1528,6 +1529,15 @@ export async function syncUserProfileToOdoo(
     // Gender - convert to lowercase for Odoo
     if (profileData.gender) {
       employeeUpdateData.sex = profileData.gender.toLowerCase();
+    }
+    if (profileData.maritalStatus) {
+      const normalizedMaritalStatus = profileData.maritalStatus.trim().toLowerCase();
+      const odooMaritalStatus = normalizedMaritalStatus === 'legal cohabitant'
+        ? 'cohabitant'
+        : normalizedMaritalStatus === 'widowed'
+          ? 'widower'
+          : normalizedMaritalStatus;
+      employeeUpdateData.marital = odooMaritalStatus;
     }
     if (profileData.address !== undefined) {
       employeeUpdateData.private_street = profileData.address;
@@ -1843,6 +1853,38 @@ export async function getCompanyPin(websiteUserKey: string, companyId: number): 
     return result[0].pin || null;
   } catch (err) {
     logger.error(`Failed to get employee PIN: ${err}`);
+    throw err;
+  }
+}
+
+export async function setPinForEmployeeIdentity(input: {
+  websiteUserKey: string;
+  email?: string | null;
+  pin: string;
+}): Promise<{ employeeCount: number }> {
+  try {
+    const { employees } = await listEmployeesForIdentity({
+      websiteUserKey: input.websiteUserKey,
+      email: input.email ?? null,
+    });
+
+    if (employees.length === 0) {
+      logger.warn(
+        { websiteUserKey: input.websiteUserKey },
+        'No hr.employee records found while attempting PIN reset',
+      );
+      return { employeeCount: 0 };
+    }
+
+    const employeeIds = employees.map((row) => row.id);
+
+    await withRetry(() =>
+      callOdooKw('hr.employee', 'write', [employeeIds, { pin: input.pin }]).then(() => undefined),
+    );
+
+    return { employeeCount: employeeIds.length };
+  } catch (err) {
+    logger.error({ err, websiteUserKey: input.websiteUserKey }, 'Failed to reset employee PIN in Odoo');
     throw err;
   }
 }

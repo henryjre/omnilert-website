@@ -322,6 +322,7 @@ export async function approvePersonalInformationVerification(input: {
     legalName: (approved.legalName as string) || user.legal_name || '',
     birthday: (approved.birthday as string | null) ?? user.birthday,
     gender: (approved.gender as string | null) ?? user.gender,
+    maritalStatus: (approved.maritalStatus as string | null) ?? user.marital_status,
     address: approved.address !== undefined
       ? String(approved.address ?? '')
       : undefined,
