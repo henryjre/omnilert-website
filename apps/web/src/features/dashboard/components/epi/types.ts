@@ -55,6 +55,7 @@ export interface LeaderboardDetailEntry {
   avatarUrl: string | null;
   monthKey: string;
   epiScore: number | null;
+  projectedEpiScore: number | null;
   hasData: boolean;
   criteria: EpiCriteria;
   wrsStatus?: WrsStatusSummary | null;

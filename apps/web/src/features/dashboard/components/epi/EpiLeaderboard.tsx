@@ -2,13 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, Star, AlertCircle } from 'lucide-react';
-import type { EpiCriteria, LeaderboardDetailEntry, LeaderboardSummaryEntry, WrsStatusSummary } from './types';
+import type { EpiCriteria, LeaderboardDetailEntry, LeaderboardSummaryEntry } from './types';
 import { getAovZone, getEpiZone, getRateZone, getScoreZone, getZoneColors } from './epiUtils';
 import { SectionLabel } from './SectionLabel';
 import { AvatarFallback } from './AvatarFallback';
 import { Card, CardBody } from '@/shared/components/ui/Card';
 import { fetchEpiLeaderboardDetail } from '../../services/epi.api';
-import { LeaderboardDetailSkeleton, LeaderboardSkeleton } from './EpiSkeletons';
+import { LeaderboardSkeleton } from './EpiSkeletons';
 import { AWARD_BONUS, VIOLATION_DEDUCTION } from './mockData';
 
 interface EpiLeaderboardProps {
@@ -151,6 +151,20 @@ function NullMetric({ label }: { label: string }) {
   );
 }
 
+function LoadingMetric({ label }: { label: string }) {
+  return (
+    <div>
+      <div className="mb-0.5 flex items-center justify-between">
+        <span className="text-gray-500 dark:text-gray-400">{label}</span>
+        <span className="h-3 w-12 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+        <div className="h-1.5 w-2/3 animate-pulse rounded-full bg-gray-300 dark:bg-gray-600" />
+      </div>
+    </div>
+  );
+}
+
 function formatAsOfDateTime(dateTime: string | null): string | null {
   if (!dateTime) return null;
 
@@ -162,6 +176,53 @@ function formatAsOfDateTime(dateTime: string | null): string | null {
     hour: 'numeric',
     minute: '2-digit',
   }).format(new Date(dateTime))} PHT`;
+}
+
+function ExpandedMetricsLoading() {
+  return (
+    <div className="space-y-4 text-xs">
+      <div className="rounded-lg border border-gray-100 bg-gray-50/80 px-3 py-2 text-[11px] text-gray-500 dark:border-gray-800 dark:bg-gray-900/30 dark:text-gray-400">
+        <p className="font-semibold text-gray-600 dark:text-gray-300">Fetching employee metrics...</p>
+        <p>Live or historical breakdown is loading.</p>
+      </div>
+
+      <div>
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">Performance Scores</p>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <LoadingMetric label="Customer Service" />
+          <LoadingMetric label="Workplace Relations" />
+          <LoadingMetric label="Professional Conduct" />
+        </div>
+      </div>
+
+      <div>
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">Operational Metrics</p>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <LoadingMetric label="Attendance Rate" />
+          <LoadingMetric label="Punctuality Rate" />
+          <LoadingMetric label="Productivity Rate" />
+          <LoadingMetric label="Avg Order Value" />
+        </div>
+      </div>
+
+      <div>
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">Operational Compliance</p>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <LoadingMetric label="Uniform Compliance" />
+          <LoadingMetric label="Hygiene Compliance" />
+          <LoadingMetric label="SOP Compliance" />
+        </div>
+      </div>
+
+      <div>
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">Discipline &amp; Recognition</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="h-12 animate-pulse rounded-lg bg-gray-200 dark:bg-gray-700" />
+          <div className="h-12 animate-pulse rounded-lg bg-gray-200 dark:bg-gray-700" />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function ExpandedMetrics({
@@ -189,14 +250,23 @@ function ExpandedMetrics({
   const violationImpact = criteria.violationCount * VIOLATION_DEDUCTION;
   const awardImpact = criteria.awardCount * AWARD_BONUS;
   const asOfDateTime = formatAsOfDateTime(detail?.asOfDateTime ?? null);
+  const showProjectedEpi = detail?.criteriaSource === 'live' && detail?.projectedEpiScore !== null;
 
   return (
     <div className="space-y-4 text-xs">
       {detail && (
         <div className="rounded-lg border border-gray-100 bg-gray-50/80 px-3 py-2 text-[11px] text-gray-500 dark:border-gray-800 dark:bg-gray-900/30 dark:text-gray-400">
           <p className="font-semibold text-gray-600 dark:text-gray-300">
-            {detail.scoreSource === 'official' ? 'Official saved EPI' : 'Historical monthly EPI'}
-            {detail.epiScore !== null ? `: ${detail.epiScore.toFixed(1)}` : ''}
+            {showProjectedEpi
+              ? 'Projected EPI'
+              : detail.scoreSource === 'historical'
+                ? 'Historical monthly EPI'
+                : 'Official EPI'}
+            {showProjectedEpi
+              ? `: ${detail.projectedEpiScore?.toFixed(1)}`
+              : detail.epiScore !== null
+                ? `: ${detail.epiScore.toFixed(1)}`
+                : ''}
           </p>
           <p>
             {detail.criteriaSource === 'live' ? 'Live rolling 30-day criteria' : 'Saved monthly snapshot criteria'}
@@ -301,7 +371,7 @@ function ExpandedLeaderboardPanel({
   error: string | null;
 }) {
   if (isLoading) {
-    return <LeaderboardDetailSkeleton />;
+    return <ExpandedMetricsLoading />;
   }
 
   if (error) {

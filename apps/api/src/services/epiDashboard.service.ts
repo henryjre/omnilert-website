@@ -124,6 +124,7 @@ export interface EpiLeaderboardDetailResponse {
   avatarUrl: string | null;
   monthKey: string;
   epiScore: number | null;
+  projectedEpiScore: number | null;
   hasData: boolean;
   criteria: DashboardCriteria;
   wrsStatus: WrsStatusSummary | null;
@@ -379,6 +380,7 @@ export function createLeaderboardDetail(input: {
       avatarUrl: row.avatarUrl,
       monthKey,
       epiScore: row.officialEpiScore,
+      projectedEpiScore: currentLive?.projectedEpiScore ?? null,
       hasData: true,
       criteria: currentLive?.criteria ?? createEmptyCriteria(),
       wrsStatus: currentLive?.wrsStatus ?? null,
@@ -396,6 +398,7 @@ export function createLeaderboardDetail(input: {
       avatarUrl: row.avatarUrl,
       monthKey,
       epiScore: null,
+      projectedEpiScore: null,
       hasData: false,
       criteria: createEmptyCriteria(),
       wrsStatus: null,
@@ -411,6 +414,7 @@ export function createLeaderboardDetail(input: {
     avatarUrl: row.avatarUrl,
     monthKey,
     epiScore: historicalMonth.epiScore,
+    projectedEpiScore: null,
     hasData: true,
     criteria: historicalMonth.criteria,
     wrsStatus: null,

@@ -53,6 +53,7 @@ interface BackendLeaderboardDetailResponse {
   avatarUrl: string | null;
   monthKey: string;
   epiScore: number | null;
+  projectedEpiScore: number | null;
   hasData: boolean;
   criteria: EpiCriteria;
   wrsStatus: WrsStatusSummary | null;
@@ -259,6 +260,7 @@ export async function fetchEpiLeaderboardDetail(userId: string, monthKey: string
     avatarUrl: entry.avatarUrl,
     monthKey: entry.monthKey,
     epiScore: entry.epiScore,
+    projectedEpiScore: entry.projectedEpiScore,
     hasData: entry.hasData,
     criteria: entry.criteria ?? getEmptyCriteria(),
     wrsStatus: entry.wrsStatus ?? null,

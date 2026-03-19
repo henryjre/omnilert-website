@@ -138,7 +138,7 @@ test('createLeaderboardSummaryEntries ranks historical months by saved monthly h
   ]);
 });
 
-test('createLeaderboardDetail returns official current-month score with live criteria', () => {
+test('createLeaderboardDetail returns official current-month score with live criteria and projected EPI metadata', () => {
   const liveCriteria = createCriteria({ workplaceRelationsScore: 4.7, awardCount: 2 });
   const row: LeaderboardDetailUserRow = {
     userId: 'user-1',
@@ -170,6 +170,7 @@ test('createLeaderboardDetail returns official current-month score with live cri
   });
 
   assert.equal(detail?.epiScore, 112.4);
+  assert.equal(detail?.projectedEpiScore, 117.4);
   assert.equal(detail?.scoreSource, 'official');
   assert.equal(detail?.criteriaSource, 'live');
   assert.equal(detail?.criteria.workplaceRelationsScore, 4.7);
@@ -199,4 +200,5 @@ test('createLeaderboardDetail returns historical score and criteria for past mon
   assert.equal(detail?.criteria.workplaceRelationsScore, 3.8);
   assert.equal(detail?.wrsStatus, null);
   assert.equal(detail?.asOfDateTime, null);
+  assert.equal(detail?.projectedEpiScore, null);
 });
