@@ -10,18 +10,53 @@ const ZONE_COLOR: Record<'green' | 'amber' | 'red', string> = {
   amber: '#fbbf24',
   red: '#f87171',
 };
+const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
 
 interface EpiHeroCardProps {
   data: EpiDashboardData;
   selectedEntry: EpiMonthEntry;
 }
 
+function getNextWeeklySnapshotDate(now: Date = new Date()): Date {
+  const manilaNow = new Date(now.getTime() + MANILA_OFFSET_MS);
+  const nextSnapshot = new Date(manilaNow.getTime());
+
+  nextSnapshot.setUTCHours(17, 0, 0, 0);
+  const daysUntilSunday = (7 - nextSnapshot.getUTCDay()) % 7;
+  nextSnapshot.setUTCDate(nextSnapshot.getUTCDate() + daysUntilSunday);
+
+  if (nextSnapshot.getTime() <= manilaNow.getTime()) {
+    nextSnapshot.setUTCDate(nextSnapshot.getUTCDate() + 7);
+  }
+
+  return new Date(nextSnapshot.getTime() - MANILA_OFFSET_MS);
+}
+
+function formatSnapshotDate(date: Date): string {
+  return `${new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila',
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date)} PHT`;
+}
+
 export function EpiHeroCard({ data, selectedEntry }: EpiHeroCardProps) {
-  const zone = getEpiZone(selectedEntry.score);
+  const isCurrentMonth = selectedEntry.monthKey === data.currentMonthKey;
+  const displayScore = isCurrentMonth ? data.officialEpiScore : selectedEntry.score;
+  const zone = getEpiZone(displayScore);
   const selectedIndex = data.history.findIndex((entry) => entry.monthKey === selectedEntry.monthKey);
   const previousEntry = selectedIndex > 0 ? data.history[selectedIndex - 1] : null;
-  const delta = previousEntry ? selectedEntry.score - previousEntry.score : 0;
-  const isCurrentMonth = selectedEntry.monthKey === data.currentMonthKey;
+  const delta = previousEntry ? displayScore - previousEntry.score : 0;
+  const nextWeeklySnapshot = isCurrentMonth ? formatSnapshotDate(getNextWeeklySnapshotDate()) : null;
+  const chartHistory = data.history.map((entry) => (
+    entry.monthKey === data.currentMonthKey
+      ? { ...entry, score: data.officialEpiScore }
+      : entry
+  ));
 
   const DeltaIcon = delta > 0 ? TrendingUp : delta < 0 ? TrendingDown : Minus;
   const zoneColor = ZONE_COLOR[zone];
@@ -41,7 +76,7 @@ export function EpiHeroCard({ data, selectedEntry }: EpiHeroCardProps) {
         <div className="flex flex-col items-center gap-3">
           <OdometerGauge
             key={selectedEntry.monthKey}
-            value={selectedEntry.score}
+            value={displayScore}
             max={150}
             neutralAt={100}
             width={220}
@@ -83,17 +118,23 @@ export function EpiHeroCard({ data, selectedEntry }: EpiHeroCardProps) {
           {isCurrentMonth && (
             <div className="rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-center lg:text-left">
               <p className="text-[10px] font-semibold uppercase tracking-widest text-white/60">
-                Official Saved EPI
+                Projected EPI
               </p>
-              <p className="text-lg font-bold text-white">{data.officialEpiScore.toFixed(1)}</p>
+              <p className="text-lg font-bold text-white">{selectedEntry.score.toFixed(1)}</p>
+              <p className="mt-1 text-[10px] font-medium text-white/60">
+                Next weekly snapshot
+              </p>
+              <p className="text-xs font-semibold text-white/80">
+                {nextWeeklySnapshot}
+              </p>
             </div>
           )}
         </div>
 
         <div className="flex-1 min-w-0">
-          <p className="mb-1 text-xs text-white/60">Last {data.history.length} months</p>
+          <p className="mb-1 text-xs text-white/60">Last {chartHistory.length} months</p>
           <TrendChart
-            history={data.history}
+            history={chartHistory}
             zone={zone}
             height={120}
             strokeColor="rgba(255,255,255,0.8)"
