@@ -4,6 +4,8 @@ import {
   getAttendanceRecords,
   getPosOrders,
   getBranchPosOrders,
+  type OdooAttendanceRecord,
+  type OdooPlanningSlot,
 } from './odooQuery.service.js';
 
 // ─── KPI Breakdown Types ──────────────────────────────────────────────────────
@@ -34,6 +36,22 @@ export interface WrsStatusSummary {
   effectiveCount: number;
   delayedCount: number;
 }
+
+export interface KpiQueryDeps {
+  getOdooEmployeeIdsByWebsiteKey: typeof getOdooEmployeeIdsByWebsiteKey;
+  getScheduledSlots: typeof getScheduledSlots;
+  getAttendanceRecords: typeof getAttendanceRecords;
+  getPosOrders: typeof getPosOrders;
+  getBranchPosOrders: typeof getBranchPosOrders;
+}
+
+const defaultKpiQueryDeps: KpiQueryDeps = {
+  getOdooEmployeeIdsByWebsiteKey,
+  getScheduledSlots,
+  getAttendanceRecords,
+  getPosOrders,
+  getBranchPosOrders,
+};
 
 // ─── Impact Tables ────────────────────────────────────────────────────────────
 
@@ -216,14 +234,10 @@ function calcComplianceRate(
   return Math.round((trueCount / recent.length) * 1000) / 10;
 }
 
-async function calcAttendance(employeeOdooIds: number[], dateFrom: string, dateTo: string, from: Date): Promise<{ rate: number | null; impact: number }> {
-  if (employeeOdooIds.length === 0) return { rate: null, impact: 0 };
-
-  const [slots, attendances] = await Promise.all([
-    getScheduledSlots(employeeOdooIds, dateFrom, dateTo),
-    getAttendanceRecords(employeeOdooIds, dateFrom, dateTo),
-  ]);
-
+function calcAttendanceFromRecords(
+  slots: OdooPlanningSlot[],
+  attendances: OdooAttendanceRecord[],
+): { rate: number | null; impact: number } {
   if (slots.length === 0) return { rate: null, impact: 0 };
 
   const scheduledHours = slots.reduce((s, slot) => s + (slot.allocated_hours || 0), 0);
@@ -247,14 +261,10 @@ async function calcAttendance(employeeOdooIds: number[], dateFrom: string, dateT
   return { rate, impact: attendanceImpact(rate) };
 }
 
-async function calcPunctuality(employeeOdooIds: number[], dateFrom: string, dateTo: string): Promise<{ rate: number | null; impact: number }> {
-  if (employeeOdooIds.length === 0) return { rate: null, impact: 0 };
-
-  const [slots, attendances] = await Promise.all([
-    getScheduledSlots(employeeOdooIds, dateFrom, dateTo),
-    getAttendanceRecords(employeeOdooIds, dateFrom, dateTo),
-  ]);
-
+function calcPunctualityFromRecords(
+  slots: OdooPlanningSlot[],
+  attendances: OdooAttendanceRecord[],
+): { rate: number | null; impact: number } {
   if (slots.length === 0) return { rate: null, impact: 0 };
 
   // Group attendances by employee+day for lookup
@@ -295,12 +305,34 @@ async function calcPunctuality(employeeOdooIds: number[], dateFrom: string, date
   return { rate, impact: punctualityImpact(rate) };
 }
 
+async function fetchOperationalOdooData(
+  employeeOdooIds: number[],
+  dateFrom: string,
+  dateTo: string,
+  queryDeps: KpiQueryDeps,
+): Promise<{ slots: OdooPlanningSlot[]; attendances: OdooAttendanceRecord[] }> {
+  if (employeeOdooIds.length === 0) {
+    return {
+      slots: [],
+      attendances: [],
+    };
+  }
+
+  const [slots, attendances] = await Promise.all([
+    queryDeps.getScheduledSlots(employeeOdooIds, dateFrom, dateTo),
+    queryDeps.getAttendanceRecords(employeeOdooIds, dateFrom, dateTo),
+  ]);
+
+  return { slots, attendances };
+}
+
 async function calcAov(
   websiteKey: string,
   dateFrom: string,
   dateTo: string,
+  queryDeps: Pick<KpiQueryDeps, 'getPosOrders' | 'getBranchPosOrders'>,
 ): Promise<{ value: number | null; branch_avg: number | null; impact: number }> {
-  const orders = await getPosOrders(websiteKey, dateFrom, dateTo);
+  const orders = await queryDeps.getPosOrders(websiteKey, dateFrom, dateTo);
   if (orders.length === 0) return { value: null, branch_avg: null, impact: 0 };
 
   const employeeTotal = orders.reduce((s, o) => s + o.amount_total, 0);
@@ -315,7 +347,7 @@ async function calcAov(
   // Fetch all branch orders to compute branch AOV
   const branchOrdersAll = await Promise.all(
     branchIds.map(async (branchId) => {
-      const branchOrders = await getBranchPosOrders(branchId, dateFrom, dateTo);
+      const branchOrders = await queryDeps.getBranchPosOrders(branchId, dateFrom, dateTo);
       const branchTotal = branchOrders.reduce((s, o) => s + o.amount_total, 0);
       const branchCount = branchOrders.length;
       return { branchId, branchAov: branchCount > 0 ? branchTotal / branchCount : 0, branchCount };
@@ -389,18 +421,31 @@ export interface UserKpiData {
  * Calculates all 12 KPI scores and the EPI delta for a single user.
  * Odoo live queries are made for attendance, punctuality, and AOV.
  */
-export async function calculateKpiScores(userData: UserKpiData): Promise<EpiDeltaResult> {
+export async function calculateKpiScoresWithQueryDeps(
+  userData: UserKpiData,
+  queryDeps: KpiQueryDeps,
+): Promise<EpiDeltaResult> {
   const { from, to, fromStr, toStr } = getPast30DayRange();
 
   // Resolve Odoo employee IDs for this user
-  const employeeOdooIds = await getOdooEmployeeIdsByWebsiteKey(userData.userKey);
+  const employeeOdooIds = await queryDeps.getOdooEmployeeIdsByWebsiteKey(userData.userKey);
+
+  const operationalOdooDataPromise = fetchOperationalOdooData(employeeOdooIds, fromStr, toStr, queryDeps);
 
   // Run all calculations in parallel where possible
-  const [attendanceResult, punctualityResult, aovResult] = await Promise.all([
-    calcAttendance(employeeOdooIds, fromStr, toStr, from),
-    calcPunctuality(employeeOdooIds, fromStr, toStr),
-    calcAov(userData.userKey, fromStr, toStr),
+  const [operationalOdooData, aovResult] = await Promise.all([
+    operationalOdooDataPromise,
+    calcAov(userData.userKey, fromStr, toStr, queryDeps),
   ]);
+
+  const attendanceResult = calcAttendanceFromRecords(
+    operationalOdooData.slots,
+    operationalOdooData.attendances,
+  );
+  const punctualityResult = calcPunctualityFromRecords(
+    operationalOdooData.slots,
+    operationalOdooData.attendances,
+  );
 
   const css = calcCss(userData.cssAudits, from, to);
   const wrs = calcWrs(userData.peerEvaluations, from, to);
@@ -465,4 +510,8 @@ export async function calculateKpiScores(userData: UserKpiData): Promise<EpiDelt
   const delta = Math.max(-5, Math.min(5, raw_delta));
 
   return { breakdown, delta, raw_delta, capped };
+}
+
+export async function calculateKpiScores(userData: UserKpiData): Promise<EpiDeltaResult> {
+  return calculateKpiScoresWithQueryDeps(userData, defaultKpiQueryDeps);
 }
