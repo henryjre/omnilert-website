@@ -1,10 +1,19 @@
 import { db } from '../config/database.js';
 import { logger } from '../utils/logger.js';
-import { calculateKpiScores, type KpiBreakdown, type UserKpiData } from './epiCalculation.service.js';
+import {
+  calculateKpiScores,
+  getWrsStatusSummary,
+  type KpiBreakdown,
+  type UserKpiData,
+  type WrsStatusSummary,
+} from './epiCalculation.service.js';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
+const THIRTY_DAY_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const LEADERBOARD_CONCURRENCY = 4;
 
-export interface EpiHistoryEntry {
+interface EpiHistoryEntry {
   type: 'weekly' | 'monthly';
   date: string;
   epi_before: number;
@@ -15,137 +24,389 @@ export interface EpiHistoryEntry {
   raw_delta: number;
 }
 
-export interface EpiDashboardResponse {
-  epiScore: number;
-  epiHistory: EpiHistoryEntry[];
-  currentThirtyDay: CurrentThirtyDaySnapshot | null;
+interface DashboardUserRow extends UserKpiData {
+  epi_score: number | string | null;
+  epi_history: unknown;
 }
 
-export interface LeaderboardEntry {
+interface LeaderboardUserRow extends DashboardUserRow {
+  first_name: string | null;
+  last_name: string | null;
+  avatar_url: string | null;
+}
+
+interface ManilaDateParts {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+  dayOfWeek: number;
+}
+
+export interface DashboardCriteria {
+  sqaaScore: number | null;
+  workplaceRelationsScore: number | null;
+  professionalConductScore: number | null;
+  productivityRate: number | null;
+  punctualityRate: number | null;
+  attendanceRate: number | null;
+  aov: number | null;
+  branchAov: number | null;
+  violationCount: number;
+  awardCount: number;
+  uniformComplianceRate: number | null;
+  hygieneComplianceRate: number | null;
+  sopComplianceRate: number | null;
+}
+
+export interface HistoricalMonthEntry {
+  monthKey: string;
+  monthLabel: string;
+  year: number;
+  epiScore: number;
+  criteria: DashboardCriteria;
+}
+
+export interface CurrentLiveSnapshot {
+  monthKey: string;
+  monthLabel: string;
+  year: number;
+  asOfDateTime: string;
+  projectedEpiScore: number;
+  delta: number;
+  rawDelta: number;
+  capped: boolean;
+  criteria: DashboardCriteria;
+  wrsStatus: WrsStatusSummary;
+}
+
+export interface EpiDashboardResponse {
+  officialEpiScore: number;
+  currentMonthKey: string;
+  currentLive: CurrentLiveSnapshot | null;
+  monthlyHistory: HistoricalMonthEntry[];
+}
+
+export interface EpiLeaderboardEntry {
   userId: string;
   fullName: string;
   avatarUrl: string | null;
-  epiScore: number;
+  officialEpiScore: number;
+  currentLive: CurrentLiveSnapshot | null;
+  monthlyHistory: HistoricalMonthEntry[];
   rank: number;
 }
 
-export interface CurrentThirtyDaySnapshot {
-  asOfDate: string;
-  epiProjected: number;
-  delta: number;
-  raw_delta: number;
-  capped: boolean;
-  kpi_breakdown: KpiBreakdown;
+function getManilaDateParts(date: Date = new Date()): ManilaDateParts {
+  const shifted = new Date(date.getTime() + MANILA_OFFSET_MS);
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+    hour: shifted.getUTCHours(),
+    minute: shifted.getUTCMinutes(),
+    second: shifted.getUTCSeconds(),
+    dayOfWeek: shifted.getUTCDay(),
+  };
 }
 
-interface EpiDashboardUserRow {
-  epi_score: number | null;
-  epi_history: unknown;
-  user_key: string | null;
-  css_audits: unknown;
-  peer_evaluations: unknown;
-  compliance_audit: unknown;
-  violation_notices: unknown;
+function getCurrentMonthKey(): string {
+  return getMonthKey(new Date());
 }
 
-function getManilaDateString(): string {
-  const manilaNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' }));
-  const year = manilaNow.getFullYear();
-  const month = String(manilaNow.getMonth() + 1).padStart(2, '0');
-  const day = String(manilaNow.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+function getMonthKey(date: Date): string {
+  const parts = getManilaDateParts(date);
+  return `${parts.year}-${String(parts.month).padStart(2, '0')}`;
 }
 
-// ─── Service Functions ─────────────────────────────────────────────────────────
+function getMonthKeyFromDateString(dateStr: string): string | null {
+  const parsed = new Date(dateStr);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return getMonthKey(parsed);
+}
 
-export async function getEpiDashboard(userId: string): Promise<EpiDashboardResponse> {
-  const masterDb = db.getMasterDb();
+function getMonthLabel(date: Date): string {
+  const parts = getManilaDateParts(date);
+  return MONTH_NAMES[parts.month - 1];
+}
 
-  const user = (await masterDb('users')
-    .where({ id: userId })
-    .select(
-      'epi_score',
-      'epi_history',
-      'user_key',
-      'css_audits',
-      'peer_evaluations',
-      'compliance_audit',
-      'violation_notices',
-    )
-    .first()) as EpiDashboardUserRow | undefined;
+function getYear(date: Date): number {
+  return getManilaDateParts(date).year;
+}
 
-  if (!user) {
-    return { epiScore: 100, epiHistory: [], currentThirtyDay: null };
+function roundToTenth(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+function toNumber(value: number | string | null | undefined, fallback: number): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+}
+
+function createEmptyCriteria(): DashboardCriteria {
+  return {
+    sqaaScore: null,
+    workplaceRelationsScore: null,
+    professionalConductScore: null,
+    productivityRate: null,
+    punctualityRate: null,
+    attendanceRate: null,
+    aov: null,
+    branchAov: null,
+    violationCount: 0,
+    awardCount: 0,
+    uniformComplianceRate: null,
+    hygieneComplianceRate: null,
+    sopComplianceRate: null,
+  };
+}
+
+function breakdownToCriteria(kpi: KpiBreakdown | null | undefined): DashboardCriteria {
+  if (!kpi) return createEmptyCriteria();
+
+  return {
+    sqaaScore: kpi.css.score,
+    workplaceRelationsScore: kpi.wrs.score,
+    professionalConductScore: kpi.pcs.score,
+    productivityRate: kpi.productivity.rate,
+    punctualityRate: kpi.punctuality.rate,
+    attendanceRate: kpi.attendance.rate,
+    aov: kpi.aov.value,
+    branchAov: kpi.aov.branch_avg,
+    violationCount: kpi.violations.count,
+    awardCount: kpi.awards.count,
+    uniformComplianceRate: kpi.uniform.rate,
+    hygieneComplianceRate: kpi.hygiene.rate,
+    sopComplianceRate: kpi.sop.rate,
+  };
+}
+
+function normalizeHistoryEntries(rawHistory: unknown): EpiHistoryEntry[] {
+  if (!Array.isArray(rawHistory)) return [];
+  return rawHistory.filter((entry): entry is EpiHistoryEntry => {
+    return Boolean(
+      entry &&
+      typeof entry === 'object' &&
+      'type' in entry &&
+      'date' in entry &&
+      'epi_after' in entry &&
+      'kpi_breakdown' in entry,
+    );
+  });
+}
+
+function sortHistoryEntries(entries: EpiHistoryEntry[]): EpiHistoryEntry[] {
+  return [...entries].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+}
+
+function historyEntriesToMonthlyHistory(entries: EpiHistoryEntry[]): HistoricalMonthEntry[] {
+  const deduped = new Map<string, HistoricalMonthEntry>();
+
+  for (const entry of sortHistoryEntries(entries)) {
+    if (entry.type !== 'monthly') continue;
+
+    const monthKey = getMonthKeyFromDateString(entry.date);
+    if (!monthKey) continue;
+
+    const parsedDate = new Date(entry.date);
+    if (Number.isNaN(parsedDate.getTime())) continue;
+
+    deduped.set(monthKey, {
+      monthKey,
+      monthLabel: getMonthLabel(parsedDate),
+      year: getYear(parsedDate),
+      epiScore: roundToTenth(toNumber(entry.epi_after, 100)),
+      criteria: breakdownToCriteria(entry.kpi_breakdown),
+    });
   }
 
-  const epiScore = Number(user.epi_score ?? 100);
-  const epiHistory: EpiHistoryEntry[] = Array.isArray(user.epi_history)
-    ? (user.epi_history as EpiHistoryEntry[])
-    : [];
-  let currentThirtyDay: CurrentThirtyDaySnapshot | null = null;
+  return Array.from(deduped.values()).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
+}
 
-  if (user.user_key) {
-    try {
-      const { breakdown, delta, raw_delta, capped } = await calculateKpiScores({
-        userId,
-        userKey: user.user_key,
-        cssAudits: (user.css_audits as UserKpiData['cssAudits']) ?? null,
-        peerEvaluations: (user.peer_evaluations as UserKpiData['peerEvaluations']) ?? null,
-        complianceAudit: (user.compliance_audit as UserKpiData['complianceAudit']) ?? null,
-        violationNotices: (user.violation_notices as UserKpiData['violationNotices']) ?? null,
-      });
+async function buildCurrentLiveSnapshot(user: DashboardUserRow): Promise<CurrentLiveSnapshot | null> {
+  if (!user.userKey) return null;
 
-      currentThirtyDay = {
-        asOfDate: getManilaDateString(),
-        epiProjected: Math.round((epiScore + delta) * 10) / 10,
-        delta,
-        raw_delta,
-        capped,
-        kpi_breakdown: breakdown,
-      };
-    } catch (err) {
-      logger.error({ err, userId }, 'Failed to compute rolling 30-day dashboard snapshot');
+  const now = new Date();
+  const from = new Date(now.getTime() - THIRTY_DAY_WINDOW_MS);
+  const officialEpiScore = toNumber(user.epi_score, 100);
+  const parts = getManilaDateParts(now);
+
+  const { breakdown, delta, raw_delta, capped } = await calculateKpiScores({
+    userId: user.userId,
+    userKey: user.userKey,
+    cssAudits: user.cssAudits,
+    peerEvaluations: user.peerEvaluations,
+    complianceAudit: user.complianceAudit,
+    violationNotices: user.violationNotices,
+  });
+
+  return {
+    monthKey: `${parts.year}-${String(parts.month).padStart(2, '0')}`,
+    monthLabel: MONTH_NAMES[parts.month - 1],
+    year: parts.year,
+    asOfDateTime: now.toISOString(),
+    projectedEpiScore: roundToTenth(officialEpiScore + delta),
+    delta,
+    rawDelta: raw_delta,
+    capped,
+    criteria: breakdownToCriteria(breakdown),
+    wrsStatus: getWrsStatusSummary(user.peerEvaluations, from, now),
+  };
+}
+
+async function mapWithConcurrency<TInput, TOutput>(
+  items: TInput[],
+  concurrency: number,
+  mapper: (item: TInput, index: number) => Promise<TOutput>,
+): Promise<TOutput[]> {
+  const results: TOutput[] = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (true) {
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= items.length) return;
+      results[index] = await mapper(items[index], index);
     }
   }
 
-  return { epiScore, epiHistory, currentThirtyDay };
+  const workerCount = Math.max(1, Math.min(concurrency, items.length));
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
 }
 
-export async function getEpiLeaderboard(companyId: string): Promise<LeaderboardEntry[]> {
+function compareLeaderboardEntries(a: EpiLeaderboardEntry, b: EpiLeaderboardEntry): number {
+  const aScore = a.currentLive?.projectedEpiScore ?? null;
+  const bScore = b.currentLive?.projectedEpiScore ?? null;
+
+  if (aScore === null && bScore === null) {
+    return a.fullName.localeCompare(b.fullName);
+  }
+  if (aScore === null) return 1;
+  if (bScore === null) return -1;
+  if (bScore !== aScore) return bScore - aScore;
+
+  return a.fullName.localeCompare(b.fullName);
+}
+
+function formatFullName(firstName: string | null, lastName: string | null): string {
+  const combined = `${firstName ?? ''} ${lastName ?? ''}`.trim();
+  return combined || 'Unknown User';
+}
+
+export async function getEpiDashboard(userId: string): Promise<EpiDashboardResponse> {
+  const masterDb = db.getMasterDb();
+  const row = await masterDb('users')
+    .where({ id: userId })
+    .first(
+      'id as userId',
+      'user_key as userKey',
+      'epi_score',
+      'epi_history',
+      'css_audits as cssAudits',
+      'peer_evaluations as peerEvaluations',
+      'compliance_audit as complianceAudit',
+      'violation_notices as violationNotices',
+    ) as DashboardUserRow | undefined;
+
+  if (!row) {
+    return {
+      officialEpiScore: 100,
+      currentMonthKey: getCurrentMonthKey(),
+      currentLive: null,
+      monthlyHistory: [],
+    };
+  }
+
+  const officialEpiScore = toNumber(row.epi_score, 100);
+  const monthlyHistory = historyEntriesToMonthlyHistory(normalizeHistoryEntries(row.epi_history));
+
+  let currentLive: CurrentLiveSnapshot | null = null;
+  try {
+    currentLive = await buildCurrentLiveSnapshot(row);
+  } catch (error) {
+    logger.error({ err: error, userId }, 'Failed to build live EPI dashboard snapshot');
+  }
+
+  return {
+    officialEpiScore,
+    currentMonthKey: getCurrentMonthKey(),
+    currentLive,
+    monthlyHistory,
+  };
+}
+
+export async function getEpiLeaderboard(companyId: string): Promise<EpiLeaderboardEntry[]> {
   const masterDb = db.getMasterDb();
 
-  // Get active Service Crew users in this company, ranked by EPI score
-  const users = await masterDb('users as u')
-    .join('user_company_access as uca', (qb) =>
-      qb.on('uca.user_id', 'u.id').andOnVal('uca.company_id', companyId),
-    )
-    .join('user_roles as ur', 'u.id', 'ur.user_id')
-    .join('roles as r', 'ur.role_id', 'r.id')
+  const rows = await masterDb('users as u')
     .where('u.is_active', true)
     .where('u.employment_status', 'active')
-    .where('r.name', 'Service Crew')
-    .where('uca.is_active', true)
+    .whereExists((query) => {
+      query
+        .select(masterDb.raw('1'))
+        .from('user_company_access as uca')
+        .whereRaw('uca.user_id = u.id')
+        .where('uca.company_id', companyId)
+        .where('uca.is_active', true);
+    })
+    .whereExists((query) => {
+      query
+        .select(masterDb.raw('1'))
+        .from('user_roles as ur')
+        .join('roles as r', 'ur.role_id', 'r.id')
+        .whereRaw('ur.user_id = u.id')
+        .where('r.name', 'Service Crew');
+    })
     .select(
       'u.id as userId',
       'u.first_name',
       'u.last_name',
-      'u.avatar_url as avatarUrl',
-      'u.epi_score as epiScore',
+      'u.avatar_url',
+      'u.user_key as userKey',
+      'u.epi_score',
+      'u.epi_history',
+      'u.css_audits as cssAudits',
+      'u.peer_evaluations as peerEvaluations',
+      'u.compliance_audit as complianceAudit',
+      'u.violation_notices as violationNotices',
     )
-    .distinct('u.id')
-    .orderBy('u.epi_score', 'desc') as Array<{
-    userId: string;
-    first_name: string;
-    last_name: string;
-    avatarUrl: string | null;
-    epiScore: string | number;
-  }>;
+    .orderBy('u.last_name', 'asc')
+    .orderBy('u.first_name', 'asc')
+    .orderBy('u.id', 'asc') as LeaderboardUserRow[];
 
-  return users.map((u, idx) => ({
-    userId: u.userId,
-    fullName: `${u.first_name} ${u.last_name}`.trim(),
-    avatarUrl: u.avatarUrl,
-    epiScore: Math.round(Number(u.epiScore ?? 100) * 10) / 10,
-    rank: idx + 1,
+  const entries = await mapWithConcurrency(rows, LEADERBOARD_CONCURRENCY, async (row) => {
+    const officialEpiScore = toNumber(row.epi_score, 100);
+    const monthlyHistory = historyEntriesToMonthlyHistory(normalizeHistoryEntries(row.epi_history));
+
+    let currentLive: CurrentLiveSnapshot | null = null;
+    try {
+      currentLive = await buildCurrentLiveSnapshot(row);
+    } catch (error) {
+      logger.error({ err: error, userId: row.userId }, 'Failed to build live leaderboard snapshot');
+    }
+
+    return {
+      userId: row.userId,
+      fullName: formatFullName(row.first_name, row.last_name),
+      avatarUrl: row.avatar_url ?? null,
+      officialEpiScore,
+      currentLive,
+      monthlyHistory,
+      rank: 0,
+    } satisfies EpiLeaderboardEntry;
+  });
+
+  const ranked = [...entries].sort(compareLeaderboardEntries);
+  return ranked.map((entry, index) => ({
+    ...entry,
+    rank: index + 1,
   }));
 }

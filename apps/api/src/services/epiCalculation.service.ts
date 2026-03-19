@@ -30,6 +30,11 @@ export interface EpiDeltaResult {
   capped: boolean;
 }
 
+export interface WrsStatusSummary {
+  effectiveCount: number;
+  delayedCount: number;
+}
+
 // ─── Impact Tables ────────────────────────────────────────────────────────────
 
 function cssImpact(score: number): number {
@@ -106,14 +111,69 @@ function dateRangeFilter(dateStr: string, from: Date, to: Date): boolean {
   return d >= from && d <= to;
 }
 
+function formatDateTime(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+
 function getPast30DayRange(): { from: Date; to: Date; fromStr: string; toStr: string } {
   const to = new Date();
-  const from = new Date();
-  from.setDate(from.getDate() - 30);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const fmt = (d: Date) =>
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} 00:00:00`;
-  return { from, to, fromStr: fmt(from), toStr: fmt(to) };
+  const from = new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
+  return { from, to, fromStr: formatDateTime(from), toStr: formatDateTime(to) };
+}
+
+function splitWrsEvaluations(
+  peerEvaluations: Array<{
+    average_score: number;
+    submitted_at?: string | null;
+    wrs_effective_at?: string | null;
+  }> | null,
+  from: Date,
+  to: Date,
+): {
+  effective: Array<{ average_score: number }>;
+  delayed: Array<{ average_score: number }>;
+} {
+  if (!Array.isArray(peerEvaluations) || peerEvaluations.length === 0) {
+    return { effective: [], delayed: [] };
+  }
+
+  const effective: Array<{ average_score: number }> = [];
+  const delayed: Array<{ average_score: number }> = [];
+
+  for (const evaluation of peerEvaluations) {
+    const submittedAt = evaluation.submitted_at ? new Date(evaluation.submitted_at) : null;
+    const effectiveAtRaw = evaluation.wrs_effective_at ?? evaluation.submitted_at;
+    const effectiveAt = effectiveAtRaw ? new Date(effectiveAtRaw) : null;
+    if (!effectiveAt || Number.isNaN(effectiveAt.getTime())) continue;
+
+    if (effectiveAt >= from && effectiveAt <= to) {
+      effective.push({ average_score: evaluation.average_score });
+      continue;
+    }
+
+    if (submittedAt && !Number.isNaN(submittedAt.getTime()) && submittedAt >= from && submittedAt <= to && effectiveAt > to) {
+      delayed.push({ average_score: evaluation.average_score });
+    }
+  }
+
+  return { effective, delayed };
+}
+
+export function getWrsStatusSummary(
+  peerEvaluations: Array<{
+    average_score: number;
+    submitted_at?: string | null;
+    wrs_effective_at?: string | null;
+  }> | null,
+  from: Date,
+  to: Date,
+): WrsStatusSummary {
+  const { effective, delayed } = splitWrsEvaluations(peerEvaluations, from, to);
+  return {
+    effectiveCount: effective.length,
+    delayedCount: delayed.length,
+  };
 }
 
 // ─── Individual KPI Calculators ───────────────────────────────────────────────
@@ -136,14 +196,9 @@ function calcWrs(
   from: Date,
   to: Date,
 ): { score: number | null; impact: number } {
-  if (!Array.isArray(peerEvaluations) || peerEvaluations.length === 0) return { score: null, impact: 0 };
-  const recent = peerEvaluations.filter((e) => {
-    const effectiveAt = e.wrs_effective_at ?? e.submitted_at;
-    if (!effectiveAt) return false;
-    return dateRangeFilter(effectiveAt, from, to);
-  });
-  if (recent.length === 0) return { score: null, impact: 0 };
-  const avg = recent.reduce((s, e) => s + e.average_score, 0) / recent.length;
+  const { effective } = splitWrsEvaluations(peerEvaluations, from, to);
+  if (effective.length === 0) return { score: null, impact: 0 };
+  const avg = effective.reduce((s, e) => s + e.average_score, 0) / effective.length;
   const score = Math.round(avg * 100) / 100;
   return { score, impact: wrsImpact(score) };
 }

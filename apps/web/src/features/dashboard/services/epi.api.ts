@@ -1,130 +1,59 @@
 import { api } from '@/shared/services/api.client';
-import type { EpiDashboardData, EpiMonthEntry, EpiCriteria, LeaderboardEntry } from '../components/epi/types';
+import type {
+  EpiCriteria,
+  EpiDashboardData,
+  EpiMonthEntry,
+  LeaderboardEntry,
+  WrsStatusSummary,
+} from '../components/epi/types';
 
-// ─── Backend Response Types ───────────────────────────────────────────────────
-
-interface KpiBreakdown {
-  css: { score: number | null; impact: number };
-  wrs: { score: number | null; impact: number };
-  pcs: { score: number | null; impact: number };
-  attendance: { rate: number | null; impact: number };
-  punctuality: { rate: number | null; impact: number };
-  productivity: { rate: number | null; impact: number };
-  aov: { value: number | null; branch_avg: number | null; impact: number };
-  uniform: { rate: number | null; impact: number };
-  hygiene: { rate: number | null; impact: number };
-  sop: { rate: number | null; impact: number };
-  awards: { count: number; impact: number };
-  violations: { count: number; total_decrease: number; impact: number };
+interface BackendHistoricalMonthEntry {
+  monthKey: string;
+  monthLabel: string;
+  year: number;
+  epiScore: number;
+  criteria: EpiCriteria;
 }
 
-interface BackendEpiHistoryEntry {
-  type: 'weekly' | 'monthly';
-  date: string; // YYYY-MM-DD
-  epi_before: number;
-  epi_after: number;
+interface BackendCurrentLiveSnapshot {
+  monthKey: string;
+  monthLabel: string;
+  year: number;
+  asOfDateTime: string;
+  projectedEpiScore: number;
   delta: number;
-  kpi_breakdown: KpiBreakdown;
+  rawDelta: number;
   capped: boolean;
-  raw_delta: number;
+  criteria: EpiCriteria;
+  wrsStatus: WrsStatusSummary;
 }
 
 interface BackendEpiDashboardResponse {
-  epiScore: number;
-  epiHistory: BackendEpiHistoryEntry[];
-  currentThirtyDay: BackendCurrentThirtyDaySnapshot | null;
-}
-
-interface BackendCurrentThirtyDaySnapshot {
-  asOfDate: string; // YYYY-MM-DD
-  epiProjected: number;
-  delta: number;
-  raw_delta: number;
-  capped: boolean;
-  kpi_breakdown: KpiBreakdown;
+  officialEpiScore: number;
+  currentMonthKey: string;
+  currentLive: BackendCurrentLiveSnapshot | null;
+  monthlyHistory: BackendHistoricalMonthEntry[];
 }
 
 interface BackendLeaderboardEntry {
   userId: string;
   fullName: string;
   avatarUrl: string | null;
-  epiScore: number;
+  officialEpiScore: number;
+  currentLive: BackendCurrentLiveSnapshot | null;
+  monthlyHistory: BackendHistoricalMonthEntry[];
   rank: number;
 }
 
-// ─── Transformers ─────────────────────────────────────────────────────────────
-
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-function kpiBreakdownToCriteria(kpi: KpiBreakdown): EpiCriteria {
+function getEmptyCriteria(): EpiCriteria {
   return {
-    sqaaScore: kpi.css.score,
-    scsaScore: kpi.wrs.score,
-    workplaceRelationsScore: kpi.wrs.score, // WRS maps to workplace relations
-    productivityRate: kpi.productivity.rate,
-    cashierAccuracyRate: null, // Not in new KPI system
-    attendanceRate: kpi.attendance.rate,
-    aov: kpi.aov.value,
-    branchAov: kpi.aov.branch_avg,
-    violationCount: kpi.violations.count,
-    awardCount: kpi.awards.count,
-    uniformComplianceRate: kpi.uniform.rate,
-    hygieneComplianceRate: kpi.hygiene.rate,
-    sopComplianceRate: kpi.sop.rate,
-  };
-}
-
-function historyEntriesToMonthEntries(entries: BackendEpiHistoryEntry[]): EpiMonthEntry[] {
-  // Use monthly snapshots for the month selector; fall back to weekly if no monthly exists
-  const monthlyEntries = entries.filter((e) => e.type === 'monthly');
-  const useEntries = monthlyEntries.length > 0 ? monthlyEntries : entries;
-
-  // Deduplicate by month+year (keep last entry per month)
-  const byMonth = new Map<string, BackendEpiHistoryEntry>();
-  for (const entry of useEntries) {
-    const d = new Date(entry.date);
-    const key = `${d.getFullYear()}-${d.getMonth()}`;
-    byMonth.set(key, entry);
-  }
-
-  return Array.from(byMonth.values())
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-    .map((entry) => {
-      const d = new Date(entry.date);
-      return {
-        month: MONTH_NAMES[d.getMonth()],
-        year: d.getFullYear(),
-        score: entry.epi_after,
-        criteria: kpiBreakdownToCriteria(entry.kpi_breakdown),
-      };
-    });
-}
-
-function sortMonthEntries(entries: EpiMonthEntry[]): EpiMonthEntry[] {
-  return [...entries].sort((a, b) => {
-    if (a.year !== b.year) return a.year - b.year;
-    return MONTH_NAMES.indexOf(a.month) - MONTH_NAMES.indexOf(b.month);
-  });
-}
-
-function upsertMonthEntry(history: EpiMonthEntry[], nextEntry: EpiMonthEntry): EpiMonthEntry[] {
-  const idx = history.findIndex((entry) => entry.month === nextEntry.month && entry.year === nextEntry.year);
-  if (idx === -1) {
-    return sortMonthEntries([...history, nextEntry]);
-  }
-  const next = [...history];
-  next[idx] = nextEntry;
-  return sortMonthEntries(next);
-}
-
-function buildEmptyDashboard(epiScore: number): EpiDashboardData {
-  const now = new Date();
-  const emptyCriteria: EpiCriteria = {
     sqaaScore: null,
-    scsaScore: null,
     workplaceRelationsScore: null,
+    professionalConductScore: null,
     productivityRate: null,
-    cashierAccuracyRate: null,
+    punctualityRate: null,
     attendanceRate: null,
     aov: null,
     branchAov: null,
@@ -134,78 +63,137 @@ function buildEmptyDashboard(epiScore: number): EpiDashboardData {
     hygieneComplianceRate: null,
     sopComplianceRate: null,
   };
+}
+
+function getCurrentMonthMeta(): { monthKey: string; month: string; year: number } {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+  });
+
+  const parts = formatter.formatToParts(new Date());
+  const year = Number(parts.find((part) => part.type === 'year')?.value ?? new Date().getFullYear());
+  const monthNumber = Number(parts.find((part) => part.type === 'month')?.value ?? new Date().getMonth() + 1);
 
   return {
-    epiScore,
-    epiDelta: 0,
-    currentMonth: MONTH_NAMES[now.getMonth()],
-    goalTarget: 105,
-    history: [
-      {
-        month: MONTH_NAMES[now.getMonth()],
-        year: now.getFullYear(),
-        score: epiScore,
-        criteria: emptyCriteria,
-      },
-    ],
-    criteria: emptyCriteria,
+    monthKey: `${year}-${String(monthNumber).padStart(2, '0')}`,
+    month: MONTH_NAMES[monthNumber - 1],
+    year,
   };
 }
 
-// ─── API Functions ─────────────────────────────────────────────────────────────
+function toHistoricalMonthEntry(entry: BackendHistoricalMonthEntry): EpiMonthEntry {
+  return {
+    monthKey: entry.monthKey,
+    month: entry.monthLabel,
+    year: entry.year,
+    score: entry.epiScore,
+    criteria: entry.criteria ?? getEmptyCriteria(),
+    source: 'historical',
+    wrsStatus: null,
+  };
+}
+
+function toLiveMonthEntry(entry: BackendCurrentLiveSnapshot): EpiMonthEntry {
+  return {
+    monthKey: entry.monthKey,
+    month: entry.monthLabel,
+    year: entry.year,
+    score: entry.projectedEpiScore,
+    criteria: entry.criteria ?? getEmptyCriteria(),
+    source: 'live',
+    wrsStatus: entry.wrsStatus ?? null,
+  };
+}
+
+function combineMonthHistory(
+  monthlyHistory: BackendHistoricalMonthEntry[],
+  currentLive: BackendCurrentLiveSnapshot | null,
+): EpiMonthEntry[] {
+  const byMonth = new Map<string, EpiMonthEntry>();
+
+  for (const entry of monthlyHistory ?? []) {
+    byMonth.set(entry.monthKey, toHistoricalMonthEntry(entry));
+  }
+
+  if (currentLive) {
+    byMonth.set(currentLive.monthKey, toLiveMonthEntry(currentLive));
+  }
+
+  return Array.from(byMonth.values()).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
+}
+
+function buildEmptyDashboard(officialEpiScore: number): EpiDashboardData {
+  const current = getCurrentMonthMeta();
+
+  return {
+    officialEpiScore,
+    goalTarget: 105,
+    currentMonthKey: current.monthKey,
+    history: [
+      {
+        monthKey: current.monthKey,
+        month: current.month,
+        year: current.year,
+        score: officialEpiScore,
+        criteria: getEmptyCriteria(),
+        source: 'live',
+        wrsStatus: null,
+      },
+    ],
+  };
+}
+
+function ensureCurrentMonthEntry(history: EpiMonthEntry[], officialEpiScore: number, currentMonthKey: string): EpiMonthEntry[] {
+  if (history.some((entry) => entry.monthKey === currentMonthKey)) {
+    return history;
+  }
+
+  const [yearPart, monthPart] = currentMonthKey.split('-');
+  const monthIndex = Math.max(0, Number(monthPart) - 1);
+  const fallbackEntry: EpiMonthEntry = {
+    monthKey: currentMonthKey,
+    month: MONTH_NAMES[monthIndex] ?? MONTH_NAMES[0],
+    year: Number(yearPart) || new Date().getFullYear(),
+    score: officialEpiScore,
+    criteria: getEmptyCriteria(),
+    source: 'live',
+    wrsStatus: null,
+  };
+
+  return [...history, fallbackEntry].sort((a, b) => a.monthKey.localeCompare(b.monthKey));
+}
+
+function splitFullName(fullName: string): { firstName: string; lastName: string } {
+  const [firstName = '', ...rest] = fullName.trim().split(/\s+/);
+  return {
+    firstName,
+    lastName: rest.join(' '),
+  };
+}
 
 export async function fetchEpiDashboard(): Promise<EpiDashboardData> {
-  const res = await api.get<{ success: boolean; data: BackendEpiDashboardResponse }>('/dashboard/epi');
+  const res = await api.get<{ success: boolean; data: BackendEpiDashboardResponse | null }>('/dashboard/epi');
   const backend = res.data.data;
 
   if (!backend) {
     return buildEmptyDashboard(100);
   }
 
-  let history = historyEntriesToMonthEntries(backend.epiHistory ?? []);
-  let epiScore = backend.epiScore;
-  let epiDelta = 0;
-  let criteria: EpiCriteria | null = null;
-  let currentDate = new Date();
-
-  if (backend.currentThirtyDay) {
-    const parsedDate = new Date(backend.currentThirtyDay.asOfDate);
-    currentDate = Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
-
-    const rollingCriteria = kpiBreakdownToCriteria(backend.currentThirtyDay.kpi_breakdown);
-    const rollingEntry: EpiMonthEntry = {
-      month: MONTH_NAMES[currentDate.getMonth()],
-      year: currentDate.getFullYear(),
-      score: backend.currentThirtyDay.epiProjected,
-      criteria: rollingCriteria,
-    };
-
-    history = upsertMonthEntry(history, rollingEntry);
-    criteria = rollingCriteria;
-    epiScore = backend.currentThirtyDay.epiProjected;
-    epiDelta = backend.currentThirtyDay.delta;
-  } else if (backend.epiHistory.length > 0) {
-    const latestEntry = backend.epiHistory[backend.epiHistory.length - 1];
-    criteria = kpiBreakdownToCriteria(latestEntry.kpi_breakdown);
-    const lastWeekly = [...backend.epiHistory].reverse().find((e) => e.type === 'weekly');
-    epiDelta = lastWeekly?.delta ?? 0;
-  }
+  const officialEpiScore = backend.officialEpiScore ?? 100;
+  const combinedHistory = combineMonthHistory(backend.monthlyHistory ?? [], backend.currentLive);
+  const history = ensureCurrentMonthEntry(combinedHistory, officialEpiScore, backend.currentMonthKey);
 
   if (history.length === 0) {
-    return buildEmptyDashboard(epiScore);
-  }
-
-  if (!criteria) {
-    criteria = history[history.length - 1].criteria;
+    return buildEmptyDashboard(officialEpiScore);
   }
 
   return {
-    epiScore,
-    epiDelta,
-    currentMonth: MONTH_NAMES[currentDate.getMonth()],
+    officialEpiScore,
     goalTarget: 105,
+    currentMonthKey: backend.currentMonthKey,
     history,
-    criteria,
   };
 }
 
@@ -213,31 +201,22 @@ export async function fetchEpiLeaderboard(currentUserId?: string): Promise<Leade
   const res = await api.get<{ success: boolean; data: BackendLeaderboardEntry[] }>('/dashboard/epi/leaderboard');
   const list = res.data.data ?? [];
 
-  const emptyCriteria: EpiCriteria = {
-    sqaaScore: null,
-    scsaScore: null,
-    workplaceRelationsScore: null,
-    productivityRate: null,
-    cashierAccuracyRate: null,
-    attendanceRate: null,
-    aov: null,
-    branchAov: null,
-    violationCount: 0,
-    awardCount: 0,
-    uniformComplianceRate: null,
-    hygieneComplianceRate: null,
-    sopComplianceRate: null,
-  };
+  return list.map((entry) => {
+    const history = combineMonthHistory(entry.monthlyHistory ?? [], entry.currentLive);
+    const { firstName, lastName } = splitFullName(entry.fullName);
 
-  return list.map((entry: BackendLeaderboardEntry) => ({
-    id: entry.userId,
-    rank: entry.rank,
-    firstName: entry.fullName.split(' ')[0] ?? '',
-    lastName: entry.fullName.split(' ').slice(1).join(' '),
-    avatarUrl: entry.avatarUrl,
-    epiScore: entry.epiScore,
-    isCurrentUser: entry.userId === currentUserId,
-    criteria: emptyCriteria,
-    history: [],
-  }));
+    return {
+      id: entry.userId,
+      rank: entry.rank,
+      firstName,
+      lastName,
+      avatarUrl: entry.avatarUrl,
+      officialEpiScore: entry.officialEpiScore,
+      epiScore: entry.currentLive?.projectedEpiScore ?? entry.officialEpiScore,
+      isCurrentUser: entry.userId === currentUserId,
+      criteria: entry.currentLive?.criteria ?? getEmptyCriteria(),
+      wrsStatus: entry.currentLive?.wrsStatus ?? null,
+      history,
+    } satisfies LeaderboardEntry;
+  });
 }

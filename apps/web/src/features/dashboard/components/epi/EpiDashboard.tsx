@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { EpiDashboardData, LeaderboardEntry } from './types';
 import { GreetingGoalRow } from './GreetingGoalRow';
 import { EpiHeroCard } from './EpiHeroCard';
@@ -16,44 +16,54 @@ interface EpiDashboardProps {
 }
 
 export function EpiDashboard({ data, leaderboard, firstName }: EpiDashboardProps) {
-  const currentIndex = data.history.length - 1;
-  const [selectedIndex, setSelectedIndex] = useState(currentIndex);
+  const fallbackMonthKey = data.history[data.history.length - 1]?.monthKey ?? data.currentMonthKey;
+  const [selectedMonthKey, setSelectedMonthKey] = useState(data.currentMonthKey || fallbackMonthKey);
 
-  const selectedEntry = data.history[selectedIndex];
+  useEffect(() => {
+    setSelectedMonthKey(data.currentMonthKey || fallbackMonthKey);
+  }, [data.currentMonthKey, fallbackMonthKey]);
+
+  const selectedEntry = useMemo(() => {
+    return data.history.find((entry) => entry.monthKey === selectedMonthKey) ?? data.history[data.history.length - 1];
+  }, [data.history, selectedMonthKey]);
+
+  if (!selectedEntry) return null;
 
   return (
     <div className="space-y-6">
       <GreetingGoalRow firstName={firstName} />
 
-      {/* Hero reflects the selected month */}
       <EpiHeroCard
         data={data}
         selectedEntry={selectedEntry}
-        selectedIndex={selectedIndex}
       />
 
-      {/* Month selector */}
       <div className="space-y-2">
         <p className="text-center text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500">
           Monthly Breakdown
         </p>
         <MonthSelector
           history={data.history}
-          selectedIndex={selectedIndex}
-          onSelect={setSelectedIndex}
-          currentIndex={currentIndex}
+          selectedMonthKey={selectedMonthKey}
+          onSelect={setSelectedMonthKey}
+          currentMonthKey={data.currentMonthKey}
         />
       </div>
 
-      {/* Detail sections — no section-level AnimatePresence; individual components handle their own number/gauge animations */}
       <div className="space-y-6">
-        <PerformanceScoresSection criteria={selectedEntry.criteria} />
+        <PerformanceScoresSection
+          criteria={selectedEntry.criteria}
+          wrsStatus={selectedEntry.source === 'live' ? selectedEntry.wrsStatus ?? null : null}
+        />
         <OperationalMetricsSection criteria={selectedEntry.criteria} />
         <OperationalComplianceSection criteria={selectedEntry.criteria} />
         <DisciplineRecognitionSection criteria={selectedEntry.criteria} />
       </div>
 
-      <EpiLeaderboard entries={leaderboard} selectedIndex={selectedIndex} />
+      <EpiLeaderboard
+        entries={leaderboard}
+        selectedMonthKey={selectedMonthKey}
+      />
     </div>
   );
 }

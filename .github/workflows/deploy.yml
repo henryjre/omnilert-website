@@ -69,8 +69,9 @@ jobs:
             fi
             git fetch origin main
             git reset --hard origin/main
-            git clean -fd
+            git clean -fdx -e apps/api/.env -e apps/api/uploads/
             pnpm install --frozen-lockfile --config.confirmModulesPurge=false
+            pnpm --filter @omnilert/shared build
             pnpm -C apps/api migrate:master
             pnpm -C apps/api migrate:tenant
             TURBO_CONCURRENCY=1 pnpm build

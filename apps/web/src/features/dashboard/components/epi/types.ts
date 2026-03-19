@@ -1,9 +1,9 @@
 export interface EpiCriteria {
   sqaaScore: number | null;
-  scsaScore: number | null;
   workplaceRelationsScore: number | null;
+  professionalConductScore: number | null;
   productivityRate: number | null;
-  cashierAccuracyRate: number | null;
+  punctualityRate: number | null;
   attendanceRate: number | null;
   aov: number | null;
   branchAov: number | null;
@@ -14,20 +14,26 @@ export interface EpiCriteria {
   sopComplianceRate: number | null;
 }
 
+export interface WrsStatusSummary {
+  effectiveCount: number;
+  delayedCount: number;
+}
+
 export interface EpiMonthEntry {
-  month: string;       // Short label: "Jan", "Feb", etc.
-  year: number;        // e.g. 2025, 2026
+  monthKey: string;
+  month: string;
+  year: number;
   score: number;
   criteria: EpiCriteria;
+  source: 'live' | 'historical';
+  wrsStatus?: WrsStatusSummary | null;
 }
 
 export interface EpiDashboardData {
-  epiScore: number;
-  epiDelta: number;
-  currentMonth: string;
+  officialEpiScore: number;
   goalTarget: number;
+  currentMonthKey: string;
   history: EpiMonthEntry[];
-  criteria: EpiCriteria;
 }
 
 export interface LeaderboardEntry {
@@ -36,10 +42,11 @@ export interface LeaderboardEntry {
   firstName: string;
   lastName: string;
   avatarUrl: string | null;
+  officialEpiScore: number;
   epiScore: number;
   isCurrentUser: boolean;
   criteria: EpiCriteria;
-  /** Full 12-month history, same order as EpiDashboardData.history */
+  wrsStatus?: WrsStatusSummary | null;
   history: EpiMonthEntry[];
 }
 

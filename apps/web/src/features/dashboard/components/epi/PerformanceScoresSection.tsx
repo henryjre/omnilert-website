@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import type { EpiCriteria } from './types';
+import type { EpiCriteria, WrsStatusSummary } from './types';
 import { getScoreZone, getZoneColors } from './epiUtils';
 import { SectionLabel } from './SectionLabel';
 import { StarRating } from './StarRating';
@@ -7,16 +7,17 @@ import { Card, CardBody } from '@/shared/components/ui/Card';
 
 interface PerformanceScoresSectionProps {
   criteria: EpiCriteria;
+  wrsStatus?: WrsStatusSummary | null;
 }
 
 interface StarTileProps {
   label: string;
   score: number | null;
-  contribution: string;
+  subtext: string;
   delay: number;
 }
 
-function StarTile({ label, score, contribution, delay }: StarTileProps) {
+function StarTile({ label, score, subtext, delay }: StarTileProps) {
   const zone = score !== null ? getScoreZone(score) : 'amber';
   const colors = getZoneColors(zone);
 
@@ -34,15 +35,14 @@ function StarTile({ label, score, contribution, delay }: StarTileProps) {
               <StarRating score={score} zone={zone} delay={delay} size={24} gap={5} />
               <div>
                 <p className="text-xs font-medium text-gray-700 dark:text-gray-300">{label}</p>
-                <p className={`text-xs ${colors.text} ${colors.darkText}`}>{contribution}</p>
+                <p className={`text-xs ${colors.text} ${colors.darkText}`}>{subtext}</p>
               </div>
             </>
           ) : (
             <>
-              {/* Empty state: 5 hollow stars */}
               <div className="flex items-center gap-1.5">
-                {Array.from({ length: 5 }, (_, i) => (
-                  <svg key={i} width={24} height={24} viewBox="0 0 24 24">
+                {Array.from({ length: 5 }, (_, index) => (
+                  <svg key={index} width={24} height={24} viewBox="0 0 24 24">
                     <path
                       d="M12 2.25l2.47 5.01 5.53.8-4 3.9.94 5.5L12 14.77l-4.94 2.69.94-5.5-4-3.9 5.53-.8z"
                       fill="#e5e7eb"
@@ -52,7 +52,7 @@ function StarTile({ label, score, contribution, delay }: StarTileProps) {
               </div>
               <div>
                 <p className="text-xs font-medium text-gray-700 dark:text-gray-300">{label}</p>
-                <p className="text-xs italic text-gray-400">No data this period</p>
+                <p className="text-xs italic text-gray-400">{subtext}</p>
               </div>
             </>
           )}
@@ -62,7 +62,16 @@ function StarTile({ label, score, contribution, delay }: StarTileProps) {
   );
 }
 
-export function PerformanceScoresSection({ criteria }: PerformanceScoresSectionProps) {
+export function PerformanceScoresSection({ criteria, wrsStatus }: PerformanceScoresSectionProps) {
+  const wrsDelayedText =
+    wrsStatus && wrsStatus.delayedCount > 0
+      ? `${wrsStatus.delayedCount} submission(s) delayed for privacy`
+      : 'Contributes to EPI';
+  const wrsEmptyText =
+    wrsStatus && wrsStatus.delayedCount > 0
+      ? `${wrsStatus.delayedCount} submission(s) delayed for privacy`
+      : 'No effective peer evaluations yet';
+
   return (
     <div>
       <SectionLabel>Performance Scores</SectionLabel>
@@ -70,19 +79,19 @@ export function PerformanceScoresSection({ criteria }: PerformanceScoresSectionP
         <StarTile
           label="Customer Service Score"
           score={criteria.sqaaScore}
-          contribution="Contributes to EPI"
+          subtext="Contributes to EPI"
           delay={0}
         />
         <StarTile
           label="Workplace Relations Score"
-          score={criteria.scsaScore}
-          contribution="Contributes to EPI"
+          score={criteria.workplaceRelationsScore}
+          subtext={criteria.workplaceRelationsScore !== null ? wrsDelayedText : wrsEmptyText}
           delay={0.15}
         />
         <StarTile
           label="Professional Conduct Score"
-          score={criteria.workplaceRelationsScore}
-          contribution="Contributes to EPI"
+          score={criteria.professionalConductScore}
+          subtext={criteria.professionalConductScore !== null ? 'Contributes to EPI' : 'Awaiting management evaluations'}
           delay={0.3}
         />
       </div>

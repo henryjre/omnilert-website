@@ -4,7 +4,15 @@ import { calculateKpiScores, type KpiBreakdown } from './epiCalculation.service.
 import { generateEpiReportPdf, generateManagerSummaryPdf, type EpiReportData } from './epiReport.service.js';
 import { sendWeeklyEpiEmail, sendManagerEpiSummaryEmail } from './mail.service.js';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
+const THIRTY_DAY_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const MAX_TIMEOUT_MS = 2_147_483_647;
+const STALE_RUN_THRESHOLD_MS = 6 * 60 * 60 * 1000;
+
+const WEEKLY_EPI_JOB_NAME = 'epi-weekly-snapshot';
+const MONTHLY_EPI_JOB_NAME = 'epi-monthly-snapshot';
+const WEEKLY_EPI_CRON = '0 17 * * 0';
+const MONTHLY_EPI_CRON = '0 4 1 * *';
 
 interface EpiHistoryEntry {
   type: 'weekly' | 'monthly';
@@ -27,70 +35,422 @@ interface MasterUserRow {
   violation_notices: unknown;
 }
 
-// ─── Cron Handles ─────────────────────────────────────────────────────────────
-
-let weeklyHandle: NodeJS.Timeout | null = null;
-let monthlyHandle: NodeJS.Timeout | null = null;
-
-// ─── Time Checks ──────────────────────────────────────────────────────────────
-
-/**
- * Returns the current time in Asia/Manila timezone broken into components.
- */
-function getManilaNow(): Date {
-  const now = new Date();
-  const manilaStr = now.toLocaleString('en-US', { timeZone: 'Asia/Manila' });
-  return new Date(manilaStr);
+interface ScheduledJobRunRow {
+  id: string;
+  status: string;
+  attempt_count: number | string | null;
+  started_at: Date | string | null;
 }
 
-function formatDateYYYYMMDD(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+interface ManilaDateParts {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+  dayOfWeek: number;
 }
 
-function getManilaTime(): { dayOfWeek: number; hour: number; minute: number; dayOfMonth: number } {
-  const manila = getManilaNow();
+interface ParsedCronExpression {
+  expression: string;
+  minute: number | null;
+  hour: number | null;
+  dayOfMonth: number | null;
+  month: number | null;
+  dayOfWeek: number | null;
+}
+
+interface ScheduledSnapshotJob {
+  name: string;
+  expression: string;
+  schedule: ParsedCronExpression;
+  handle: NodeJS.Timeout | null;
+  runner: (input: { scheduledFor: Date }) => Promise<void>;
+}
+
+const scheduledJobs: ScheduledSnapshotJob[] = [
+  {
+    name: WEEKLY_EPI_JOB_NAME,
+    expression: WEEKLY_EPI_CRON,
+    schedule: parseCronExpression(WEEKLY_EPI_CRON),
+    handle: null,
+    runner: ({ scheduledFor }) => runWeeklyEpiSnapshot({ scheduledFor }),
+  },
+  {
+    name: MONTHLY_EPI_JOB_NAME,
+    expression: MONTHLY_EPI_CRON,
+    schedule: parseCronExpression(MONTHLY_EPI_CRON),
+    handle: null,
+    runner: ({ scheduledFor }) => runMonthlyEpiSnapshot({ scheduledFor }),
+  },
+];
+
+let initialized = false;
+
+function getManilaDateParts(date: Date = new Date()): ManilaDateParts {
+  const shifted = new Date(date.getTime() + MANILA_OFFSET_MS);
   return {
-    dayOfWeek: manila.getDay(),   // 0=Sun, 1=Mon, ... 6=Sat
-    hour: manila.getHours(),
-    minute: manila.getMinutes(),
-    dayOfMonth: manila.getDate(),
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+    hour: shifted.getUTCHours(),
+    minute: shifted.getUTCMinutes(),
+    second: shifted.getUTCSeconds(),
+    dayOfWeek: shifted.getUTCDay(),
   };
 }
 
-function isWeeklySnapshotTime(): boolean {
-  const { dayOfWeek, hour, minute } = getManilaTime();
-  return dayOfWeek === 0 && hour === 17 && minute < 30; // Sunday 5:00–5:30 PM
+function formatManilaDate(date: Date): string {
+  const parts = getManilaDateParts(date);
+  return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
 }
 
-function isMonthlySnapshotTime(): boolean {
-  const { dayOfMonth, hour, minute } = getManilaTime();
-  return dayOfMonth === 1 && hour === 4 && minute < 30; // 1st of month 4:00–4:30 AM
+function formatManilaDateTime(date: Date): string {
+  const parts = getManilaDateParts(date);
+  return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')} ${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}:${String(parts.second).padStart(2, '0')}`;
 }
 
-function getManilaDateString(): string {
-  return formatDateYYYYMMDD(getManilaNow());
+function formatScheduledForKey(date: Date): string {
+  const parts = getManilaDateParts(date);
+  return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}T${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`;
 }
 
-function getPreviousMonthDateString(): string {
-  const manilaNow = getManilaNow();
-  // If snapshot runs on the 1st, this stamps the monthly record to the previous month.
-  const previousMonthLastDay = new Date(manilaNow.getFullYear(), manilaNow.getMonth(), 0);
-  return formatDateYYYYMMDD(previousMonthLastDay);
+function getPreviousMonthDateString(date: Date): string {
+  const parts = getManilaDateParts(date);
+  const previousMonth = parts.month === 1 ? 12 : parts.month - 1;
+  const previousYear = parts.month === 1 ? parts.year - 1 : parts.year;
+  const previousMonthLastDay = new Date(Date.UTC(previousYear, previousMonth, 0)).getUTCDate();
+  return `${previousYear}-${String(previousMonth).padStart(2, '0')}-${String(previousMonthLastDay).padStart(2, '0')}`;
 }
 
-// ─── Snapshot Runners ─────────────────────────────────────────────────────────
+function parseCronField(field: string, label: string, min: number, max: number): number | null {
+  if (field === '*') return null;
+  const parsed = Number(field);
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
+    throw new Error(`Unsupported cron ${label} field: ${field}`);
+  }
+  return parsed;
+}
 
-export async function runWeeklyEpiSnapshot(): Promise<void> {
-  logger.info('EPI weekly snapshot started');
+function parseCronExpression(expression: string): ParsedCronExpression {
+  const parts = expression.trim().split(/\s+/);
+  if (parts.length !== 5) {
+    throw new Error(`Unsupported cron expression: ${expression}`);
+  }
 
+  return {
+    expression,
+    minute: parseCronField(parts[0], 'minute', 0, 59),
+    hour: parseCronField(parts[1], 'hour', 0, 23),
+    dayOfMonth: parseCronField(parts[2], 'dayOfMonth', 1, 31),
+    month: parseCronField(parts[3], 'month', 1, 12),
+    dayOfWeek: parseCronField(parts[4], 'dayOfWeek', 0, 6),
+  };
+}
+
+function matchesCronField(value: number, field: number | null): boolean {
+  return field === null || field === value;
+}
+
+function matchesCronExpression(date: Date, schedule: ParsedCronExpression): boolean {
+  const parts = getManilaDateParts(date);
+  return (
+    matchesCronField(parts.minute, schedule.minute) &&
+    matchesCronField(parts.hour, schedule.hour) &&
+    matchesCronField(parts.day, schedule.dayOfMonth) &&
+    matchesCronField(parts.month, schedule.month) &&
+    matchesCronField(parts.dayOfWeek, schedule.dayOfWeek)
+  );
+}
+
+function ceilToNextMinute(date: Date): Date {
+  const next = new Date(date.getTime());
+  next.setUTCSeconds(0, 0);
+  next.setTime(next.getTime() + 60 * 1000);
+  return next;
+}
+
+function floorToMinute(date: Date): Date {
+  const floored = new Date(date.getTime());
+  floored.setUTCSeconds(0, 0);
+  return floored;
+}
+
+function findNextOccurrence(schedule: ParsedCronExpression, after: Date): Date {
+  const candidate = ceilToNextMinute(after);
+
+  for (let offset = 0; offset <= 366 * 24 * 60; offset += 1) {
+    const current = new Date(candidate.getTime() + offset * 60 * 1000);
+    if (matchesCronExpression(current, schedule)) return current;
+  }
+
+  throw new Error(`Could not find next occurrence for cron ${schedule.expression}`);
+}
+
+function findLatestOccurrence(schedule: ParsedCronExpression, at: Date): Date {
+  const candidate = floorToMinute(at);
+
+  for (let offset = 0; offset <= 366 * 24 * 60; offset += 1) {
+    const current = new Date(candidate.getTime() - offset * 60 * 1000);
+    if (matchesCronExpression(current, schedule)) return current;
+  }
+
+  throw new Error(`Could not find latest occurrence for cron ${schedule.expression}`);
+}
+
+function clearScheduledHandle(job: ScheduledSnapshotJob): void {
+  if (!job.handle) return;
+  clearTimeout(job.handle);
+  job.handle = null;
+}
+
+function scheduleTimeoutUntil(job: ScheduledSnapshotJob, target: Date, callback: () => void): void {
+  clearScheduledHandle(job);
+
+  const remainingMs = target.getTime() - Date.now();
+  const delayMs = Math.min(Math.max(remainingMs, 0), MAX_TIMEOUT_MS);
+
+  job.handle = setTimeout(() => {
+    if (!initialized) return;
+
+    if (Date.now() < target.getTime()) {
+      scheduleTimeoutUntil(job, target, callback);
+      return;
+    }
+
+    callback();
+  }, delayMs);
+}
+
+async function claimScheduledJobRun(jobName: string, scheduledFor: Date): Promise<boolean> {
+  const masterDb = db.getMasterDb();
+  const scheduledForKey = formatScheduledForKey(scheduledFor);
+  const scheduledForManila = formatManilaDateTime(scheduledFor);
+  const now = new Date();
+
+  return masterDb.transaction(async (trx) => {
+    let existing = await trx('scheduled_job_runs')
+      .where({ job_name: jobName, scheduled_for_key: scheduledForKey })
+      .forUpdate()
+      .first() as ScheduledJobRunRow | undefined;
+
+    if (!existing) {
+      const inserted = await trx('scheduled_job_runs')
+        .insert({
+          job_name: jobName,
+          scheduled_for_key: scheduledForKey,
+          scheduled_for_manila: scheduledForManila,
+          status: 'running',
+          attempt_count: 1,
+          started_at: now,
+          finished_at: null,
+          error_message: null,
+          created_at: now,
+          updated_at: now,
+        })
+        .onConflict(['job_name', 'scheduled_for_key'])
+        .ignore()
+        .returning('id');
+
+      if (inserted.length > 0) {
+        return true;
+      }
+
+      existing = await trx('scheduled_job_runs')
+        .where({ job_name: jobName, scheduled_for_key: scheduledForKey })
+        .forUpdate()
+        .first() as ScheduledJobRunRow | undefined;
+    }
+
+    if (!existing) return false;
+
+    const startedAt = existing.started_at ? new Date(existing.started_at) : null;
+    const isStaleRunning =
+      existing.status === 'running' &&
+      (!startedAt || now.getTime() - startedAt.getTime() > STALE_RUN_THRESHOLD_MS);
+
+    if (existing.status !== 'failed' && !isStaleRunning) {
+      return false;
+    }
+
+    await trx('scheduled_job_runs')
+      .where({ id: existing.id })
+      .update({
+        status: 'running',
+        attempt_count: Number(existing.attempt_count ?? 0) + 1,
+        started_at: now,
+        finished_at: null,
+        error_message: null,
+        updated_at: now,
+      });
+
+    return true;
+  });
+}
+
+function getExpectedSnapshotDate(job: ScheduledSnapshotJob, scheduledFor: Date): string {
+  return job.name === WEEKLY_EPI_JOB_NAME
+    ? formatManilaDate(scheduledFor)
+    : getPreviousMonthDateString(scheduledFor);
+}
+
+function getExpectedSnapshotType(job: ScheduledSnapshotJob): EpiHistoryEntry['type'] {
+  return job.name === WEEKLY_EPI_JOB_NAME ? 'weekly' : 'monthly';
+}
+
+async function hasExistingSnapshotHistory(job: ScheduledSnapshotJob, scheduledFor: Date): Promise<boolean> {
+  const masterDb = db.getMasterDb();
+  const snapshotType = getExpectedSnapshotType(job);
+  const snapshotDate = getExpectedSnapshotDate(job, scheduledFor);
+  const jsonPath = `$[*] ? (@.type == "${snapshotType}" && @.date == "${snapshotDate}")`;
+
+  const row = await masterDb('users as u')
+    .join('user_roles as ur', 'u.id', 'ur.user_id')
+    .join('roles as r', 'ur.role_id', 'r.id')
+    .where('u.is_active', true)
+    .where('u.employment_status', 'active')
+    .where('r.name', 'Service Crew')
+    .whereRaw(`jsonb_path_exists(COALESCE(u.epi_history, '[]'::jsonb), ?::jsonpath)`, [jsonPath])
+    .first('u.id');
+
+  return Boolean(row);
+}
+
+async function recordSuccessfulScheduledJobRun(jobName: string, scheduledFor: Date): Promise<void> {
+  const masterDb = db.getMasterDb();
+  const now = new Date();
+
+  await masterDb('scheduled_job_runs')
+    .insert({
+      job_name: jobName,
+      scheduled_for_key: formatScheduledForKey(scheduledFor),
+      scheduled_for_manila: formatManilaDateTime(scheduledFor),
+      status: 'success',
+      attempt_count: 1,
+      started_at: now,
+      finished_at: now,
+      error_message: null,
+      created_at: now,
+      updated_at: now,
+    })
+    .onConflict(['job_name', 'scheduled_for_key'])
+    .merge({
+      scheduled_for_manila: formatManilaDateTime(scheduledFor),
+      status: 'success',
+      finished_at: now,
+      error_message: null,
+      updated_at: now,
+    });
+}
+
+async function markScheduledJobRunSuccess(jobName: string, scheduledFor: Date): Promise<void> {
+  const masterDb = db.getMasterDb();
+  const scheduledForKey = formatScheduledForKey(scheduledFor);
+  const now = new Date();
+
+  await masterDb('scheduled_job_runs')
+    .where({ job_name: jobName, scheduled_for_key: scheduledForKey })
+    .update({
+      status: 'success',
+      finished_at: now,
+      updated_at: now,
+    });
+}
+
+async function markScheduledJobRunFailure(jobName: string, scheduledFor: Date, error: unknown): Promise<void> {
+  const masterDb = db.getMasterDb();
+  const scheduledForKey = formatScheduledForKey(scheduledFor);
+  const now = new Date();
+  const errorMessage = error instanceof Error ? error.message : String(error);
+
+  await masterDb('scheduled_job_runs')
+    .where({ job_name: jobName, scheduled_for_key: scheduledForKey })
+    .update({
+      status: 'failed',
+      finished_at: now,
+      error_message: errorMessage.slice(0, 4000),
+      updated_at: now,
+    });
+}
+
+async function runScheduledJob(job: ScheduledSnapshotJob, scheduledFor: Date, source: 'scheduled' | 'startup'): Promise<void> {
+  const scheduledForKey = formatScheduledForKey(scheduledFor);
+  const claimed = await claimScheduledJobRun(job.name, scheduledFor);
+
+  if (!claimed) {
+    logger.info({ jobName: job.name, scheduledForKey, source }, 'Skipping EPI snapshot job; occurrence already claimed');
+    return;
+  }
+
+  logger.info(
+    {
+      jobName: job.name,
+      scheduledForKey,
+      scheduledForManila: formatManilaDateTime(scheduledFor),
+      source,
+    },
+    'Starting EPI snapshot job',
+  );
+
+  try {
+    await job.runner({ scheduledFor });
+    await markScheduledJobRunSuccess(job.name, scheduledFor);
+    logger.info({ jobName: job.name, scheduledForKey }, 'Completed EPI snapshot job');
+  } catch (error) {
+    await markScheduledJobRunFailure(job.name, scheduledFor, error);
+    logger.error({ err: error, jobName: job.name, scheduledForKey }, 'EPI snapshot job failed');
+  }
+}
+
+function scheduleJob(job: ScheduledSnapshotJob): void {
+  if (!initialized) return;
+
+  const nextOccurrence = findNextOccurrence(job.schedule, new Date());
+  scheduleTimeoutUntil(job, nextOccurrence, () => {
+    void runScheduledJob(job, nextOccurrence, 'scheduled').finally(() => {
+      if (initialized) {
+        scheduleJob(job);
+      }
+    });
+  });
+
+  logger.info(
+    {
+      jobName: job.name,
+      expression: job.expression,
+      nextRunManila: formatManilaDateTime(nextOccurrence),
+    },
+    'Scheduled EPI snapshot job',
+  );
+}
+
+async function reconcileLatestOccurrence(job: ScheduledSnapshotJob): Promise<void> {
+  const latestOccurrence = findLatestOccurrence(job.schedule, new Date());
+  const ageMs = Date.now() - latestOccurrence.getTime();
+
+  if (ageMs < 0) return;
+  if (ageMs > 45 * 24 * 60 * 60 * 1000) return;
+
+  if (await hasExistingSnapshotHistory(job, latestOccurrence)) {
+    await recordSuccessfulScheduledJobRun(job.name, latestOccurrence);
+    logger.info(
+      {
+        jobName: job.name,
+        scheduledForKey: formatScheduledForKey(latestOccurrence),
+      },
+      'Recorded pre-existing EPI snapshot occurrence from history',
+    );
+    return;
+  }
+
+  await runScheduledJob(job, latestOccurrence, 'startup');
+}
+
+async function getActiveServiceCrewUsers(): Promise<MasterUserRow[]> {
   const masterDb = db.getMasterDb();
 
-  // Fetch active Service Crew users (those with epi_score set)
-  // We use a join against user_roles/roles to find Service Crew members
-  const users = await masterDb('users as u')
+  return masterDb('users as u')
     .join('user_roles as ur', 'u.id', 'ur.user_id')
     .join('roles as r', 'ur.role_id', 'r.id')
     .where('u.is_active', true)
@@ -106,19 +466,28 @@ export async function runWeeklyEpiSnapshot(): Promise<void> {
       'u.violation_notices',
     )
     .distinct('u.id')
-    .orderBy('u.id') as MasterUserRow[];
+    .orderBy('u.id') as Promise<MasterUserRow[]>;
+}
 
-  logger.info({ count: users.length }, 'EPI weekly snapshot: processing users');
+export async function runWeeklyEpiSnapshot(input?: { scheduledFor?: Date }): Promise<void> {
+  const scheduledFor = input?.scheduledFor ?? new Date();
+  const snapshotDate = formatManilaDate(scheduledFor);
 
-  const snapshotDate = getManilaDateString();
+  logger.info({ snapshotDate }, 'EPI weekly snapshot started');
+
+  const masterDb = db.getMasterDb();
+  const users = await getActiveServiceCrewUsers();
   const reportDataList: EpiReportData[] = [];
 
-  // Fetch user emails and names in bulk
-  const userIds = users.map((u) => u.id);
+  logger.info({ snapshotDate, count: users.length }, 'EPI weekly snapshot: processing users');
+
+  const userIds = users.map((user) => user.id);
   const userDetails = userIds.length > 0
-    ? await masterDb('users').whereIn('id', userIds).select('id', 'first_name', 'last_name', 'email', 'employee_number')
+    ? await masterDb('users')
+      .whereIn('id', userIds)
+      .select('id', 'first_name', 'last_name', 'email', 'employee_number')
     : [];
-  const userDetailMap = new Map(userDetails.map((u) => [u.id as string, u]));
+  const userDetailMap = new Map(userDetails.map((user) => [user.id as string, user]));
 
   for (const user of users) {
     try {
@@ -172,12 +541,11 @@ export async function runWeeklyEpiSnapshot(): Promise<void> {
           reportDate: snapshotDate,
         });
       }
-    } catch (err) {
-      logger.error({ err, userId: user.id }, 'EPI weekly snapshot failed for user');
+    } catch (error) {
+      logger.error({ err: error, userId: user.id, snapshotDate }, 'EPI weekly snapshot failed for user');
     }
   }
 
-  // Send individual emails to Service Crew
   for (const reportData of reportDataList) {
     try {
       const pdfBuffer = await generateEpiReportPdf(reportData);
@@ -190,13 +558,11 @@ export async function runWeeklyEpiSnapshot(): Promise<void> {
         reportData.reportDate,
         pdfBuffer,
       );
-    } catch (err) {
-      logger.error({ err, userId: reportData.userId }, 'Failed to send EPI email to employee');
+    } catch (error) {
+      logger.error({ err: error, userId: reportData.userId, snapshotDate }, 'Failed to send EPI email to employee');
     }
   }
 
-  // Send summary email to managers/admins per company
-  // Fetch managers grouped by company
   const companies = await masterDb('companies').where({ is_active: true }).select('id', 'name');
   for (const company of companies) {
     try {
@@ -204,18 +570,18 @@ export async function runWeeklyEpiSnapshot(): Promise<void> {
         (await masterDb('user_company_access')
           .where({ company_id: company.id, is_active: true })
           .select('user_id'))
-          .map((r) => r.user_id as string),
+          .map((row) => row.user_id as string),
       );
 
-      const companyReports = reportDataList.filter((r) => companyEmployeeIds.has(r.userId));
+      const companyReports = reportDataList.filter((report) => companyEmployeeIds.has(report.userId));
       if (companyReports.length === 0) continue;
 
       const managers = await masterDb('users as u')
         .join('user_roles as ur', 'u.id', 'ur.user_id')
         .join('roles as r', 'ur.role_id', 'r.id')
-        .join('user_company_access as uca', (qb) =>
-          qb.on('uca.user_id', 'u.id').andOn('uca.company_id', masterDb.raw('?', [company.id]))
-        )
+        .join('user_company_access as uca', (query) => {
+          query.on('uca.user_id', 'u.id').andOn('uca.company_id', masterDb.raw('?', [company.id]));
+        })
         .where('u.is_active', true)
         .whereIn('r.name', ['Administrator', 'Management'])
         .select('u.id', 'u.first_name', 'u.last_name', 'u.email')
@@ -223,7 +589,7 @@ export async function runWeeklyEpiSnapshot(): Promise<void> {
 
       if (managers.length === 0) continue;
 
-      const avgDelta = companyReports.reduce((s, r) => s + r.delta, 0) / companyReports.length;
+      const avgDelta = companyReports.reduce((sum, report) => sum + report.delta, 0) / companyReports.length;
       const summaryPdf = await generateManagerSummaryPdf(companyReports, company.name as string, snapshotDate);
 
       for (const manager of managers) {
@@ -237,42 +603,26 @@ export async function runWeeklyEpiSnapshot(): Promise<void> {
             snapshotDate,
             summaryPdf,
           );
-        } catch (err) {
-          logger.error({ err, managerId: manager.id }, 'Failed to send EPI summary email to manager');
+        } catch (error) {
+          logger.error({ err: error, managerId: manager.id, snapshotDate }, 'Failed to send EPI summary email to manager');
         }
       }
-    } catch (err) {
-      logger.error({ err, companyId: company.id }, 'Failed to send manager EPI summary for company');
+    } catch (error) {
+      logger.error({ err: error, companyId: company.id, snapshotDate }, 'Failed to send manager EPI summary for company');
     }
   }
 
   logger.info({ snapshotDate, processed: reportDataList.length }, 'EPI weekly snapshot completed');
 }
 
-export async function runMonthlyEpiSnapshot(): Promise<void> {
-  logger.info('EPI monthly snapshot started');
+export async function runMonthlyEpiSnapshot(input?: { scheduledFor?: Date }): Promise<void> {
+  const scheduledFor = input?.scheduledFor ?? new Date();
+  const snapshotDate = getPreviousMonthDateString(scheduledFor);
+
+  logger.info({ snapshotDate }, 'EPI monthly snapshot started');
 
   const masterDb = db.getMasterDb();
-
-  const users = await masterDb('users as u')
-    .join('user_roles as ur', 'u.id', 'ur.user_id')
-    .join('roles as r', 'ur.role_id', 'r.id')
-    .where('u.is_active', true)
-    .where('u.employment_status', 'active')
-    .where('r.name', 'Service Crew')
-    .select(
-      'u.id',
-      'u.user_key',
-      'u.epi_score',
-      'u.css_audits',
-      'u.peer_evaluations',
-      'u.compliance_audit',
-      'u.violation_notices',
-    )
-    .distinct('u.id')
-    .orderBy('u.id') as MasterUserRow[];
-
-  const snapshotDate = getPreviousMonthDateString();
+  const users = await getActiveServiceCrewUsers();
 
   for (const user of users) {
     try {
@@ -286,7 +636,6 @@ export async function runMonthlyEpiSnapshot(): Promise<void> {
       });
 
       const currentEpi = Number(user.epi_score ?? 100);
-
       const entry: EpiHistoryEntry = {
         type: 'monthly',
         date: snapshotDate,
@@ -307,62 +656,41 @@ export async function runMonthlyEpiSnapshot(): Promise<void> {
           ),
           updated_at: new Date(),
         });
-    } catch (err) {
-      logger.error({ err, userId: user.id }, 'EPI monthly snapshot failed for user');
+    } catch (error) {
+      logger.error({ err: error, userId: user.id, snapshotDate }, 'EPI monthly snapshot failed for user');
     }
   }
 
   logger.info({ snapshotDate, processed: users.length }, 'EPI monthly snapshot completed');
 }
 
-// ─── Cron Init/Stop ───────────────────────────────────────────────────────────
+export async function initEpiSnapshotCrons(): Promise<void> {
+  if (initialized) return;
+  initialized = true;
 
-let lastWeeklyRunDate: string | null = null;
-let lastMonthlyRunDate: string | null = null;
+  try {
+    await Promise.all(scheduledJobs.map((job) => reconcileLatestOccurrence(job)));
+  } catch (error) {
+    logger.error({ err: error }, 'EPI snapshot startup reconciliation failed');
+  }
 
-function weeklyTick(): void {
-  if (!isWeeklySnapshotTime()) return;
+  for (const job of scheduledJobs) {
+    scheduleJob(job);
+  }
 
-  const today = getManilaDateString();
-  if (lastWeeklyRunDate === today) return; // Already ran today
-
-  lastWeeklyRunDate = today;
-  void runWeeklyEpiSnapshot().catch((err) => {
-    logger.error({ err }, 'EPI weekly snapshot cron error');
-  });
-}
-
-function monthlyTick(): void {
-  if (!isMonthlySnapshotTime()) return;
-
-  const today = getManilaDateString();
-  if (lastMonthlyRunDate === today) return; // Already ran today
-
-  lastMonthlyRunDate = today;
-  void runMonthlyEpiSnapshot().catch((err) => {
-    logger.error({ err }, 'EPI monthly snapshot cron error');
-  });
-}
-
-export function initEpiSnapshotCrons(): void {
-  if (weeklyHandle || monthlyHandle) return;
-
-  // Check every 15 minutes
-  const INTERVAL_MS = 15 * 60 * 1000;
-
-  weeklyHandle = setInterval(weeklyTick, INTERVAL_MS);
-  monthlyHandle = setInterval(monthlyTick, INTERVAL_MS);
-
-  logger.info('EPI snapshot crons initialized (check interval: 15 min)');
+  logger.info(
+    {
+      jobs: scheduledJobs.map((job) => ({ name: job.name, expression: job.expression })),
+      windowDays: Math.round(THIRTY_DAY_WINDOW_MS / (24 * 60 * 60 * 1000)),
+    },
+    'EPI snapshot cron scheduler initialized',
+  );
 }
 
 export function stopEpiSnapshotCrons(): void {
-  if (weeklyHandle) {
-    clearInterval(weeklyHandle);
-    weeklyHandle = null;
-  }
-  if (monthlyHandle) {
-    clearInterval(monthlyHandle);
-    monthlyHandle = null;
+  initialized = false;
+
+  for (const job of scheduledJobs) {
+    clearScheduledHandle(job);
   }
 }

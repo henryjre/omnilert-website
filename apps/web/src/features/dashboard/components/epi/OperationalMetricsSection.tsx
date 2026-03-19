@@ -96,7 +96,7 @@ export function OperationalMetricsSection({ criteria }: OperationalMetricsSectio
                     <CalendarCheck size={18} className="text-gray-400" />
                   </div>
                   <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
-                    <span className="text-2xl font-bold text-gray-400">—</span>
+                    <span className="text-2xl font-bold text-gray-400">--</span>
                   </div>
                   <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Attendance Rate</p>
                   <p className="text-xs italic text-gray-400">No data this period</p>
@@ -115,20 +115,20 @@ export function OperationalMetricsSection({ criteria }: OperationalMetricsSectio
         >
           <Card className="h-full">
             <CardBody className="flex h-full flex-col items-center justify-center gap-2 py-6 text-center">
-              {criteria.cashierAccuracyRate !== null ? (
+              {criteria.punctualityRate !== null ? (
                 <>
-                  <MetricIcon icon={Clock} zone={getRateZone(criteria.cashierAccuracyRate)} />
+                  <MetricIcon icon={Clock} zone={getRateZone(criteria.punctualityRate)} />
                   <RadialGauge
-                    value={criteria.cashierAccuracyRate}
+                    value={criteria.punctualityRate}
                     max={100}
                     size={80}
                     strokeWidth={8}
-                    zone={getRateZone(criteria.cashierAccuracyRate)}
+                    zone={getRateZone(criteria.punctualityRate)}
                     valueFormat={(v) => `${v.toFixed(0)}%`}
                     delay={0}
                   />
                   <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Punctuality Rate</p>
-                  <ZoneBadge zone={getRateZone(criteria.cashierAccuracyRate)} />
+                  <ZoneBadge zone={getRateZone(criteria.punctualityRate)} />
                 </>
               ) : (
                 <>
@@ -136,7 +136,7 @@ export function OperationalMetricsSection({ criteria }: OperationalMetricsSectio
                     <Clock size={18} className="text-gray-400" />
                   </div>
                   <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
-                    <span className="text-2xl font-bold text-gray-400">—</span>
+                    <span className="text-2xl font-bold text-gray-400">--</span>
                   </div>
                   <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Punctuality Rate</p>
                   <p className="text-xs italic text-gray-400">No data this period</p>
@@ -176,7 +176,7 @@ export function OperationalMetricsSection({ criteria }: OperationalMetricsSectio
                     <Zap size={18} className="text-gray-400" />
                   </div>
                   <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
-                    <span className="text-2xl font-bold text-gray-400">—</span>
+                    <span className="text-2xl font-bold text-gray-400">--</span>
                   </div>
                   <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Productivity Rate</p>
                   <p className="text-xs italic text-gray-400">No data this period</p>
@@ -203,7 +203,7 @@ export function OperationalMetricsSection({ criteria }: OperationalMetricsSectio
                     <AnimatedCounter
                       value={criteria.aov}
                       decimals={0}
-                      prefix="₱"
+                      prefix="P"
                       delay={0.3}
                       className={`text-xl lg:text-2xl font-bold ${aovColors.text} ${aovColors.darkText}`}
                     />
@@ -234,7 +234,7 @@ export function OperationalMetricsSection({ criteria }: OperationalMetricsSectio
                       </div>
                     </div>
                     <p className="text-xs text-gray-400">
-                      Branch avg: ₱{criteria.branchAov?.toFixed(0) ?? '—'}
+                      Branch avg: P{criteria.branchAov?.toFixed(0) ?? '--'}
                     </p>
                   </div>
                   <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Average Order Value</p>
@@ -246,7 +246,7 @@ export function OperationalMetricsSection({ criteria }: OperationalMetricsSectio
                     <ShoppingCart size={18} className="text-gray-400" />
                   </div>
                   <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
-                    <span className="text-2xl font-bold text-gray-400">—</span>
+                    <span className="text-2xl font-bold text-gray-400">--</span>
                   </div>
                   <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Average Order Value</p>
                   <p className="text-xs italic text-gray-400">No data this period</p>

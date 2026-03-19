@@ -77,7 +77,7 @@ async function bootstrap(): Promise<void> {
   await initComplianceCron();
   await initPeerEvaluationQueue();
   initPeerEvaluationCron();
-  initEpiSnapshotCrons();
+  await initEpiSnapshotCrons();
   await verifyMailConnection();
 
   server.listen(env.PORT, () => {
