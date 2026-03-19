@@ -1,25 +1,24 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, Star, AlertCircle } from 'lucide-react';
-import type { EpiCriteria, EpiMonthEntry, LeaderboardEntry, WrsStatusSummary } from './types';
+import type { EpiCriteria, LeaderboardDetailEntry, LeaderboardSummaryEntry, WrsStatusSummary } from './types';
 import { getAovZone, getEpiZone, getRateZone, getScoreZone, getZoneColors } from './epiUtils';
 import { SectionLabel } from './SectionLabel';
 import { AvatarFallback } from './AvatarFallback';
 import { Card, CardBody } from '@/shared/components/ui/Card';
+import { fetchEpiLeaderboardDetail } from '../../services/epi.api';
+import { LeaderboardDetailSkeleton, LeaderboardSkeleton } from './EpiSkeletons';
 import { AWARD_BONUS, VIOLATION_DEDUCTION } from './mockData';
 
 interface EpiLeaderboardProps {
-  entries: LeaderboardEntry[];
+  entries: LeaderboardSummaryEntry[];
   selectedMonthKey: string;
+  loading: boolean;
+  error: string | null;
 }
 
-interface ResolvedLeaderboardEntry extends LeaderboardEntry {
-  selectedEntry: EpiMonthEntry | null;
-  displayScore: number | null;
-  displayCriteria: EpiCriteria;
-  displayWrsStatus: WrsStatusSummary | null;
-  hasData: boolean;
-}
+interface RankedLeaderboardEntry extends LeaderboardSummaryEntry {}
 
 function getEmptyCriteria(): EpiCriteria {
   return {
@@ -59,12 +58,12 @@ function PodiumCard({
   isExpanded,
   onToggle,
 }: {
-  entry: ResolvedLeaderboardEntry;
+  entry: RankedLeaderboardEntry;
   height: string;
   isExpanded: boolean;
   onToggle: () => void;
 }) {
-  const zone = entry.displayScore !== null ? getEpiZone(entry.displayScore) : 'amber';
+  const zone = entry.displayEpiScore !== null ? getEpiZone(entry.displayEpiScore) : 'amber';
   const colors = getZoneColors(zone);
 
   return (
@@ -76,7 +75,7 @@ function PodiumCard({
         delay: entry.rank === 1 ? 0.4 : entry.rank === 2 ? 0.2 : 0.6,
         ease: 'easeOut',
       }}
-      className={`flex flex-col items-center justify-end rounded-xl border p-3 text-center cursor-pointer transition-shadow hover:shadow-md ${height} ${
+      className={`flex cursor-pointer flex-col items-center justify-end rounded-xl border p-3 text-center transition-shadow hover:shadow-md ${height} ${
         isExpanded
           ? entry.rank === 1
             ? 'border-yellow-400 ring-2 ring-yellow-200 dark:ring-yellow-800'
@@ -104,8 +103,8 @@ function PodiumCard({
       <p className="mt-2 max-w-[80px] truncate text-xs font-semibold text-gray-800 dark:text-gray-200">
         {entry.firstName}
       </p>
-      <p className={`text-sm font-bold ${entry.displayScore !== null ? `${colors.text} ${colors.darkText}` : 'text-gray-400'}`}>
-        {entry.displayScore !== null ? entry.displayScore.toFixed(1) : '--'}
+      <p className={`text-sm font-bold ${entry.displayEpiScore !== null ? `${colors.text} ${colors.darkText}` : 'text-gray-400'}`}>
+        {entry.displayEpiScore !== null ? entry.displayEpiScore.toFixed(1) : '--'}
       </p>
       <ChevronDown
         className={`mt-1 h-3 w-3 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
@@ -126,11 +125,11 @@ function MetricBar({ label, value, max, format }: {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-0.5">
+      <div className="mb-0.5 flex items-center justify-between">
         <span className="text-gray-500 dark:text-gray-400">{label}</span>
         <span className={`font-semibold ${colors.text} ${colors.darkText}`}>{format}</span>
       </div>
-      <div className="h-1.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+      <div className="h-1.5 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
         <motion.div
           className="h-1.5 rounded-full"
           style={{ backgroundColor: colors.stroke }}
@@ -152,15 +151,29 @@ function NullMetric({ label }: { label: string }) {
   );
 }
 
+function formatAsOfDateTime(dateTime: string | null): string | null {
+  if (!dateTime) return null;
+
+  return `${new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(new Date(dateTime))} PHT`;
+}
+
 function ExpandedMetrics({
-  criteria,
-  wrsStatus,
+  detail,
   isMissingData,
 }: {
-  criteria: EpiCriteria | null;
-  wrsStatus: WrsStatusSummary | null;
+  detail: LeaderboardDetailEntry | null;
   isMissingData: boolean;
 }) {
+  const criteria = detail?.criteria ?? null;
+  const wrsStatus = detail?.wrsStatus ?? null;
+
   if (isMissingData || !criteria) {
     return (
       <div className="rounded-lg border border-dashed border-gray-200 px-4 py-5 text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400">
@@ -175,9 +188,23 @@ function ExpandedMetrics({
   const aovColors = aovZone ? getZoneColors(aovZone) : null;
   const violationImpact = criteria.violationCount * VIOLATION_DEDUCTION;
   const awardImpact = criteria.awardCount * AWARD_BONUS;
+  const asOfDateTime = formatAsOfDateTime(detail?.asOfDateTime ?? null);
 
   return (
     <div className="space-y-4 text-xs">
+      {detail && (
+        <div className="rounded-lg border border-gray-100 bg-gray-50/80 px-3 py-2 text-[11px] text-gray-500 dark:border-gray-800 dark:bg-gray-900/30 dark:text-gray-400">
+          <p className="font-semibold text-gray-600 dark:text-gray-300">
+            {detail.scoreSource === 'official' ? 'Official saved EPI' : 'Historical monthly EPI'}
+            {detail.epiScore !== null ? `: ${detail.epiScore.toFixed(1)}` : ''}
+          </p>
+          <p>
+            {detail.criteriaSource === 'live' ? 'Live rolling 30-day criteria' : 'Saved monthly snapshot criteria'}
+            {asOfDateTime ? ` as of ${asOfDateTime}` : ''}
+          </p>
+        </div>
+      )}
+
       <div>
         <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">Performance Scores</p>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -213,7 +240,7 @@ function ExpandedMetrics({
           {criteria.aov !== null && aovColors
             ? (
               <div>
-                <div className="flex items-center justify-between mb-0.5">
+                <div className="mb-0.5 flex items-center justify-between">
                   <span className="text-gray-500 dark:text-gray-400">Avg Order Value</span>
                   <span className={`font-semibold ${aovColors.text} ${aovColors.darkText}`}>
                     P{criteria.aov.toFixed(0)}
@@ -244,14 +271,14 @@ function ExpandedMetrics({
       <div>
         <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">Discipline &amp; Recognition</p>
         <div className="grid grid-cols-2 gap-3">
-          <div className="flex items-center gap-2 rounded-lg bg-amber-50 dark:bg-amber-900/10 px-3 py-2">
+          <div className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 dark:bg-amber-900/10">
             <Star className="h-4 w-4 flex-shrink-0 text-amber-500" />
             <div>
               <p className="font-bold text-amber-600 dark:text-amber-400">{criteria.awardCount} Awards</p>
               <p className="text-[10px] text-amber-500">{criteria.awardCount === 0 ? 'No bonus' : `+${awardImpact} pts`}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 rounded-lg bg-red-50 dark:bg-red-900/10 px-3 py-2">
+          <div className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 dark:bg-red-900/10">
             <AlertCircle className="h-4 w-4 flex-shrink-0 text-red-500" />
             <div>
               <p className="font-bold text-red-600 dark:text-red-400">{criteria.violationCount} Violations</p>
@@ -264,62 +291,137 @@ function ExpandedMetrics({
   );
 }
 
+function ExpandedLeaderboardPanel({
+  detail,
+  isLoading,
+  error,
+}: {
+  detail: LeaderboardDetailEntry | null;
+  isLoading: boolean;
+  error: string | null;
+}) {
+  if (isLoading) {
+    return <LeaderboardDetailSkeleton />;
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-5 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+        {error}
+      </div>
+    );
+  }
+
+  return (
+    <ExpandedMetrics
+      detail={detail}
+      isMissingData={detail?.hasData === false}
+    />
+  );
+}
+
 const PAGE_SIZE = 10;
 
-export function EpiLeaderboard({ entries, selectedMonthKey }: EpiLeaderboardProps) {
+export function EpiLeaderboard({ entries, selectedMonthKey, loading, error }: EpiLeaderboardProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [page, setPage] = useState(0);
 
-  useEffect(() => {
-    setExpandedId(null);
-    setPage(0);
-  }, [selectedMonthKey]);
-
   const rankedEntries = useMemo(() => {
-    const resolved = entries.map((entry) => {
-      const selectedEntry = entry.history.find((historyEntry) => historyEntry.monthKey === selectedMonthKey) ?? null;
-      const hasData = selectedEntry !== null;
-
-      return {
-        ...entry,
-        selectedEntry,
-        displayScore: selectedEntry?.score ?? null,
-        displayCriteria: selectedEntry?.criteria ?? getEmptyCriteria(),
-        displayWrsStatus: selectedEntry?.wrsStatus ?? null,
-        hasData,
-      } satisfies ResolvedLeaderboardEntry;
-    });
-
-    resolved.sort((a, b) => {
+    const sorted = [...entries].sort((a, b) => {
       if (a.hasData && b.hasData) {
-        if (a.displayScore !== b.displayScore) {
-          return (b.displayScore ?? 0) - (a.displayScore ?? 0);
+        if (a.displayEpiScore !== b.displayEpiScore) {
+          return (b.displayEpiScore ?? 0) - (a.displayEpiScore ?? 0);
         }
         return `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`);
       }
+
       if (a.hasData) return -1;
       if (b.hasData) return 1;
       return `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`);
     });
 
-    return resolved.map((entry, index) => ({
+    return sorted.map((entry, index) => ({
       ...entry,
       rank: index + 1,
-    }));
-  }, [entries, selectedMonthKey]);
+    })) satisfies RankedLeaderboardEntry[];
+  }, [entries]);
 
   const top3 = useMemo(() => rankedEntries.filter((entry) => entry.rank <= 3), [rankedEntries]);
   const rest = useMemo(() => rankedEntries.filter((entry) => entry.rank > 3), [rankedEntries]);
   const totalPages = Math.ceil(rest.length / PAGE_SIZE);
   const pageEntries = rest.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
   const podiumOrder = [top3[1], top3[0], top3[2]].filter(
-    (entry): entry is ResolvedLeaderboardEntry => Boolean(entry),
+    (entry): entry is RankedLeaderboardEntry => Boolean(entry),
   );
+
+  const detailQuery = useQuery({
+    queryKey: ['epi-leaderboard-detail', selectedMonthKey, expandedId ?? 'none'],
+    queryFn: () => fetchEpiLeaderboardDetail(expandedId!, selectedMonthKey),
+    enabled: expandedId !== null,
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
+
+  useEffect(() => {
+    if (expandedId === null) {
+      setPage(0);
+      return;
+    }
+
+    const expandedEntry = rankedEntries.find((entry) => entry.id === expandedId);
+    if (!expandedEntry) {
+      setExpandedId(null);
+      setPage(0);
+      return;
+    }
+
+    if (expandedEntry.rank <= 3) {
+      return;
+    }
+
+    const restIndex = rest.findIndex((entry) => entry.id === expandedId);
+    if (restIndex === -1) {
+      return;
+    }
+
+    const nextPage = Math.floor(restIndex / PAGE_SIZE);
+    if (nextPage !== page) {
+      setPage(nextPage);
+    }
+  }, [expandedId, page, rankedEntries, rest]);
 
   function handlePageChange(nextPage: number) {
     setExpandedId(null);
     setPage(nextPage);
   }
+
+  if (loading && entries.length === 0) {
+    return (
+      <div>
+        <SectionLabel>Leaderboard</SectionLabel>
+        <LeaderboardSkeleton />
+      </div>
+    );
+  }
+
+  if (error && entries.length === 0) {
+    return (
+      <div>
+        <SectionLabel>Leaderboard</SectionLabel>
+        <Card>
+          <CardBody>
+            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+              {error}
+            </div>
+          </CardBody>
+        </Card>
+      </div>
+    );
+  }
+
+  const expandedDetail = expandedId ? detailQuery.data ?? null : null;
+  const detailError = detailQuery.isError ? 'Failed to load employee details.' : null;
+  const isDetailLoading = expandedId !== null && detailQuery.isPending;
 
   return (
     <div>
@@ -360,10 +462,10 @@ export function EpiLeaderboard({ entries, selectedMonthKey }: EpiLeaderboardProp
                       <p className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">
                         {entry.firstName} {entry.lastName} - Metrics
                       </p>
-                      <ExpandedMetrics
-                        criteria={entry.hasData ? entry.displayCriteria : null}
-                        wrsStatus={entry.displayWrsStatus}
-                        isMissingData={!entry.hasData}
+                      <ExpandedLeaderboardPanel
+                        detail={expandedDetail}
+                        isLoading={isDetailLoading}
+                        error={detailError}
                       />
                     </div>
                   </motion.div>
@@ -383,7 +485,7 @@ export function EpiLeaderboard({ entries, selectedMonthKey }: EpiLeaderboardProp
                 className="space-y-1"
               >
                 {pageEntries.map((entry) => {
-                  const zone = entry.displayScore !== null ? getEpiZone(entry.displayScore) : 'amber';
+                  const zone = entry.displayEpiScore !== null ? getEpiZone(entry.displayEpiScore) : 'amber';
                   const colors = getZoneColors(zone);
                   const isExpanded = expandedId === entry.id;
                   const isHighlighted = entry.isCurrentUser;
@@ -407,8 +509,8 @@ export function EpiLeaderboard({ entries, selectedMonthKey }: EpiLeaderboardProp
                               <span className="ml-1 text-xs font-normal text-primary-600 dark:text-primary-400">(You)</span>
                             )}
                           </span>
-                          <span className={`text-sm font-semibold ${entry.displayScore !== null ? `${colors.text} ${colors.darkText}` : 'text-gray-400'}`}>
-                            {entry.displayScore !== null ? entry.displayScore.toFixed(1) : '--'}
+                          <span className={`text-sm font-semibold ${entry.displayEpiScore !== null ? `${colors.text} ${colors.darkText}` : 'text-gray-400'}`}>
+                            {entry.displayEpiScore !== null ? entry.displayEpiScore.toFixed(1) : '--'}
                           </span>
                           <ChevronDown
                             className={`h-4 w-4 flex-shrink-0 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
@@ -426,10 +528,10 @@ export function EpiLeaderboard({ entries, selectedMonthKey }: EpiLeaderboardProp
                               style={{ overflow: 'hidden' }}
                             >
                               <div className="px-4 pb-3 pt-1">
-                                <ExpandedMetrics
-                                  criteria={entry.hasData ? entry.displayCriteria : null}
-                                  wrsStatus={entry.displayWrsStatus}
-                                  isMissingData={!entry.hasData}
+                                <ExpandedLeaderboardPanel
+                                  detail={expandedDetail}
+                                  isLoading={isDetailLoading}
+                                  error={detailError}
                                 />
                               </div>
                             </motion.div>
@@ -444,7 +546,7 @@ export function EpiLeaderboard({ entries, selectedMonthKey }: EpiLeaderboardProp
           </div>
 
           {totalPages > 1 && (
-            <div className="flex items-center justify-between border-t border-gray-100 dark:border-gray-800 pt-3">
+            <div className="flex items-center justify-between border-t border-gray-100 pt-3 dark:border-gray-800">
               <p className="text-xs text-gray-400">
                 Showing {page * PAGE_SIZE + 1}-{Math.min((page + 1) * PAGE_SIZE, rest.length)} of {rest.length} employees
               </p>

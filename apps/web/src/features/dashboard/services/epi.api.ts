@@ -3,7 +3,8 @@ import type {
   EpiCriteria,
   EpiDashboardData,
   EpiMonthEntry,
-  LeaderboardEntry,
+  LeaderboardDetailEntry,
+  LeaderboardSummaryEntry,
   WrsStatusSummary,
 } from '../components/epi/types';
 
@@ -39,10 +40,25 @@ interface BackendLeaderboardEntry {
   userId: string;
   fullName: string;
   avatarUrl: string | null;
-  officialEpiScore: number;
-  currentLive: BackendCurrentLiveSnapshot | null;
-  monthlyHistory: BackendHistoricalMonthEntry[];
+  monthKey: string;
+  displayEpiScore: number | null;
+  hasData: boolean;
+  isCurrentUser: boolean;
   rank: number;
+}
+
+interface BackendLeaderboardDetailResponse {
+  userId: string;
+  fullName: string;
+  avatarUrl: string | null;
+  monthKey: string;
+  epiScore: number | null;
+  hasData: boolean;
+  criteria: EpiCriteria;
+  wrsStatus: WrsStatusSummary | null;
+  asOfDateTime: string | null;
+  scoreSource: 'official' | 'historical';
+  criteriaSource: 'live' | 'historical';
 }
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -81,6 +97,10 @@ function getCurrentMonthMeta(): { monthKey: string; month: string; year: number 
     month: MONTH_NAMES[monthNumber - 1],
     year,
   };
+}
+
+export function getCurrentManilaMonthKey(): string {
+  return getCurrentMonthMeta().monthKey;
 }
 
 function toHistoricalMonthEntry(entry: BackendHistoricalMonthEntry): EpiMonthEntry {
@@ -197,12 +217,13 @@ export async function fetchEpiDashboard(): Promise<EpiDashboardData> {
   };
 }
 
-export async function fetchEpiLeaderboard(currentUserId?: string): Promise<LeaderboardEntry[]> {
-  const res = await api.get<{ success: boolean; data: BackendLeaderboardEntry[] }>('/dashboard/epi/leaderboard');
+export async function fetchEpiLeaderboardSummary(monthKey: string): Promise<LeaderboardSummaryEntry[]> {
+  const res = await api.get<{ success: boolean; data: BackendLeaderboardEntry[] }>('/dashboard/epi/leaderboard', {
+    params: { monthKey },
+  });
   const list = res.data.data ?? [];
 
   return list.map((entry) => {
-    const history = combineMonthHistory(entry.monthlyHistory ?? [], entry.currentLive);
     const { firstName, lastName } = splitFullName(entry.fullName);
 
     return {
@@ -211,12 +232,38 @@ export async function fetchEpiLeaderboard(currentUserId?: string): Promise<Leade
       firstName,
       lastName,
       avatarUrl: entry.avatarUrl,
-      officialEpiScore: entry.officialEpiScore,
-      epiScore: entry.currentLive?.projectedEpiScore ?? entry.officialEpiScore,
-      isCurrentUser: entry.userId === currentUserId,
-      criteria: entry.currentLive?.criteria ?? getEmptyCriteria(),
-      wrsStatus: entry.currentLive?.wrsStatus ?? null,
-      history,
-    } satisfies LeaderboardEntry;
+      monthKey: entry.monthKey,
+      displayEpiScore: entry.displayEpiScore,
+      hasData: entry.hasData,
+      isCurrentUser: entry.isCurrentUser,
+    } satisfies LeaderboardSummaryEntry;
   });
+}
+
+export async function fetchEpiLeaderboardDetail(userId: string, monthKey: string): Promise<LeaderboardDetailEntry | null> {
+  const res = await api.get<{ success: boolean; data: BackendLeaderboardDetailResponse | null }>(`/dashboard/epi/leaderboard/${userId}`, {
+    params: { monthKey },
+  });
+  const entry = res.data.data;
+
+  if (!entry) {
+    return null;
+  }
+
+  const { firstName, lastName } = splitFullName(entry.fullName);
+
+  return {
+    id: entry.userId,
+    firstName,
+    lastName,
+    avatarUrl: entry.avatarUrl,
+    monthKey: entry.monthKey,
+    epiScore: entry.epiScore,
+    hasData: entry.hasData,
+    criteria: entry.criteria ?? getEmptyCriteria(),
+    wrsStatus: entry.wrsStatus ?? null,
+    asOfDateTime: entry.asOfDateTime,
+    scoreSource: entry.scoreSource,
+    criteriaSource: entry.criteriaSource,
+  } satisfies LeaderboardDetailEntry;
 }

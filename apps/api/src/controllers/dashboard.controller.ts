@@ -3,7 +3,25 @@ import { db } from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import { getEmployeeByWebsiteUserKey, getEmployeePayslipData, createViewOnlyPayslip, getEmployeeEPIData, getEmployeeAuditRatings, getAllEmployeesWithEPI } from '../services/odoo.service.js';
-import { getEpiDashboard, getEpiLeaderboard } from '../services/epiDashboard.service.js';
+import { getEpiDashboard, getEpiLeaderboard, getEpiLeaderboardDetail } from '../services/epiDashboard.service.js';
+
+function parseMonthKey(monthKeyParam: string | undefined): string {
+  if (!monthKeyParam) {
+    throw new AppError(400, 'monthKey is required');
+  }
+
+  if (!/^\d{4}-\d{2}$/.test(monthKeyParam)) {
+    throw new AppError(400, 'monthKey must be in YYYY-MM format');
+  }
+
+  const [, month] = monthKeyParam.split('-');
+  const monthNumber = Number(month);
+  if (monthNumber < 1 || monthNumber > 12) {
+    throw new AppError(400, 'monthKey month must be between 01 and 12');
+  }
+
+  return monthKeyParam;
+}
 
 export async function getPerformanceIndex(req: Request, res: Response, next: NextFunction) {
   try {
@@ -289,7 +307,21 @@ export async function getEpiDashboardData(req: Request, res: Response, next: Nex
 export async function getEpiLeaderboardData(req: Request, res: Response, next: NextFunction) {
   try {
     const companyId = req.companyContext!.companyId;
-    const data = await getEpiLeaderboard(companyId);
+    const currentUserId = req.user!.sub;
+    const monthKey = parseMonthKey(req.query.monthKey as string | undefined);
+    const data = await getEpiLeaderboard(companyId, currentUserId, monthKey);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getEpiLeaderboardDetailData(req: Request, res: Response, next: NextFunction) {
+  try {
+    const companyId = req.companyContext!.companyId;
+    const userId = String(req.params.userId);
+    const monthKey = parseMonthKey(req.query.monthKey as string | undefined);
+    const data = await getEpiLeaderboardDetail(companyId, userId, monthKey);
     res.json({ success: true, data });
   } catch (err) {
     next(err);

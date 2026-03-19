@@ -1,4 +1,4 @@
-import type { EpiCriteria, EpiDashboardData, EpiMonthEntry, LeaderboardEntry } from './types';
+import type { EpiCriteria, EpiDashboardData, EpiMonthEntry } from './types';
 
 export const VIOLATION_DEDUCTION = 5;
 export const AWARD_BONUS = 5;
@@ -208,57 +208,3 @@ export const MOCK_EPI_DATA: EpiDashboardData = {
   currentMonthKey: CURRENT_MONTH.monthKey,
   history: HISTORY,
 };
-
-function makeEntry(
-  id: string,
-  rank: number,
-  firstName: string,
-  lastName: string,
-  epiScore: number,
-  isCurrentUser = false,
-  customHistory?: EpiMonthEntry[],
-): LeaderboardEntry {
-  const criteria = mockCriteria(epiScore);
-  const history = customHistory ?? mockLeaderboardHistory(epiScore, rank, criteria);
-
-  return {
-    id,
-    rank,
-    firstName,
-    lastName,
-    avatarUrl: null,
-    officialEpiScore: epiScore - 2.5,
-    epiScore,
-    isCurrentUser,
-    criteria: history[history.length - 1]?.criteria ?? criteria,
-    wrsStatus: history[history.length - 1]?.wrsStatus ?? null,
-    history,
-  };
-}
-
-export const MOCK_LEADERBOARD: LeaderboardEntry[] = [
-  makeEntry('1', 1, 'Maria', 'Santos', 124.1),
-  makeEntry('2', 2, 'Juan', 'Dela Cruz', 119.7),
-  makeEntry('3', 3, 'Ana', 'Reyes', 116.3),
-  makeEntry('4', 4, 'Pedro', 'Garcia', 114.8),
-  makeEntry('5', 5, 'Rosa', 'Flores', 113.2),
-  makeEntry('6', 6, 'Carlos', 'Lopez', 110.9),
-  {
-    id: '7',
-    rank: 7,
-    firstName: 'You',
-    lastName: '',
-    avatarUrl: null,
-    officialEpiScore: 105.2,
-    epiScore: 108.4,
-    isCurrentUser: true,
-    criteria: CURRENT_MONTH.criteria,
-    wrsStatus: CURRENT_MONTH.wrsStatus ?? null,
-    history: HISTORY,
-  },
-  makeEntry('8', 8, 'Liza', 'Cruz', 106.1),
-  makeEntry('9', 9, 'Ramon', 'Torres', 104.5),
-  makeEntry('10', 10, 'Elena', 'Ramos', 102.8),
-  makeEntry('11', 11, 'Jose', 'Morales', 99.4),
-  makeEntry('12', 12, 'Grace', 'Rivera', 97.3),
-];

@@ -45,4 +45,10 @@ router.get(
   dashboardController.getEpiLeaderboardData,
 );
 
+router.get(
+  '/epi/leaderboard/:userId',
+  requirePermission(PERMISSIONS.DASHBOARD_VIEW_PERFORMANCE_INDEX),
+  dashboardController.getEpiLeaderboardDetailData,
+);
+
 export default router;

@@ -36,18 +36,31 @@ export interface EpiDashboardData {
   history: EpiMonthEntry[];
 }
 
-export interface LeaderboardEntry {
+export interface LeaderboardSummaryEntry {
   id: string;
   rank: number;
   firstName: string;
   lastName: string;
   avatarUrl: string | null;
-  officialEpiScore: number;
-  epiScore: number;
+  monthKey: string;
+  displayEpiScore: number | null;
+  hasData: boolean;
   isCurrentUser: boolean;
+}
+
+export interface LeaderboardDetailEntry {
+  id: string;
+  firstName: string;
+  lastName: string;
+  avatarUrl: string | null;
+  monthKey: string;
+  epiScore: number | null;
+  hasData: boolean;
   criteria: EpiCriteria;
   wrsStatus?: WrsStatusSummary | null;
-  history: EpiMonthEntry[];
+  asOfDateTime: string | null;
+  scoreSource: 'official' | 'historical';
+  criteriaSource: 'live' | 'historical';
 }
 
 export type EpiZone = 'green' | 'amber' | 'red';

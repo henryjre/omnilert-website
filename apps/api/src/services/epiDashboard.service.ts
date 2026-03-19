@@ -11,7 +11,6 @@ import {
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
 const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
 const THIRTY_DAY_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
-const LEADERBOARD_CONCURRENCY = 4;
 
 interface EpiHistoryEntry {
   type: 'weekly' | 'monthly';
@@ -29,10 +28,19 @@ interface DashboardUserRow extends UserKpiData {
   epi_history: unknown;
 }
 
-interface LeaderboardUserRow extends DashboardUserRow {
+interface LeaderboardIdentityRow extends DashboardUserRow {
   first_name: string | null;
   last_name: string | null;
   avatar_url: string | null;
+}
+
+interface LeaderboardSummaryDbRow {
+  userId: string;
+  first_name: string | null;
+  last_name: string | null;
+  avatar_url: string | null;
+  epi_score: number | string | null;
+  epi_history: unknown;
 }
 
 interface ManilaDateParts {
@@ -89,14 +97,39 @@ export interface EpiDashboardResponse {
   monthlyHistory: HistoricalMonthEntry[];
 }
 
-export interface EpiLeaderboardEntry {
+export interface LeaderboardSummaryUserRow {
   userId: string;
   fullName: string;
   avatarUrl: string | null;
   officialEpiScore: number;
-  currentLive: CurrentLiveSnapshot | null;
   monthlyHistory: HistoricalMonthEntry[];
+}
+
+export interface LeaderboardDetailUserRow extends LeaderboardSummaryUserRow {}
+
+export interface EpiLeaderboardSummaryEntry {
+  userId: string;
+  fullName: string;
+  avatarUrl: string | null;
+  monthKey: string;
+  displayEpiScore: number | null;
+  hasData: boolean;
+  isCurrentUser: boolean;
   rank: number;
+}
+
+export interface EpiLeaderboardDetailResponse {
+  userId: string;
+  fullName: string;
+  avatarUrl: string | null;
+  monthKey: string;
+  epiScore: number | null;
+  hasData: boolean;
+  criteria: DashboardCriteria;
+  wrsStatus: WrsStatusSummary | null;
+  asOfDateTime: string | null;
+  scoreSource: 'official' | 'historical';
+  criteriaSource: 'live' | 'historical';
 }
 
 function getManilaDateParts(date: Date = new Date()): ManilaDateParts {
@@ -260,45 +293,153 @@ async function buildCurrentLiveSnapshot(user: DashboardUserRow): Promise<Current
   };
 }
 
-async function mapWithConcurrency<TInput, TOutput>(
-  items: TInput[],
-  concurrency: number,
-  mapper: (item: TInput, index: number) => Promise<TOutput>,
-): Promise<TOutput[]> {
-  const results: TOutput[] = new Array(items.length);
-  let nextIndex = 0;
-
-  async function worker(): Promise<void> {
-    while (true) {
-      const index = nextIndex;
-      nextIndex += 1;
-      if (index >= items.length) return;
-      results[index] = await mapper(items[index], index);
-    }
-  }
-
-  const workerCount = Math.max(1, Math.min(concurrency, items.length));
-  await Promise.all(Array.from({ length: workerCount }, () => worker()));
-  return results;
+function isCurrentMonthSelection(monthKey: string, currentMonthKey: string): boolean {
+  return monthKey === currentMonthKey;
 }
 
-function compareLeaderboardEntries(a: EpiLeaderboardEntry, b: EpiLeaderboardEntry): number {
-  const aScore = a.currentLive?.projectedEpiScore ?? null;
-  const bScore = b.currentLive?.projectedEpiScore ?? null;
-
-  if (aScore === null && bScore === null) {
-    return a.fullName.localeCompare(b.fullName);
-  }
-  if (aScore === null) return 1;
-  if (bScore === null) return -1;
-  if (bScore !== aScore) return bScore - aScore;
-
-  return a.fullName.localeCompare(b.fullName);
+function getHistoricalMonth(monthlyHistory: HistoricalMonthEntry[], monthKey: string): HistoricalMonthEntry | null {
+  return monthlyHistory.find((entry) => entry.monthKey === monthKey) ?? null;
 }
 
 function formatFullName(firstName: string | null, lastName: string | null): string {
   const combined = `${firstName ?? ''} ${lastName ?? ''}`.trim();
   return combined || 'Unknown User';
+}
+
+function toLeaderboardSummaryRow(row: LeaderboardSummaryDbRow): LeaderboardSummaryUserRow {
+  return {
+    userId: row.userId,
+    fullName: formatFullName(row.first_name, row.last_name),
+    avatarUrl: row.avatar_url ?? null,
+    officialEpiScore: toNumber(row.epi_score, 100),
+    monthlyHistory: historyEntriesToMonthlyHistory(normalizeHistoryEntries(row.epi_history)),
+  };
+}
+
+function compareLeaderboardSummaryEntries(a: EpiLeaderboardSummaryEntry, b: EpiLeaderboardSummaryEntry): number {
+  if (a.hasData && b.hasData) {
+    if (a.displayEpiScore !== b.displayEpiScore) {
+      return (b.displayEpiScore ?? 0) - (a.displayEpiScore ?? 0);
+    }
+    return a.fullName.localeCompare(b.fullName);
+  }
+
+  if (a.hasData) return -1;
+  if (b.hasData) return 1;
+  return a.fullName.localeCompare(b.fullName);
+}
+
+export function createLeaderboardSummaryEntries(
+  rows: LeaderboardSummaryUserRow[],
+  options: {
+    currentUserId: string;
+    monthKey: string;
+    currentMonthKey: string;
+  },
+): EpiLeaderboardSummaryEntry[] {
+  const { currentUserId, monthKey, currentMonthKey } = options;
+  const isCurrentMonth = isCurrentMonthSelection(monthKey, currentMonthKey);
+
+  const unresolved = rows.map((row) => {
+    const historicalMonth = isCurrentMonth ? null : getHistoricalMonth(row.monthlyHistory, monthKey);
+    const displayEpiScore = isCurrentMonth ? row.officialEpiScore : historicalMonth?.epiScore ?? null;
+    const hasData = isCurrentMonth ? true : historicalMonth !== null;
+
+    return {
+      userId: row.userId,
+      fullName: row.fullName,
+      avatarUrl: row.avatarUrl,
+      monthKey,
+      displayEpiScore,
+      hasData,
+      isCurrentUser: row.userId === currentUserId,
+      rank: 0,
+    } satisfies EpiLeaderboardSummaryEntry;
+  });
+
+  const ranked = [...unresolved].sort(compareLeaderboardSummaryEntries);
+  return ranked.map((entry, index) => ({
+    ...entry,
+    rank: index + 1,
+  }));
+}
+
+export function createLeaderboardDetail(input: {
+  row: LeaderboardDetailUserRow;
+  monthKey: string;
+  currentMonthKey: string;
+  currentLive: CurrentLiveSnapshot | null;
+}): EpiLeaderboardDetailResponse | null {
+  const { row, monthKey, currentMonthKey, currentLive } = input;
+
+  if (isCurrentMonthSelection(monthKey, currentMonthKey)) {
+    return {
+      userId: row.userId,
+      fullName: row.fullName,
+      avatarUrl: row.avatarUrl,
+      monthKey,
+      epiScore: row.officialEpiScore,
+      hasData: true,
+      criteria: currentLive?.criteria ?? createEmptyCriteria(),
+      wrsStatus: currentLive?.wrsStatus ?? null,
+      asOfDateTime: currentLive?.asOfDateTime ?? null,
+      scoreSource: 'official',
+      criteriaSource: 'live',
+    };
+  }
+
+  const historicalMonth = getHistoricalMonth(row.monthlyHistory, monthKey);
+  if (!historicalMonth) {
+    return {
+      userId: row.userId,
+      fullName: row.fullName,
+      avatarUrl: row.avatarUrl,
+      monthKey,
+      epiScore: null,
+      hasData: false,
+      criteria: createEmptyCriteria(),
+      wrsStatus: null,
+      asOfDateTime: null,
+      scoreSource: 'historical',
+      criteriaSource: 'historical',
+    };
+  }
+
+  return {
+    userId: row.userId,
+    fullName: row.fullName,
+    avatarUrl: row.avatarUrl,
+    monthKey,
+    epiScore: historicalMonth.epiScore,
+    hasData: true,
+    criteria: historicalMonth.criteria,
+    wrsStatus: null,
+    asOfDateTime: null,
+    scoreSource: 'historical',
+    criteriaSource: 'historical',
+  };
+}
+
+function applyLeaderboardFilters(query: any, masterDb: any, companyId: string) {
+  return query
+    .where('u.is_active', true)
+    .where('u.employment_status', 'active')
+    .whereExists((subquery: any) => {
+      subquery
+        .select(masterDb.raw('1'))
+        .from('user_company_access as uca')
+        .whereRaw('uca.user_id = u.id')
+        .where('uca.company_id', companyId)
+        .where('uca.is_active', true);
+    })
+    .whereExists((subquery: any) => {
+      subquery
+        .select(masterDb.raw('1'))
+        .from('user_roles as ur')
+        .join('roles as r', 'ur.role_id', 'r.id')
+        .whereRaw('ur.user_id = u.id')
+        .where('r.name', 'Service Crew');
+    });
 }
 
 export async function getEpiDashboard(userId: string): Promise<EpiDashboardResponse> {
@@ -343,29 +484,43 @@ export async function getEpiDashboard(userId: string): Promise<EpiDashboardRespo
   };
 }
 
-export async function getEpiLeaderboard(companyId: string): Promise<EpiLeaderboardEntry[]> {
+export async function getEpiLeaderboard(companyId: string, currentUserId: string, monthKey: string): Promise<EpiLeaderboardSummaryEntry[]> {
   const masterDb = db.getMasterDb();
+  const currentMonthKey = getCurrentMonthKey();
 
-  const rows = await masterDb('users as u')
-    .where('u.is_active', true)
-    .where('u.employment_status', 'active')
-    .whereExists((query) => {
-      query
-        .select(masterDb.raw('1'))
-        .from('user_company_access as uca')
-        .whereRaw('uca.user_id = u.id')
-        .where('uca.company_id', companyId)
-        .where('uca.is_active', true);
-    })
-    .whereExists((query) => {
-      query
-        .select(masterDb.raw('1'))
-        .from('user_roles as ur')
-        .join('roles as r', 'ur.role_id', 'r.id')
-        .whereRaw('ur.user_id = u.id')
-        .where('r.name', 'Service Crew');
-    })
+  const rows = await applyLeaderboardFilters(masterDb('users as u'), masterDb, companyId)
     .select(
+      'u.id as userId',
+      'u.first_name',
+      'u.last_name',
+      'u.avatar_url',
+      'u.epi_score',
+      'u.epi_history',
+    )
+    .orderBy('u.last_name', 'asc')
+    .orderBy('u.first_name', 'asc')
+    .orderBy('u.id', 'asc') as LeaderboardSummaryDbRow[];
+
+  const summaryRows = rows.map(toLeaderboardSummaryRow);
+  return createLeaderboardSummaryEntries(summaryRows, {
+    currentUserId,
+    monthKey,
+    currentMonthKey,
+  });
+}
+
+export async function getEpiLeaderboardDetail(
+  companyId: string,
+  userId: string,
+  monthKey: string,
+): Promise<EpiLeaderboardDetailResponse | null> {
+  const masterDb = db.getMasterDb();
+  const currentMonthKey = getCurrentMonthKey();
+  const isCurrentMonth = isCurrentMonthSelection(monthKey, currentMonthKey);
+
+  const row = await applyLeaderboardFilters(masterDb('users as u'), masterDb, companyId)
+    .where('u.id', userId)
+    .first(
       'u.id as userId',
       'u.first_name',
       'u.last_name',
@@ -377,36 +532,33 @@ export async function getEpiLeaderboard(companyId: string): Promise<EpiLeaderboa
       'u.peer_evaluations as peerEvaluations',
       'u.compliance_audit as complianceAudit',
       'u.violation_notices as violationNotices',
-    )
-    .orderBy('u.last_name', 'asc')
-    .orderBy('u.first_name', 'asc')
-    .orderBy('u.id', 'asc') as LeaderboardUserRow[];
+    ) as LeaderboardIdentityRow | undefined;
 
-  const entries = await mapWithConcurrency(rows, LEADERBOARD_CONCURRENCY, async (row) => {
-    const officialEpiScore = toNumber(row.epi_score, 100);
-    const monthlyHistory = historyEntriesToMonthlyHistory(normalizeHistoryEntries(row.epi_history));
+  if (!row) {
+    return null;
+  }
 
-    let currentLive: CurrentLiveSnapshot | null = null;
+  const detailRow: LeaderboardDetailUserRow = {
+    userId: row.userId,
+    fullName: formatFullName(row.first_name, row.last_name),
+    avatarUrl: row.avatar_url ?? null,
+    officialEpiScore: toNumber(row.epi_score, 100),
+    monthlyHistory: historyEntriesToMonthlyHistory(normalizeHistoryEntries(row.epi_history)),
+  };
+
+  let currentLive: CurrentLiveSnapshot | null = null;
+  if (isCurrentMonth) {
     try {
       currentLive = await buildCurrentLiveSnapshot(row);
     } catch (error) {
-      logger.error({ err: error, userId: row.userId }, 'Failed to build live leaderboard snapshot');
+      logger.error({ err: error, userId: row.userId }, 'Failed to build live leaderboard detail snapshot');
     }
+  }
 
-    return {
-      userId: row.userId,
-      fullName: formatFullName(row.first_name, row.last_name),
-      avatarUrl: row.avatar_url ?? null,
-      officialEpiScore,
-      currentLive,
-      monthlyHistory,
-      rank: 0,
-    } satisfies EpiLeaderboardEntry;
+  return createLeaderboardDetail({
+    row: detailRow,
+    monthKey,
+    currentMonthKey,
+    currentLive,
   });
-
-  const ranked = [...entries].sort(compareLeaderboardEntries);
-  return ranked.map((entry, index) => ({
-    ...entry,
-    rank: index + 1,
-  }));
 }

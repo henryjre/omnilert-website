@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import type { EpiDashboardData, LeaderboardEntry } from './types';
+import { useMemo } from 'react';
+import type { EpiDashboardData, LeaderboardSummaryEntry } from './types';
 import { GreetingGoalRow } from './GreetingGoalRow';
 import { EpiHeroCard } from './EpiHeroCard';
 import { MonthSelector } from './MonthSelector';
@@ -11,18 +11,23 @@ import { EpiLeaderboard } from './EpiLeaderboard';
 
 interface EpiDashboardProps {
   data: EpiDashboardData;
-  leaderboard: LeaderboardEntry[];
+  leaderboard: LeaderboardSummaryEntry[];
+  leaderboardLoading: boolean;
+  leaderboardError: string | null;
   firstName: string;
+  selectedMonthKey: string;
+  onSelectMonth: (monthKey: string) => void;
 }
 
-export function EpiDashboard({ data, leaderboard, firstName }: EpiDashboardProps) {
-  const fallbackMonthKey = data.history[data.history.length - 1]?.monthKey ?? data.currentMonthKey;
-  const [selectedMonthKey, setSelectedMonthKey] = useState(data.currentMonthKey || fallbackMonthKey);
-
-  useEffect(() => {
-    setSelectedMonthKey(data.currentMonthKey || fallbackMonthKey);
-  }, [data.currentMonthKey, fallbackMonthKey]);
-
+export function EpiDashboard({
+  data,
+  leaderboard,
+  leaderboardLoading,
+  leaderboardError,
+  firstName,
+  selectedMonthKey,
+  onSelectMonth,
+}: EpiDashboardProps) {
   const selectedEntry = useMemo(() => {
     return data.history.find((entry) => entry.monthKey === selectedMonthKey) ?? data.history[data.history.length - 1];
   }, [data.history, selectedMonthKey]);
@@ -45,7 +50,7 @@ export function EpiDashboard({ data, leaderboard, firstName }: EpiDashboardProps
         <MonthSelector
           history={data.history}
           selectedMonthKey={selectedMonthKey}
-          onSelect={setSelectedMonthKey}
+          onSelect={onSelectMonth}
           currentMonthKey={data.currentMonthKey}
         />
       </div>
@@ -62,6 +67,8 @@ export function EpiDashboard({ data, leaderboard, firstName }: EpiDashboardProps
 
       <EpiLeaderboard
         entries={leaderboard}
+        loading={leaderboardLoading}
+        error={leaderboardError}
         selectedMonthKey={selectedMonthKey}
       />
     </div>

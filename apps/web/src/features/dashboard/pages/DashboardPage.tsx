@@ -1,70 +1,65 @@
 import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@/features/auth/store/authSlice';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { PERMISSIONS } from '@omnilert/shared';
 import { EpiDashboard } from '../components/epi/EpiDashboard';
-import { fetchEpiDashboard, fetchEpiLeaderboard } from '../services/epi.api';
-import type { EpiDashboardData, LeaderboardEntry } from '../components/epi/types';
+import { DashboardPageSkeleton } from '../components/epi/EpiSkeletons';
+import { fetchEpiDashboard, fetchEpiLeaderboardSummary, getCurrentManilaMonthKey } from '../services/epi.api';
 
 export function DashboardPage() {
   const { hasPermission } = usePermission();
   const user = useAuthStore((s) => s.user);
+  const canViewPerformanceIndex = hasPermission(PERMISSIONS.DASHBOARD_VIEW_PERFORMANCE_INDEX);
+  const [selectedMonthKey, setSelectedMonthKey] = useState(() => getCurrentManilaMonthKey());
 
-  const [data, setData] = useState<EpiDashboardData | null>(null);
-  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const dashboardQuery = useQuery({
+    queryKey: ['epi-dashboard'],
+    queryFn: fetchEpiDashboard,
+    enabled: canViewPerformanceIndex,
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
 
   useEffect(() => {
-    if (!hasPermission(PERMISSIONS.DASHBOARD_VIEW_PERFORMANCE_INDEX)) {
-      setLoading(false);
-      return;
+    if (!dashboardQuery.data) return;
+
+    const fallbackMonthKey =
+      dashboardQuery.data.history[dashboardQuery.data.history.length - 1]?.monthKey ??
+      dashboardQuery.data.currentMonthKey;
+
+    if (!dashboardQuery.data.history.some((entry) => entry.monthKey === selectedMonthKey)) {
+      setSelectedMonthKey(dashboardQuery.data.currentMonthKey || fallbackMonthKey);
     }
+  }, [dashboardQuery.data, selectedMonthKey]);
 
-    let cancelled = false;
-
-    async function load() {
-      try {
-        const [dashboardData, leaderboardData] = await Promise.all([
-          fetchEpiDashboard(),
-          fetchEpiLeaderboard(user?.id),
-        ]);
-        if (!cancelled) {
-          setData(dashboardData);
-          setLeaderboard(leaderboardData);
-        }
-      } catch {
-        if (!cancelled) {
-          setError('Failed to load EPI data.');
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    void load();
-    return () => { cancelled = true; };
-  }, [hasPermission, user?.id]);
+  const leaderboardSummaryQuery = useQuery({
+    queryKey: ['epi-leaderboard-summary', selectedMonthKey],
+    queryFn: () => fetchEpiLeaderboardSummary(selectedMonthKey),
+    enabled: canViewPerformanceIndex && Boolean(selectedMonthKey),
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
 
   return (
     <div className="space-y-6">
-      {hasPermission(PERMISSIONS.DASHBOARD_VIEW_PERFORMANCE_INDEX) && (
+      {canViewPerformanceIndex && (
         <>
-          {loading && (
-            <div className="flex items-center justify-center py-16 text-sm text-gray-500 dark:text-gray-400">
-              Loading performance data…
-            </div>
-          )}
-          {error && !loading && (
+          {dashboardQuery.isPending && !dashboardQuery.data && <DashboardPageSkeleton />}
+          {dashboardQuery.error && !dashboardQuery.data && (
             <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
-              {error}
+              Failed to load EPI data.
             </div>
           )}
-          {!loading && !error && data && (
+          {dashboardQuery.data && (
             <EpiDashboard
-              data={data}
-              leaderboard={leaderboard}
+              data={dashboardQuery.data}
+              leaderboard={leaderboardSummaryQuery.data ?? []}
+              leaderboardLoading={leaderboardSummaryQuery.isPending}
+              leaderboardError={leaderboardSummaryQuery.error ? 'Failed to load leaderboard.' : null}
               firstName={user?.firstName || 'User'}
+              selectedMonthKey={selectedMonthKey}
+              onSelectMonth={setSelectedMonthKey}
             />
           )}
         </>
