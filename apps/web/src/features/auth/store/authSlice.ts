@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { queryClient } from '@/shared/services/queryClient';
 
 interface AuthUser {
   id: string;
@@ -48,7 +49,7 @@ export const useAuthStore = create<AuthState>()(
       companyName: null,
       isAuthenticated: false,
 
-      setAuth: (user, accessToken, refreshToken, companySlug, companyThemeColor, companyName) =>
+      setAuth: (user, accessToken, refreshToken, companySlug, companyThemeColor, companyName) => {
         set({
           user,
           accessToken,
@@ -57,7 +58,9 @@ export const useAuthStore = create<AuthState>()(
           companyThemeColor: companyThemeColor ?? null,
           companyName: companyName ?? null,
           isAuthenticated: true,
-        }),
+        });
+        queryClient.clear();
+      },
 
       setTokens: (accessToken, refreshToken) =>
         set({ accessToken, refreshToken }),
@@ -70,7 +73,7 @@ export const useAuthStore = create<AuthState>()(
           user: state.user ? { ...state.user, ...updates } : state.user,
         })),
 
-      logout: () =>
+      logout: () => {
         set({
           user: null,
           accessToken: null,
@@ -79,7 +82,9 @@ export const useAuthStore = create<AuthState>()(
           companyThemeColor: null,
           companyName: null,
           isAuthenticated: false,
-        }),
+        });
+        queryClient.clear();
+      },
     }),
     {
       name: 'omnilert-auth',

@@ -9,11 +9,13 @@ import { AvatarFallback } from './AvatarFallback';
 import { resolveLeaderboardPaginationState } from './leaderboardPagination';
 import { Card, CardBody } from '@/shared/components/ui/Card';
 import { fetchEpiLeaderboardDetail } from '../../services/epi.api';
+import { getDashboardRefreshPolicy } from '../../services/dashboardRefreshPolicy';
 import { LeaderboardSkeleton } from './EpiSkeletons';
 import { AWARD_BONUS, VIOLATION_DEDUCTION } from './mockData';
 
 interface EpiLeaderboardProps {
   entries: LeaderboardSummaryEntry[];
+  currentMonthKey: string;
   selectedMonthKey: string;
   loading: boolean;
   error: string | null;
@@ -315,7 +317,7 @@ function ExpandedMetrics({
                   <span className="text-gray-500 dark:text-gray-400">Avg Order Value</span>
                   <span className={`font-semibold ${aovColors.text} ${aovColors.darkText}`}>
                     P{criteria.aov.toFixed(0)}
-                    {criteria.branchAov ? <span className="font-normal text-gray-400"> / Global P{criteria.branchAov.toFixed(0)}</span> : null}
+                    {criteria.branchAov ? <span className="font-normal text-gray-400"> / Branch P{criteria.branchAov.toFixed(0)}</span> : null}
                   </span>
                 </div>
               </div>
@@ -393,9 +395,13 @@ function ExpandedLeaderboardPanel({
 
 const PAGE_SIZE = 10;
 
-export function EpiLeaderboard({ entries, selectedMonthKey, loading, error }: EpiLeaderboardProps) {
+export function EpiLeaderboard({ entries, currentMonthKey, selectedMonthKey, loading, error }: EpiLeaderboardProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [page, setPage] = useState(0);
+  const detailRefreshPolicy = useMemo(
+    () => getDashboardRefreshPolicy({ selectedMonthKey, currentMonthKey }),
+    [currentMonthKey, selectedMonthKey],
+  );
 
   const rankedEntries = useMemo(() => {
     const sorted = [...entries].sort((a, b) => {
@@ -438,8 +444,8 @@ export function EpiLeaderboard({ entries, selectedMonthKey, loading, error }: Ep
     queryKey: ['epi-leaderboard-detail', selectedMonthKey, expandedId ?? 'none'],
     queryFn: () => fetchEpiLeaderboardDetail(expandedId!, selectedMonthKey),
     enabled: expandedId !== null,
-    staleTime: Infinity,
-    gcTime: Infinity,
+    ...detailRefreshPolicy,
+    gcTime: Number.POSITIVE_INFINITY,
   });
 
   useEffect(() => {

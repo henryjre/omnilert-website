@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import type { EpiDashboardData, LeaderboardSummaryEntry } from './types';
 import { GreetingGoalRow } from './GreetingGoalRow';
 import { EpiHeroCard } from './EpiHeroCard';
@@ -15,6 +15,7 @@ interface EpiDashboardProps {
   leaderboardLoading: boolean;
   leaderboardError: string | null;
   firstName: string;
+  headerAction?: ReactNode;
   selectedMonthKey: string;
   onSelectMonth: (monthKey: string) => void;
 }
@@ -25,6 +26,7 @@ export function EpiDashboard({
   leaderboardLoading,
   leaderboardError,
   firstName,
+  headerAction,
   selectedMonthKey,
   onSelectMonth,
 }: EpiDashboardProps) {
@@ -36,7 +38,7 @@ export function EpiDashboard({
 
   return (
     <div className="space-y-6">
-      <GreetingGoalRow firstName={firstName} />
+      <GreetingGoalRow firstName={firstName} action={headerAction} />
 
       <EpiHeroCard
         data={data}
@@ -69,6 +71,7 @@ export function EpiDashboard({
         entries={leaderboard}
         loading={leaderboardLoading}
         error={leaderboardError}
+        currentMonthKey={data.currentMonthKey}
         selectedMonthKey={selectedMonthKey}
       />
     </div>
