@@ -1,6 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import type { CssCriteriaScores, StoreAudit, StoreAuditStatus, StoreAuditType, GroupedUsersResponse, ViolationNotice } from '@omnilert/shared';
+import type {
+  CssCriteriaScores,
+  StoreAudit,
+  StoreAuditStatus,
+  StoreAuditType,
+  GroupedUsersResponse,
+  ListStoreAuditsResponse,
+  ViolationNotice,
+} from '@omnilert/shared';
 import { PERMISSIONS } from '@omnilert/shared';
 import { ClipboardList, LayoutGrid, ShieldCheck, Star, X } from 'lucide-react';
 import { Badge } from '@/shared/components/ui/Badge';
@@ -17,8 +25,10 @@ import { CssAuditCard } from '../components/CssAuditCard';
 import { ComplianceAuditCard } from '../components/ComplianceAuditCard';
 import { CssAuditDetailPanel } from '../components/CssAuditDetailPanel';
 import { ComplianceAuditDetailPanel } from '../components/ComplianceAuditDetailPanel';
+import { resolveStoreAuditPaginationState } from './storeAuditPagination';
 
 type CategoryTab = 'all' | StoreAuditType;
+const PAGE_SIZE = 10;
 
 function statusBadge(status: StoreAuditStatus) {
   if (status === 'completed') return 'success' as const;
@@ -34,6 +44,7 @@ export function StoreAuditsPage() {
   const canProcessAudit = hasPermission(PERMISSIONS.STORE_AUDIT_PROCESS);
   const canRequestVN = hasPermission(PERMISSIONS.VIOLATION_NOTICE_CREATE);
   const [searchParams, setSearchParams] = useSearchParams();
+  const initialAuditIdRef = useRef<string | null>(searchParams.get('auditId'));
 
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -42,17 +53,27 @@ export function StoreAuditsPage() {
     () => (searchParams.get('auditId') ? 'completed' : 'pending'),
   );
   const [audits, setAudits] = useState<StoreAudit[]>([]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE);
+  const [total, setTotal] = useState(0);
   const [processingAuditId, setProcessingAuditId] = useState<string | null>(null);
   const [selectedAuditId, setSelectedAuditId] = useState<string | null>(
     () => searchParams.get('auditId'),
   );
+  const [selectedAuditFallback, setSelectedAuditFallback] = useState<StoreAudit | null>(null);
   const [showRequestVNModal, setShowRequestVNModal] = useState(false);
   const [groupedUsers, setGroupedUsers] = useState<GroupedUsersResponse | null>(null);
   const [loadingGroupedUsers, setLoadingGroupedUsers] = useState(false);
 
+  const paginationState = useMemo(
+    () => resolveStoreAuditPaginationState({ page, pageSize, total }),
+    [page, pageSize, total],
+  );
+
   const selectedAudit = useMemo(
-    () => audits.find((audit) => audit.id === selectedAuditId) ?? null,
-    [audits, selectedAuditId],
+    () => audits.find((audit) => audit.id === selectedAuditId)
+      ?? (selectedAuditFallback?.id === selectedAuditId ? selectedAuditFallback : null),
+    [audits, selectedAuditFallback, selectedAuditId],
   );
 
   const fetchAudits = useCallback(async (options?: { silent?: boolean }) => {
@@ -62,16 +83,29 @@ export function StoreAuditsPage() {
         params: {
           type: category === 'all' ? undefined : category,
           status,
-          page: 1,
-          pageSize: 100,
+          page,
+          pageSize: PAGE_SIZE,
         },
       });
-      const data = response.data.data as {
-        items: StoreAudit[];
-        processingAuditId: string | null;
-      };
-      setAudits(data.items ?? []);
+      const data = response.data.data as ListStoreAuditsResponse;
+      const nextPageSize = Math.max(1, Number(data.pageSize ?? PAGE_SIZE));
+      const nextTotal = Math.max(0, Number(data.total ?? 0));
+      const resolvedPage = resolveStoreAuditPaginationState({
+        page,
+        pageSize: nextPageSize,
+        total: nextTotal,
+      }).page;
+
+      setPageSize(nextPageSize);
+      setTotal(nextTotal);
       setProcessingAuditId(data.processingAuditId ?? null);
+
+      if (resolvedPage !== page) {
+        setPage(resolvedPage);
+        return;
+      }
+
+      setAudits(data.items ?? []);
     } catch (err: any) {
       if (!options?.silent) {
         showErrorToast(err.response?.data?.error || 'Failed to load store audits');
@@ -79,17 +113,49 @@ export function StoreAuditsPage() {
     } finally {
       if (!options?.silent) setLoading(false);
     }
-  }, [category, status, showErrorToast]);
+  }, [category, page, showErrorToast, status]);
 
   useEffect(() => {
     void fetchAudits();
   }, [fetchAudits]);
 
   useEffect(() => {
-    if (!selectedAuditId || loading) return;
-    const exists = audits.some((audit) => audit.id === selectedAuditId);
-    if (!exists) setSelectedAuditId(null);
-  }, [audits, selectedAuditId, loading]);
+    if (!selectedAuditId) {
+      setSelectedAuditFallback(null);
+      return;
+    }
+
+    const pageAudit = audits.find((audit) => audit.id === selectedAuditId);
+    if (pageAudit) {
+      initialAuditIdRef.current = null;
+      setSelectedAuditFallback(pageAudit);
+      return;
+    }
+
+    if (loading) return;
+
+    if (initialAuditIdRef.current !== selectedAuditId) {
+      setSelectedAuditId(null);
+      return;
+    }
+
+    initialAuditIdRef.current = null;
+    let active = true;
+
+    void api.get(`/store-audits/${selectedAuditId}`)
+      .then((response) => {
+        if (!active) return;
+        setSelectedAuditFallback(response.data.data as StoreAudit);
+      })
+      .catch(() => {
+        if (!active) return;
+        setSelectedAuditId(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [audits, loading, selectedAuditId]);
 
   // Sync selectedAuditId to URL
   useEffect(() => {
@@ -122,6 +188,9 @@ export function StoreAuditsPage() {
         setAudits((prev) =>
           prev.map((a) => (a.id === payload.id ? { ...a, vn_requested: true } : a)),
         );
+        setSelectedAuditFallback((prev) => (
+          prev && prev.id === payload.id ? { ...prev, vn_requested: true } : prev
+        ));
       }
     };
 
@@ -173,14 +242,21 @@ export function StoreAuditsPage() {
 
   const handleVNCreated = (_vn: ViolationNotice) => {
     setShowRequestVNModal(false);
-    // Update the in-memory audit so the button hides immediately
     if (selectedAuditId) {
       setAudits((prev) =>
         prev.map((a) => (a.id === selectedAuditId ? { ...a, vn_requested: true } : a)),
       );
+      setSelectedAuditFallback((prev) => (
+        prev && prev.id === selectedAuditId ? { ...prev, vn_requested: true } : prev
+      ));
     }
     void fetchAudits({ silent: true });
   };
+
+  const currentPage = paginationState.page;
+  const totalPages = paginationState.totalPages;
+  const pageStart = total === 0 ? 0 : ((currentPage - 1) * pageSize) + 1;
+  const pageEnd = total === 0 ? 0 : Math.min(total, currentPage * pageSize);
 
   return (
     <>
@@ -191,7 +267,7 @@ export function StoreAuditsPage() {
               <ClipboardList className="h-6 w-6 text-primary-600" />
               <h1 className="text-2xl font-bold text-gray-900">Store Audits</h1>
             </div>
-            <Badge variant={statusBadge(status)}>{audits.length} {status}</Badge>
+            <Badge variant={statusBadge(status)}>{total} {status}</Badge>
           </div>
           <p className="mt-1 text-sm font-medium text-gray-600 sm:hidden">
             {category === 'all' ? 'All Categories' : category === 'customer_service' ? 'Customer Service Audit' : 'Compliance Audit'}
@@ -209,6 +285,7 @@ export function StoreAuditsPage() {
               type="button"
               onClick={() => {
                 setCategory(tab.key);
+                setPage(1);
                 setSelectedAuditId(null);
               }}
               className={`flex items-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
@@ -230,6 +307,7 @@ export function StoreAuditsPage() {
               type="button"
               onClick={() => {
                 setStatus(tab);
+                setPage(1);
                 setSelectedAuditId(null);
               }}
               className={`flex-1 rounded-md px-4 py-1.5 text-center text-sm font-medium capitalize transition-colors sm:flex-none ${
@@ -247,7 +325,7 @@ export function StoreAuditsPage() {
           <div className="flex justify-center py-12">
             <Spinner size="lg" />
           </div>
-        ) : audits.length === 0 ? (
+        ) : total === 0 ? (
           <Card>
             <CardBody className="py-12 text-center">
               <p className="text-sm text-gray-500">No audits found for the selected filters.</p>
@@ -276,6 +354,43 @@ export function StoreAuditsPage() {
                 />
               )
             ))}
+
+            {totalPages > 1 && (
+              <div className="flex flex-col gap-3 rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-600 sm:flex-row sm:items-center sm:justify-between">
+                <span>
+                  Showing {pageStart}-{pageEnd} of {total}
+                </span>
+                <div className="flex items-center justify-between gap-3 sm:justify-end">
+                  <span>
+                    Page {currentPage} of {totalPages}
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPage(Math.max(1, currentPage - 1));
+                        setSelectedAuditId(null);
+                      }}
+                      disabled={currentPage === 1}
+                      className="rounded-lg border border-gray-300 px-3 py-1.5 font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPage(Math.min(totalPages, currentPage + 1));
+                        setSelectedAuditId(null);
+                      }}
+                      disabled={currentPage === totalPages}
+                      className="rounded-lg border border-gray-300 px-3 py-1.5 font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

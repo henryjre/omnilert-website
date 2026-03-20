@@ -3,7 +3,7 @@ import test from 'node:test';
 
 const {
   resolveLeaderboardPaginationState,
-} = await import('../../../web/src/features/dashboard/components/epi/leaderboardPagination.js');
+} = await import('../../web/src/features/dashboard/components/epi/leaderboardPagination.js');
 
 function createEntries(count: number) {
   return Array.from({ length: count }, (_, index) => ({

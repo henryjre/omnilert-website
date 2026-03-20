@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import * as webhookService from '../services/webhook.service.js';
+import { shouldCreateCssAudit } from './webhookSampling.js';
 
 export async function posVerification(req: Request, res: Response, next: NextFunction) {
   try {
@@ -136,7 +137,7 @@ export async function posOrder(req: Request, res: Response, next: NextFunction) 
       return;
     }
 
-    if (Math.random() > 0.1) {
+    if (!shouldCreateCssAudit()) {
       res.status(200).json({ success: true });
       return;
     }
