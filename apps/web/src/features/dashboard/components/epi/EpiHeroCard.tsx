@@ -122,7 +122,7 @@ export function EpiHeroCard({ data, selectedEntry }: EpiHeroCardProps) {
               </p>
               <p className="text-lg font-bold text-white">{selectedEntry.score.toFixed(1)}</p>
               <p className="mt-1 text-[10px] font-medium text-white/60">
-                Next weekly snapshot
+                Next weekly calculation on:
               </p>
               <p className="text-xs font-semibold text-white/80">
                 {nextWeeklySnapshot}

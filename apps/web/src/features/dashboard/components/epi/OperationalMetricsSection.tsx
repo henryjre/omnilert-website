@@ -223,7 +223,7 @@ export function OperationalMetricsSection({ criteria }: OperationalMetricsSectio
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <span className="w-10 text-right text-[10px] text-gray-400">Global</span>
+                      <span className="w-10 text-right text-[10px] text-gray-400">Branch</span>
                       <div className="relative flex-1 h-2.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
                         <motion.div
                           className="absolute inset-y-0 left-0 rounded-full bg-gray-400 dark:bg-gray-500"
@@ -234,7 +234,7 @@ export function OperationalMetricsSection({ criteria }: OperationalMetricsSectio
                       </div>
                     </div>
                     <p className="text-xs text-gray-400">
-                      Global avg: P{criteria.branchAov?.toFixed(0) ?? '--'}
+                      Branch avg: P{criteria.branchAov?.toFixed(0) ?? '--'}
                     </p>
                   </div>
                   <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Average Order Value</p>

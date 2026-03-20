@@ -11,6 +11,7 @@ export interface OdooPlanningSlot {
 
 export interface OdooAttendanceRecord {
   employee_id: [number, string];
+  x_company_id: [number, string] | false;
   check_in: string;
   check_out: string | false;
 }
@@ -92,7 +93,7 @@ export async function getAttendanceRecords(
         ['check_in', '>=', dateFrom],
         ['check_in', '<=', dateTo],
       ],
-      fields: ['employee_id', 'check_in', 'check_out'],
+      fields: ['employee_id', 'x_company_id', 'check_in', 'check_out'],
       limit: 10000,
     },
   )) as OdooAttendanceRecord[];

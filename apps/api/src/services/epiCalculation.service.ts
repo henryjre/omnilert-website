@@ -4,10 +4,10 @@ import {
   getAttendanceRecords,
   getPosOrders,
   getBranchPosOrders,
+  type OdooPosOrder,
   type OdooAttendanceRecord,
   type OdooPlanningSlot,
 } from './odooQuery.service.js';
-import { listGlobalActiveOdooBranchIds } from './globalOdooBranch.service.js';
 
 // ─── KPI Breakdown Types ──────────────────────────────────────────────────────
 
@@ -43,7 +43,6 @@ export interface KpiQueryDeps {
   getScheduledSlots: typeof getScheduledSlots;
   getAttendanceRecords: typeof getAttendanceRecords;
   getPosOrders: typeof getPosOrders;
-  getGlobalActiveOdooBranchIds: typeof listGlobalActiveOdooBranchIds;
   getBranchPosOrders: typeof getBranchPosOrders;
 }
 
@@ -52,7 +51,6 @@ const defaultKpiQueryDeps: KpiQueryDeps = {
   getScheduledSlots,
   getAttendanceRecords,
   getPosOrders,
-  getGlobalActiveOdooBranchIds: listGlobalActiveOdooBranchIds,
   getBranchPosOrders,
 };
 
@@ -330,47 +328,68 @@ async function fetchOperationalOdooData(
 }
 
 async function calcAov(
-  websiteKey: string,
+  orders: OdooPosOrder[],
+  attendances: OdooAttendanceRecord[],
   dateFrom: string,
   dateTo: string,
-  queryDeps: Pick<KpiQueryDeps, 'getPosOrders' | 'getGlobalActiveOdooBranchIds' | 'getBranchPosOrders'>,
+  queryDeps: Pick<KpiQueryDeps, 'getBranchPosOrders'>,
 ): Promise<{ value: number | null; branch_avg: number | null; impact: number }> {
-  const orders = await queryDeps.getPosOrders(websiteKey, dateFrom, dateTo);
   if (orders.length === 0) return { value: null, branch_avg: null, impact: 0 };
 
   const employeeTotal = orders.reduce((s, o) => s + o.amount_total, 0);
   const employeeAov = employeeTotal / orders.length;
   const roundedEmployeeAov = Math.round(employeeAov * 100) / 100;
-  const globalBranchIds = await queryDeps.getGlobalActiveOdooBranchIds();
 
-  if (globalBranchIds.length === 0) {
+  const workedBranchIds = Array.from(new Set(
+    attendances
+      .map((attendance) => Array.isArray(attendance.x_company_id) ? Number(attendance.x_company_id[0]) : null)
+      .filter((branchId): branchId is number => branchId !== null && Number.isFinite(branchId)),
+  ));
+
+  if (workedBranchIds.length === 0) {
     return { value: roundedEmployeeAov, branch_avg: null, impact: 0 };
+  }
+
+  const branchOrderWeights = new Map<number, number>();
+  for (const order of orders) {
+    const branchId = Array.isArray(order.company_id) ? Number(order.company_id[0]) : null;
+    if (branchId === null || !Number.isFinite(branchId)) continue;
+    branchOrderWeights.set(branchId, (branchOrderWeights.get(branchId) ?? 0) + 1);
   }
 
   const branchOrdersAll = await Promise.all(
-    globalBranchIds.map((branchId) => queryDeps.getBranchPosOrders(branchId, dateFrom, dateTo)),
+    workedBranchIds.map((branchId) => queryDeps.getBranchPosOrders(branchId, dateFrom, dateTo)),
   );
 
-  let globalTotal = 0;
-  let globalCount = 0;
-  for (const branchOrders of branchOrdersAll) {
-    globalTotal += branchOrders.reduce((sum, order) => sum + order.amount_total, 0);
-    globalCount += branchOrders.length;
+  let weightedTotal = 0;
+  let weightedCount = 0;
+  for (const [index, branchOrders] of branchOrdersAll.entries()) {
+    const branchId = workedBranchIds[index];
+    if (branchId === undefined) continue;
+
+    const employeeOrderCount = branchOrderWeights.get(branchId) ?? 0;
+    if (employeeOrderCount === 0 || branchOrders.length === 0) continue;
+
+    const branchTotal = branchOrders.reduce((sum, order) => sum + order.amount_total, 0);
+    const branchAov = branchTotal / branchOrders.length;
+
+    weightedTotal += branchAov * employeeOrderCount;
+    weightedCount += employeeOrderCount;
   }
 
-  if (globalCount === 0) {
+  if (weightedCount === 0) {
     return { value: roundedEmployeeAov, branch_avg: null, impact: 0 };
   }
 
-  const globalBenchmark = globalTotal / globalCount;
+  const branchBenchmark = weightedTotal / weightedCount;
 
-  const pct = globalBenchmark > 0
-    ? ((employeeAov - globalBenchmark) / globalBenchmark) * 100
+  const pct = branchBenchmark > 0
+    ? ((employeeAov - branchBenchmark) / branchBenchmark) * 100
     : 0;
 
   return {
     value: roundedEmployeeAov,
-    branch_avg: Math.round(globalBenchmark * 100) / 100,
+    branch_avg: Math.round(branchBenchmark * 100) / 100,
     impact: aovImpact(pct),
   };
 }
@@ -423,12 +442,20 @@ export async function calculateKpiScoresWithQueryDeps(
   const employeeOdooIds = await queryDeps.getOdooEmployeeIdsByWebsiteKey(userData.userKey);
 
   const operationalOdooDataPromise = fetchOperationalOdooData(employeeOdooIds, fromStr, toStr, queryDeps);
+  const employeeOrdersPromise = queryDeps.getPosOrders(userData.userKey, fromStr, toStr);
 
   // Run all calculations in parallel where possible
-  const [operationalOdooData, aovResult] = await Promise.all([
+  const [operationalOdooData, employeeOrders] = await Promise.all([
     operationalOdooDataPromise,
-    calcAov(userData.userKey, fromStr, toStr, queryDeps),
+    employeeOrdersPromise,
   ]);
+  const aovResult = await calcAov(
+    employeeOrders,
+    operationalOdooData.attendances,
+    fromStr,
+    toStr,
+    queryDeps,
+  );
 
   const attendanceResult = calcAttendanceFromRecords(
     operationalOdooData.slots,
