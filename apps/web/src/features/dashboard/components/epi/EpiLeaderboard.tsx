@@ -6,6 +6,7 @@ import type { EpiCriteria, LeaderboardDetailEntry, LeaderboardSummaryEntry } fro
 import { getAovZone, getEpiZone, getRateZone, getScoreZone, getZoneColors } from './epiUtils';
 import { SectionLabel } from './SectionLabel';
 import { AvatarFallback } from './AvatarFallback';
+import { resolveLeaderboardPaginationState } from './leaderboardPagination';
 import { Card, CardBody } from '@/shared/components/ui/Card';
 import { fetchEpiLeaderboardDetail } from '../../services/epi.api';
 import { LeaderboardSkeleton } from './EpiSkeletons';
@@ -423,6 +424,15 @@ export function EpiLeaderboard({ entries, selectedMonthKey, loading, error }: Ep
   const podiumOrder = [top3[1], top3[0], top3[2]].filter(
     (entry): entry is RankedLeaderboardEntry => Boolean(entry),
   );
+  const resolvedPaginationState = useMemo(
+    () => resolveLeaderboardPaginationState({
+      entries: rankedEntries,
+      expandedId,
+      page,
+      pageSize: PAGE_SIZE,
+    }),
+    [expandedId, page, rankedEntries],
+  );
 
   const detailQuery = useQuery({
     queryKey: ['epi-leaderboard-detail', selectedMonthKey, expandedId ?? 'none'],
@@ -433,32 +443,13 @@ export function EpiLeaderboard({ entries, selectedMonthKey, loading, error }: Ep
   });
 
   useEffect(() => {
-    if (expandedId === null) {
-      setPage(0);
-      return;
+    if (resolvedPaginationState.expandedId !== expandedId) {
+      setExpandedId(resolvedPaginationState.expandedId);
     }
-
-    const expandedEntry = rankedEntries.find((entry) => entry.id === expandedId);
-    if (!expandedEntry) {
-      setExpandedId(null);
-      setPage(0);
-      return;
+    if (resolvedPaginationState.page !== page) {
+      setPage(resolvedPaginationState.page);
     }
-
-    if (expandedEntry.rank <= 3) {
-      return;
-    }
-
-    const restIndex = rest.findIndex((entry) => entry.id === expandedId);
-    if (restIndex === -1) {
-      return;
-    }
-
-    const nextPage = Math.floor(restIndex / PAGE_SIZE);
-    if (nextPage !== page) {
-      setPage(nextPage);
-    }
-  }, [expandedId, page, rankedEntries, rest]);
+  }, [expandedId, page, resolvedPaginationState]);
 
   function handlePageChange(nextPage: number) {
     setExpandedId(null);
