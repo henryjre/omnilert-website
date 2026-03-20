@@ -14,6 +14,7 @@ process.env.OPENAI_ORGANIZATION_ID ??= 'test-openai-org';
 process.env.OPENAI_PROJECT_ID ??= 'test-openai-project';
 
 const {
+  applyGlobalLeaderboardFilters,
   createLeaderboardDetail,
   createLeaderboardSummaryEntries,
 } = await import('./epiDashboard.service.js');
@@ -22,6 +23,48 @@ type DashboardCriteria = import('./epiDashboard.service.js').DashboardCriteria;
 type HistoricalMonthEntry = import('./epiDashboard.service.js').HistoricalMonthEntry;
 type LeaderboardDetailUserRow = import('./epiDashboard.service.js').LeaderboardDetailUserRow;
 type LeaderboardSummaryUserRow = import('./epiDashboard.service.js').LeaderboardSummaryUserRow;
+
+function createQueryRecorder() {
+  const operations: Array<Record<string, unknown>> = [];
+
+  const query = {
+    where: (...args: unknown[]) => {
+      operations.push({ type: 'where', args });
+      return query;
+    },
+    whereExists: (callback: (subquery: any) => void) => {
+      const nested: Array<Record<string, unknown>> = [];
+      const subquery = {
+        select: (...args: unknown[]) => {
+          nested.push({ type: 'select', args });
+          return subquery;
+        },
+        from: (...args: unknown[]) => {
+          nested.push({ type: 'from', args });
+          return subquery;
+        },
+        join: (...args: unknown[]) => {
+          nested.push({ type: 'join', args });
+          return subquery;
+        },
+        whereRaw: (...args: unknown[]) => {
+          nested.push({ type: 'whereRaw', args });
+          return subquery;
+        },
+        where: (...args: unknown[]) => {
+          nested.push({ type: 'where', args });
+          return subquery;
+        },
+      };
+
+      callback(subquery);
+      operations.push({ type: 'whereExists', nested });
+      return query;
+    },
+  };
+
+  return { operations, query };
+}
 
 function createCriteria(overrides: Partial<DashboardCriteria> = {}): DashboardCriteria {
   return {
@@ -201,4 +244,28 @@ test('createLeaderboardDetail returns historical score and criteria for past mon
   assert.equal(detail?.wrsStatus, null);
   assert.equal(detail?.asOfDateTime, null);
   assert.equal(detail?.projectedEpiScore, null);
+});
+
+test('applyGlobalLeaderboardFilters keeps the leaderboard global while still restricting to active service crew', () => {
+  const { operations, query } = createQueryRecorder();
+  const masterDb = {
+    raw: (value: string) => value,
+  };
+
+  applyGlobalLeaderboardFilters(query as any, masterDb);
+
+  assert.deepEqual(operations, [
+    { type: 'where', args: ['u.is_active', true] },
+    { type: 'where', args: ['u.employment_status', 'active'] },
+    {
+      type: 'whereExists',
+      nested: [
+        { type: 'select', args: ['1'] },
+        { type: 'from', args: ['user_roles as ur'] },
+        { type: 'join', args: ['roles as r', 'ur.role_id', 'r.id'] },
+        { type: 'whereRaw', args: ['ur.user_id = u.id'] },
+        { type: 'where', args: ['r.name', 'Service Crew'] },
+      ],
+    },
+  ]);
 });

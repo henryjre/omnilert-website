@@ -7,6 +7,7 @@ import {
   type OdooAttendanceRecord,
   type OdooPlanningSlot,
 } from './odooQuery.service.js';
+import { listGlobalActiveOdooBranchIds } from './globalOdooBranch.service.js';
 
 // ─── KPI Breakdown Types ──────────────────────────────────────────────────────
 
@@ -42,6 +43,7 @@ export interface KpiQueryDeps {
   getScheduledSlots: typeof getScheduledSlots;
   getAttendanceRecords: typeof getAttendanceRecords;
   getPosOrders: typeof getPosOrders;
+  getGlobalActiveOdooBranchIds: typeof listGlobalActiveOdooBranchIds;
   getBranchPosOrders: typeof getBranchPosOrders;
 }
 
@@ -50,6 +52,7 @@ const defaultKpiQueryDeps: KpiQueryDeps = {
   getScheduledSlots,
   getAttendanceRecords,
   getPosOrders,
+  getGlobalActiveOdooBranchIds: listGlobalActiveOdooBranchIds,
   getBranchPosOrders,
 };
 
@@ -330,55 +333,44 @@ async function calcAov(
   websiteKey: string,
   dateFrom: string,
   dateTo: string,
-  queryDeps: Pick<KpiQueryDeps, 'getPosOrders' | 'getBranchPosOrders'>,
+  queryDeps: Pick<KpiQueryDeps, 'getPosOrders' | 'getGlobalActiveOdooBranchIds' | 'getBranchPosOrders'>,
 ): Promise<{ value: number | null; branch_avg: number | null; impact: number }> {
   const orders = await queryDeps.getPosOrders(websiteKey, dateFrom, dateTo);
   if (orders.length === 0) return { value: null, branch_avg: null, impact: 0 };
 
   const employeeTotal = orders.reduce((s, o) => s + o.amount_total, 0);
   const employeeAov = employeeTotal / orders.length;
+  const roundedEmployeeAov = Math.round(employeeAov * 100) / 100;
+  const globalBranchIds = await queryDeps.getGlobalActiveOdooBranchIds();
 
-  // Get unique branch IDs from this employee's orders
-  const branchIds = [...new Set(orders.map((o) => {
-    const cid = o.company_id;
-    return Array.isArray(cid) ? cid[0] : Number(cid);
-  }))];
+  if (globalBranchIds.length === 0) {
+    return { value: roundedEmployeeAov, branch_avg: null, impact: 0 };
+  }
 
-  // Fetch all branch orders to compute branch AOV
   const branchOrdersAll = await Promise.all(
-    branchIds.map(async (branchId) => {
-      const branchOrders = await queryDeps.getBranchPosOrders(branchId, dateFrom, dateTo);
-      const branchTotal = branchOrders.reduce((s, o) => s + o.amount_total, 0);
-      const branchCount = branchOrders.length;
-      return { branchId, branchAov: branchCount > 0 ? branchTotal / branchCount : 0, branchCount };
-    }),
+    globalBranchIds.map((branchId) => queryDeps.getBranchPosOrders(branchId, dateFrom, dateTo)),
   );
 
-  // Weighted benchmark across all branches the employee worked at
-  const employeeOrdersByBranch = new Map<number, number>();
-  for (const order of orders) {
-    const cid = Array.isArray(order.company_id) ? order.company_id[0] : Number(order.company_id);
-    employeeOrdersByBranch.set(cid, (employeeOrdersByBranch.get(cid) ?? 0) + 1);
+  let globalTotal = 0;
+  let globalCount = 0;
+  for (const branchOrders of branchOrdersAll) {
+    globalTotal += branchOrders.reduce((sum, order) => sum + order.amount_total, 0);
+    globalCount += branchOrders.length;
   }
 
-  let weightedBenchmarkNum = 0;
-  let weightedBenchmarkDen = 0;
-  for (const { branchId, branchAov } of branchOrdersAll) {
-    const empCount = employeeOrdersByBranch.get(branchId) ?? 0;
-    weightedBenchmarkNum += branchAov * empCount;
-    weightedBenchmarkDen += empCount;
+  if (globalCount === 0) {
+    return { value: roundedEmployeeAov, branch_avg: null, impact: 0 };
   }
 
-  if (weightedBenchmarkDen === 0) return { value: null, branch_avg: null, impact: 0 };
-  const weightedBenchmark = weightedBenchmarkNum / weightedBenchmarkDen;
+  const globalBenchmark = globalTotal / globalCount;
 
-  const pct = weightedBenchmark > 0
-    ? ((employeeAov - weightedBenchmark) / weightedBenchmark) * 100
+  const pct = globalBenchmark > 0
+    ? ((employeeAov - globalBenchmark) / globalBenchmark) * 100
     : 0;
 
   return {
-    value: Math.round(employeeAov * 100) / 100,
-    branch_avg: Math.round(weightedBenchmark * 100) / 100,
+    value: roundedEmployeeAov,
+    branch_avg: Math.round(globalBenchmark * 100) / 100,
     impact: aovImpact(pct),
   };
 }

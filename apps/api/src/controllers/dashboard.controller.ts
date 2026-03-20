@@ -306,10 +306,9 @@ export async function getEpiDashboardData(req: Request, res: Response, next: Nex
 
 export async function getEpiLeaderboardData(req: Request, res: Response, next: NextFunction) {
   try {
-    const companyId = req.companyContext!.companyId;
     const currentUserId = req.user!.sub;
     const monthKey = parseMonthKey(req.query.monthKey as string | undefined);
-    const data = await getEpiLeaderboard(companyId, currentUserId, monthKey);
+    const data = await getEpiLeaderboard(currentUserId, monthKey);
     res.json({ success: true, data });
   } catch (err) {
     next(err);
@@ -318,10 +317,9 @@ export async function getEpiLeaderboardData(req: Request, res: Response, next: N
 
 export async function getEpiLeaderboardDetailData(req: Request, res: Response, next: NextFunction) {
   try {
-    const companyId = req.companyContext!.companyId;
     const userId = String(req.params.userId);
     const monthKey = parseMonthKey(req.query.monthKey as string | undefined);
-    const data = await getEpiLeaderboardDetail(companyId, userId, monthKey);
+    const data = await getEpiLeaderboardDetail(userId, monthKey);
     res.json({ success: true, data });
   } catch (err) {
     next(err);

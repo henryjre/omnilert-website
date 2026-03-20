@@ -424,18 +424,10 @@ export function createLeaderboardDetail(input: {
   };
 }
 
-function applyLeaderboardFilters(query: any, masterDb: any, companyId: string) {
+export function applyGlobalLeaderboardFilters(query: any, masterDb: any) {
   return query
     .where('u.is_active', true)
     .where('u.employment_status', 'active')
-    .whereExists((subquery: any) => {
-      subquery
-        .select(masterDb.raw('1'))
-        .from('user_company_access as uca')
-        .whereRaw('uca.user_id = u.id')
-        .where('uca.company_id', companyId)
-        .where('uca.is_active', true);
-    })
     .whereExists((subquery: any) => {
       subquery
         .select(masterDb.raw('1'))
@@ -488,11 +480,11 @@ export async function getEpiDashboard(userId: string): Promise<EpiDashboardRespo
   };
 }
 
-export async function getEpiLeaderboard(companyId: string, currentUserId: string, monthKey: string): Promise<EpiLeaderboardSummaryEntry[]> {
+export async function getEpiLeaderboard(currentUserId: string, monthKey: string): Promise<EpiLeaderboardSummaryEntry[]> {
   const masterDb = db.getMasterDb();
   const currentMonthKey = getCurrentMonthKey();
 
-  const rows = await applyLeaderboardFilters(masterDb('users as u'), masterDb, companyId)
+  const rows = await applyGlobalLeaderboardFilters(masterDb('users as u'), masterDb)
     .select(
       'u.id as userId',
       'u.first_name',
@@ -514,7 +506,6 @@ export async function getEpiLeaderboard(companyId: string, currentUserId: string
 }
 
 export async function getEpiLeaderboardDetail(
-  companyId: string,
   userId: string,
   monthKey: string,
 ): Promise<EpiLeaderboardDetailResponse | null> {
@@ -522,7 +513,7 @@ export async function getEpiLeaderboardDetail(
   const currentMonthKey = getCurrentMonthKey();
   const isCurrentMonth = isCurrentMonthSelection(monthKey, currentMonthKey);
 
-  const row = await applyLeaderboardFilters(masterDb('users as u'), masterDb, companyId)
+  const row = await applyGlobalLeaderboardFilters(masterDb('users as u'), masterDb)
     .where('u.id', userId)
     .first(
       'u.id as userId',

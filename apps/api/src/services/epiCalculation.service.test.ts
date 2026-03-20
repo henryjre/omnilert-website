@@ -21,6 +21,7 @@ test('calculateKpiScoresWithQueryDeps fetches slots and attendance once for both
   let attendanceFetches = 0;
   let posOrderFetches = 0;
   let branchOrderFetches = 0;
+  let globalBranchLookups = 0;
 
   const result = await calculateKpiScoresWithQueryDeps({
     userId: 'user-1',
@@ -65,6 +66,10 @@ test('calculateKpiScoresWithQueryDeps fetches slots and attendance once for both
         },
       ];
     },
+    getGlobalActiveOdooBranchIds: async () => {
+      globalBranchLookups += 1;
+      return [12];
+    },
     getBranchPosOrders: async () => {
       branchOrderFetches += 1;
       return [{ amount_total: 120 }, { amount_total: 180 }];
@@ -75,7 +80,81 @@ test('calculateKpiScoresWithQueryDeps fetches slots and attendance once for both
   assert.equal(slotFetches, 1);
   assert.equal(attendanceFetches, 1);
   assert.equal(posOrderFetches, 1);
+  assert.equal(globalBranchLookups, 1);
   assert.equal(branchOrderFetches, 1);
   assert.equal(result.breakdown.attendance.rate, 100);
   assert.equal(result.breakdown.punctuality.rate, 100);
+});
+
+test('calculateKpiScoresWithQueryDeps benchmarks AOV against all active mapped tenant branches', async () => {
+  const branchOrderLookups: number[] = [];
+
+  const result = await calculateKpiScoresWithQueryDeps({
+    userId: 'user-1',
+    userKey: 'website-key-1',
+    cssAudits: null,
+    peerEvaluations: null,
+    complianceAudit: null,
+    violationNotices: null,
+  }, {
+    getOdooEmployeeIdsByWebsiteKey: async () => [101],
+    getScheduledSlots: async () => [],
+    getAttendanceRecords: async () => [],
+    getPosOrders: async () => [
+      {
+        amount_total: 150,
+        company_id: [12, 'Main Branch'],
+        date_order: '2026-03-10 06:30:00',
+      },
+    ],
+    getGlobalActiveOdooBranchIds: async () => [12, 99],
+    getBranchPosOrders: async (branchId) => {
+      branchOrderLookups.push(branchId);
+      if (branchId === 12) {
+        return [{ amount_total: 100 }, { amount_total: 100 }];
+      }
+
+      return [{ amount_total: 300 }];
+    },
+  });
+
+  assert.deepEqual(branchOrderLookups, [12, 99]);
+  assert.equal(result.breakdown.aov.value, 150);
+  assert.equal(result.breakdown.aov.branch_avg, 166.67);
+  assert.equal(result.breakdown.aov.impact, -1);
+});
+
+test('calculateKpiScoresWithQueryDeps keeps employee AOV visible when no global branch benchmark can be built', async () => {
+  const result = await calculateKpiScoresWithQueryDeps({
+    userId: 'user-1',
+    userKey: 'website-key-1',
+    cssAudits: null,
+    peerEvaluations: null,
+    complianceAudit: null,
+    violationNotices: null,
+  }, {
+    getOdooEmployeeIdsByWebsiteKey: async () => [101],
+    getScheduledSlots: async () => [],
+    getAttendanceRecords: async () => [],
+    getPosOrders: async () => [
+      {
+        amount_total: 180,
+        company_id: [12, 'Main Branch'],
+        date_order: '2026-03-10 06:30:00',
+      },
+      {
+        amount_total: 120,
+        company_id: [12, 'Main Branch'],
+        date_order: '2026-03-11 06:30:00',
+      },
+    ],
+    getGlobalActiveOdooBranchIds: async () => [],
+    getBranchPosOrders: async () => {
+      throw new Error('should not fetch branch orders without a global benchmark set');
+    },
+  });
+
+  assert.equal(result.breakdown.aov.value, 150);
+  assert.equal(result.breakdown.aov.branch_avg, null);
+  assert.equal(result.breakdown.aov.impact, 0);
 });

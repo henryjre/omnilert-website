@@ -314,7 +314,7 @@ function ExpandedMetrics({
                   <span className="text-gray-500 dark:text-gray-400">Avg Order Value</span>
                   <span className={`font-semibold ${aovColors.text} ${aovColors.darkText}`}>
                     P{criteria.aov.toFixed(0)}
-                    {criteria.branchAov ? <span className="font-normal text-gray-400"> / P{criteria.branchAov.toFixed(0)}</span> : null}
+                    {criteria.branchAov ? <span className="font-normal text-gray-400"> / Global P{criteria.branchAov.toFixed(0)}</span> : null}
                   </span>
                 </div>
               </div>
