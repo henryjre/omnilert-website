@@ -97,7 +97,9 @@ async function enrichAuditRows(tenantDb: Knex, rows: any[]): Promise<StoreAuditR
   if (rows.length === 0) return [];
 
   const branchIds = [...new Set(rows.map((row) => row.branch_id).filter(Boolean))] as string[];
-  const auditorIds = [...new Set(rows.map((row) => row.auditor_user_id).filter(Boolean))] as string[];
+  const auditorIds = [
+    ...new Set(rows.map((row) => row.auditor_user_id).filter(Boolean)),
+  ] as string[];
   const auditIds = rows.map((row) => row.id) as string[];
 
   const [branches, auditors, linkedVns] = await Promise.all([
@@ -113,20 +115,27 @@ async function enrichAuditRows(tenantDb: Knex, rows: any[]): Promise<StoreAuditR
       .select('id', 'source_store_audit_id'),
   ]);
 
-  const branchMap = new Map(branches.map((branch: any) => [branch.id as string, branch.name as string]));
-  const auditorMap = new Map(
-    auditors.map((auditor: any) => [auditor.id as string, `${auditor.first_name} ${auditor.last_name}`.trim()]),
+  const branchMap = new Map(
+    branches.map((branch: any) => [branch.id as string, branch.name as string]),
   );
-  const vnMap = new Map(linkedVns.map((vn: any) => [vn.source_store_audit_id as string, vn.id as string]));
+  const auditorMap = new Map(
+    auditors.map((auditor: any) => [
+      auditor.id as string,
+      `${auditor.first_name} ${auditor.last_name}`.trim(),
+    ]),
+  );
+  const vnMap = new Map(
+    linkedVns.map((vn: any) => [vn.source_store_audit_id as string, vn.id as string]),
+  );
 
   return rows.map((row) => {
     const normalized = normalizeRow(row);
     return {
       ...normalized,
       branch_name: normalized.branch_name ?? branchMap.get(normalized.branch_id) ?? null,
-      auditor_name: normalized.auditor_name ?? (
-        normalized.auditor_user_id ? auditorMap.get(normalized.auditor_user_id) ?? null : null
-      ),
+      auditor_name:
+        normalized.auditor_name ??
+        (normalized.auditor_user_id ? (auditorMap.get(normalized.auditor_user_id) ?? null) : null),
       linked_vn_id: vnMap.get(normalized.id) ?? null,
     };
   });
@@ -140,17 +149,27 @@ function isUniqueViolation(error: unknown): boolean {
 
 function emitStoreAuditEvent(
   companyId: string,
-  event: 'store-audit:new' | 'store-audit:claimed' | 'store-audit:completed' | 'store-audit:updated',
+  event:
+    | 'store-audit:new'
+    | 'store-audit:claimed'
+    | 'store-audit:completed'
+    | 'store-audit:updated',
   payload: unknown,
 ): void {
   try {
-    getIO().of('/store-audits').to(`company:${companyId}`).emit(event, payload as never);
+    getIO()
+      .of('/store-audits')
+      .to(`company:${companyId}`)
+      .emit(event, payload as never);
   } catch {
     logger.warn({ companyId, event }, 'Socket.IO not available for store audit event');
   }
 }
 
-async function analyzeCssAudit(auditLog: string, criteriaScores: CssCriteriaScores): Promise<string> {
+async function analyzeCssAudit(
+  auditLog: string,
+  criteriaScores: CssCriteriaScores,
+): Promise<string> {
   const criteriaLabels: Record<keyof CssCriteriaScores, string> = {
     greeting: 'Greeting & First Impression',
     order_accuracy: 'Order Accuracy & Confirmation',
@@ -194,7 +213,7 @@ async function analyzeComplianceAudit(
   const userContent = `Compliance Answers:\n${answersPreamble}\n\nAudit Log:\n${auditLog}`;
   return analyzeAuditWithAI({
     systemPrompt:
-      'You summarize compliance audits for retail/food-service operations. Return concise findings, risks, and clear corrective actions.',
+      'You summarize compliance audits for retail/food-service operations. Return concise actionable findings, strengths, risks, and coaching recommendations.',
     userContent,
   });
 }
@@ -203,24 +222,27 @@ async function analyzeAuditWithAI(input: {
   systemPrompt: string;
   userContent: string;
 }): Promise<string> {
-  const systemPrompt = `${input.systemPrompt}
-
-You are a neutral, data-driven audit analyst.
-Interpret mixed-language and noisy audit notes (English/Filipino/Tagalog/Taglish, shorthand, typos) as faithfully as possible.
-Do not fabricate facts. Do not add assumptions that are not supported by the provided data.
-If evidence is weak or unclear, explicitly state insufficient evidence.
-
-Return STRICT JSON only with these exact keys:
-- criteria_summary (array of strings)
-- audit_trail_findings (array of strings)
-- strengths (array of strings)
-- risks (array of strings)
-- coaching_recommendations (array of strings)
-
-Rules:
-- Every item must be evidence-based and concise.
-- Keep tone unbiased, factual, and professional.
-- No markdown, no extra keys, no wrapper text.`;
+  const systemPrompt = [
+    input.systemPrompt,
+    '',
+    'You are a neutral, data-driven audit analyst for a retail/food-service operation.',
+    'Audit notes may be written in English, Filipino, Tagalog, Taglish, shorthand, or contain typos.',
+    'Interpret these conservatively and faithfully — do not assume intent beyond what is stated.',
+    'If audit notes contradict the provided scores, surface the discrepancy explicitly.',
+    'If evidence is weak, ambiguous, or missing, state "Insufficient evidence" rather than speculating.',
+    '',
+    'Return STRICT JSON only with these exact keys:',
+    '- criteria_summary (array of strings)',
+    '- audit_trail_findings (array of strings)',
+    '- strengths (array of strings)',
+    '- risks (array of strings)',
+    '- coaching_recommendations (array of strings)',
+    '',
+    'Rules:',
+    '- Every item must be directly supported by the provided data.',
+    '- Tone must be unbiased, factual, and professional.',
+    '- No markdown, no extra keys, no preamble or wrapper text.',
+  ].join('\n');
 
   const response = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
@@ -231,8 +253,8 @@ Rules:
       'OpenAI-Project': env.OPENAI_PROJECT_ID,
     },
     body: JSON.stringify({
-      model: 'gpt-4.1-mini',
-      max_output_tokens: 800,
+      model: 'gpt-4.1',
+      max_output_tokens: 1500,
       input: [
         {
           role: 'system',
@@ -296,7 +318,10 @@ function parseAuditReportSections(rawText: string): AuditReportSections {
 
   const obj = parsed as Record<string, unknown>;
   return {
-    criteria_summary: sanitizeStringArray(obj.criteria_summary, EMPTY_AUDIT_REPORT_SECTIONS.criteria_summary[0]),
+    criteria_summary: sanitizeStringArray(
+      obj.criteria_summary,
+      EMPTY_AUDIT_REPORT_SECTIONS.criteria_summary[0],
+    ),
     audit_trail_findings: sanitizeStringArray(
       obj.audit_trail_findings,
       EMPTY_AUDIT_REPORT_SECTIONS.audit_trail_findings[0],
@@ -328,21 +353,14 @@ function parseJsonObject(rawText: string): unknown {
 
 function sanitizeStringArray(value: unknown, fallback: string): string[] {
   if (!Array.isArray(value)) return [fallback];
-  const cleaned = value
-    .map((item) => String(item ?? '').trim())
-    .filter(Boolean);
+  const cleaned = value.map((item) => String(item ?? '').trim()).filter(Boolean);
   if (cleaned.length === 0) return [fallback];
   return cleaned;
 }
 
 function formatAuditReportSections(sections: AuditReportSections): string {
-  const toLines = (title: string, items: string[]) => (
-    [
-      `**${title}**`,
-      ...items.map((item) => `- ${item}`),
-      '',
-    ].join('\n')
-  );
+  const toLines = (title: string, items: string[]) =>
+    [`**${title}**`, ...items.map((item) => `- ${item}`), ''].join('\n');
 
   return [
     toLines('Criteria Summary', sections.criteria_summary),
@@ -350,15 +368,20 @@ function formatAuditReportSections(sections: AuditReportSections): string {
     toLines('Strengths', sections.strengths),
     toLines('Risks', sections.risks),
     toLines('Coaching Recommendations', sections.coaching_recommendations),
-  ].join('\n').trim();
+  ]
+    .join('\n')
+    .trim();
 }
 
-async function appendCssAuditResult(userKey: string, payload: {
-  audit_id: string;
-  star_rating: number;
-  criteria_scores: CssCriteriaScores;
-  audited_at: string;
-}): Promise<void> {
+async function appendCssAuditResult(
+  userKey: string,
+  payload: {
+    audit_id: string;
+    star_rating: number;
+    criteria_scores: CssCriteriaScores;
+    audited_at: string;
+  },
+): Promise<void> {
   const masterDb = db.getMasterDb();
   const targetUser = await masterDb('users').where({ user_key: userKey }).first('id');
   if (!targetUser) return;
@@ -366,24 +389,26 @@ async function appendCssAuditResult(userKey: string, payload: {
   await masterDb('users')
     .where({ id: targetUser.id })
     .update({
-      css_audits: masterDb.raw(
-        `COALESCE(css_audits, '[]'::jsonb) || ?::jsonb`,
-        [JSON.stringify([payload])],
-      ),
+      css_audits: masterDb.raw(`COALESCE(css_audits, '[]'::jsonb) || ?::jsonb`, [
+        JSON.stringify([payload]),
+      ]),
       updated_at: new Date(),
     });
 }
 
-async function updateComplianceAuditResult(odooEmployeeId: number, payload: {
-  audit_id: string;
-  answers: {
-    productivity_rate: boolean;
-    uniform: boolean;
-    hygiene: boolean;
-    sop: boolean;
-  };
-  audited_at: string;
-}): Promise<void> {
+async function updateComplianceAuditResult(
+  odooEmployeeId: number,
+  payload: {
+    audit_id: string;
+    answers: {
+      productivity_rate: boolean;
+      uniform: boolean;
+      hygiene: boolean;
+      sop: boolean;
+    };
+    audited_at: string;
+  },
+): Promise<void> {
   const websiteKey = await getEmployeeWebsiteKeyByEmployeeId(odooEmployeeId);
   if (!websiteKey) return;
 
@@ -394,18 +419,15 @@ async function updateComplianceAuditResult(odooEmployeeId: number, payload: {
   await masterDb('users')
     .where({ id: targetUser.id })
     .update({
-      compliance_audit: masterDb.raw(
-        `COALESCE(compliance_audit, '[]'::jsonb) || ?::jsonb`,
-        [JSON.stringify([payload])],
-      ),
+      compliance_audit: masterDb.raw(`COALESCE(compliance_audit, '[]'::jsonb) || ?::jsonb`, [
+        JSON.stringify([payload]),
+      ]),
       updated_at: new Date(),
     });
 }
 
 async function getWebsiteKeyByUserId(userId: string): Promise<string | null> {
-  const row = await db.getMasterDb()('users')
-    .where({ id: userId })
-    .first('user_key');
+  const row = await db.getMasterDb()('users').where({ id: userId }).first('user_key');
 
   const key = String(row?.user_key ?? '').trim();
   return key || null;
@@ -447,10 +469,10 @@ async function buildStoreAuditMessageList(
   tenantDb: Knex,
   auditId: string,
 ): Promise<StoreAuditMessage[]> {
-  const messageRows = await tenantDb('store_audit_messages')
+  const messageRows = (await tenantDb('store_audit_messages')
     .where({ store_audit_id: auditId })
     .orderBy('created_at', 'asc')
-    .select('*') as StoreAuditMessageRow[];
+    .select('*')) as StoreAuditMessageRow[];
 
   if (messageRows.length === 0) return [];
 
@@ -554,10 +576,13 @@ export async function listStoreAudits(input: {
     query.clone().count<{ count: string }>({ count: '*' }).first(),
     query
       .clone()
-      .orderBy(sortOrder as Array<{ column: string; order: 'asc' | 'desc'; nulls?: 'first' | 'last' }>)
+      .orderBy(
+        sortOrder as Array<{ column: string; order: 'asc' | 'desc'; nulls?: 'first' | 'last' }>,
+      )
       .limit(pageSize)
       .offset((page - 1) * pageSize),
-    input.tenantDb('store_audits')
+    input
+      .tenantDb('store_audits')
       .where({ status: 'processing', auditor_user_id: input.userId })
       .first('id'),
   ]);
@@ -681,9 +706,10 @@ export async function editStoreAuditMessage(input: {
   const nextContent = input.content.trim();
   if (!nextContent) throw new AppError(400, 'Message content is required');
 
-  const message = await input.tenantDb('store_audit_messages')
+  const message = (await input
+    .tenantDb('store_audit_messages')
     .where({ id: input.messageId, store_audit_id: input.auditId })
-    .first() as StoreAuditMessageRow | undefined;
+    .first()) as StoreAuditMessageRow | undefined;
   if (!message) throw new AppError(404, 'Audit message not found');
   if (message.user_id !== input.userId) {
     throw new AppError(403, 'You can only edit your own audit messages');
@@ -692,12 +718,10 @@ export async function editStoreAuditMessage(input: {
     throw new AppError(409, 'Deleted messages cannot be edited');
   }
 
-  await input.tenantDb('store_audit_messages')
-    .where({ id: input.messageId })
-    .update({
-      content: nextContent,
-      updated_at: new Date(),
-    });
+  await input.tenantDb('store_audit_messages').where({ id: input.messageId }).update({
+    content: nextContent,
+    updated_at: new Date(),
+  });
 
   const messages = await buildStoreAuditMessageList(input.tenantDb, input.auditId);
   const updated = messages.find((item) => item.id === input.messageId);
@@ -720,9 +744,10 @@ export async function deleteStoreAuditMessage(input: {
     userId: input.userId,
   });
 
-  const message = await input.tenantDb('store_audit_messages')
+  const message = (await input
+    .tenantDb('store_audit_messages')
     .where({ id: input.messageId, store_audit_id: input.auditId })
-    .first() as StoreAuditMessageRow | undefined;
+    .first()) as StoreAuditMessageRow | undefined;
   if (!message) throw new AppError(404, 'Audit message not found');
   if (message.user_id !== input.userId) {
     throw new AppError(403, 'You can only delete your own audit messages');
@@ -731,13 +756,15 @@ export async function deleteStoreAuditMessage(input: {
     throw new AppError(409, 'Message is already deleted');
   }
 
-  const attachments = await input.tenantDb('store_audit_attachments')
+  const attachments = (await input
+    .tenantDb('store_audit_attachments')
     .where({ message_id: input.messageId })
-    .select('file_url') as Array<{ file_url: string }>;
+    .select('file_url')) as Array<{ file_url: string }>;
 
   const users = await hydrateUsersByIds([input.userId], ['id', 'first_name', 'last_name']);
   const deleter = users[input.userId];
-  const deleterName = `${deleter?.first_name ?? ''} ${deleter?.last_name ?? ''}`.trim() || 'Someone';
+  const deleterName =
+    `${deleter?.first_name ?? ''} ${deleter?.last_name ?? ''}`.trim() || 'Someone';
 
   await input.tenantDb.transaction(async (trx) => {
     await trx('store_audit_messages')
@@ -752,7 +779,9 @@ export async function deleteStoreAuditMessage(input: {
     await trx('store_audit_attachments').where({ message_id: input.messageId }).delete();
   });
 
-  await Promise.all(attachments.map((attachment) => deleteFile(attachment.file_url).catch(() => undefined)));
+  await Promise.all(
+    attachments.map((attachment) => deleteFile(attachment.file_url).catch(() => undefined)),
+  );
   emitStoreAuditEvent(input.companyId, 'store-audit:updated', { id: input.auditId });
 }
 
@@ -767,7 +796,8 @@ export async function processStoreAudit(input: {
     throw new AppError(404, 'Store audit not found');
   }
 
-  const activeAudit = await input.tenantDb('store_audits')
+  const activeAudit = await input
+    .tenantDb('store_audits')
     .where({ status: 'processing', auditor_user_id: input.userId })
     .first('id');
   if (activeAudit) {
@@ -776,7 +806,8 @@ export async function processStoreAudit(input: {
 
   let updated: any;
   try {
-    [updated] = await input.tenantDb('store_audits')
+    [updated] = await input
+      .tenantDb('store_audits')
       .where({ id: input.auditId, status: 'pending' })
       .update({
         status: 'processing',
@@ -810,15 +841,15 @@ export async function completeStoreAudit(input: {
   userId: string;
   companyId: string;
   payload:
-  | {
-    criteria_scores: CssCriteriaScores;
-  }
-  | {
-    productivity_rate: boolean;
-    uniform: boolean;
-    hygiene: boolean;
-    sop: boolean;
-  };
+    | {
+        criteria_scores: CssCriteriaScores;
+      }
+    | {
+        productivity_rate: boolean;
+        uniform: boolean;
+        hygiene: boolean;
+        sop: boolean;
+      };
 }): Promise<StoreAuditRow> {
   const audit = await input.tenantDb('store_audits').where({ id: input.auditId }).first();
   if (!audit) throw new AppError(404, 'Store audit not found');
@@ -826,7 +857,10 @@ export async function completeStoreAudit(input: {
     throw new AppError(403, 'You can only complete your own processing audit');
   }
 
-  const createSalaryAttachmentForAuditor = async (description: string, totalAmount: number): Promise<void> => {
+  const createSalaryAttachmentForAuditor = async (
+    description: string,
+    totalAmount: number,
+  ): Promise<void> => {
     if (totalAmount <= 0) return;
 
     const auditorWebsiteKey = await getWebsiteKeyByUserId(input.userId);
@@ -854,15 +888,25 @@ export async function completeStoreAudit(input: {
     const messages = await buildStoreAuditMessageList(input.tenantDb, input.auditId);
     const visibleMessages = messages.filter((message) => !message.is_deleted);
     if (visibleMessages.length === 0) {
-      throw new AppError(400, 'At least one audit message is required before completing this CSS audit');
+      throw new AppError(
+        400,
+        'At least one audit message is required before completing this CSS audit',
+      );
     }
     const generatedAuditLog = buildAuditMessageTranscript(visibleMessages);
-    const starRating = Math.round(
-      ((criteria_scores.greeting + criteria_scores.order_accuracy + criteria_scores.suggestive_selling
-        + criteria_scores.service_efficiency + criteria_scores.professionalism) / 5) * 100,
-    ) / 100;
+    const starRating =
+      Math.round(
+        ((criteria_scores.greeting +
+          criteria_scores.order_accuracy +
+          criteria_scores.suggestive_selling +
+          criteria_scores.service_efficiency +
+          criteria_scores.professionalism) /
+          5) *
+          100,
+      ) / 100;
     const aiReport = await analyzeCssAudit(generatedAuditLog, criteria_scores);
-    [updated] = await input.tenantDb('store_audits')
+    [updated] = await input
+      .tenantDb('store_audits')
       .where({ id: input.auditId })
       .update({
         status: 'completed',
@@ -899,11 +943,15 @@ export async function completeStoreAudit(input: {
     const messages = await buildStoreAuditMessageList(input.tenantDb, input.auditId);
     const visibleMessages = messages.filter((message) => !message.is_deleted);
     if (visibleMessages.length === 0) {
-      throw new AppError(400, 'At least one audit message is required before completing this compliance audit');
+      throw new AppError(
+        400,
+        'At least one audit message is required before completing this compliance audit',
+      );
     }
     const generatedAuditLog = buildAuditMessageTranscript(visibleMessages);
     const aiReport = await analyzeComplianceAudit(generatedAuditLog, compPayload);
-    [updated] = await input.tenantDb('store_audits')
+    [updated] = await input
+      .tenantDb('store_audits')
       .where({ id: input.auditId })
       .update({
         status: 'completed',
