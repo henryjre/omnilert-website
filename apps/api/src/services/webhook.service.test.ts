@@ -1,6 +1,22 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { reassignUserToSingleCheckedInBranch } from './webhook.service.js';
+
+process.env.JWT_SECRET ??= 'test-jwt-secret-12345';
+process.env.JWT_REFRESH_SECRET ??= 'test-jwt-refresh-secret';
+process.env.SUPER_ADMIN_BOOTSTRAP_SECRET ??= 'test-bootstrap-secret-1234567890';
+process.env.SUPER_ADMIN_JWT_SECRET ??= 'test-super-admin-jwt-secret-123456';
+process.env.ODOO_DB ??= 'test-odoo-db';
+process.env.ODOO_URL ??= 'http://localhost:8069';
+process.env.ODOO_USERNAME ??= 'test-odoo-user@example.com';
+process.env.ODOO_PASSWORD ??= 'test-odoo-password';
+process.env.OPENAI_API_KEY ??= 'test-openai-key';
+process.env.OPENAI_ORGANIZATION_ID ??= 'test-openai-org';
+process.env.OPENAI_PROJECT_ID ??= 'test-openai-project';
+
+const {
+  createAttendanceProcessor,
+  reassignUserToSingleCheckedInBranch,
+} = await import('./webhook.service.js');
 
 type RecordedOperation =
   | { type: 'transaction:start' | 'transaction:end' }
@@ -8,6 +24,27 @@ type RecordedOperation =
   | { type: 'insert'; values: Record<string, unknown> }
   | { type: 'onConflict'; columns: string[] }
   | { type: 'ignore' };
+
+type ShiftRecord = {
+  id: string;
+  odoo_shift_id: number;
+  branch_id: string;
+  user_id: string | null;
+  employee_name: string;
+  employee_avatar_url: string | null;
+  duty_type: string;
+  duty_color: number;
+  shift_start: string | Date;
+  shift_end: string | Date;
+  allocated_hours: number;
+  total_worked_hours: number | null;
+  pending_approvals: number;
+  status: string;
+  check_in_status: string | null;
+  odoo_payload: string;
+  created_at?: Date;
+  updated_at?: Date;
+};
 
 function createTenantDbMock() {
   const operations: RecordedOperation[] = [];
@@ -47,12 +84,172 @@ function createTenantDbMock() {
   return { tenantDb, operations };
 }
 
+function createShift(partial: Partial<ShiftRecord> & Pick<ShiftRecord, 'id' | 'odoo_shift_id' | 'branch_id'>): ShiftRecord {
+  return {
+    id: partial.id,
+    odoo_shift_id: partial.odoo_shift_id,
+    branch_id: partial.branch_id,
+    user_id: partial.user_id ?? 'user-1',
+    employee_name: partial.employee_name ?? '001 - Alex Crew',
+    employee_avatar_url: partial.employee_avatar_url ?? null,
+    duty_type: partial.duty_type ?? 'Dining',
+    duty_color: partial.duty_color ?? 1,
+    shift_start: partial.shift_start ?? '2026-03-20T09:00:00.000Z',
+    shift_end: partial.shift_end ?? '2026-03-20T17:00:00.000Z',
+    allocated_hours: partial.allocated_hours ?? 8,
+    total_worked_hours: partial.total_worked_hours ?? null,
+    pending_approvals: partial.pending_approvals ?? 0,
+    status: partial.status ?? 'open',
+    check_in_status: partial.check_in_status ?? null,
+    odoo_payload: partial.odoo_payload ?? JSON.stringify({}),
+    created_at: partial.created_at ?? new Date('2026-03-20T00:00:00.000Z'),
+    updated_at: partial.updated_at ?? new Date('2026-03-20T00:00:00.000Z'),
+  };
+}
+
+function hasPositiveOverlap(aStart: string | Date, aEnd: string | Date, bStart: string | Date, bEnd: string | Date): boolean {
+  const latestStart = Math.max(new Date(aStart).getTime(), new Date(bStart).getTime());
+  const earliestEnd = Math.min(new Date(aEnd).getTime(), new Date(bEnd).getTime());
+  return latestStart < earliestEnd;
+}
+
+function createAttendanceHarness(options?: {
+  shifts?: ShiftRecord[];
+  websiteUserKey?: string | null;
+  resolvedUserId?: string | null;
+  resolvedEmployeeName?: string;
+}) {
+  const tenantDb = { name: 'tenant-db' };
+  const now = new Date('2026-03-21T12:00:00.000Z');
+  const branches = [
+    { id: 'branch-main', odoo_branch_id: '12', name: 'Main Branch' },
+    { id: 'branch-other', odoo_branch_id: '99', name: 'Other Branch' },
+  ];
+  const shifts = [...(options?.shifts ?? [])];
+  const logs: Array<Record<string, unknown>> = [];
+  const auths: Array<Record<string, unknown>> = [];
+  const queuedJobs: Array<{ payload: Record<string, unknown>; runAt: Date }> = [];
+  const notifications: Array<Record<string, unknown>> = [];
+  const socketEvents: Array<{ event: string; payload: Record<string, unknown> }> = [];
+  const branchAssignments: Array<{ userId: string; branchId: string }> = [];
+
+  let logCount = 0;
+  let authCount = 0;
+  let interimShiftCount = 0;
+
+  return {
+    branches,
+    shifts,
+    logs,
+    auths,
+    queuedJobs,
+    notifications,
+    socketEvents,
+    branchAssignments,
+    deps: {
+      now: () => now,
+      getTenantDb: async () => tenantDb,
+      findBranchByOdooCompanyId: async (_tenantDb: unknown, odooCompanyId: number) =>
+        branches.find((branch) => branch.odoo_branch_id === String(odooCompanyId)) ?? null,
+      findShiftByPlanningSlotId: async (_tenantDb: unknown, planningSlotId: number, branchId: string) =>
+        shifts.find((shift) => shift.odoo_shift_id === planningSlotId && shift.branch_id === branchId) ?? null,
+      findShiftById: async (_tenantDb: unknown, shiftId: string) =>
+        shifts.find((shift) => shift.id === shiftId) ?? null,
+      createShiftLog: async (_tenantDb: unknown, input: Record<string, unknown>) => {
+        const record = { id: `log-${++logCount}`, ...input };
+        logs.push(record);
+        return record;
+      },
+      updateShiftById: async (_tenantDb: unknown, shiftId: string, updates: Record<string, unknown>) => {
+        const shift = shifts.find((row) => row.id === shiftId) ?? null;
+        if (!shift) return null;
+        Object.assign(shift, updates);
+        return shift;
+      },
+      incrementShiftPendingApprovals: async (_tenantDb: unknown, shiftId: string) => {
+        const shift = shifts.find((row) => row.id === shiftId) ?? null;
+        if (!shift) return null;
+        shift.pending_approvals += 1;
+        return shift;
+      },
+      createShiftAuthorization: async (_tenantDb: unknown, input: Record<string, unknown>) => {
+        const record = { id: `auth-${++authCount}`, ...input };
+        auths.push(record);
+        return record;
+      },
+      upsertInterimShift: async (_tenantDb: unknown, input: Record<string, unknown>) => {
+        const odooShiftId = Number(input.odoo_shift_id);
+        let shift = shifts.find((row) => row.odoo_shift_id === odooShiftId && row.branch_id === input.branch_id);
+        if (!shift) {
+          shift = createShift({
+            id: `shift-interim-${++interimShiftCount}`,
+            odoo_shift_id: odooShiftId,
+            branch_id: String(input.branch_id),
+            user_id: (input.user_id as string | null) ?? null,
+            employee_name: String(input.employee_name),
+            employee_avatar_url: (input.employee_avatar_url as string | null) ?? null,
+            duty_type: String(input.duty_type),
+            duty_color: Number(input.duty_color),
+            shift_start: input.shift_start as string | Date,
+            shift_end: input.shift_end as string | Date,
+            allocated_hours: Number(input.allocated_hours),
+            total_worked_hours: Number(input.total_worked_hours),
+            pending_approvals: Number(input.pending_approvals ?? 0),
+            status: String(input.status),
+            check_in_status: (input.check_in_status as string | null) ?? null,
+            odoo_payload: String(input.odoo_payload),
+          });
+          shifts.push(shift);
+        } else {
+          Object.assign(shift, input);
+        }
+        return shift;
+      },
+      reassignLogsToShift: async (_tenantDb: unknown, attendanceId: number, shiftId: string) => {
+        for (const log of logs) {
+          if (log.odoo_attendance_id === attendanceId) {
+            log.shift_id = shiftId;
+          }
+        }
+      },
+      findOverlappingShiftInOtherBranches: async (
+        _tenantDb: unknown,
+        input: { userId: string | null; branchId: string; attendanceStart: Date; attendanceEnd: Date },
+      ) => {
+        if (!input.userId) return null;
+        return shifts.find((shift) =>
+          shift.user_id === input.userId
+          && shift.branch_id !== input.branchId
+          && hasPositiveOverlap(shift.shift_start, shift.shift_end, input.attendanceStart, input.attendanceEnd)
+        ) ?? null;
+      },
+      resolveAttendanceIdentity: async (_tenantDb: unknown, payload: Record<string, unknown>) => ({
+        userId: options?.resolvedUserId ?? null,
+        websiteUserKey: String(payload.x_website_key ?? options?.websiteUserKey ?? '').trim() || null,
+        employeeName: options?.resolvedEmployeeName ?? String(payload.x_employee_contact_name ?? ''),
+      }),
+      reassignUserToSingleCheckedInBranch: async (_tenantDb: unknown, userId: string, branchId: string) => {
+        branchAssignments.push({ userId, branchId });
+      },
+      enqueueEarlyCheckInAuthJob: async (payload: Record<string, unknown>, runAt: Date) => {
+        queuedJobs.push({ payload, runAt });
+      },
+      createAndDispatchNotification: async (input: Record<string, unknown>) => {
+        notifications.push(input);
+      },
+      emitSocketEvent: (event: string, payload: Record<string, unknown>) => {
+        socketEvents.push({ event, payload });
+      },
+    },
+  };
+}
+
 test('reassignUserToSingleCheckedInBranch clears existing assignments and inserts checked-in branch', async () => {
   const userId = 'user-123';
   const branchId = 'branch-789';
   const { tenantDb, operations } = createTenantDbMock();
 
-  await reassignUserToSingleCheckedInBranch(tenantDb, userId, branchId);
+  await reassignUserToSingleCheckedInBranch(tenantDb as any, userId, branchId);
 
   assert.deepEqual(operations, [
     { type: 'transaction:start' },
@@ -69,4 +266,309 @@ test('reassignUserToSingleCheckedInBranch clears existing assignments and insert
     { type: 'ignore' },
     { type: 'transaction:end' },
   ]);
+});
+
+test('createAttendanceProcessor creates a synthetic interim-duty shift for unlinked attendance on checkout', async () => {
+  const harness = createAttendanceHarness({
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+  });
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  await processAttendance('tenant_a', {
+    id: 9001,
+    check_in: '2026-03-20 01:00:00',
+    x_company_id: 12,
+    x_cumulative_minutes: 0,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_employee_avatar: 'https://example.com/alex.png',
+    x_planning_slot_id: false,
+    x_website_key: 'website-user-1',
+  });
+
+  await processAttendance('tenant_a', {
+    id: 9001,
+    check_in: '2026-03-20 01:00:00',
+    check_out: '2026-03-20 09:00:00',
+    worked_hours: 8,
+    x_company_id: 12,
+    x_cumulative_minutes: 480,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_employee_avatar: 'https://example.com/alex.png',
+    x_planning_slot_id: false,
+    x_website_key: 'website-user-1',
+  });
+
+  const interimShift = harness.shifts.find((shift) => shift.odoo_shift_id === -9001);
+  assert.ok(interimShift);
+  assert.equal(interimShift?.duty_type, 'Interim Duty');
+  assert.equal(interimShift?.user_id, 'user-1');
+  assert.equal(interimShift?.status, 'ended');
+  assert.equal(interimShift?.check_in_status, 'checked_out');
+  assert.equal(interimShift?.allocated_hours, 8);
+  assert.equal(interimShift?.total_worked_hours, 8);
+
+  const interimPayload = JSON.parse(String(interimShift?.odoo_payload ?? '{}')) as Record<string, unknown>;
+  assert.equal(interimPayload.interim_reason, 'no_planning_schedule');
+  assert.equal(interimPayload.source_attendance_id, 9001);
+
+  assert.equal(harness.logs.length, 2);
+  assert.ok(harness.logs.every((log) => log.shift_id === interimShift?.id));
+  assert.equal(harness.auths.length, 0);
+});
+
+test('createAttendanceProcessor restores the planned shift and reclassifies a fully pre-shift attendance as interim duty', async () => {
+  const plannedShift = createShift({
+    id: 'shift-100',
+    odoo_shift_id: 100,
+    branch_id: 'branch-main',
+    shift_start: '2026-03-20T09:00:00.000Z',
+    shift_end: '2026-03-20T17:00:00.000Z',
+  });
+  const harness = createAttendanceHarness({
+    shifts: [plannedShift],
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+  });
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  await processAttendance('tenant_a', {
+    id: 9002,
+    check_in: '2026-03-20 07:00:00',
+    x_company_id: 12,
+    x_cumulative_minutes: 0,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: 100,
+    x_website_key: 'website-user-1',
+  });
+
+  assert.equal(plannedShift.status, 'active');
+  assert.equal(plannedShift.check_in_status, 'checked_in');
+  assert.equal(harness.queuedJobs.length, 1);
+
+  await processAttendance('tenant_a', {
+    id: 9002,
+    check_in: '2026-03-20 07:00:00',
+    check_out: '2026-03-20 08:00:00',
+    worked_hours: 1,
+    x_company_id: 12,
+    x_cumulative_minutes: 60,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: 100,
+    x_website_key: 'website-user-1',
+  });
+
+  const interimShift = harness.shifts.find((shift) => shift.odoo_shift_id === -9002);
+  assert.ok(interimShift);
+  assert.equal(plannedShift.status, 'open');
+  assert.equal(plannedShift.check_in_status, null);
+  assert.equal(plannedShift.total_worked_hours, null);
+  assert.equal(harness.auths.length, 0);
+  assert.ok(harness.logs.every((log) => log.shift_id === interimShift?.id));
+});
+
+test('createAttendanceProcessor skips tardiness creation when check-in occurs after the linked shift already ended', async () => {
+  const plannedShift = createShift({
+    id: 'shift-101',
+    odoo_shift_id: 101,
+    branch_id: 'branch-main',
+    shift_start: '2026-03-20T09:00:00.000Z',
+    shift_end: '2026-03-20T17:00:00.000Z',
+  });
+  const harness = createAttendanceHarness({
+    shifts: [plannedShift],
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+  });
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  await processAttendance('tenant_a', {
+    id: 9003,
+    check_in: '2026-03-20 18:00:00',
+    x_company_id: 12,
+    x_cumulative_minutes: 0,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: 101,
+    x_website_key: 'website-user-1',
+  });
+
+  assert.equal(harness.auths.length, 0);
+  assert.equal(harness.queuedJobs.length, 0);
+  assert.equal(plannedShift.status, 'open');
+  assert.equal(plannedShift.check_in_status, null);
+});
+
+test('createAttendanceProcessor marks cross-branch coverage as scheduled_other_branch interim duty', async () => {
+  const otherBranchShift = createShift({
+    id: 'shift-other',
+    odoo_shift_id: 200,
+    branch_id: 'branch-other',
+    user_id: 'user-1',
+    shift_start: '2026-03-20T09:00:00.000Z',
+    shift_end: '2026-03-20T17:00:00.000Z',
+  });
+  const harness = createAttendanceHarness({
+    shifts: [otherBranchShift],
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+  });
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  await processAttendance('tenant_a', {
+    id: 9004,
+    check_in: '2026-03-20 09:00:00',
+    x_company_id: 12,
+    x_cumulative_minutes: 0,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: false,
+    x_website_key: 'website-user-1',
+  });
+
+  await processAttendance('tenant_a', {
+    id: 9004,
+    check_in: '2026-03-20 09:00:00',
+    check_out: '2026-03-20 17:00:00',
+    worked_hours: 8,
+    x_company_id: 12,
+    x_cumulative_minutes: 480,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: false,
+    x_website_key: 'website-user-1',
+  });
+
+  const interimShift = harness.shifts.find((shift) => shift.odoo_shift_id === -9004);
+  assert.ok(interimShift);
+
+  const interimPayload = JSON.parse(String(interimShift?.odoo_payload ?? '{}')) as Record<string, unknown>;
+  assert.equal(interimPayload.interim_reason, 'scheduled_other_branch');
+  assert.equal(harness.auths.length, 0);
+});
+
+test('createAttendanceProcessor keeps overlapping early check-ins on the normal authorization path', async () => {
+  const plannedShift = createShift({
+    id: 'shift-102',
+    odoo_shift_id: 102,
+    branch_id: 'branch-main',
+    shift_start: '2026-03-20T09:00:00.000Z',
+    shift_end: '2026-03-20T17:00:00.000Z',
+  });
+  const harness = createAttendanceHarness({
+    shifts: [plannedShift],
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+  });
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  await processAttendance('tenant_a', {
+    id: 9005,
+    check_in: '2026-03-20 08:30:00',
+    x_company_id: 12,
+    x_cumulative_minutes: 0,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: 102,
+    x_website_key: 'website-user-1',
+  });
+
+  assert.equal(harness.queuedJobs.length, 1);
+  assert.equal(harness.auths.length, 0);
+  assert.equal(plannedShift.status, 'active');
+  assert.equal(plannedShift.check_in_status, 'checked_in');
+});
+
+test('createAttendanceProcessor keeps tardiness on the normal authorization path when attendance overlaps the shift', async () => {
+  const plannedShift = createShift({
+    id: 'shift-103',
+    odoo_shift_id: 103,
+    branch_id: 'branch-main',
+    shift_start: '2026-03-20T09:00:00.000Z',
+    shift_end: '2026-03-20T17:00:00.000Z',
+  });
+  const harness = createAttendanceHarness({
+    shifts: [plannedShift],
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+  });
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  await processAttendance('tenant_a', {
+    id: 9006,
+    check_in: '2026-03-20 09:15:00',
+    x_company_id: 12,
+    x_cumulative_minutes: 0,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: 103,
+    x_website_key: 'website-user-1',
+  });
+
+  assert.equal(harness.auths.length, 1);
+  assert.equal(harness.auths[0]?.auth_type, 'tardiness');
+  assert.equal(harness.auths[0]?.status, 'pending');
+});
+
+test('createAttendanceProcessor keeps early check-out on the normal authorization path when attendance overlaps the shift', async () => {
+  const plannedShift = createShift({
+    id: 'shift-104',
+    odoo_shift_id: 104,
+    branch_id: 'branch-main',
+    shift_start: '2026-03-20T09:00:00.000Z',
+    shift_end: '2026-03-20T17:00:00.000Z',
+    status: 'active',
+    check_in_status: 'checked_in',
+  });
+  const harness = createAttendanceHarness({
+    shifts: [plannedShift],
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+  });
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  await processAttendance('tenant_a', {
+    id: 9007,
+    check_in: '2026-03-20 09:00:00',
+    check_out: '2026-03-20 16:30:00',
+    worked_hours: 7.5,
+    x_company_id: 12,
+    x_cumulative_minutes: 450,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: 104,
+    x_website_key: 'website-user-1',
+  });
+
+  assert.equal(harness.auths.length, 1);
+  assert.equal(harness.auths[0]?.auth_type, 'early_check_out');
+  assert.equal(harness.auths[0]?.status, 'no_approval_needed');
+});
+
+test('createAttendanceProcessor keeps late check-out on the normal authorization path when attendance overlaps the shift', async () => {
+  const plannedShift = createShift({
+    id: 'shift-105',
+    odoo_shift_id: 105,
+    branch_id: 'branch-main',
+    shift_start: '2026-03-20T09:00:00.000Z',
+    shift_end: '2026-03-20T17:00:00.000Z',
+    status: 'active',
+    check_in_status: 'checked_in',
+  });
+  const harness = createAttendanceHarness({
+    shifts: [plannedShift],
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+  });
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  await processAttendance('tenant_a', {
+    id: 9008,
+    check_in: '2026-03-20 09:00:00',
+    check_out: '2026-03-20 17:30:00',
+    worked_hours: 8.5,
+    x_company_id: 12,
+    x_cumulative_minutes: 510,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: 105,
+    x_website_key: 'website-user-1',
+  });
+
+  assert.equal(harness.auths.length, 1);
+  assert.equal(harness.auths[0]?.auth_type, 'late_check_out');
+  assert.equal(harness.auths[0]?.status, 'pending');
 });

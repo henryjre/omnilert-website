@@ -1831,6 +1831,38 @@ export async function getEmployeeWebsiteKeyByEmployeeId(employeeId: number): Pro
   return key || null;
 }
 
+export async function getAttendanceIdentityByAttendanceId(attendanceId: number): Promise<{
+  employeeId: number;
+  employeeName: string;
+  websiteUserKey: string | null;
+} | null> {
+  const rows = (await callOdooKw(
+    'hr.attendance',
+    'search_read',
+    [],
+    {
+      domain: [['id', '=', attendanceId]],
+      fields: ['id', 'employee_id'],
+      limit: 1,
+    },
+  )) as Array<{ id: number; employee_id?: [number, string] | false }>;
+
+  if (!rows.length || !Array.isArray(rows[0].employee_id)) {
+    return null;
+  }
+
+  const employeeId = Number(rows[0].employee_id[0]);
+  if (!Number.isFinite(employeeId) || employeeId <= 0) {
+    return null;
+  }
+
+  return {
+    employeeId,
+    employeeName: String(rows[0].employee_id[1] ?? '').trim(),
+    websiteUserKey: await getEmployeeWebsiteKeyByEmployeeId(employeeId),
+  };
+}
+
 /**
  * Gets the PIN code from Odoo hr.employee
  * @param websiteUserKey - The Omnilert user ID (UUID)

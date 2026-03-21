@@ -25,79 +25,142 @@ function getRetryLimit(): number {
   return Number.isFinite(retryLimit) && retryLimit >= 0 ? retryLimit : 3;
 }
 
-async function processEarlyCheckInJob(job: Job<EarlyCheckInAuthJobPayload>): Promise<void> {
-  const payload = job.data;
-  const tenantDb = await db.getTenantDb(payload.companyDbName);
+interface EarlyCheckInJobProcessorDeps {
+  getTenantDb: (companyDbName: string) => Promise<unknown>;
+  findShiftById: (tenantDb: unknown, shiftId: string, branchId: string) => Promise<Record<string, unknown> | null>;
+  findShiftLogById: (tenantDb: unknown, shiftLogId: string, branchId: string) => Promise<Record<string, unknown> | null>;
+  findExistingAuthorization: (tenantDb: unknown, shiftLogId: string) => Promise<Record<string, unknown> | null>;
+  createShiftAuthorization: (tenantDb: unknown, input: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  incrementShiftPendingApprovals: (tenantDb: unknown, shiftId: string) => Promise<void>;
+  emitSocketEvent: (event: string, payload: Record<string, unknown>) => void;
+  logInfo: (context: Record<string, unknown>, message: string) => void;
+}
 
-  const shift = await tenantDb('employee_shifts')
-    .where({ id: payload.shiftId, branch_id: payload.branchId })
-    .first();
-  if (!shift) {
-    logger.info(
-      {
-        queue: env.EARLY_CHECKIN_QUEUE_NAME,
-        jobId: job.id,
-        payload,
-      },
-      'Early check-in auth job skipped: shift not found',
-    );
-    return;
-  }
+const defaultEarlyCheckInJobProcessorDeps: EarlyCheckInJobProcessorDeps = {
+  getTenantDb: (companyDbName) => db.getTenantDb(companyDbName),
+  findShiftById: async (tenantDb, shiftId, branchId) =>
+    (await (tenantDb as Awaited<ReturnType<typeof db.getTenantDb>>)('employee_shifts')
+      .where({ id: shiftId, branch_id: branchId })
+      .first()) as Record<string, unknown> | null,
+  findShiftLogById: async (tenantDb, shiftLogId, branchId) =>
+    (await (tenantDb as Awaited<ReturnType<typeof db.getTenantDb>>)('shift_logs')
+      .where({ id: shiftLogId, branch_id: branchId })
+      .first()) as Record<string, unknown> | null,
+  findExistingAuthorization: async (tenantDb, shiftLogId) =>
+    (await (tenantDb as Awaited<ReturnType<typeof db.getTenantDb>>)('shift_authorizations')
+      .where({
+        shift_log_id: shiftLogId,
+        auth_type: 'early_check_in',
+      })
+      .first()) as Record<string, unknown> | null,
+  createShiftAuthorization: async (tenantDb, input) =>
+    (await (tenantDb as Awaited<ReturnType<typeof db.getTenantDb>>)('shift_authorizations')
+      .insert(input)
+      .returning('*'))[0] as Record<string, unknown>,
+  incrementShiftPendingApprovals: async (tenantDb, shiftId) => {
+    await (tenantDb as Awaited<ReturnType<typeof db.getTenantDb>>)('employee_shifts')
+      .where({ id: shiftId })
+      .increment('pending_approvals', 1);
+  },
+  emitSocketEvent: (event, payload) => {
+    try {
+      getIO().of('/employee-shifts').to(`branch:${payload.branch_id}`).emit(event as any, payload as any);
+    } catch {
+      logger.warn('Socket.IO not available for delayed early check-in authorization emit');
+    }
+  },
+  logInfo: (context, message) => {
+    logger.info(context, message);
+  },
+};
 
-  const shiftLog = await tenantDb('shift_logs')
-    .where({ id: payload.shiftLogId, branch_id: payload.branchId })
-    .first();
-  if (!shiftLog || shiftLog.log_type !== 'check_in') {
-    logger.info(
-      {
-        queue: env.EARLY_CHECKIN_QUEUE_NAME,
-        jobId: job.id,
-        shiftLogId: payload.shiftLogId,
-      },
-      'Early check-in auth job skipped: check-in log not found',
-    );
-    return;
-  }
+export function createEarlyCheckInJobProcessor(
+  overrides: Partial<EarlyCheckInJobProcessorDeps> = {},
+) {
+  const deps: EarlyCheckInJobProcessorDeps = {
+    ...defaultEarlyCheckInJobProcessorDeps,
+    ...overrides,
+  };
 
-  const existingAuth = await tenantDb('shift_authorizations')
-    .where({
-      shift_log_id: payload.shiftLogId,
-      auth_type: 'early_check_in',
-    })
-    .first();
-  if (existingAuth) {
-    logger.info(
-      {
-        queue: env.EARLY_CHECKIN_QUEUE_NAME,
-        jobId: job.id,
-        shiftLogId: payload.shiftLogId,
-        authId: existingAuth.id,
-      },
-      'Early check-in auth job skipped: authorization already exists',
-    );
-    return;
-  }
+  return async function processEarlyCheckInJob(
+    job: Pick<Job<EarlyCheckInAuthJobPayload>, 'id' | 'data'>,
+  ): Promise<void> {
+    const payload = job.data;
+    const tenantDb = await deps.getTenantDb(payload.companyDbName);
 
-  const eventTime = Number.isNaN(new Date(payload.checkInEventTime).getTime())
-    ? new Date(shiftLog.event_time as string)
-    : new Date(payload.checkInEventTime);
-  const shiftStart = new Date(shift.shift_start as string);
-  const diffMinutes = Math.round((shiftStart.getTime() - eventTime.getTime()) / 60000);
-  if (diffMinutes <= 0) {
-    logger.info(
-      {
-        queue: env.EARLY_CHECKIN_QUEUE_NAME,
-        jobId: job.id,
-        shiftId: payload.shiftId,
-        diffMinutes,
-      },
-      'Early check-in auth job skipped: shift no longer early',
-    );
-    return;
-  }
+    const shift = await deps.findShiftById(tenantDb, payload.shiftId, payload.branchId);
+    if (!shift) {
+      deps.logInfo(
+        {
+          queue: env.EARLY_CHECKIN_QUEUE_NAME,
+          jobId: job.id,
+          payload,
+        },
+        'Early check-in auth job skipped: shift not found',
+      );
+      return;
+    }
 
-  const [auth] = await tenantDb('shift_authorizations')
-    .insert({
+    const shiftLog = await deps.findShiftLogById(tenantDb, payload.shiftLogId, payload.branchId);
+    if (!shiftLog || shiftLog.log_type !== 'check_in') {
+      deps.logInfo(
+        {
+          queue: env.EARLY_CHECKIN_QUEUE_NAME,
+          jobId: job.id,
+          shiftLogId: payload.shiftLogId,
+        },
+        'Early check-in auth job skipped: check-in log not found',
+      );
+      return;
+    }
+
+    if (shiftLog.shift_id !== payload.shiftId) {
+      deps.logInfo(
+        {
+          queue: env.EARLY_CHECKIN_QUEUE_NAME,
+          jobId: job.id,
+          shiftId: payload.shiftId,
+          shiftLogId: payload.shiftLogId,
+          currentShiftId: shiftLog.shift_id ?? null,
+        },
+        'Early check-in auth job skipped: check-in log was reclassified away from the scheduled shift',
+      );
+      return;
+    }
+
+    const existingAuth = await deps.findExistingAuthorization(tenantDb, payload.shiftLogId);
+    if (existingAuth) {
+      deps.logInfo(
+        {
+          queue: env.EARLY_CHECKIN_QUEUE_NAME,
+          jobId: job.id,
+          shiftLogId: payload.shiftLogId,
+          authId: existingAuth.id,
+        },
+        'Early check-in auth job skipped: authorization already exists',
+      );
+      return;
+    }
+
+    const eventTime = Number.isNaN(new Date(payload.checkInEventTime).getTime())
+      ? new Date(shiftLog.event_time as string)
+      : new Date(payload.checkInEventTime);
+    const shiftStart = new Date(shift.shift_start as string);
+    const diffMinutes = Math.round((shiftStart.getTime() - eventTime.getTime()) / 60000);
+    if (diffMinutes <= 0) {
+      deps.logInfo(
+        {
+          queue: env.EARLY_CHECKIN_QUEUE_NAME,
+          jobId: job.id,
+          shiftId: payload.shiftId,
+          diffMinutes,
+        },
+        'Early check-in auth job skipped: shift no longer early',
+      );
+      return;
+    }
+
+    const auth = await deps.createShiftAuthorization(tenantDb, {
       shift_id: shift.id as string,
       shift_log_id: payload.shiftLogId,
       branch_id: payload.branchId,
@@ -106,29 +169,24 @@ async function processEarlyCheckInJob(job: Job<EarlyCheckInAuthJobPayload>): Pro
       diff_minutes: diffMinutes,
       needs_employee_reason: false,
       status: 'pending',
-    })
-    .returning('*');
+    });
 
-  await tenantDb('employee_shifts')
-    .where({ id: shift.id as string })
-    .increment('pending_approvals', 1);
+    await deps.incrementShiftPendingApprovals(tenantDb, shift.id as string);
+    deps.emitSocketEvent('shift:authorization-new', auth);
 
-  try {
-    getIO().of('/employee-shifts').to(`branch:${payload.branchId}`).emit('shift:authorization-new', auth);
-  } catch {
-    logger.warn('Socket.IO not available for delayed early check-in authorization emit');
-  }
-
-  logger.info(
-    {
-      queue: env.EARLY_CHECKIN_QUEUE_NAME,
-      jobId: job.id,
-      authId: auth.id,
-      shiftId: shift.id,
-    },
-    'Early check-in authorization created from queued job',
-  );
+    deps.logInfo(
+      {
+        queue: env.EARLY_CHECKIN_QUEUE_NAME,
+        jobId: job.id,
+        authId: auth.id,
+        shiftId: shift.id,
+      },
+      'Early check-in authorization created from queued job',
+    );
+  };
 }
+
+const processEarlyCheckInJob = createEarlyCheckInJobProcessor();
 
 export async function initAttendanceQueue(): Promise<void> {
   if (boss) return;

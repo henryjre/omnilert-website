@@ -67,7 +67,7 @@ export function DashboardLayout() {
 
       <div className="flex flex-1 flex-col overflow-hidden">
         <TopBar onOpenSidebar={() => setMobileSidebarOpen(true)} />
-        <main className="flex-1 overflow-y-auto bg-gray-50 p-4 sm:p-6">
+        <main data-dashboard-scroll-container="true" className="flex-1 overflow-y-auto bg-gray-50 p-4 sm:p-6">
           <Outlet />
         </main>
       </div>

@@ -4,6 +4,7 @@ import { enqueueEarlyCheckInAuthJob } from './attendanceQueue.service.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import { createAndDispatchNotification } from './notification.service.js';
+import { getAttendanceIdentityByAttendanceId } from './odoo.service.js';
 
 const DISABLED_AUDIT_ODOO_COMPANY_IDS = new Set<number>([2]);
 
@@ -484,48 +485,308 @@ export async function reassignUserToSingleCheckedInBranch(
   });
 }
 
-export async function processAttendance(
-  companyDbName: string,
-  payload: {
-    id: number;
-    check_in: string;
-    check_out?: string;
-    worked_hours?: number;
-    x_company_id: number;
-    x_cumulative_minutes: number;
-    x_employee_avatar?: string;
-    x_employee_contact_name: string;
-    x_planning_slot_id: number | false;
-    x_prev_attendance_id?: number | false;
-    x_shift_end?: string;
-    x_shift_start?: string;
-    [key: string]: unknown;
-  },
-) {
-  const tenantDb = await db.getTenantDb(companyDbName);
+export interface AttendancePayload {
+  id: number;
+  check_in: string;
+  check_out?: string;
+  worked_hours?: number;
+  x_company_id: number;
+  x_cumulative_minutes: number;
+  x_employee_avatar?: string;
+  x_employee_contact_name: string;
+  x_planning_slot_id: number | false;
+  x_prev_attendance_id?: number | false;
+  x_shift_end?: string;
+  x_shift_start?: string;
+  x_website_key?: string;
+  [key: string]: unknown;
+}
 
-  const branch = await tenantDb('branches')
-    .where({ odoo_branch_id: String(payload.x_company_id) })
-    .first();
-  if (!branch) throw new AppError(404, `Branch not found for x_company_id: ${payload.x_company_id}`);
+interface AttendanceBranchRow {
+  id: string;
+  odoo_branch_id?: string;
+  name?: string;
+  [key: string]: unknown;
+}
 
-  // Resolve shift if x_planning_slot_id is set
-  let shift: Record<string, unknown> | null = null;
-  if (payload.x_planning_slot_id !== false && payload.x_planning_slot_id != null) {
-    shift = await tenantDb('employee_shifts')
-      .where({ odoo_shift_id: payload.x_planning_slot_id, branch_id: branch.id })
-      .first() ?? null;
+interface AttendanceShiftRow {
+  id: string;
+  odoo_shift_id: number;
+  branch_id: string;
+  user_id?: string | null;
+  employee_name?: string;
+  employee_avatar_url?: string | null;
+  duty_type?: string;
+  duty_color?: number;
+  shift_start: string | Date;
+  shift_end: string | Date;
+  allocated_hours?: number;
+  total_worked_hours?: number | null;
+  pending_approvals?: number;
+  status?: string;
+  check_in_status?: string | null;
+  odoo_payload?: string | Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+interface AttendanceShiftLogRow {
+  id: string;
+  shift_id?: string | null;
+  branch_id: string;
+  log_type: string;
+  odoo_attendance_id: number;
+  event_time: string | Date;
+  worked_hours?: number | null;
+  cumulative_minutes?: number | null;
+  odoo_payload: string | Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+interface AttendanceShiftAuthorizationRow {
+  id: string;
+  auth_type: string;
+  status: string;
+  [key: string]: unknown;
+}
+
+interface ResolvedAttendanceIdentity {
+  userId: string | null;
+  websiteUserKey: string | null;
+  employeeName: string;
+}
+
+interface AttendanceProcessorDeps {
+  now: () => Date;
+  getTenantDb: (companyDbName: string) => Promise<unknown>;
+  findBranchByOdooCompanyId: (tenantDb: unknown, odooCompanyId: number) => Promise<AttendanceBranchRow | null>;
+  findShiftByPlanningSlotId: (tenantDb: unknown, planningSlotId: number, branchId: string) => Promise<AttendanceShiftRow | null>;
+  findShiftById: (tenantDb: unknown, shiftId: string) => Promise<AttendanceShiftRow | null>;
+  createShiftLog: (tenantDb: unknown, input: Record<string, unknown>) => Promise<AttendanceShiftLogRow>;
+  updateShiftById: (tenantDb: unknown, shiftId: string, updates: Record<string, unknown>) => Promise<AttendanceShiftRow | null>;
+  incrementShiftPendingApprovals: (tenantDb: unknown, shiftId: string) => Promise<AttendanceShiftRow | null>;
+  createShiftAuthorization: (tenantDb: unknown, input: Record<string, unknown>) => Promise<AttendanceShiftAuthorizationRow>;
+  upsertInterimShift: (tenantDb: unknown, input: Record<string, unknown>) => Promise<AttendanceShiftRow>;
+  reassignLogsToShift: (tenantDb: unknown, attendanceId: number, shiftId: string) => Promise<void>;
+  findOverlappingShiftInOtherBranches: (
+    tenantDb: unknown,
+    input: { userId: string | null; branchId: string; attendanceStart: Date; attendanceEnd: Date },
+  ) => Promise<AttendanceShiftRow | null>;
+  resolveAttendanceIdentity: (tenantDb: unknown, payload: AttendancePayload) => Promise<ResolvedAttendanceIdentity>;
+  reassignUserToSingleCheckedInBranch: (
+    tenantDb: unknown,
+    userId: string,
+    branchId: string,
+  ) => Promise<void>;
+  enqueueEarlyCheckInAuthJob: (
+    payload: Parameters<typeof enqueueEarlyCheckInAuthJob>[0],
+    runAt: Date,
+  ) => ReturnType<typeof enqueueEarlyCheckInAuthJob>;
+  createAndDispatchNotification: (
+    input: Parameters<typeof createAndDispatchNotification>[0],
+  ) => ReturnType<typeof createAndDispatchNotification>;
+  emitSocketEvent: (event: string, payload: Record<string, unknown>) => void;
+}
+
+function parseOdooUtcDateTime(value: string): Date {
+  return new Date(`${value} UTC`);
+}
+
+function roundHoursFromMs(ms: number): number {
+  return Math.round((ms / 3_600_000) * 100) / 100;
+}
+
+function hasPositiveWindowOverlap(
+  rangeStart: Date,
+  rangeEnd: Date,
+  shiftStart: Date,
+  shiftEnd: Date,
+): boolean {
+  return Math.max(rangeStart.getTime(), shiftStart.getTime())
+    < Math.min(rangeEnd.getTime(), shiftEnd.getTime());
+}
+
+async function defaultResolveAttendanceIdentity(
+  tenantDb: unknown,
+  payload: AttendancePayload,
+): Promise<ResolvedAttendanceIdentity> {
+  let websiteUserKey = typeof payload.x_website_key === 'string'
+    ? payload.x_website_key.trim()
+    : '';
+  let userId = websiteUserKey
+    ? await resolveUserIdByUserKey(tenantDb as Awaited<ReturnType<typeof db.getTenantDb>>, websiteUserKey)
+    : null;
+  let employeeName = String(payload.x_employee_contact_name ?? '').trim();
+
+  if (!websiteUserKey || !userId) {
+    try {
+      const fallbackIdentity = await getAttendanceIdentityByAttendanceId(payload.id);
+      if (fallbackIdentity?.websiteUserKey) {
+        websiteUserKey = fallbackIdentity.websiteUserKey;
+        if (!userId) {
+          userId = await resolveUserIdByUserKey(
+            tenantDb as Awaited<ReturnType<typeof db.getTenantDb>>,
+            fallbackIdentity.websiteUserKey,
+          );
+        }
+      }
+      if (!employeeName && fallbackIdentity?.employeeName) {
+        employeeName = fallbackIdentity.employeeName;
+      }
+    } catch (error) {
+      logger.warn(
+        {
+          attendanceId: payload.id,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to resolve fallback attendance identity from Odoo',
+      );
+    }
   }
 
-  const isCheckOut = !!payload.check_out;
-  const logType = isCheckOut ? 'check_out' : 'check_in';
-  const eventTime = new Date(
-    isCheckOut ? payload.check_out! + ' UTC' : payload.check_in + ' UTC',
-  );
+  return {
+    userId: userId ?? null,
+    websiteUserKey: websiteUserKey || null,
+    employeeName,
+  };
+}
 
-  const [log] = await tenantDb('shift_logs')
-    .insert({
-      shift_id: shift ? (shift.id as string) : null,
+const defaultAttendanceProcessorDeps: AttendanceProcessorDeps = {
+  now: () => new Date(),
+  getTenantDb: (companyDbName) => db.getTenantDb(companyDbName),
+  findBranchByOdooCompanyId: async (tenantDb, odooCompanyId) =>
+    (await (tenantDb as Awaited<ReturnType<typeof db.getTenantDb>>)('branches')
+      .where({ odoo_branch_id: String(odooCompanyId) })
+      .first()) as AttendanceBranchRow | null,
+  findShiftByPlanningSlotId: async (tenantDb, planningSlotId, branchId) =>
+    (await (tenantDb as Awaited<ReturnType<typeof db.getTenantDb>>)('employee_shifts')
+      .where({ odoo_shift_id: planningSlotId, branch_id: branchId })
+      .first()) as AttendanceShiftRow | null,
+  findShiftById: async (tenantDb, shiftId) =>
+    (await (tenantDb as Awaited<ReturnType<typeof db.getTenantDb>>)('employee_shifts')
+      .where({ id: shiftId })
+      .first()) as AttendanceShiftRow | null,
+  createShiftLog: async (tenantDb, input) =>
+    (await (tenantDb as Awaited<ReturnType<typeof db.getTenantDb>>)('shift_logs')
+      .insert(input)
+      .returning('*'))[0] as AttendanceShiftLogRow,
+  updateShiftById: async (tenantDb, shiftId, updates) =>
+    ((await (tenantDb as Awaited<ReturnType<typeof db.getTenantDb>>)('employee_shifts')
+      .where({ id: shiftId })
+      .update(updates)
+      .returning('*'))[0] ?? null) as AttendanceShiftRow | null,
+  incrementShiftPendingApprovals: async (tenantDb, shiftId) =>
+    ((await (tenantDb as Awaited<ReturnType<typeof db.getTenantDb>>)('employee_shifts')
+      .where({ id: shiftId })
+      .increment('pending_approvals', 1)
+      .returning('*'))[0] ?? null) as AttendanceShiftRow | null,
+  createShiftAuthorization: async (tenantDb, input) =>
+    (await (tenantDb as Awaited<ReturnType<typeof db.getTenantDb>>)('shift_authorizations')
+      .insert(input)
+      .returning('*'))[0] as AttendanceShiftAuthorizationRow,
+  upsertInterimShift: async (tenantDb, input) => {
+    const knex = tenantDb as Awaited<ReturnType<typeof db.getTenantDb>>;
+    const existing = await knex('employee_shifts')
+      .where({
+        odoo_shift_id: input.odoo_shift_id,
+        branch_id: input.branch_id,
+      })
+      .first();
+
+    if (existing) {
+      return ((await knex('employee_shifts')
+        .where({ id: existing.id })
+        .update(input)
+        .returning('*'))[0] ?? existing) as AttendanceShiftRow;
+    }
+
+    return (await knex('employee_shifts')
+      .insert(input)
+      .returning('*'))[0] as AttendanceShiftRow;
+  },
+  reassignLogsToShift: async (tenantDb, attendanceId, shiftId) => {
+    await (tenantDb as Awaited<ReturnType<typeof db.getTenantDb>>)('shift_logs')
+      .where({ odoo_attendance_id: attendanceId })
+      .update({ shift_id: shiftId });
+  },
+  findOverlappingShiftInOtherBranches: async (tenantDb, input) => {
+    if (!input.userId) return null;
+    return (await (tenantDb as Awaited<ReturnType<typeof db.getTenantDb>>)('employee_shifts')
+      .where({ user_id: input.userId })
+      .whereNot('branch_id', input.branchId)
+      .andWhere('shift_start', '<', input.attendanceEnd)
+      .andWhere('shift_end', '>', input.attendanceStart)
+      .orderBy('shift_start', 'asc')
+      .first()) as AttendanceShiftRow | null;
+  },
+  resolveAttendanceIdentity: defaultResolveAttendanceIdentity,
+  reassignUserToSingleCheckedInBranch: (tenantDb, userId, branchId) =>
+    reassignUserToSingleCheckedInBranch(
+      tenantDb as Awaited<ReturnType<typeof db.getTenantDb>>,
+      userId,
+      branchId,
+    ),
+  enqueueEarlyCheckInAuthJob: (payload, runAt) => enqueueEarlyCheckInAuthJob(payload, runAt),
+  createAndDispatchNotification: (input) => createAndDispatchNotification(input),
+  emitSocketEvent: (event, payload) => {
+    try {
+      const io = getIO();
+      if (event === 'user:branch-assignments-updated') {
+        const userId = String(payload.userId ?? '').trim();
+        if (!userId) return;
+        io.of('/notifications').to(`user:${userId}`).emit(event as any, {
+          branchIds: Array.isArray(payload.branchIds) ? payload.branchIds : [],
+        } as any);
+        return;
+      }
+
+      const branchId = String(payload.branch_id ?? payload.branchId ?? '').trim();
+      if (!branchId) return;
+      io.of('/employee-shifts').to(`branch:${branchId}`).emit(event as any, payload as any);
+    } catch {
+      logger.warn(`Socket.IO not available for ${event} emit`);
+    }
+  },
+};
+
+async function resolveInterimReason(
+  deps: AttendanceProcessorDeps,
+  tenantDb: unknown,
+  input: {
+    userId: string | null;
+    branchId: string;
+    attendanceStart: Date;
+    attendanceEnd: Date;
+  },
+): Promise<'no_planning_schedule' | 'scheduled_other_branch'> {
+  const otherBranchShift = await deps.findOverlappingShiftInOtherBranches(tenantDb, input);
+  return otherBranchShift ? 'scheduled_other_branch' : 'no_planning_schedule';
+}
+
+export function createAttendanceProcessor(
+  overrides: Partial<AttendanceProcessorDeps> = {},
+) {
+  const deps: AttendanceProcessorDeps = { ...defaultAttendanceProcessorDeps, ...overrides };
+
+  return async function processAttendance(
+    companyDbName: string,
+    payload: AttendancePayload,
+  ): Promise<AttendanceShiftLogRow> {
+    const tenantDb = await deps.getTenantDb(companyDbName);
+    const branch = await deps.findBranchByOdooCompanyId(tenantDb, payload.x_company_id);
+    if (!branch) throw new AppError(404, `Branch not found for x_company_id: ${payload.x_company_id}`);
+
+    let shift = payload.x_planning_slot_id !== false && payload.x_planning_slot_id != null
+      ? await deps.findShiftByPlanningSlotId(tenantDb, payload.x_planning_slot_id, branch.id)
+      : null;
+
+    const isCheckOut = Boolean(payload.check_out);
+    const logType = isCheckOut ? 'check_out' : 'check_in';
+    const eventTime = isCheckOut
+      ? parseOdooUtcDateTime(payload.check_out!)
+      : parseOdooUtcDateTime(payload.check_in);
+
+    let log = await deps.createShiftLog(tenantDb, {
+      shift_id: shift ? shift.id : null,
       branch_id: branch.id,
       log_type: logType,
       odoo_attendance_id: payload.id,
@@ -533,58 +794,138 @@ export async function processAttendance(
       worked_hours: payload.worked_hours ?? null,
       cumulative_minutes: payload.x_cumulative_minutes,
       odoo_payload: JSON.stringify(payload),
-    })
-    .returning('*');
+    });
 
-  // On check-out, update total_worked_hours and check_in_status on the shift
-  let updatedTotalWorkedHours: number | null = null;
-  if (isCheckOut && shift) {
-    const totalWorkedHours = payload.x_cumulative_minutes / 60;
-    await tenantDb('employee_shifts')
-      .where({ id: shift.id as string })
-      .update({ total_worked_hours: totalWorkedHours, check_in_status: 'checked_out', updated_at: new Date() });
-    updatedTotalWorkedHours = totalWorkedHours;
-  }
+    let updatedTotalWorkedHours: number | null = null;
+    let createdInterimShift = false;
+    let restoredScheduledShift: AttendanceShiftRow | null = null;
+    let activeShift: AttendanceShiftRow | null = shift;
+    let skipStandardAuthorizationFlow = false;
 
-  // On check-in, update status to 'active' and check_in_status to 'checked_in'
-  if (!isCheckOut && shift) {
-    await tenantDb('employee_shifts')
-      .where({ id: shift.id as string })
-      .update({ status: 'active', check_in_status: 'checked_in', updated_at: new Date() });
+    if (isCheckOut) {
+      const attendanceStart = parseOdooUtcDateTime(payload.check_in);
+      const attendanceEnd = eventTime;
+      const resolvedIdentity = await deps.resolveAttendanceIdentity(tenantDb, payload);
+      const linkedShiftHasOverlap = shift
+        ? hasPositiveWindowOverlap(
+          attendanceStart,
+          attendanceEnd,
+          new Date(shift.shift_start),
+          new Date(shift.shift_end),
+        )
+        : false;
 
-    // Reassign checked-in employee to a single active branch for branch-scoped access.
-    if (shift.user_id) {
-      const userId = shift.user_id as string;
-      const checkedInBranchId = branch.id as string;
-      await reassignUserToSingleCheckedInBranch(tenantDb, userId, checkedInBranchId);
+      let interimReason: 'no_planning_schedule' | 'scheduled_other_branch' | null = null;
+      if (!shift || !linkedShiftHasOverlap) {
+        interimReason = await resolveInterimReason(deps, tenantDb, {
+          userId: (shift?.user_id as string | null | undefined) ?? resolvedIdentity.userId,
+          branchId: branch.id,
+          attendanceStart,
+          attendanceEnd,
+        });
+      }
 
-      // Push updated branch assignments to the active web client for immediate UI sync.
-      try {
-        getIO()
-          .of('/notifications')
-          .to(`user:${userId}`)
-          .emit('user:branch-assignments-updated', { branchIds: [checkedInBranchId] });
-      } catch {
-        logger.warn('Socket.IO not available for branch assignment update emit');
+      if (interimReason) {
+        skipStandardAuthorizationFlow = true;
+        const interimOdooShiftId = payload.id * -1;
+        const existingInterimShift = await deps.findShiftByPlanningSlotId(
+          tenantDb,
+          interimOdooShiftId,
+          branch.id,
+        );
+        const totalWorkedHours = Math.round((payload.x_cumulative_minutes / 60) * 100) / 100;
+        const allocatedHours = Math.max(
+          0,
+          roundHoursFromMs(attendanceEnd.getTime() - attendanceStart.getTime()),
+        );
+        const interimShift = await deps.upsertInterimShift(tenantDb, {
+          odoo_shift_id: interimOdooShiftId,
+          branch_id: branch.id,
+          user_id: resolvedIdentity.userId ?? (shift?.user_id as string | null | undefined) ?? null,
+          employee_name: resolvedIdentity.employeeName || String(payload.x_employee_contact_name ?? ''),
+          employee_avatar_url: payload.x_employee_avatar ?? (shift?.employee_avatar_url as string | null | undefined) ?? null,
+          duty_type: 'Interim Duty',
+          duty_color: 0,
+          shift_start: attendanceStart,
+          shift_end: attendanceEnd,
+          allocated_hours: allocatedHours,
+          total_worked_hours: totalWorkedHours,
+          status: 'ended',
+          check_in_status: 'checked_out',
+          odoo_payload: JSON.stringify({
+            source: 'attendance',
+            source_attendance_id: payload.id,
+            source_planning_slot_id: payload.x_planning_slot_id === false ? null : payload.x_planning_slot_id ?? null,
+            interim_reason: interimReason,
+            linked_shift_id: shift?.id ?? null,
+            linked_shift_odoo_id: shift?.odoo_shift_id ?? null,
+            website_user_key: resolvedIdentity.websiteUserKey,
+            attendance_payload: payload,
+          }),
+          updated_at: deps.now(),
+        });
+
+        createdInterimShift = !existingInterimShift;
+        updatedTotalWorkedHours = totalWorkedHours;
+        await deps.reassignLogsToShift(tenantDb, payload.id, interimShift.id);
+        log = { ...log, shift_id: interimShift.id };
+        activeShift = interimShift;
+
+        if (shift) {
+          restoredScheduledShift = await deps.updateShiftById(tenantDb, shift.id, {
+            status: 'open',
+            check_in_status: null,
+            total_worked_hours: null,
+            updated_at: deps.now(),
+          });
+        }
       }
     }
-  }
 
-  // Authorization detection — only when linked to a shift
-  if (shift) {
-    const shiftStart = new Date(shift.shift_start as string);
-    const shiftEnd = new Date(shift.shift_end as string);
+    if (!isCheckOut && shift) {
+      const shiftEnd = new Date(shift.shift_end);
+      if (eventTime.getTime() >= shiftEnd.getTime()) {
+        skipStandardAuthorizationFlow = true;
+      } else {
+        activeShift = await deps.updateShiftById(tenantDb, shift.id, {
+          status: 'active',
+          check_in_status: 'checked_in',
+          updated_at: deps.now(),
+        }) ?? shift;
 
-    if (!isCheckOut) {
-      // CHECK-IN
-      const diffMs = shiftStart.getTime() - eventTime.getTime();
-      const diffMinutes = Math.round(diffMs / 60000);
+        if (shift.user_id) {
+          const userId = shift.user_id as string;
+          const checkedInBranchId = branch.id as string;
+          await deps.reassignUserToSingleCheckedInBranch(tenantDb, userId, checkedInBranchId);
+          deps.emitSocketEvent('user:branch-assignments-updated', {
+            userId,
+            branchIds: [checkedInBranchId],
+          });
+        }
+      }
+    }
 
-      if (diffMinutes > 0) {
-        // Checked in before shift start - schedule delayed early check-in authorization.
-        if (shiftStart.getTime() > eventTime.getTime()) {
+    if (isCheckOut && shift && !skipStandardAuthorizationFlow) {
+      const totalWorkedHours = payload.x_cumulative_minutes / 60;
+      activeShift = await deps.updateShiftById(tenantDb, shift.id, {
+        total_worked_hours: totalWorkedHours,
+        check_in_status: 'checked_out',
+        updated_at: deps.now(),
+      }) ?? shift;
+      updatedTotalWorkedHours = totalWorkedHours;
+    }
+
+    if (shift && !skipStandardAuthorizationFlow) {
+      const shiftStart = new Date(shift.shift_start);
+      const shiftEnd = new Date(shift.shift_end);
+
+      if (!isCheckOut) {
+        const diffMs = shiftStart.getTime() - eventTime.getTime();
+        const diffMinutes = Math.round(diffMs / 60_000);
+
+        if (diffMinutes > 0) {
           const scheduleAt = new Date(shiftStart.getTime() + 60_000);
-          await enqueueEarlyCheckInAuthJob(
+          await deps.enqueueEarlyCheckInAuthJob(
             {
               companyDbName,
               branchId: branch.id as string,
@@ -595,12 +936,9 @@ export async function processAttendance(
             },
             scheduleAt,
           );
-        }
-      } else if (diffMinutes < 0) {
-        // Checked in after shift start — tardiness
-        const absDiff = Math.abs(diffMinutes);
-        const [auth] = await tenantDb('shift_authorizations')
-          .insert({
+        } else if (diffMinutes < 0) {
+          const absDiff = Math.abs(diffMinutes);
+          const auth = await deps.createShiftAuthorization(tenantDb, {
             shift_id: shift.id as string,
             shift_log_id: log.id,
             branch_id: branch.id,
@@ -609,34 +947,26 @@ export async function processAttendance(
             diff_minutes: absDiff,
             needs_employee_reason: true,
             status: 'pending',
-          })
-          .returning('*');
-        await tenantDb('employee_shifts')
-          .where({ id: shift.id as string })
-          .increment('pending_approvals', 1);
-        if (shift.user_id) {
-          await createAndDispatchNotification({
-            tenantDb,
-            userId: shift.user_id as string,
-            title: 'Tardiness Authorization Required',
-            message: `You checked in ${formatDiffMinutes(absDiff)} late for your shift. Please submit a reason in the Authorization Requests tab.`,
-            type: 'warning',
-            linkUrl: '/account/schedule',
           });
+          await deps.incrementShiftPendingApprovals(tenantDb, shift.id as string);
+          if (shift.user_id) {
+          await deps.createAndDispatchNotification({
+              tenantDb: tenantDb as Awaited<ReturnType<typeof db.getTenantDb>>,
+              userId: shift.user_id as string,
+              title: 'Tardiness Authorization Required',
+              message: `You checked in ${formatDiffMinutes(absDiff)} late for your shift. Please submit a reason in the Authorization Requests tab.`,
+              type: 'warning',
+              linkUrl: '/account/schedule',
+            });
+          }
+          deps.emitSocketEvent('shift:authorization-new', auth as Record<string, unknown>);
         }
-        try {
-          getIO().of('/employee-shifts').to(`branch:${branch.id}`).emit('shift:authorization-new', auth);
-        } catch { /* socket unavailable */ }
-      }
-    } else {
-      // CHECK-OUT
-      const diffMs = shiftEnd.getTime() - eventTime.getTime();
-      const diffMinutes = Math.round(diffMs / 60000);
+      } else {
+        const diffMs = shiftEnd.getTime() - eventTime.getTime();
+        const diffMinutes = Math.round(diffMs / 60_000);
 
-      if (diffMinutes > 0) {
-        // Checked out before shift end — early check-out (no approval needed)
-        const [auth] = await tenantDb('shift_authorizations')
-          .insert({
+        if (diffMinutes > 0) {
+          const auth = await deps.createShiftAuthorization(tenantDb, {
             shift_id: shift.id as string,
             shift_log_id: log.id,
             branch_id: branch.id,
@@ -645,16 +975,11 @@ export async function processAttendance(
             diff_minutes: diffMinutes,
             needs_employee_reason: false,
             status: 'no_approval_needed',
-          })
-          .returning('*');
-        try {
-          getIO().of('/employee-shifts').to(`branch:${branch.id}`).emit('shift:authorization-new', auth);
-        } catch { /* socket unavailable */ }
-      } else if (diffMinutes < 0) {
-        // Checked out after shift end — late check-out
-        const absDiff = Math.abs(diffMinutes);
-        const [auth] = await tenantDb('shift_authorizations')
-          .insert({
+          });
+          deps.emitSocketEvent('shift:authorization-new', auth as Record<string, unknown>);
+        } else if (diffMinutes < 0) {
+          const absDiff = Math.abs(diffMinutes);
+          const auth = await deps.createShiftAuthorization(tenantDb, {
             shift_id: shift.id as string,
             shift_log_id: log.id,
             branch_id: branch.id,
@@ -663,49 +988,46 @@ export async function processAttendance(
             diff_minutes: absDiff,
             needs_employee_reason: true,
             status: 'pending',
-          })
-          .returning('*');
-        await tenantDb('employee_shifts')
-          .where({ id: shift.id as string })
-          .increment('pending_approvals', 1);
-        if (shift.user_id) {
-          await createAndDispatchNotification({
-            tenantDb,
-            userId: shift.user_id as string,
-            title: 'Late Check Out - Reason Required',
-            message: `You checked out ${formatDiffMinutes(absDiff)} after your scheduled shift end. Please submit a reason in the Authorization Requests tab.`,
-            type: 'warning',
-            linkUrl: '/account/schedule',
           });
+          await deps.incrementShiftPendingApprovals(tenantDb, shift.id as string);
+          if (shift.user_id) {
+            await deps.createAndDispatchNotification({
+              tenantDb: tenantDb as Awaited<ReturnType<typeof db.getTenantDb>>,
+              userId: shift.user_id as string,
+              title: 'Late Check Out - Reason Required',
+              message: `You checked out ${formatDiffMinutes(absDiff)} after your scheduled shift end. Please submit a reason in the Authorization Requests tab.`,
+              type: 'warning',
+              linkUrl: '/account/schedule',
+            });
+          }
+          deps.emitSocketEvent('shift:authorization-new', auth as Record<string, unknown>);
         }
-        try {
-          getIO().of('/employee-shifts').to(`branch:${branch.id}`).emit('shift:authorization-new', auth);
-        } catch { /* socket unavailable */ }
       }
     }
-  }
 
-  try {
-    const io = getIO();
-    io.of('/employee-shifts')
-      .to(`branch:${branch.id}`)
-      .emit('shift:log-new', {
-        ...log,
-        total_worked_hours: updatedTotalWorkedHours,
-      });
-    // Emit updated shift so list view refreshes status/check_in_status
-    if (shift) {
-      const refreshedShift = await tenantDb('employee_shifts').where({ id: shift.id as string }).first();
-      if (refreshedShift) {
-        io.of('/employee-shifts').to(`branch:${branch.id}`).emit('shift:updated', refreshedShift);
-      }
+    if (restoredScheduledShift) {
+      deps.emitSocketEvent('shift:updated', restoredScheduledShift as Record<string, unknown>);
     }
-  } catch {
-    logger.warn('Socket.IO not available for attendance log emit');
-  }
 
-  return log;
+    if (activeShift) {
+      deps.emitSocketEvent(
+        createdInterimShift ? 'shift:new' : 'shift:updated',
+        activeShift as Record<string, unknown>,
+      );
+    }
+
+    deps.emitSocketEvent('shift:log-new', {
+      ...log,
+      branch_id: branch.id,
+      shift_id: log.shift_id ?? activeShift?.id ?? null,
+      total_worked_hours: updatedTotalWorkedHours,
+    });
+
+    return log;
+  };
 }
+
+export const processAttendance = createAttendanceProcessor();
 
 export async function processDiscountOrder(
   companyDbName: string,
