@@ -8,6 +8,12 @@ export interface AccountAuditResultBranch {
   name: string;
 }
 
+export interface AccountAuditResultCompany {
+  id: string;
+  name: string;
+  slug: string;
+}
+
 export interface AccountAuditResultSummary {
   result_line: string;
   overall_value: number;
@@ -51,6 +57,7 @@ export interface AccountAuditResultListItem {
   id: string;
   type: StoreAuditType;
   type_label: AccountAuditResultTypeLabel;
+  company: AccountAuditResultCompany;
   branch: AccountAuditResultBranch;
   completed_at: string;
   observed_at: string | null;

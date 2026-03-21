@@ -1,7 +1,11 @@
 import type { NextFunction, Request, Response } from 'express';
 import * as violationNoticeService from '../services/violationNotice.service.js';
-import { getIO } from '../config/socket.js';
 import { AppError } from '../middleware/errorHandler.js';
+import {
+  resolveGlobalStoreAuditContext,
+  syncGlobalStoreAuditProjectionByAuditId,
+} from '../services/globalStoreAuditIndex.service.js';
+import { emitStoreAuditEvent } from '../services/storeAuditRealtime.service.js';
 
 function getUploadedFiles(req: Request): Express.Multer.File[] {
   const files = (req as Request & { files?: Express.Multer.File[] | Record<string, Express.Multer.File[]> }).files;
@@ -315,8 +319,10 @@ export async function mentionables(req: Request, res: Response, next: NextFuncti
 
 export async function groupedUsers(req: Request, res: Response, next: NextFunction) {
   try {
+    const auditId = String(req.query.auditId ?? '').trim();
+    const auditContext = auditId ? await resolveGlobalStoreAuditContext(auditId) : null;
     const data = await violationNoticeService.getGroupedUsersForVN({
-      companyId: req.user!.companyId,
+      companyId: auditContext?.company.id ?? req.user!.companyId,
     });
     res.json({ success: true, data });
   } catch (error) {
@@ -344,9 +350,14 @@ export async function createFromCaseReport(req: Request, res: Response, next: Ne
 export async function createFromStoreAudit(req: Request, res: Response, next: NextFunction) {
   try {
     const auditId = String(req.body.auditId ?? '');
+    const auditContext = await resolveGlobalStoreAuditContext(auditId);
+    if (!auditContext) {
+      throw new AppError(404, 'Store audit not found');
+    }
+
     const data = await violationNoticeService.createViolationNotice({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
+      tenantDb: auditContext.tenantDb,
+      companyId: auditContext.company.id,
       userId: req.user!.sub,
       description: String(req.body.description ?? ''),
       targetUserIds: req.body.targetUserIds,
@@ -354,13 +365,15 @@ export async function createFromStoreAudit(req: Request, res: Response, next: Ne
       sourceStoreAuditId: auditId,
     });
     if (auditId) {
-      await req.tenantDb!('store_audits').where({ id: auditId }).update({
+      await auditContext.tenantDb('store_audits').where({ id: auditId }).update({
         vn_requested: true,
         updated_at: new Date(),
       });
-      try {
-        getIO().of('/store-audits').to(`company:${req.user!.companyId}`).emit('store-audit:updated', { id: auditId });
-      } catch { /* socket not critical */ }
+      await syncGlobalStoreAuditProjectionByAuditId({
+        companyId: auditContext.company.id,
+        auditId,
+      });
+      emitStoreAuditEvent(auditContext.company.id, 'store-audit:updated', { id: auditId });
     }
     res.status(201).json({ success: true, data });
   } catch (error) {

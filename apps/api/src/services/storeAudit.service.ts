@@ -9,9 +9,9 @@ import type {
 } from '@omnilert/shared';
 import { db } from '../config/database.js';
 import { env } from '../config/env.js';
-import { getIO } from '../config/socket.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
+import { emitStoreAuditEvent } from './storeAuditRealtime.service.js';
 import { hydrateUsersByIds } from './globalUser.service.js';
 import { createAuditSalaryAttachment, getEmployeeWebsiteKeyByEmployeeId } from './odoo.service.js';
 import { buildTenantStoragePrefix, deleteFile, uploadFile } from './storage.service.js';
@@ -150,25 +150,6 @@ function isUniqueViolation(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
   const code = (error as { code?: string }).code;
   return code === '23505';
-}
-
-function emitStoreAuditEvent(
-  companyId: string,
-  event:
-    | 'store-audit:new'
-    | 'store-audit:claimed'
-    | 'store-audit:completed'
-    | 'store-audit:updated',
-  payload: unknown,
-): void {
-  try {
-    getIO()
-      .of('/store-audits')
-      .to(`company:${companyId}`)
-      .emit(event, payload as never);
-  } catch {
-    logger.warn({ companyId, event }, 'Socket.IO not available for store audit event');
-  }
 }
 
 async function analyzeCssAudit(

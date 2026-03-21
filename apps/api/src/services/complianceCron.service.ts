@@ -1,7 +1,8 @@
 import { db } from '../config/database.js';
-import { getIO } from '../config/socket.js';
 import { logger } from '../utils/logger.js';
+import { syncGlobalStoreAuditProjectionByAuditId } from './globalStoreAuditIndex.service.js';
 import { getActiveAttendances } from './odoo.service.js';
+import { emitStoreAuditEvent } from './storeAuditRealtime.service.js';
 import { resolveCompanyByOdooBranchId } from './webhook.service.js';
 import {
   COMPLIANCE_HOURLY_JOB_NAME,
@@ -309,11 +310,12 @@ export async function runComplianceCron(): Promise<ComplianceRunOutcome> {
       })
       .returning('*');
 
-    try {
-      getIO().of('/store-audits').to(`company:${company.id}`).emit('store-audit:new', audit);
-    } catch {
-      logger.warn('Socket.IO not available for compliance cron emit');
-    }
+    await syncGlobalStoreAuditProjectionByAuditId({
+      companyId: String(company.id),
+      auditId: String(audit.id),
+    });
+
+    emitStoreAuditEvent(String(company.id), 'store-audit:new', audit);
 
     return { status: 'success' };
   } catch (error) {
