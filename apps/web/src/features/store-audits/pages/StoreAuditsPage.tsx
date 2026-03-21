@@ -167,15 +167,15 @@ export function StoreAuditsPage() {
     }
   }, [selectedAuditId, setSearchParams]);
 
-  // Fetch grouped users for VN modal when user has VN create permission
   useEffect(() => {
-    if (!canRequestVN) return;
+    if (!canRequestVN || !showRequestVNModal || !selectedAudit) return;
+    setGroupedUsers(null);
     setLoadingGroupedUsers(true);
-    getGroupedUsers()
+    getGroupedUsers(selectedAudit.id)
       .then(setGroupedUsers)
       .catch(() => undefined)
       .finally(() => setLoadingGroupedUsers(false));
-  }, [canRequestVN]);
+  }, [canRequestVN, selectedAudit, showRequestVNModal]);
 
   useEffect(() => {
     if (!socket) return;
@@ -449,7 +449,7 @@ export function StoreAuditsPage() {
           groupedUsers={groupedUsers}
           loadingUsers={loadingGroupedUsers}
           sourceStoreAuditId={selectedAudit.id}
-          sourceLabel={`Store Audit — ${selectedAudit.type === 'customer_service' ? 'CSS' : 'Compliance'} (${selectedAudit.branch_name || selectedAudit.id})`}
+          sourceLabel={`Store Audit — ${selectedAudit.type === 'customer_service' ? 'CSS' : 'Compliance'} — ${selectedAudit.company?.name || 'Unknown Company'} / ${selectedAudit.branch_name || selectedAudit.id}`}
         />
       )}
     </>

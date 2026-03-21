@@ -148,6 +148,10 @@ export function AccountAuditResultDetailPanel({
             <p className="mt-1 text-sm text-gray-900">{audit.type_label}</p>
           </div>
           <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Company</p>
+            <p className="mt-1 text-sm text-gray-900">{audit.company?.name || '-'}</p>
+          </div>
+          <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Branch</p>
             <p className="mt-1 text-sm text-gray-900">{audit.branch.name}</p>
           </div>

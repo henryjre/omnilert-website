@@ -19,6 +19,9 @@ const {
 
 function createAuditRow(
   overrides: Partial<{
+    company_id: string;
+    company_name: string;
+    company_slug: string;
     id: string;
     type: 'customer_service' | 'compliance';
     status: 'completed' | 'pending';
@@ -53,6 +56,9 @@ function createAuditRow(
   }> = {},
 ) {
   return {
+    company_id: overrides.company_id ?? 'company-1',
+    company_name: overrides.company_name ?? 'Alpha Foods',
+    company_slug: overrides.company_slug ?? 'alpha-foods',
     id: overrides.id ?? 'audit-1',
     type: overrides.type ?? 'customer_service',
     status: overrides.status ?? 'completed',
@@ -199,6 +205,11 @@ test('listAccountAuditResults returns only owned completed audits with normalize
   assert.deepEqual(result.items.map((item) => item.id), ['css-owned', 'comp-owned']);
   assert.equal(result.items[0]?.summary.result_line, 'Overall score: 4.2 / 5');
   assert.equal(result.items[1]?.summary.result_line, 'Passed checks: 3 / 4');
+  assert.deepEqual(result.items[0]?.company, {
+    id: 'company-1',
+    name: 'Alpha Foods',
+    slug: 'alpha-foods',
+  });
 });
 
 test('getAccountAuditResultById returns a sanitized read-only detail payload', async () => {
@@ -235,6 +246,11 @@ test('getAccountAuditResultById returns a sanitized read-only detail payload', a
   assert.equal(result.audit_trail[0]?.content, 'Cashier greeted within 5 seconds.');
   assert.equal(result.audit_trail[0]?.attachments[0]?.file_name, 'audit-photo.jpg');
   assert.equal(result.ai_report, 'Strong service recovery.');
+  assert.deepEqual(result.company, {
+    id: 'company-1',
+    name: 'Alpha Foods',
+    slug: 'alpha-foods',
+  });
   assert.deepEqual(result.css_result, {
     criteria_scores: {
       greeting: 4,

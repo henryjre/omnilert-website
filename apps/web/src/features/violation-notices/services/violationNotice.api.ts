@@ -153,8 +153,10 @@ export async function getVNMentionables(): Promise<{
   };
 }
 
-export async function getGroupedUsers(): Promise<GroupedUsersResponse> {
-  const response = await api.get('/violation-notices/grouped-users');
+export async function getGroupedUsers(auditId?: string): Promise<GroupedUsersResponse> {
+  const response = await api.get('/violation-notices/grouped-users', {
+    params: auditId ? { auditId } : undefined,
+  });
   return response.data.data as GroupedUsersResponse;
 }
 
