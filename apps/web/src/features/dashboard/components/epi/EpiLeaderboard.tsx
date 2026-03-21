@@ -101,6 +101,7 @@ function PodiumCard({
       <AvatarFallback
         firstName={entry.firstName}
         lastName={entry.lastName}
+        avatarUrl={entry.avatarUrl}
         size={entry.rank === 1 ? 'lg' : 'md'}
       />
       <p className="mt-2 max-w-[80px] truncate text-xs font-semibold text-gray-800 dark:text-gray-200">
@@ -569,7 +570,12 @@ export function EpiLeaderboard({ entries, currentMonthKey, selectedMonthKey, loa
                       >
                         <div className="flex items-center gap-3 px-3 py-2">
                           <RankBadge rank={entry.rank} />
-                          <AvatarFallback firstName={entry.firstName} lastName={entry.lastName} size="sm" />
+                          <AvatarFallback
+                            firstName={entry.firstName}
+                            lastName={entry.lastName}
+                            avatarUrl={entry.avatarUrl}
+                            size="sm"
+                          />
                           <span className="flex-1 truncate text-sm font-medium text-gray-800 dark:text-gray-200">
                             {entry.firstName} {entry.lastName}
                             {isHighlighted && (

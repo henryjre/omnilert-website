@@ -1,6 +1,10 @@
+import { useEffect, useState } from 'react';
+import { resolveAvatarDisplay } from './avatarDisplay';
+
 interface AvatarFallbackProps {
   firstName: string;
   lastName: string;
+  avatarUrl?: string | null;
   size?: 'sm' | 'md' | 'lg';
   className?: string;
 }
@@ -14,15 +18,35 @@ const sizeClasses = {
 export function AvatarFallback({
   firstName,
   lastName,
+  avatarUrl,
   size = 'md',
   className = '',
 }: AvatarFallbackProps) {
-  const initials = `${firstName.trim().charAt(0)}${lastName.trim().charAt(0)}`.toUpperCase().trim();
+  const { imageUrl, initials } = resolveAvatarDisplay({ firstName, lastName, avatarUrl });
+  const [imageFailed, setImageFailed] = useState(false);
+  const alt = `${firstName.trim()} ${lastName.trim()}`.trim() || 'Profile photo';
+  const classes = `flex items-center justify-center overflow-hidden rounded-full bg-gray-200 font-semibold text-gray-600 dark:bg-gray-700 dark:text-gray-300 ${sizeClasses[size]} ${className}`;
+
+  useEffect(() => {
+    setImageFailed(false);
+  }, [imageUrl]);
+
+  if (imageUrl && !imageFailed) {
+    return (
+      <div className={classes}>
+        <img
+          src={imageUrl}
+          alt={alt}
+          className="h-full w-full object-cover"
+          loading="lazy"
+          onError={() => setImageFailed(true)}
+        />
+      </div>
+    );
+  }
 
   return (
-    <div
-      className={`flex items-center justify-center rounded-full bg-gray-200 font-semibold text-gray-600 dark:bg-gray-700 dark:text-gray-300 ${sizeClasses[size]} ${className}`}
-    >
+    <div className={classes}>
       {initials || '?'}
     </div>
   );
