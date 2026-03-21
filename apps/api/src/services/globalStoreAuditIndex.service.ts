@@ -122,6 +122,14 @@ function parseJsonField<T>(value: unknown, fallback: T): T {
   return value as T;
 }
 
+function sanitizeProjectionJsonbValue(value: unknown): unknown {
+  const parsed = parseJsonField<unknown>(value, null);
+  if (parsed === null) return null;
+  if (Array.isArray(parsed)) return parsed;
+  if (typeof parsed === 'object') return parsed;
+  return null;
+}
+
 function toIsoString(value: string | Date | null | undefined): string | null {
   if (!value) return null;
   if (typeof value === 'string') return value;
@@ -323,7 +331,10 @@ async function listTenantAuditSnapshots(tenantDb: Knex, auditId?: string): Promi
   });
 }
 
-function buildProjectionRow(company: ActiveCompanyRow, row: TenantAuditSnapshotRow): Record<string, unknown> {
+export function buildProjectionRow(
+  company: ActiveCompanyRow,
+  row: TenantAuditSnapshotRow,
+): Record<string, unknown> {
   return {
     company_id: company.id,
     company_name: company.name,
@@ -351,17 +362,17 @@ function buildProjectionRow(company: ActiveCompanyRow, row: TenantAuditSnapshotR
     css_cashier_user_key: row.css_cashier_user_key,
     css_date_order: row.css_date_order,
     css_amount_total: row.css_amount_total,
-    css_order_lines: row.css_order_lines,
-    css_payments: row.css_payments,
+    css_order_lines: sanitizeProjectionJsonbValue(row.css_order_lines),
+    css_payments: sanitizeProjectionJsonbValue(row.css_payments),
     css_star_rating: row.css_star_rating,
-    css_criteria_scores: row.css_criteria_scores,
+    css_criteria_scores: sanitizeProjectionJsonbValue(row.css_criteria_scores),
     css_audit_log: row.css_audit_log,
     css_ai_report: row.css_ai_report,
     comp_odoo_employee_id: row.comp_odoo_employee_id,
     comp_employee_name: row.comp_employee_name,
     comp_employee_avatar: row.comp_employee_avatar,
     comp_check_in_time: row.comp_check_in_time,
-    comp_extra_fields: row.comp_extra_fields,
+    comp_extra_fields: sanitizeProjectionJsonbValue(row.comp_extra_fields),
     comp_productivity_rate: row.comp_productivity_rate,
     comp_uniform: row.comp_uniform,
     comp_hygiene: row.comp_hygiene,
