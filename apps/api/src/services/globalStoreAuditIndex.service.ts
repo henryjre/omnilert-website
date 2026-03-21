@@ -4,7 +4,6 @@ import { db } from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { hydrateUsersByIds } from './globalUser.service.js';
 import { getCompanyStorageRoot } from './storage.service.js';
-import { logger } from '../utils/logger.js';
 
 export type GlobalStoreAuditProjectionRow = {
   company_id: string;
@@ -532,20 +531,9 @@ export async function backfillGlobalStoreAuditProjection(input?: { onlyIfEmpty?:
 
   const companies = await listActiveCompanies();
   for (const company of companies) {
-    try {
-      const tenantDb = await db.getTenantDb(company.dbName);
-      const rows = await listTenantAuditSnapshots(tenantDb);
-      await upsertProjectionRows(masterDb, rows.map((row) => buildProjectionRow(company, row)));
-    } catch (error) {
-      logger.warn(
-        {
-          err: error,
-          companyId: company.id,
-          companyDbName: company.dbName,
-        },
-        'Failed to backfill global store audit projection for tenant',
-      );
-    }
+    const tenantDb = await db.getTenantDb(company.dbName);
+    const rows = await listTenantAuditSnapshots(tenantDb);
+    await upsertProjectionRows(masterDb, rows.map((row) => buildProjectionRow(company, row)));
   }
 }
 

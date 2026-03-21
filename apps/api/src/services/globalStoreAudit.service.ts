@@ -19,6 +19,14 @@ import {
   type GlobalStoreAuditProjectionRow,
   type ResolvedGlobalStoreAuditContext,
 } from './globalStoreAuditIndex.service.js';
+import {
+  completeStoreAudit,
+  deleteStoreAuditMessage,
+  editStoreAuditMessage,
+  listStoreAuditMessages,
+  processStoreAudit,
+  sendStoreAuditMessage,
+} from './storeAudit.service.js';
 
 type GlobalStoreAuditServiceDeps = {
   listProjectionRows: (input: {
@@ -99,73 +107,6 @@ function toStoreAudit(row: Record<string, unknown>): StoreAudit {
   return mapProjectionRowToStoreAudit(row);
 }
 
-async function defaultListStoreAuditMessages(input: {
-  tenantDb: Knex;
-  auditId: string;
-}): Promise<StoreAuditMessage[]> {
-  const mod = await import('./storeAudit.service.js');
-  return mod.listStoreAuditMessages(input);
-}
-
-async function defaultSendStoreAuditMessage(input: {
-  tenantDb: Knex;
-  companyId: string;
-  companyStorageRoot: string;
-  auditId: string;
-  userId: string;
-  content: string;
-  files: Array<{ buffer: Buffer; originalname: string; mimetype: string; size: number }>;
-}): Promise<StoreAuditMessage> {
-  const mod = await import('./storeAudit.service.js');
-  return mod.sendStoreAuditMessage(input);
-}
-
-async function defaultEditStoreAuditMessage(input: {
-  tenantDb: Knex;
-  companyId: string;
-  auditId: string;
-  messageId: string;
-  userId: string;
-  content: string;
-}): Promise<StoreAuditMessage> {
-  const mod = await import('./storeAudit.service.js');
-  return mod.editStoreAuditMessage(input);
-}
-
-async function defaultDeleteStoreAuditMessage(input: {
-  tenantDb: Knex;
-  companyId: string;
-  auditId: string;
-  messageId: string;
-  userId: string;
-}): Promise<void> {
-  const mod = await import('./storeAudit.service.js');
-  return mod.deleteStoreAuditMessage(input);
-}
-
-async function defaultProcessStoreAuditTenant(input: {
-  tenantDb: Knex;
-  auditId: string;
-  userId: string;
-  companyId: string;
-}): Promise<StoreAudit> {
-  const mod = await import('./storeAudit.service.js');
-  return mod.processStoreAudit(input);
-}
-
-async function defaultCompleteStoreAuditTenant(input: {
-  tenantDb: Knex;
-  auditId: string;
-  userId: string;
-  companyId: string;
-  payload:
-    | { criteria_scores: CssCriteriaScores }
-    | { productivity_rate: boolean; uniform: boolean; hygiene: boolean; sop: boolean };
-}): Promise<StoreAudit> {
-  const mod = await import('./storeAudit.service.js');
-  return mod.completeStoreAudit(input);
-}
-
 export function createGlobalStoreAuditService(
   overrides: Partial<GlobalStoreAuditServiceDeps> = {},
 ) {
@@ -176,12 +117,12 @@ export function createGlobalStoreAuditService(
     resolveAuditContext: overrides.resolveAuditContext ?? resolveGlobalStoreAuditContext,
     reserveProcessingAudit: overrides.reserveProcessingAudit ?? reserveGlobalProcessingAudit,
     syncProjectionByAuditId: overrides.syncProjectionByAuditId ?? syncGlobalStoreAuditProjectionByAuditId,
-    listStoreAuditMessages: overrides.listStoreAuditMessages ?? defaultListStoreAuditMessages,
-    sendStoreAuditMessage: overrides.sendStoreAuditMessage ?? defaultSendStoreAuditMessage,
-    editStoreAuditMessage: overrides.editStoreAuditMessage ?? defaultEditStoreAuditMessage,
-    deleteStoreAuditMessage: overrides.deleteStoreAuditMessage ?? defaultDeleteStoreAuditMessage,
-    processStoreAuditTenant: overrides.processStoreAuditTenant ?? defaultProcessStoreAuditTenant,
-    completeStoreAuditTenant: overrides.completeStoreAuditTenant ?? defaultCompleteStoreAuditTenant,
+    listStoreAuditMessages: overrides.listStoreAuditMessages ?? listStoreAuditMessages,
+    sendStoreAuditMessage: overrides.sendStoreAuditMessage ?? sendStoreAuditMessage,
+    editStoreAuditMessage: overrides.editStoreAuditMessage ?? editStoreAuditMessage,
+    deleteStoreAuditMessage: overrides.deleteStoreAuditMessage ?? deleteStoreAuditMessage,
+    processStoreAuditTenant: overrides.processStoreAuditTenant ?? processStoreAudit,
+    completeStoreAuditTenant: overrides.completeStoreAuditTenant ?? completeStoreAudit,
   };
 
   return {
@@ -315,10 +256,9 @@ export function createGlobalStoreAuditService(
         companyId: context.company.id,
         auditId: input.auditId,
       });
-      const currentProjection = synced ?? await deps.getProjectionByAuditId(input.auditId);
 
-      return currentProjection
-        ? toStoreAudit(currentProjection as unknown as Record<string, unknown>)
+      return synced
+        ? toStoreAudit(synced as unknown as Record<string, unknown>)
         : toStoreAudit(context.projection as unknown as Record<string, unknown>);
     },
 
@@ -342,10 +282,9 @@ export function createGlobalStoreAuditService(
         companyId: context.company.id,
         auditId: input.auditId,
       });
-      const currentProjection = synced ?? await deps.getProjectionByAuditId(input.auditId);
 
-      return currentProjection
-        ? toStoreAudit(currentProjection as unknown as Record<string, unknown>)
+      return synced
+        ? toStoreAudit(synced as unknown as Record<string, unknown>)
         : toStoreAudit(context.projection as unknown as Record<string, unknown>);
     },
   };
