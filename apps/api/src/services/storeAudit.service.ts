@@ -15,6 +15,7 @@ import { logger } from '../utils/logger.js';
 import { hydrateUsersByIds } from './globalUser.service.js';
 import { createAuditSalaryAttachment, getEmployeeWebsiteKeyByEmployeeId } from './odoo.service.js';
 import { buildTenantStoragePrefix, deleteFile, uploadFile } from './storage.service.js';
+import { notifyCompletedStoreAudit } from './storeAuditWebhook.service.js';
 import {
   buildCompletedStoreAuditTimestamps,
   buildProcessStoreAuditClaimUpdate,
@@ -988,6 +989,10 @@ export async function completeStoreAudit(input: {
   }
 
   const [enriched] = await enrichAuditRows(input.tenantDb, [updated]);
+  await notifyCompletedStoreAudit({
+    companyId: input.companyId,
+    audit: enriched,
+  });
   emitStoreAuditEvent(input.companyId, 'store-audit:completed', { id: input.auditId });
   return enriched;
 }

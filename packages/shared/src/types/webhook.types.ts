@@ -43,3 +43,51 @@ export interface OdooPosOrderPayload {
     amount: number;
   }>;
 }
+
+export type AuditResultsWebhookEvent = 'store_audit.completed';
+export type AuditResultsWebhookSourceType = 'pos_order' | 'attendance';
+export type AuditResultsWebhookOverallUnit = 'rating' | 'checks';
+
+export interface AuditResultsWebhookRecipient {
+  user_id: string;
+  user_key: string;
+  email: string;
+  full_name: string;
+}
+
+export interface AuditResultsWebhookCompany {
+  id: string;
+  name: string;
+}
+
+export interface AuditResultsWebhookBranch {
+  id: string;
+  name: string;
+}
+
+export interface AuditResultsWebhookAudit {
+  id: string;
+  type: 'customer_service' | 'compliance';
+  type_label: 'Customer Service Audit' | 'Compliance Audit';
+  completed_at: string;
+  observed_at: string | null;
+  source_type: AuditResultsWebhookSourceType;
+  source_reference: string;
+}
+
+export interface AuditResultsWebhookSummary {
+  result_line: string;
+  overall_value: number;
+  overall_max: number;
+  overall_unit: AuditResultsWebhookOverallUnit;
+}
+
+export interface AuditResultsWebhookPayload {
+  event: AuditResultsWebhookEvent;
+  version: 1;
+  recipient: AuditResultsWebhookRecipient;
+  company: AuditResultsWebhookCompany;
+  branch: AuditResultsWebhookBranch;
+  audit: AuditResultsWebhookAudit;
+  summary: AuditResultsWebhookSummary;
+}
