@@ -62,6 +62,10 @@ export function AccountAuditResultCard({
         </span>
       </div>
 
+      <div className="mt-1 text-xs text-gray-500">
+        Company: {audit.company?.name || '-'}
+      </div>
+
       <div className="mt-2 text-sm font-medium text-gray-800">
         {audit.summary.result_line}
       </div>

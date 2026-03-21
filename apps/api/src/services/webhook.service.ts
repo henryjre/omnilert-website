@@ -1,10 +1,11 @@
 import { db } from '../config/database.js';
-import { getIO } from '../config/socket.js';
 import { enqueueEarlyCheckInAuthJob } from './attendanceQueue.service.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
+import { syncGlobalStoreAuditProjectionByAuditId } from './globalStoreAuditIndex.service.js';
 import { createAndDispatchNotification } from './notification.service.js';
 import { getAttendanceIdentityByAttendanceId } from './odoo.service.js';
+import { emitStoreAuditEvent } from './storeAuditRealtime.service.js';
 
 const DISABLED_AUDIT_ODOO_COMPANY_IDS = new Set<number>([2]);
 
@@ -1704,10 +1705,11 @@ export async function createCssAudit(payload: {
     throw error;
   }
 
-  try {
-    getIO().of('/store-audits').to(`company:${company.id}`).emit('store-audit:new', audit);
-  } catch {
-    logger.warn('Socket.IO not available for store audit emit');
-  }
+  await syncGlobalStoreAuditProjectionByAuditId({
+    companyId: String(company.id),
+    auditId: String(audit.id),
+  });
+
+  emitStoreAuditEvent(String(company.id), 'store-audit:new', audit);
 }
 

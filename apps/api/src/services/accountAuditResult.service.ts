@@ -10,9 +10,13 @@ import type {
 import type { Knex } from 'knex';
 import { db } from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { resolveGlobalStoreAuditContext } from './globalStoreAuditIndex.service.js';
 import { listEmployeeIdsByWebsiteUserKey } from './odoo.service.js';
 
 type AuditRowSource = {
+  company_id: string;
+  company_name: string;
+  company_slug: string;
   id: string;
   type: StoreAuditType;
   status: 'pending' | 'processing' | 'completed';
@@ -135,6 +139,11 @@ function buildListItem(row: AuditRowSource): AccountAuditResultListItem {
     id: row.id,
     type: row.type,
     type_label: formatAuditTypeLabel(row.type),
+    company: {
+      id: row.company_id,
+      name: row.company_name,
+      slug: row.company_slug,
+    },
     branch: {
       id: row.branch_id,
       name: row.branch_name ?? 'Unknown Branch',
@@ -254,15 +263,17 @@ async function defaultListCompletedAuditRows(input: {
   tenantDb: Knex;
   type?: StoreAuditType;
 }): Promise<AuditRowSource[]> {
-  const query = input.tenantDb('store_audits as audits')
-    .leftJoin('branches', 'audits.branch_id', 'branches.id')
+  const query = db.getMasterDb()('global_store_audits as audits')
     .where('audits.status', 'completed')
     .select(
-      'audits.id',
+      'audits.company_id',
+      'audits.company_name',
+      'audits.company_slug',
+      'audits.audit_id as id',
       'audits.type',
       'audits.status',
       'audits.branch_id',
-      'branches.name as branch_name',
+      'audits.branch_name',
       'audits.completed_at',
       'audits.created_at',
       'audits.css_cashier_user_key',
@@ -291,15 +302,17 @@ async function defaultGetAuditRowById(input: {
   tenantDb: Knex;
   auditId: string;
 }): Promise<AuditRowSource | null> {
-  const row = await input.tenantDb('store_audits as audits')
-    .leftJoin('branches', 'audits.branch_id', 'branches.id')
-    .where('audits.id', input.auditId)
+  const row = await db.getMasterDb()('global_store_audits as audits')
+    .where('audits.audit_id', input.auditId)
     .first(
-      'audits.id',
+      'audits.company_id',
+      'audits.company_name',
+      'audits.company_slug',
+      'audits.audit_id as id',
       'audits.type',
       'audits.status',
       'audits.branch_id',
-      'branches.name as branch_name',
+      'audits.branch_name',
       'audits.completed_at',
       'audits.created_at',
       'audits.css_cashier_user_key',
@@ -324,7 +337,12 @@ async function defaultListAuditMessages(input: {
   tenantDb: Knex;
   auditId: string;
 }): Promise<AuditMessageSource[]> {
-  const messageRows = await input.tenantDb('store_audit_messages')
+  const context = await resolveGlobalStoreAuditContext(input.auditId);
+  if (!context) {
+    return [];
+  }
+
+  const messageRows = await context.tenantDb('store_audit_messages')
     .where({ store_audit_id: input.auditId })
     .orderBy('created_at', 'asc')
     .select('id', 'content', 'is_deleted', 'created_at');
@@ -334,7 +352,7 @@ async function defaultListAuditMessages(input: {
   }
 
   const messageIds = messageRows.map((row) => String(row.id));
-  const attachmentRows = await input.tenantDb('store_audit_attachments')
+  const attachmentRows = await context.tenantDb('store_audit_attachments')
     .whereIn('message_id', messageIds)
     .orderBy('created_at', 'asc')
     .select('id', 'message_id', 'file_url', 'file_name', 'file_size', 'content_type', 'created_at');

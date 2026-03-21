@@ -5,6 +5,7 @@ import { PERMISSIONS } from '@omnilert/shared';
 import { verifyAccessToken } from '../utils/jwt.js';
 import { env } from './env.js';
 import { logger } from '../utils/logger.js';
+import { GLOBAL_STORE_AUDITS_ROOM } from '../services/storeAuditRealtime.service.js';
 
 let io: SocketIOServer<ClientToServerEvents, ServerToClientEvents> | null = null;
 
@@ -167,6 +168,7 @@ export function initializeSocket(
     if (companyId) {
       socket.join(`company:${companyId}`);
     }
+    socket.join(GLOBAL_STORE_AUDITS_ROOM);
     logger.debug(`Store Audits: ${socket.data.user?.sub} connected`);
   });
 

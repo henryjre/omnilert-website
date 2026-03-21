@@ -56,6 +56,9 @@ export function CssAuditCard({
         <span className="truncate">Branch: {audit.branch_name || '—'}</span>
         <span className="shrink-0">{formatDateTime(audit.css_date_order)}</span>
       </div>
+      <div className="mt-1 text-xs text-gray-500">
+        <span className="truncate">Company: {audit.company?.name || '—'}</span>
+      </div>
       <div className="mt-1 flex items-center justify-between text-xs text-gray-500">
         <span>Auditor: {audit.auditor_name ?? '—'}</span>
         <span className="font-medium text-gray-700">

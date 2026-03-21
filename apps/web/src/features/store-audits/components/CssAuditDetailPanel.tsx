@@ -630,6 +630,8 @@ export function CssAuditDetailPanel({
     <div className="flex h-full flex-col">
       <div className="flex-1 space-y-4 overflow-y-auto px-6 py-5">
         <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+          <span className="text-gray-500">Company</span>
+          <span className="font-medium text-gray-900">{audit.company?.name || '-'}</span>
           <span className="text-gray-500">Session</span>
           <span className="font-medium text-gray-900">{audit.css_session_name || '-'}</span>
           <span className="text-gray-500">Reference</span>

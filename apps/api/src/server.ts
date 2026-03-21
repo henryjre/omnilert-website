@@ -8,6 +8,7 @@ import { initComplianceCron, stopComplianceCron } from './services/complianceCro
 import { initPeerEvaluationQueue, stopPeerEvaluationQueue } from './services/peerEvaluationQueue.service.js';
 import { initPeerEvaluationCron, stopPeerEvaluationCron } from './services/peerEvaluationCron.service.js';
 import { initEpiSnapshotCrons, stopEpiSnapshotCrons } from './services/epiSnapshotCron.service.js';
+import { backfillGlobalStoreAuditProjection } from './services/globalStoreAuditIndex.service.js';
 import { verifyMailConnection } from './services/mail.service.js';
 import { logger } from './utils/logger.js';
 import fs from 'fs';
@@ -73,6 +74,7 @@ async function bootstrap(): Promise<void> {
   // Initialize Socket.IO
   initializeSocket(server);
 
+  await backfillGlobalStoreAuditProjection({ onlyIfEmpty: true });
   await initAttendanceQueue();
   await initComplianceCron();
   await initPeerEvaluationQueue();

@@ -48,10 +48,17 @@ export interface StoreAuditMessage {
   is_edited: boolean;
 }
 
+export interface StoreAuditCompany {
+  id: string;
+  name: string;
+  slug: string;
+}
+
 export interface StoreAudit {
   id: string;
   type: StoreAuditType;
   status: StoreAuditStatus;
+  company?: StoreAuditCompany | null;
   branch_id: string;
   branch_name?: string | null;
   auditor_user_id: string | null;
