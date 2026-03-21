@@ -655,7 +655,7 @@ export function ComplianceAuditDetailPanel({
           <span className="font-medium text-gray-900">{formatDateTime(audit.created_at)}</span>
           {timing.kind === 'active' ? (
             <>
-              <span className="text-gray-500">Active Since</span>
+              <span className="text-gray-500">Employee Active Since</span>
               <span className="font-medium text-gray-900">{formatDateTime(timing.activeSince)}</span>
               <span className="text-gray-500">Minutes Active</span>
               <span className="font-medium text-gray-900">{timing.durationText ?? '-'}</span>
