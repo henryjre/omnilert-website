@@ -25,6 +25,7 @@ import { CssAuditCard } from '../components/CssAuditCard';
 import { ComplianceAuditCard } from '../components/ComplianceAuditCard';
 import { CssAuditDetailPanel } from '../components/CssAuditDetailPanel';
 import { ComplianceAuditDetailPanel } from '../components/ComplianceAuditDetailPanel';
+import { StoreAuditPaginationFooter } from '../components/StoreAuditPaginationFooter';
 import { resolveStoreAuditPaginationState } from './storeAuditPagination';
 
 type CategoryTab = 'all' | StoreAuditType;
@@ -255,8 +256,6 @@ export function StoreAuditsPage() {
 
   const currentPage = paginationState.page;
   const totalPages = paginationState.totalPages;
-  const pageStart = total === 0 ? 0 : ((currentPage - 1) * pageSize) + 1;
-  const pageEnd = total === 0 ? 0 : Math.min(total, currentPage * pageSize);
 
   return (
     <>
@@ -356,40 +355,18 @@ export function StoreAuditsPage() {
             ))}
 
             {totalPages > 1 && (
-              <div className="flex flex-col gap-3 rounded-xl border border-gray-200 px-4 py-3 text-sm text-gray-600 sm:flex-row sm:items-center sm:justify-between">
-                <span>
-                  Showing {pageStart}-{pageEnd} of {total}
-                </span>
-                <div className="flex items-center justify-between gap-3 sm:justify-end">
-                  <span>
-                    Page {currentPage} of {totalPages}
-                  </span>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPage(Math.max(1, currentPage - 1));
-                        setSelectedAuditId(null);
-                      }}
-                      disabled={currentPage === 1}
-                      className="rounded-lg border border-gray-300 px-3 py-1.5 font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      Previous
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPage(Math.min(totalPages, currentPage + 1));
-                        setSelectedAuditId(null);
-                      }}
-                      disabled={currentPage === totalPages}
-                      className="rounded-lg border border-gray-300 px-3 py-1.5 font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      Next
-                    </button>
-                  </div>
-                </div>
-              </div>
+              <StoreAuditPaginationFooter
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPrevious={() => {
+                  setPage(Math.max(1, currentPage - 1));
+                  setSelectedAuditId(null);
+                }}
+                onNext={() => {
+                  setPage(Math.min(totalPages, currentPage + 1));
+                  setSelectedAuditId(null);
+                }}
+              />
             )}
           </div>
         )}
