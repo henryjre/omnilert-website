@@ -1,4 +1,5 @@
 import type { Knex } from 'knex';
+import { buildAddCheckConstraintIfMissingSql } from '../../utils/migrationSql.js';
 
 const STORE_AUDITS_TABLE = 'store_audits';
 const STORE_AUDITS_STATUS_IDX = 'store_audits_status_idx';
@@ -49,23 +50,23 @@ export async function up(knex: Knex): Promise<void> {
     });
   }
 
-  await knex.raw(`
-    ALTER TABLE ${STORE_AUDITS_TABLE}
-    ADD CONSTRAINT ${STORE_AUDITS_TABLE}_type_check
-    CHECK (type IN ('customer_service', 'compliance'))
-  `).catch(() => undefined);
+  await knex.raw(buildAddCheckConstraintIfMissingSql(
+    STORE_AUDITS_TABLE,
+    `${STORE_AUDITS_TABLE}_type_check`,
+    `type IN ('customer_service', 'compliance')`,
+  ));
 
-  await knex.raw(`
-    ALTER TABLE ${STORE_AUDITS_TABLE}
-    ADD CONSTRAINT ${STORE_AUDITS_TABLE}_status_check
-    CHECK (status IN ('pending', 'processing', 'completed'))
-  `).catch(() => undefined);
+  await knex.raw(buildAddCheckConstraintIfMissingSql(
+    STORE_AUDITS_TABLE,
+    `${STORE_AUDITS_TABLE}_status_check`,
+    `status IN ('pending', 'processing', 'completed')`,
+  ));
 
-  await knex.raw(`
-    ALTER TABLE ${STORE_AUDITS_TABLE}
-    ADD CONSTRAINT ${STORE_AUDITS_TABLE}_css_star_rating_check
-    CHECK (css_star_rating BETWEEN 1 AND 5)
-  `).catch(() => undefined);
+  await knex.raw(buildAddCheckConstraintIfMissingSql(
+    STORE_AUDITS_TABLE,
+    `${STORE_AUDITS_TABLE}_css_star_rating_check`,
+    'css_star_rating BETWEEN 1 AND 5',
+  ));
 
   await knex.raw(`
     CREATE INDEX IF NOT EXISTS ${STORE_AUDITS_STATUS_IDX}

@@ -1,4 +1,5 @@
 import type { Knex } from 'knex';
+import { buildAddCheckConstraintIfMissingSql } from '../../utils/migrationSql.js';
 
 const VN_TABLE = 'violation_notices';
 const VN_TARGETS_TABLE = 'violation_notice_targets';
@@ -127,29 +128,29 @@ export async function up(knex: Knex): Promise<void> {
     });
   }
 
-  await knex.raw(`
-    ALTER TABLE ${VN_TABLE}
-    ADD CONSTRAINT violation_notices_status_check
-    CHECK (status IN ('queued', 'discussion', 'issuance', 'disciplinary_meeting', 'completed', 'rejected'))
-  `).catch(() => undefined);
+  await knex.raw(buildAddCheckConstraintIfMissingSql(
+    VN_TABLE,
+    'violation_notices_status_check',
+    `status IN ('queued', 'discussion', 'issuance', 'disciplinary_meeting', 'completed', 'rejected')`,
+  ));
 
-  await knex.raw(`
-    ALTER TABLE ${VN_TABLE}
-    ADD CONSTRAINT violation_notices_category_check
-    CHECK (category IN ('manual', 'case_reports', 'store_audits'))
-  `).catch(() => undefined);
+  await knex.raw(buildAddCheckConstraintIfMissingSql(
+    VN_TABLE,
+    'violation_notices_category_check',
+    `category IN ('manual', 'case_reports', 'store_audits')`,
+  ));
 
-  await knex.raw(`
-    ALTER TABLE ${VN_MESSAGES_TABLE}
-    ADD CONSTRAINT violation_notice_messages_type_check
-    CHECK (type IN ('message', 'system'))
-  `).catch(() => undefined);
+  await knex.raw(buildAddCheckConstraintIfMissingSql(
+    VN_MESSAGES_TABLE,
+    'violation_notice_messages_type_check',
+    `type IN ('message', 'system')`,
+  ));
 
-  await knex.raw(`
-    ALTER TABLE ${VN_MENTIONS_TABLE}
-    ADD CONSTRAINT violation_notice_mentions_target_check
-    CHECK (mentioned_user_id IS NOT NULL OR mentioned_role_id IS NOT NULL)
-  `).catch(() => undefined);
+  await knex.raw(buildAddCheckConstraintIfMissingSql(
+    VN_MENTIONS_TABLE,
+    'violation_notice_mentions_target_check',
+    'mentioned_user_id IS NOT NULL OR mentioned_role_id IS NOT NULL',
+  ));
 
   await knex.raw(`
     CREATE INDEX IF NOT EXISTS vn_status_idx

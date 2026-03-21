@@ -1,4 +1,5 @@
 import type { Knex } from 'knex';
+import { buildAddCheckConstraintIfMissingSql } from '../../utils/migrationSql.js';
 
 const CASE_REPORTS_TABLE = 'case_reports';
 const CASE_MESSAGES_TABLE = 'case_messages';
@@ -94,17 +95,17 @@ export async function up(knex: Knex): Promise<void> {
     });
   }
 
-  await knex.raw(`
-    ALTER TABLE ${CASE_REPORTS_TABLE}
-    ADD CONSTRAINT ${CASE_REPORTS_TABLE}_status_check
-    CHECK (status IN ('open', 'closed'))
-  `).catch(() => undefined);
+  await knex.raw(buildAddCheckConstraintIfMissingSql(
+    CASE_REPORTS_TABLE,
+    `${CASE_REPORTS_TABLE}_status_check`,
+    `status IN ('open', 'closed')`,
+  ));
 
-  await knex.raw(`
-    ALTER TABLE ${CASE_MENTIONS_TABLE}
-    ADD CONSTRAINT ${CASE_MENTIONS_TABLE}_target_check
-    CHECK (mentioned_user_id IS NOT NULL OR mentioned_role_id IS NOT NULL)
-  `).catch(() => undefined);
+  await knex.raw(buildAddCheckConstraintIfMissingSql(
+    CASE_MENTIONS_TABLE,
+    `${CASE_MENTIONS_TABLE}_target_check`,
+    'mentioned_user_id IS NOT NULL OR mentioned_role_id IS NOT NULL',
+  ));
 
   await knex.raw(`
     CREATE INDEX IF NOT EXISTS case_reports_status_idx
