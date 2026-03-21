@@ -15,6 +15,10 @@ import { logger } from '../utils/logger.js';
 import { hydrateUsersByIds } from './globalUser.service.js';
 import { createAuditSalaryAttachment, getEmployeeWebsiteKeyByEmployeeId } from './odoo.service.js';
 import { buildTenantStoragePrefix, deleteFile, uploadFile } from './storage.service.js';
+import {
+  buildCompletedStoreAuditTimestamps,
+  buildProcessStoreAuditClaimUpdate,
+} from './storeAuditTiming.service.js';
 
 type StoreAuditRow = StoreAudit & {
   branch_name?: string | null;
@@ -806,14 +810,13 @@ export async function processStoreAudit(input: {
 
   let updated: any;
   try {
+    const claimUpdate = buildProcessStoreAuditClaimUpdate({
+      userId: input.userId,
+    });
     [updated] = await input
       .tenantDb('store_audits')
       .where({ id: input.auditId, status: 'pending' })
-      .update({
-        status: 'processing',
-        auditor_user_id: input.userId,
-        updated_at: new Date(),
-      })
+      .update(claimUpdate)
       .returning('*');
   } catch (error) {
     if (isUniqueViolation(error)) {
@@ -880,6 +883,7 @@ export async function completeStoreAudit(input: {
   };
 
   const completedAt = new Date();
+  const completedTimestamps = buildCompletedStoreAuditTimestamps(completedAt);
   let updated: any;
 
   if (audit.type === 'customer_service') {
@@ -914,8 +918,7 @@ export async function completeStoreAudit(input: {
         css_star_rating: starRating,
         css_audit_log: generatedAuditLog,
         css_ai_report: aiReport,
-        completed_at: completedAt,
-        updated_at: completedAt,
+        ...completedTimestamps,
       })
       .returning('*');
 
@@ -960,8 +963,7 @@ export async function completeStoreAudit(input: {
         comp_hygiene: compPayload.hygiene,
         comp_sop: compPayload.sop,
         comp_ai_report: aiReport,
-        completed_at: completedAt,
-        updated_at: completedAt,
+        ...completedTimestamps,
       })
       .returning('*');
 

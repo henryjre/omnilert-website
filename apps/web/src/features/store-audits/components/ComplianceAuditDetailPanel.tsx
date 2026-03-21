@@ -7,6 +7,7 @@ import { ImagePreviewModal } from '@/features/case-reports/components/ImagePrevi
 import { Button } from '@/shared/components/ui/Button';
 import { useAppToast } from '@/shared/hooks/useAppToast';
 import { api } from '@/shared/services/api.client';
+import { resolveComplianceAuditPanelTiming } from './complianceAuditTiming';
 import { YesNoPill } from './YesNoPill';
 
 function formatDateTime(value: string | null): string {
@@ -239,6 +240,7 @@ export function ComplianceAuditDetailPanel({
     items: { url: string; fileName: string }[];
     index: number;
   } | null>(null);
+  const [currentTime, setCurrentTime] = useState(() => new Date());
 
   useEffect(() => {
     if (audit.status !== 'processing') return;
@@ -305,11 +307,36 @@ export function ComplianceAuditDetailPanel({
     void fetchMessages();
   }, [fetchMessages]);
 
+  useEffect(() => {
+    setCurrentTime(new Date());
+
+    if (audit.status === 'completed') return undefined;
+
+    let intervalId: number | null = null;
+    const timeoutId = window.setTimeout(() => {
+      setCurrentTime(new Date());
+      intervalId = window.setInterval(() => {
+        setCurrentTime(new Date());
+      }, 60 * 1000);
+    }, 60 * 1000 - (Date.now() % (60 * 1000)));
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      if (intervalId !== null) {
+        window.clearInterval(intervalId);
+      }
+    };
+  }, [audit.completed_at, audit.comp_check_in_time, audit.id, audit.status]);
+
   const allAnswered = Object.values(answers).every((value) => value !== null);
   const positiveCount = getPositiveAnswerCount(answers);
   const visibleMessages = useMemo(() => messages.filter((message) => !message.is_deleted), [messages]);
   const hasVisibleMessages = visibleMessages.length > 0;
   const canMutateMessages = audit.status === 'processing' && canComplete;
+  const timing = useMemo(
+    () => resolveComplianceAuditPanelTiming(audit, currentTime),
+    [audit, currentTime],
+  );
 
   const openPreview = useCallback((attachment: StoreAuditAttachment, source: StoreAuditAttachment[]) => {
     const mediaItems = toPreviewItems(source);
@@ -626,6 +653,19 @@ export function ComplianceAuditDetailPanel({
           <span className="font-medium text-gray-900">{audit.branch_name || '-'}</span>
           <span className="text-gray-500">Created</span>
           <span className="font-medium text-gray-900">{formatDateTime(audit.created_at)}</span>
+          {timing.kind === 'active' ? (
+            <>
+              <span className="text-gray-500">Active Since</span>
+              <span className="font-medium text-gray-900">{formatDateTime(timing.activeSince)}</span>
+              <span className="text-gray-500">Minutes Active</span>
+              <span className="font-medium text-gray-900">{timing.durationText ?? '-'}</span>
+            </>
+          ) : (
+            <>
+              <span className="text-gray-500">Audit Duration</span>
+              <span className="font-medium text-gray-900">{timing.durationText ?? '-'}</span>
+            </>
+          )}
         </div>
 
         {audit.status === 'processing' && (
