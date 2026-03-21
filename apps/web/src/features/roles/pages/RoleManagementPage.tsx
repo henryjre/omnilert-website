@@ -8,72 +8,179 @@ import { api } from '@/shared/services/api.client';
 import { useAppToast } from '@/shared/hooks/useAppToast';
 import { PERMISSION_CATEGORIES } from '@omnilert/shared';
 import { Plus, Shield, Trash2 } from 'lucide-react';
+import { createRoleEditorDraft, hasRoleEditorChanges, type RoleEditorDraft } from './roleEditorState';
+
+interface Role {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string | null;
+  priority: number;
+  is_system: boolean;
+}
+
+interface Permission {
+  id: string;
+  name: string;
+  key: string;
+  category: string;
+}
 
 export function RoleManagementPage() {
   const { success: showSuccessToast, error: showErrorToast } = useAppToast();
-  const [roles, setRoles] = useState<any[]>([]);
-  const [permissions, setPermissions] = useState<any[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [permissions, setPermissions] = useState<Permission[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedRole, setSelectedRole] = useState<any>(null);
-  const [rolePermissions, setRolePermissions] = useState<string[]>([]);
+  const [selectedRole, setSelectedRole] = useState<Role | null>(null);
+  const [originalDraft, setOriginalDraft] = useState<RoleEditorDraft | null>(null);
+  const [roleDraft, setRoleDraft] = useState<RoleEditorDraft | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [editorLoading, setEditorLoading] = useState(false);
+  const [savingRole, setSavingRole] = useState(false);
   const [newRole, setNewRole] = useState({ name: '', color: '#3498db', priority: 10 });
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async ({
+    showLoader = false,
+    showErrorToastOnFailure = true,
+  }: {
+    showLoader?: boolean;
+    showErrorToastOnFailure?: boolean;
+  } = {}) => {
+    if (showLoader) setLoading(true);
     try {
       const [rolesRes, permsRes] = await Promise.all([
         api.get('/roles'),
         api.get('/permissions'),
       ]);
-      setRoles(rolesRes.data.data || []);
-      setPermissions(permsRes.data.data || []);
+      const nextRoles = (rolesRes.data.data || []) as Role[];
+      const nextPermissions = (permsRes.data.data || []) as Permission[];
+      setRoles(nextRoles);
+      setPermissions(nextPermissions);
+      return { roles: nextRoles, permissions: nextPermissions };
     } catch (err: any) {
-      showErrorToast(err.response?.data?.error || 'Failed to load roles and permissions');
+      if (showErrorToastOnFailure) {
+        showErrorToast(err.response?.data?.error || 'Failed to load roles and permissions');
+      }
+      return null;
     } finally {
-      setLoading(false);
+      if (showLoader) setLoading(false);
     }
   };
 
   useEffect(() => {
-    void fetchData();
+    void fetchData({ showLoader: true });
   }, []);
 
-  const selectRole = async (role: any) => {
+  const isDirty = selectedRole !== null
+    && originalDraft !== null
+    && roleDraft !== null
+    && hasRoleEditorChanges(originalDraft, roleDraft);
+
+  const selectRole = async (role: Role) => {
+    if (selectedRole?.id === role.id) {
+      return;
+    }
+    if (isDirty && !window.confirm('Discard unsaved changes?')) {
+      return;
+    }
+
+    setSelectedRole(role);
+    setEditorLoading(true);
     try {
-      setSelectedRole(role);
       const res = await api.get(`/roles/${role.id}/permissions`);
-      setRolePermissions((res.data.data || []).map((p: any) => p.id));
+      const permissionIds = (res.data.data || []).map((permission: Permission) => permission.id);
+      const nextDraft = createRoleEditorDraft(role, permissionIds);
+      setOriginalDraft(nextDraft);
+      setRoleDraft(nextDraft);
     } catch (err: any) {
       showErrorToast(err.response?.data?.error || 'Failed to load role permissions');
+      setSelectedRole(null);
+      setOriginalDraft(null);
+      setRoleDraft(null);
+    } finally {
+      setEditorLoading(false);
     }
   };
 
   const togglePermission = (permId: string) => {
-    setRolePermissions((prev) =>
-      prev.includes(permId) ? prev.filter((id) => id !== permId) : [...prev, permId],
-    );
+    setRoleDraft((prev) => {
+      if (!prev) return prev;
+      const nextPermissionIds = prev.permissionIds.includes(permId)
+        ? prev.permissionIds.filter((id) => id !== permId)
+        : [...prev.permissionIds, permId];
+
+      return {
+        ...prev,
+        permissionIds: nextPermissionIds.sort((a, b) => a.localeCompare(b)),
+      };
+    });
   };
 
-  const savePermissions = async () => {
-    if (!selectedRole) return;
+  const saveRole = async () => {
+    if (!selectedRole || !roleDraft || !originalDraft) return;
+
+    const trimmedName = roleDraft.name.trim();
+    const metadataChanged = trimmedName !== originalDraft.name
+      || roleDraft.color !== originalDraft.color
+      || roleDraft.priority !== originalDraft.priority;
+    const permissionsChanged = JSON.stringify([...roleDraft.permissionIds].sort())
+      !== JSON.stringify([...originalDraft.permissionIds].sort());
+
+    if (!metadataChanged && !permissionsChanged) {
+      return;
+    }
+
+    setSavingRole(true);
     try {
-      await api.put(`/roles/${selectedRole.id}/permissions`, {
-        permissionIds: rolePermissions,
-      });
-      showSuccessToast('Role permissions updated.');
-      void fetchData();
+      if (metadataChanged) {
+        await api.put(`/roles/${selectedRole.id}`, {
+          name: trimmedName,
+          color: roleDraft.color,
+          priority: roleDraft.priority,
+        });
+      }
+
+      if (permissionsChanged) {
+        await api.put(`/roles/${selectedRole.id}/permissions`, {
+          permissionIds: roleDraft.permissionIds,
+        });
+      }
+
+      const refreshResult = await fetchData({ showErrorToastOnFailure: false });
+      const refreshedRole = refreshResult?.roles.find((role) => role.id === selectedRole.id) ?? {
+        ...selectedRole,
+        name: trimmedName,
+        color: roleDraft.color,
+        priority: roleDraft.priority,
+      };
+      const nextDraft = createRoleEditorDraft(refreshedRole, roleDraft.permissionIds);
+      setSelectedRole(refreshedRole);
+      setOriginalDraft(nextDraft);
+      setRoleDraft(nextDraft);
+      showSuccessToast('Role updated successfully.');
     } catch (err: any) {
-      showErrorToast(err.response?.data?.error || 'Failed to save role permissions');
+      showErrorToast(err.response?.data?.error || 'Failed to save role changes');
+    } finally {
+      setSavingRole(false);
     }
   };
 
   const createRole = async () => {
     try {
-      // Need at least one permission
+      const permissionIds = roleDraft?.permissionIds.length
+        ? roleDraft.permissionIds
+        : permissions[0]?.id
+          ? [permissions[0].id]
+          : [];
+
+      if (permissionIds.length === 0) {
+        showErrorToast('No permissions available for new roles.');
+        return;
+      }
+
       await api.post('/roles', {
         ...newRole,
-        permissionIds: rolePermissions.length > 0 ? rolePermissions : [permissions[0]?.id],
+        permissionIds,
       });
       setShowCreateForm(false);
       setNewRole({ name: '', color: '#3498db', priority: 10 });
@@ -88,7 +195,11 @@ export function RoleManagementPage() {
     if (!confirm('Are you sure you want to delete this role?')) return;
     try {
       await api.delete(`/roles/${id}`);
-      if (selectedRole?.id === id) setSelectedRole(null);
+      if (selectedRole?.id === id) {
+        setSelectedRole(null);
+        setOriginalDraft(null);
+        setRoleDraft(null);
+      }
       showSuccessToast('Role deleted successfully.');
       void fetchData();
     } catch (err: any) {
@@ -199,47 +310,133 @@ export function RoleManagementPage() {
         </Card>
 
         {/* Permission matrix */}
-        {selectedRole && (
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <h2 className="font-semibold">
-                  Permissions for{' '}
-                  <span style={{ color: selectedRole.color }}>{selectedRole.name}</span>
-                </h2>
-                <Button size="sm" onClick={savePermissions}>
-                  Save
-                </Button>
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h2 className="font-semibold text-gray-900">Role Editor</h2>
+                <p className="text-sm text-gray-500">
+                  {selectedRole ? 'Edit role settings and permissions.' : 'Select a role to start editing.'}
+                </p>
               </div>
-            </CardHeader>
-            <CardBody className="space-y-4">
-              {Object.entries(PERMISSION_CATEGORIES).map(([key, category]) => (
-                <div key={key}>
-                  <h3 className="mb-2 text-sm font-semibold text-gray-700">{category.label}</h3>
-                  <div className="space-y-1">
-                    {permissions
-                      .filter((p: any) => p.category === key)
-                      .map((perm: any) => (
-                        <label
-                          key={perm.id}
-                          className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-gray-50"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={rolePermissions.includes(perm.id)}
-                            onChange={() => togglePermission(perm.id)}
-                            className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                          />
-                          <span className="text-sm text-gray-700">{perm.name}</span>
-                          <span className="text-xs text-gray-400">({perm.key})</span>
-                        </label>
-                      ))}
+              {selectedRole && (
+                <div className="flex items-center gap-2">
+                  {isDirty && <Badge variant="warning">Unsaved changes</Badge>}
+                  <Button
+                    size="sm"
+                    onClick={saveRole}
+                    disabled={editorLoading || savingRole || !roleDraft || !roleDraft.name.trim() || !isDirty}
+                  >
+                    {savingRole ? 'Saving...' : 'Save'}
+                  </Button>
+                </div>
+              )}
+            </div>
+          </CardHeader>
+          <CardBody className="space-y-4">
+            {!selectedRole && (
+              <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">
+                Pick a role from the left to edit its name, color, priority, and permissions.
+              </div>
+            )}
+
+            {selectedRole && editorLoading && (
+              <div className="flex justify-center py-12">
+                <Spinner size="lg" />
+              </div>
+            )}
+
+            {selectedRole && !editorLoading && roleDraft && (
+              <>
+                <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
+                  <div className="space-y-4">
+                    <Input
+                      label="Role Name"
+                      value={roleDraft.name}
+                      onChange={(e) => setRoleDraft({ ...roleDraft, name: e.target.value })}
+                      placeholder="e.g., Branch Manager"
+                    />
+                    <Input
+                      label="Priority"
+                      type="number"
+                      value={String(roleDraft.priority)}
+                      onChange={(e) => setRoleDraft({ ...roleDraft, priority: Number(e.target.value) })}
+                      min="0"
+                      max="99"
+                    />
+                  </div>
+
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Preview</p>
+                    <div className="mt-3 flex items-center gap-3">
+                      <div
+                        className="h-5 w-5 rounded-full border border-white shadow-sm"
+                        style={{ backgroundColor: roleDraft.color }}
+                      />
+                      <div>
+                        <p className="font-medium text-gray-900">{roleDraft.name.trim() || 'Untitled role'}</p>
+                        <p className="text-xs text-gray-500">Priority: {roleDraft.priority}</p>
+                      </div>
+                    </div>
+                    <div className="mt-3">
+                      {selectedRole.is_system ? (
+                        <Badge variant="info">System role</Badge>
+                      ) : (
+                        <Badge variant="default">Custom role</Badge>
+                      )}
+                    </div>
                   </div>
                 </div>
-              ))}
-            </CardBody>
-          </Card>
-        )}
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Color</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      value={roleDraft.color}
+                      onChange={(e) => setRoleDraft({ ...roleDraft, color: e.target.value })}
+                      className="h-10 w-16 cursor-pointer rounded border border-gray-300 bg-white"
+                    />
+                    <span className="text-sm text-gray-500">{roleDraft.color}</span>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="mb-2 flex items-center gap-2">
+                    <Shield className="h-4 w-4 text-gray-500" />
+                    <h3 className="text-sm font-semibold text-gray-700">Permissions</h3>
+                  </div>
+                  <div className="space-y-4">
+                    {Object.entries(PERMISSION_CATEGORIES).map(([key, category]) => (
+                      <div key={key}>
+                        <h4 className="mb-2 text-sm font-semibold text-gray-700">{category.label}</h4>
+                        <div className="space-y-1">
+                          {permissions
+                            .filter((permission) => permission.category === key)
+                            .map((permission) => (
+                              <label
+                                key={permission.id}
+                                className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-gray-50"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={roleDraft.permissionIds.includes(permission.id)}
+                                  onChange={() => togglePermission(permission.id)}
+                                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                                />
+                                <span className="text-sm text-gray-700">{permission.name}</span>
+                                <span className="text-xs text-gray-400">({permission.key})</span>
+                              </label>
+                            ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </CardBody>
+        </Card>
       </div>
     </div>
   );

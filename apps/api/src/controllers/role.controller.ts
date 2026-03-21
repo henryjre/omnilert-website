@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { AppError } from '../middleware/errorHandler.js';
 import { db } from '../config/database.js';
+import { buildRoleUpdates } from './roleUpdatePolicy.js';
 
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
@@ -57,15 +58,7 @@ export async function update(req: Request, res: Response, next: NextFunction) {
 
     const existing = await masterDb('roles').where({ id }).first();
     if (!existing) throw new AppError(404, 'Role not found');
-    if (existing.is_system && req.body.name) {
-      throw new AppError(403, 'Cannot rename system roles');
-    }
-
-    const updates: Record<string, unknown> = { updated_at: new Date() };
-    if (req.body.name !== undefined) updates.name = req.body.name;
-    if (req.body.description !== undefined) updates.description = req.body.description;
-    if (req.body.color !== undefined) updates.color = req.body.color;
-    if (req.body.priority !== undefined) updates.priority = req.body.priority;
+    const updates = buildRoleUpdates(req.body);
 
     const [role] = await masterDb('roles').where({ id }).update(updates).returning('*');
     res.json({ success: true, data: role });
