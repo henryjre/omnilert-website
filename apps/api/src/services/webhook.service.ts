@@ -1,4 +1,5 @@
 import { db } from '../config/database.js';
+import { getIO } from '../config/socket.js';
 import { enqueueEarlyCheckInAuthJob } from './attendanceQueue.service.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';

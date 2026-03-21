@@ -16,7 +16,6 @@ import {
   reserveGlobalProcessingAudit,
   resolveGlobalStoreAuditContext,
   syncGlobalStoreAuditProjectionByAuditId,
-  type GlobalStoreAuditProjectionRow,
   type ResolvedGlobalStoreAuditContext,
 } from './globalStoreAuditIndex.service.js';
 import {
@@ -34,9 +33,9 @@ type GlobalStoreAuditServiceDeps = {
     status?: StoreAuditStatus;
     page?: number;
     pageSize?: number;
-  }) => Promise<{ rows: GlobalStoreAuditProjectionRow[]; total: number }>;
+  }) => Promise<{ rows: Array<Record<string, unknown>>; total: number }>;
   getProcessingAuditIdByUser: (userId: string) => Promise<string | null>;
-  getProjectionByAuditId: (auditId: string) => Promise<GlobalStoreAuditProjectionRow | null>;
+  getProjectionByAuditId: (auditId: string) => Promise<Record<string, unknown> | null>;
   resolveAuditContext: (auditId: string) => Promise<ResolvedGlobalStoreAuditContext | null>;
   reserveProcessingAudit: (input: {
     companyId: string;
@@ -46,7 +45,7 @@ type GlobalStoreAuditServiceDeps = {
   syncProjectionByAuditId: (input: {
     companyId: string;
     auditId: string;
-  }) => Promise<GlobalStoreAuditProjectionRow | null>;
+  }) => Promise<Record<string, unknown> | null | undefined | void>;
   listStoreAuditMessages: (input: {
     tenantDb: Knex;
     auditId: string;
