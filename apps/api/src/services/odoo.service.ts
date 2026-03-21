@@ -764,6 +764,233 @@ function parseUtcTimestamp(timestamp: string | Date): Date {
   return new Date(timestamp);
 }
 
+type JsonRpcPayload = Record<string, unknown>;
+type JsonRpcSuccess = {
+  error?: { message: string; data?: { message: string; debug?: string } };
+  result?: unknown;
+};
+type OdooFetchResponse = {
+  ok: boolean;
+  status: number;
+  statusText: string;
+  headers: {
+    get(name: string): string | null;
+  };
+  json(): Promise<JsonRpcSuccess>;
+};
+type OdooFetch = (input: string, init: {
+  method: string;
+  headers: Record<string, string>;
+  body: string;
+}) => Promise<OdooFetchResponse>;
+type OdooRpcLogger = Pick<typeof logger, 'warn' | 'error'>;
+type OdooRpcClientOptions = {
+  fetchImpl?: OdooFetch;
+  sleep?: (ms: number) => Promise<void>;
+  logger?: OdooRpcLogger;
+  odooUrl?: string;
+  maxConcurrentRequests?: number;
+  max429Retries?: number;
+  baseRetryDelayMs?: number;
+};
+
+const DEFAULT_ODOO_RPC_MAX_CONCURRENT_REQUESTS = 2;
+const DEFAULT_ODOO_RPC_MAX_429_RETRIES = 2;
+const DEFAULT_ODOO_RPC_BASE_RETRY_DELAY_MS = 1000;
+
+class OdooHttpError extends Error {
+  status: number;
+  statusText: string;
+  retryAfterMs: number | null;
+
+  constructor(status: number, statusText: string, retryAfterMs: number | null = null) {
+    super(`Odoo JSON RPC HTTP error: ${status} ${statusText}`);
+    this.name = 'OdooHttpError';
+    this.status = status;
+    this.statusText = statusText;
+    this.retryAfterMs = retryAfterMs;
+  }
+}
+
+function normalizeOdooUrl(odooUrl: string): string {
+  if (odooUrl.startsWith("http://") || odooUrl.startsWith("https://")) {
+    return odooUrl;
+  }
+
+  return `https://${odooUrl}`;
+}
+
+function parseRetryAfterMs(value: string | null): number | null {
+  if (!value) return null;
+
+  const numericSeconds = Number(value);
+  if (Number.isFinite(numericSeconds) && numericSeconds >= 0) {
+    return numericSeconds * 1000;
+  }
+
+  const dateMs = Date.parse(value);
+  if (Number.isNaN(dateMs)) {
+    return null;
+  }
+
+  return Math.max(0, dateMs - Date.now());
+}
+
+function compute429RetryDelayMs(
+  attemptIndex: number,
+  error: OdooHttpError,
+  baseRetryDelayMs: number,
+): number {
+  if (error.retryAfterMs !== null) {
+    return error.retryAfterMs;
+  }
+
+  return baseRetryDelayMs * (2 ** attemptIndex);
+}
+
+function isRateLimitError(error: unknown): error is OdooHttpError {
+  return error instanceof OdooHttpError && error.status === 429;
+}
+
+async function defaultSleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function createOdooRpcClient(options: OdooRpcClientOptions = {}) {
+  const fetchImpl = options.fetchImpl ?? (fetch as unknown as OdooFetch);
+  const sleep = options.sleep ?? defaultSleep;
+  const odooUrl = normalizeOdooUrl(options.odooUrl ?? env.ODOO_URL);
+  const rpcLogger = options.logger ?? logger;
+  const maxConcurrentRequests = Math.max(
+    1,
+    Number(options.maxConcurrentRequests ?? DEFAULT_ODOO_RPC_MAX_CONCURRENT_REQUESTS),
+  );
+  const max429Retries = Math.max(
+    0,
+    Number(options.max429Retries ?? DEFAULT_ODOO_RPC_MAX_429_RETRIES),
+  );
+  const baseRetryDelayMs = Math.max(
+    1,
+    Number(options.baseRetryDelayMs ?? DEFAULT_ODOO_RPC_BASE_RETRY_DELAY_MS),
+  );
+
+  let activeRequests = 0;
+  const queuedResolvers: Array<() => void> = [];
+
+  async function acquireRequestSlot(): Promise<void> {
+    if (activeRequests < maxConcurrentRequests) {
+      activeRequests += 1;
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      queuedResolvers.push(resolve);
+    });
+    activeRequests += 1;
+  }
+
+  function releaseRequestSlot(): void {
+    activeRequests = Math.max(0, activeRequests - 1);
+    const next = queuedResolvers.shift();
+    if (next) {
+      next();
+    }
+  }
+
+  async function jsonRpc(method: string, payload: JsonRpcPayload): Promise<unknown> {
+    const url = `${odooUrl}/jsonrpc`;
+    await acquireRequestSlot();
+
+    try {
+      const response = await fetchImpl(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          method,
+          params: payload,
+          id: Math.floor(Math.random() * 1000000),
+        }),
+      });
+
+      if (!response.ok) {
+        throw new OdooHttpError(
+          response.status,
+          response.statusText,
+          parseRetryAfterMs(response.headers.get('retry-after')),
+        );
+      }
+
+      const data = await response.json();
+      if (data.error) {
+        const odooError = data.error;
+        const detailedMessage = odooError.data?.message || odooError.message;
+        throw new Error(`Odoo JSON RPC error: ${detailedMessage}`);
+      }
+
+      return data;
+    } catch (err) {
+      if (isRateLimitError(err)) {
+        rpcLogger.warn(`JSON RPC call hit Odoo rate limit: ${err.message}`);
+      } else {
+        rpcLogger.error(`JSON RPC call failed: ${err}`);
+      }
+      throw err;
+    } finally {
+      releaseRequestSlot();
+    }
+  }
+
+  return {
+    jsonRpc,
+    async callOdooKw(
+      model: string,
+      method: string,
+      args: unknown[] = [],
+      kwargs: Record<string, unknown> = {}
+    ): Promise<unknown> {
+      const payload = {
+        service: "object",
+        method: "execute_kw",
+        args: [
+          env.ODOO_DB,
+          2,
+          env.ODOO_PASSWORD,
+          model,
+          method,
+          args,
+          kwargs,
+        ],
+      };
+
+      for (let attempt = 0; attempt <= max429Retries; attempt += 1) {
+        try {
+          const response = await jsonRpc("call", payload);
+          return (response as { result?: unknown }).result ?? null;
+        } catch (err) {
+          if (isRateLimitError(err) && attempt < max429Retries) {
+            const delayMs = compute429RetryDelayMs(attempt, err, baseRetryDelayMs);
+            rpcLogger.warn(
+              `Retrying Odoo execute_kw for model "${model}", method "${method}" after 429 in ${delayMs}ms`
+            );
+            await sleep(delayMs);
+            continue;
+          }
+
+          rpcLogger.error(
+            `Error calling Odoo execute_kw for model "${model}", method "${method}": ${err}`
+          );
+          throw err;
+        }
+      }
+
+      return null;
+    },
+  };
+}
+
 /**
  * Makes a JSON RPC call to Odoo
  * @param method - The RPC method to call (e.g., 'call')
@@ -771,48 +998,10 @@ function parseUtcTimestamp(timestamp: string | Date): Date {
  * @returns The result from Odoo
  */
 async function jsonRpc(method: string, payload: Record<string, unknown>): Promise<unknown> {
-  // Use ODOO_URL for the RPC endpoint
-  let odooUrl = env.ODOO_URL;
-  if (!odooUrl.startsWith("http://") && !odooUrl.startsWith("https://")) {
-    odooUrl = `https://${odooUrl}`;
-  }
-  const url = `${odooUrl}/jsonrpc`;
-
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        method: method,
-        params: payload,
-        id: Math.floor(Math.random() * 1000000),
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Odoo JSON RPC HTTP error: ${response.status} ${response.statusText}`);
-    }
-
-    const data = (await response.json()) as {
-      error?: { message: string; data?: { message: string; debug?: string } };
-      result?: unknown;
-    };
-
-    if (data.error) {
-      const odooError = data.error;
-      const detailedMessage = odooError.data?.message || odooError.message;
-      throw new Error(`Odoo JSON RPC error: ${detailedMessage}`);
-    }
-
-    return data;
-  } catch (err) {
-    logger.error(`JSON RPC call failed: ${err}`);
-    throw err;
-  }
+  return defaultOdooRpcClient.jsonRpc(method, payload);
 }
+
+const defaultOdooRpcClient = createOdooRpcClient();
 
 /**
  * Calls an Odoo model method using execute_kw
@@ -828,29 +1017,7 @@ export async function callOdooKw(
   args: unknown[] = [],
   kwargs: Record<string, unknown> = {}
 ): Promise<unknown> {
-  try {
-    const payload = {
-      service: "object",
-      method: "execute_kw",
-      args: [
-        env.ODOO_DB,
-        2, // user ID - TODO: make this configurable if needed
-        env.ODOO_PASSWORD,
-        model,
-        method,
-        args,
-        kwargs,
-      ],
-    };
-
-    const response = await jsonRpc("call", payload);
-    return (response as { result?: unknown }).result ?? null;
-  } catch (err) {
-    logger.error(
-      `Error calling Odoo execute_kw for model "${model}", method "${method}": ${err}`
-    );
-    throw err;
-  }
+  return defaultOdooRpcClient.callOdooKw(model, method, args, kwargs);
 }
 
 /**

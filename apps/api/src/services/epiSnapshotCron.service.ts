@@ -447,6 +447,15 @@ async function reconcileLatestOccurrence(job: ScheduledSnapshotJob): Promise<voi
   await runScheduledJob(job, latestOccurrence, 'startup');
 }
 
+export async function reconcileJobsSequentially<T>(
+  jobs: T[],
+  reconcileJob: (job: T) => Promise<void>,
+): Promise<void> {
+  for (const job of jobs) {
+    await reconcileJob(job);
+  }
+}
+
 async function getActiveServiceCrewUsers(): Promise<MasterUserRow[]> {
   const masterDb = db.getMasterDb();
 
@@ -669,7 +678,7 @@ export async function initEpiSnapshotCrons(): Promise<void> {
   initialized = true;
 
   try {
-    await Promise.all(scheduledJobs.map((job) => reconcileLatestOccurrence(job)));
+    await reconcileJobsSequentially(scheduledJobs, reconcileLatestOccurrence);
   } catch (error) {
     logger.error({ err: error }, 'EPI snapshot startup reconciliation failed');
   }
