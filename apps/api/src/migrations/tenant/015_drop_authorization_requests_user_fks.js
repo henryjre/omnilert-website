@@ -1,0 +1,11 @@
+/**
+ * Compatibility shim for tenants that previously recorded
+ * `015_drop_authorization_requests_user_fks.js` in knex_migrations.
+ */
+export async function up(_knex) {
+  // No-op compatibility migration.
+}
+
+export async function down(_knex) {
+  // No-op compatibility rollback.
+}
