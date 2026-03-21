@@ -5,6 +5,7 @@ import {
 } from '@omnilert/shared';
 import { AppError } from '../middleware/errorHandler.js';
 import * as employeeProfileService from '../services/employeeProfile.service.js';
+import * as globalUserManagementService from '../services/globalUserManagement.service.js';
 import { db } from '../config/database.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -77,6 +78,15 @@ export async function detail(req: Request, res: Response, next: NextFunction) {
 export async function filterOptions(req: Request, res: Response, next: NextFunction) {
   try {
     const data = await employeeProfileService.getEmployeeProfileFilterOptions(req.tenantDb!);
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function assignmentOptions(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await globalUserManagementService.getGlobalUserAssignmentOptions();
     res.json({ success: true, data });
   } catch (error) {
     next(error);

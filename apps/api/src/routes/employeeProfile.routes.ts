@@ -21,6 +21,11 @@ router.get(
   employeeProfileController.filterOptions,
 );
 router.get(
+  '/assignment-options',
+  requirePermission(PERMISSIONS.EMPLOYEE_EDIT_WORK_PROFILE),
+  employeeProfileController.assignmentOptions,
+);
+router.get(
   '/:userId',
   requirePermission(PERMISSIONS.EMPLOYEE_VIEW_ALL_PROFILES),
   employeeProfileController.detail,

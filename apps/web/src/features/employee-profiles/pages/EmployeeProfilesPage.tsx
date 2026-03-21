@@ -901,7 +901,7 @@ export function EmployeeProfilesPage() {
     setAssignmentOptionsLoading(true);
     try {
       if (assignmentOptions.length === 0) {
-        const optionsRes = await api.get('/users/assignment-options');
+        const optionsRes = await api.get('/employee-profiles/assignment-options');
         setAssignmentOptions(optionsRes.data.data?.companies || []);
       }
       const assignmentMap = new Map<string, string[]>();
