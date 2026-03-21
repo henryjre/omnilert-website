@@ -122,11 +122,11 @@ function parseJsonField<T>(value: unknown, fallback: T): T {
   return value as T;
 }
 
-function sanitizeProjectionJsonbValue(value: unknown): unknown {
+function sanitizeProjectionJsonbValue(value: unknown): string | null {
   const parsed = parseJsonField<unknown>(value, null);
   if (parsed === null) return null;
-  if (Array.isArray(parsed)) return parsed;
-  if (typeof parsed === 'object') return parsed;
+  if (Array.isArray(parsed)) return JSON.stringify(parsed);
+  if (typeof parsed === 'object') return JSON.stringify(parsed);
   return null;
 }
 
