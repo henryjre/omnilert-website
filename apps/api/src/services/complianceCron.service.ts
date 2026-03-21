@@ -3,36 +3,269 @@ import { getIO } from '../config/socket.js';
 import { logger } from '../utils/logger.js';
 import { getActiveAttendances } from './odoo.service.js';
 import { resolveCompanyByOdooBranchId } from './webhook.service.js';
+import {
+  COMPLIANCE_HOURLY_JOB_NAME,
+  getComplianceSchedulingDecision,
+} from './complianceCronScheduler.js';
+import {
+  createComplianceOccurrenceExecutor,
+  type ComplianceRunOutcome,
+} from './complianceCronRuntime.js';
 
-let cronHandle: NodeJS.Timeout | null = null;
-let cronAlignHandle: NodeJS.Timeout | null = null;
+let scheduledHandle: NodeJS.Timeout | null = null;
+let initialized = false;
+
+const MAX_TIMEOUT_MS = 2_147_483_647;
+const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
+const STALE_RUN_THRESHOLD_MS = 6 * 60 * 60 * 1000;
 const DISABLED_AUDIT_ODOO_COMPANY_IDS = new Set<number>([2]);
+
+interface ScheduledJobRunRow {
+  id: string;
+  status: string;
+  attempt_count: number | string | null;
+  started_at: Date | string | null;
+}
+
+interface ManilaDateParts {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+}
 
 function randomReward(): number {
   return Math.round((15 + Math.random() * 15) * 100) / 100;
 }
 
-function msUntilNextTopOfHour(now: Date = new Date()): number {
-  const msIntoHour =
-    (now.getMinutes() * 60 * 1000)
-    + (now.getSeconds() * 1000)
-    + now.getMilliseconds();
-  if (msIntoHour === 0) return 0;
-  return (60 * 60 * 1000) - msIntoHour;
+function getManilaDateParts(date: Date = new Date()): ManilaDateParts {
+  const shifted = new Date(date.getTime() + MANILA_OFFSET_MS);
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+    hour: shifted.getUTCHours(),
+    minute: shifted.getUTCMinutes(),
+    second: shifted.getUTCSeconds(),
+  };
 }
 
-export async function runComplianceCron(): Promise<void> {
+function formatScheduledForKey(date: Date): string {
+  const parts = getManilaDateParts(date);
+  return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}T${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`;
+}
+
+function formatManilaDateTime(date: Date): string {
+  const parts = getManilaDateParts(date);
+  return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')} ${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}:${String(parts.second).padStart(2, '0')}`;
+}
+
+function clearScheduledHandle(): void {
+  if (!scheduledHandle) return;
+  clearTimeout(scheduledHandle);
+  scheduledHandle = null;
+}
+
+function scheduleTimeoutUntil(target: Date, callback: () => void): void {
+  clearScheduledHandle();
+
+  const remainingMs = target.getTime() - Date.now();
+  const delayMs = Math.min(Math.max(remainingMs, 0), MAX_TIMEOUT_MS);
+
+  scheduledHandle = setTimeout(() => {
+    if (!initialized) return;
+
+    if (Date.now() < target.getTime()) {
+      scheduleTimeoutUntil(target, callback);
+      return;
+    }
+
+    callback();
+  }, delayMs);
+}
+
+async function getScheduledRunRow(scheduledFor: Date): Promise<ScheduledJobRunRow | null> {
+  const masterDb = db.getMasterDb();
+  const scheduledForKey = formatScheduledForKey(scheduledFor);
+  const row = await masterDb('scheduled_job_runs')
+    .where({
+      job_name: COMPLIANCE_HOURLY_JOB_NAME,
+      scheduled_for_key: scheduledForKey,
+    })
+    .first('id', 'status', 'attempt_count', 'started_at');
+
+  return (row as ScheduledJobRunRow | undefined) ?? null;
+}
+
+async function claimComplianceOccurrence(scheduledFor: Date): Promise<boolean> {
+  const masterDb = db.getMasterDb();
+  const scheduledForKey = formatScheduledForKey(scheduledFor);
+  const scheduledForManila = formatManilaDateTime(scheduledFor);
+  const now = new Date();
+
+  return masterDb.transaction(async (trx) => {
+    let existing = await trx('scheduled_job_runs')
+      .where({ job_name: COMPLIANCE_HOURLY_JOB_NAME, scheduled_for_key: scheduledForKey })
+      .forUpdate()
+      .first() as ScheduledJobRunRow | undefined;
+
+    if (!existing) {
+      const inserted = await trx('scheduled_job_runs')
+        .insert({
+          job_name: COMPLIANCE_HOURLY_JOB_NAME,
+          scheduled_for_key: scheduledForKey,
+          scheduled_for_manila: scheduledForManila,
+          status: 'running',
+          attempt_count: 1,
+          started_at: now,
+          finished_at: null,
+          error_message: null,
+          created_at: now,
+          updated_at: now,
+        })
+        .onConflict(['job_name', 'scheduled_for_key'])
+        .ignore()
+        .returning('id');
+
+      if (inserted.length > 0) {
+        return true;
+      }
+
+      existing = await trx('scheduled_job_runs')
+        .where({ job_name: COMPLIANCE_HOURLY_JOB_NAME, scheduled_for_key: scheduledForKey })
+        .forUpdate()
+        .first() as ScheduledJobRunRow | undefined;
+    }
+
+    if (!existing) return false;
+
+    const startedAt = existing.started_at ? new Date(existing.started_at) : null;
+    const isStaleRunning =
+      existing.status === 'running' &&
+      (!startedAt || now.getTime() - startedAt.getTime() > STALE_RUN_THRESHOLD_MS);
+
+    if (!isStaleRunning) {
+      return false;
+    }
+
+    await trx('scheduled_job_runs')
+      .where({ id: existing.id })
+      .update({
+        status: 'running',
+        attempt_count: Number(existing.attempt_count ?? 0) + 1,
+        started_at: now,
+        finished_at: null,
+        error_message: null,
+        updated_at: now,
+      });
+
+    return true;
+  });
+}
+
+async function markComplianceOccurrenceSuccess(scheduledFor: Date): Promise<void> {
+  const masterDb = db.getMasterDb();
+  const now = new Date();
+
+  await masterDb('scheduled_job_runs')
+    .where({
+      job_name: COMPLIANCE_HOURLY_JOB_NAME,
+      scheduled_for_key: formatScheduledForKey(scheduledFor),
+    })
+    .update({
+      status: 'success',
+      finished_at: now,
+      error_message: null,
+      updated_at: now,
+    });
+}
+
+async function markComplianceOccurrenceSkipped(
+  scheduledFor: Date,
+  reason?: string | null,
+): Promise<void> {
+  const masterDb = db.getMasterDb();
+  const now = new Date();
+  const scheduledForKey = formatScheduledForKey(scheduledFor);
+  const updated = await masterDb('scheduled_job_runs')
+    .where({
+      job_name: COMPLIANCE_HOURLY_JOB_NAME,
+      scheduled_for_key: scheduledForKey,
+    })
+    .update({
+      status: 'skipped',
+      finished_at: now,
+      error_message: reason?.slice(0, 4000) ?? null,
+      updated_at: now,
+    });
+
+  if (updated > 0) return;
+
+  await masterDb('scheduled_job_runs')
+    .insert({
+      job_name: COMPLIANCE_HOURLY_JOB_NAME,
+      scheduled_for_key: scheduledForKey,
+      scheduled_for_manila: formatManilaDateTime(scheduledFor),
+      status: 'skipped',
+      attempt_count: 1,
+      started_at: now,
+      finished_at: now,
+      error_message: reason?.slice(0, 4000) ?? null,
+      created_at: now,
+      updated_at: now,
+    })
+    .onConflict(['job_name', 'scheduled_for_key'])
+    .merge({
+      status: 'skipped',
+      finished_at: now,
+      error_message: reason?.slice(0, 4000) ?? null,
+      updated_at: now,
+    });
+}
+
+async function ensureMissedOccurrenceSkipped(
+  scheduledFor: Date,
+  reason: string,
+): Promise<void> {
+  const existing = await getScheduledRunRow(scheduledFor);
+  if (existing) return;
+  await markComplianceOccurrenceSkipped(scheduledFor, reason);
+}
+
+async function markComplianceOccurrenceFailure(scheduledFor: Date, error: unknown): Promise<void> {
+  const masterDb = db.getMasterDb();
+  const now = new Date();
+  const errorMessage = error instanceof Error ? error.message : String(error);
+
+  await masterDb('scheduled_job_runs')
+    .where({
+      job_name: COMPLIANCE_HOURLY_JOB_NAME,
+      scheduled_for_key: formatScheduledForKey(scheduledFor),
+    })
+    .update({
+      status: 'failed',
+      finished_at: now,
+      error_message: errorMessage.slice(0, 4000),
+      updated_at: now,
+    });
+}
+
+export async function runComplianceCron(): Promise<ComplianceRunOutcome> {
   try {
-    // hr.attendance field availability can vary across Odoo setups.
-    // We currently rely on id, employee_id, company_id, and check_in from search_read.
     const attendances = await getActiveAttendances();
     const eligibleAttendances = attendances.filter(
       (attendance) => !DISABLED_AUDIT_ODOO_COMPANY_IDS.has(Number(attendance.company_id)),
     );
-    if (eligibleAttendances.length === 0) return;
+    if (eligibleAttendances.length === 0) {
+      return { status: 'skipped', reason: 'No eligible active attendances found' };
+    }
 
     const chosen = eligibleAttendances[Math.floor(Math.random() * eligibleAttendances.length)];
-    if (!chosen) return;
+    if (!chosen) {
+      return { status: 'skipped', reason: 'No eligible attendance could be chosen' };
+    }
 
     const company = await resolveCompanyByOdooBranchId(chosen.company_id);
     const tenantDb = await db.getTenantDb(company.db_name);
@@ -49,7 +282,9 @@ export async function runComplianceCron(): Promise<void> {
       .orderBy([{ column: 'is_main_branch', order: 'desc' }, { column: 'created_at', order: 'asc' }])
       .first('id');
 
-    if (!branch) return;
+    if (!branch) {
+      return { status: 'skipped', reason: 'No active tenant branch was available for compliance audit creation' };
+    }
 
     if (!mappedBranch) {
       logger.warn(
@@ -79,34 +314,74 @@ export async function runComplianceCron(): Promise<void> {
     } catch {
       logger.warn('Socket.IO not available for compliance cron emit');
     }
+
+    return { status: 'success' };
   } catch (error) {
     logger.error({ err: error }, 'Compliance cron failed');
+    throw error;
   }
+}
+
+const executeComplianceOccurrence = createComplianceOccurrenceExecutor({
+  jobName: COMPLIANCE_HOURLY_JOB_NAME,
+  claimOccurrence: claimComplianceOccurrence,
+  runComplianceJob: runComplianceCron,
+  markSuccess: markComplianceOccurrenceSuccess,
+  markSkipped: markComplianceOccurrenceSkipped,
+  markFailure: markComplianceOccurrenceFailure,
+  logger,
+  formatScheduledForKey,
+  formatScheduledForManila: formatManilaDateTime,
+});
+
+async function scheduleNextComplianceOccurrence(now: Date = new Date()): Promise<void> {
+  if (!initialized) return;
+
+  const decision = getComplianceSchedulingDecision(now, COMPLIANCE_HOURLY_JOB_NAME);
+
+  if (decision.skipCurrentHour) {
+    await ensureMissedOccurrenceSkipped(
+      decision.currentOccurrence.scheduledFor,
+      'Compliance cron missed its selected minute while the scheduler was offline',
+    );
+  }
+
+  const nextOccurrence = decision.nextOccurrenceToSchedule;
+  scheduleTimeoutUntil(nextOccurrence.scheduledFor, () => {
+    void executeComplianceOccurrence({
+      scheduledFor: nextOccurrence.scheduledFor,
+      source: 'scheduled',
+    }).finally(() => {
+      if (initialized) {
+        void scheduleNextComplianceOccurrence();
+      }
+    });
+  });
+
+  logger.info(
+    {
+      hourKey: nextOccurrence.hourKey,
+      scheduledMinute: nextOccurrence.scheduledMinute,
+      nextRunManila: formatManilaDateTime(nextOccurrence.scheduledFor),
+    },
+    'Scheduled compliance cron occurrence',
+  );
 }
 
 export async function initComplianceCron(): Promise<void> {
-  if (cronHandle || cronAlignHandle) return;
+  if (initialized) return;
+  initialized = true;
 
-  const delayMs = msUntilNextTopOfHour();
-  const firstRunAt = new Date(Date.now() + delayMs).toISOString();
-
-  cronAlignHandle = setTimeout(() => {
-    cronAlignHandle = null;
-    void runComplianceCron();
-    cronHandle = setInterval(() => {
-      void runComplianceCron();
-    }, 60 * 60 * 1000);
-  }, delayMs);
-
-  logger.info({ firstRunAt }, 'Compliance cron initialized (hourly at :00)');
+  try {
+    await scheduleNextComplianceOccurrence();
+  } catch (error) {
+    initialized = false;
+    clearScheduledHandle();
+    throw error;
+  }
 }
 
 export async function stopComplianceCron(): Promise<void> {
-  if (cronAlignHandle) {
-    clearTimeout(cronAlignHandle);
-    cronAlignHandle = null;
-  }
-  if (!cronHandle) return;
-  clearInterval(cronHandle);
-  cronHandle = null;
+  initialized = false;
+  clearScheduledHandle();
 }
