@@ -12,6 +12,10 @@ import {
 } from '../services/notification.service.js';
 import { db } from '../config/database.js';
 import { loadUserWorkScope } from '../services/globalUser.service.js';
+import {
+  getAccountAuditResultById,
+  listAccountAuditResults,
+} from '../services/accountAuditResult.service.js';
 
 function toDisplayStatus(status: string | null): 'complete' | 'rejected' | 'verification' | 'pending' {
   if (!status) return 'pending';
@@ -307,6 +311,36 @@ export async function getCashRequests(req: Request, res: Response, next: NextFun
       .orderBy('created_at', 'desc');
 
     res.json({ success: true, data: requests });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getAuditResults(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await listAccountAuditResults({
+      tenantDb: req.tenantDb!,
+      userId: req.user!.sub,
+      type: req.query.type as 'customer_service' | 'compliance' | 'all' | undefined,
+      page: req.query.page ? Number(req.query.page) : undefined,
+      pageSize: req.query.pageSize ? Number(req.query.pageSize) : undefined,
+    });
+
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getAuditResultById(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await getAccountAuditResultById({
+      tenantDb: req.tenantDb!,
+      userId: req.user!.sub,
+      auditId: String(req.params.id),
+    });
+
+    res.json({ success: true, data });
   } catch (err) {
     next(err);
   }

@@ -63,6 +63,16 @@ router.get(
   requirePermission(PERMISSIONS.ACCOUNT_VIEW_CASH_REQUESTS),
   accountController.getCashRequests,
 );
+router.get(
+  '/audit-results',
+  requirePermission(PERMISSIONS.ACCOUNT_VIEW_AUDIT_RESULTS),
+  accountController.getAuditResults,
+);
+router.get(
+  '/audit-results/:id',
+  requirePermission(PERMISSIONS.ACCOUNT_VIEW_AUDIT_RESULTS),
+  accountController.getAuditResultById,
+);
 router.post(
   '/cash-requests',
   requirePermission(PERMISSIONS.ACCOUNT_SUBMIT_CASH_REQUEST),

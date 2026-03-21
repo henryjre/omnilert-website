@@ -216,6 +216,25 @@ export async function getEmployeeByWebsiteUserKey(
   }
 }
 
+export async function listEmployeeIdsByWebsiteUserKey(
+  websiteUserKey: string,
+  companyId?: number,
+): Promise<number[]> {
+  try {
+    const { employees } = await listEmployeesForIdentity({
+      websiteUserKey,
+      companyId,
+    });
+
+    return employees
+      .map((employee) => Number(employee.id))
+      .filter((employeeId) => Number.isFinite(employeeId) && employeeId > 0);
+  } catch (err) {
+    logger.error(`Failed to list employee IDs for website user ID ${websiteUserKey}: ${err}`);
+    throw err;
+  }
+}
+
 /**
  * Get employee payslip data for a specific semi-month period
  * @param employeeId - The Odoo employee ID

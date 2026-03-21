@@ -15,6 +15,7 @@ const SERVICE_CREW_DEFAULT_PERMISSION_KEYS = [
   'account.view_cash_requests',
   'account.submit_cash_request',
   'account.view_notifications',
+  'account.view_audit_results',
   'employee.view_own_profile',
   'employee.edit_own_profile',
   'violation_notice.view',
