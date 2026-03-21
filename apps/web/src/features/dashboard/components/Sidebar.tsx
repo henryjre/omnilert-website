@@ -279,6 +279,12 @@ export function Sidebar({ className = '' }: SidebarProps) {
             Cash Requests
           </NavLink>
         )}
+        {hasPermission(PERMISSIONS.ACCOUNT_VIEW_AUDIT_RESULTS) && (
+          <NavLink to="/account/audit-results" className={linkClass}>
+            <ClipboardList className="h-5 w-5" />
+            Audit Results
+          </NavLink>
+        )}
         {hasPermission(PERMISSIONS.ACCOUNT_VIEW_NOTIFICATIONS) && (
           <NavLink to="/account/notifications" className={linkClass}>
             <Bell className="h-5 w-5" />

@@ -27,6 +27,7 @@ export const PERMISSIONS = {
   ACCOUNT_SUBMIT_CASH_REQUEST: 'account.submit_cash_request',
   ACCOUNT_SUBMIT_EMPLOYEE_REQUIREMENTS: 'account.submit_employee_requirements',
   ACCOUNT_VIEW_NOTIFICATIONS: 'account.view_notifications',
+  ACCOUNT_VIEW_AUDIT_RESULTS: 'account.view_audit_results',
 
   // Employee
   EMPLOYEE_VIEW_OWN_PROFILE: 'employee.view_own_profile',
@@ -127,6 +128,7 @@ export const PERMISSION_CATEGORIES: Record<string, { label: string; permissions:
         PERMISSIONS.ACCOUNT_SUBMIT_CASH_REQUEST,
         PERMISSIONS.ACCOUNT_SUBMIT_EMPLOYEE_REQUIREMENTS,
         PERMISSIONS.ACCOUNT_VIEW_NOTIFICATIONS,
+        PERMISSIONS.ACCOUNT_VIEW_AUDIT_RESULTS,
       ],
     },
     employee: {

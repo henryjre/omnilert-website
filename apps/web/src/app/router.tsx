@@ -10,6 +10,7 @@ import { AuthorizationRequestsTab } from '@/features/account/components/Authoriz
 import { CashRequestsTab } from '@/features/account/components/CashRequestsTab';
 import { EmployeeNotificationsTab } from '@/features/account/components/EmployeeNotificationsTab';
 import { SettingsTab } from '@/features/account/components/SettingsTab';
+import { AuditResultsPage } from '@/features/account/pages/AuditResultsPage';
 import { PayslipPage } from '@/features/account/pages/PayslipPage';
 import { EmploymentTab } from '@/features/account/components/EmploymentTab';
 import { PosVerificationPage } from '@/features/pos-verification/pages/PosVerificationPage';
@@ -84,6 +85,14 @@ export const router = createBrowserRouter([
             element: (
               <PermissionGuard permission={PERMISSIONS.ACCOUNT_VIEW_CASH_REQUESTS}>
                 <CashRequestsTab />
+              </PermissionGuard>
+            ),
+          },
+          {
+            path: 'account/audit-results',
+            element: (
+              <PermissionGuard permission={PERMISSIONS.ACCOUNT_VIEW_AUDIT_RESULTS}>
+                <AuditResultsPage />
               </PermissionGuard>
             ),
           },
