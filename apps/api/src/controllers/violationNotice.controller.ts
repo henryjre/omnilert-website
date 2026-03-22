@@ -1,11 +1,8 @@
 import type { NextFunction, Request, Response } from 'express';
 import * as violationNoticeService from '../services/violationNotice.service.js';
 import { AppError } from '../middleware/errorHandler.js';
-import {
-  resolveGlobalStoreAuditContext,
-  syncGlobalStoreAuditProjectionByAuditId,
-} from '../services/globalStoreAuditIndex.service.js';
 import { emitStoreAuditEvent } from '../services/storeAuditRealtime.service.js';
+import { db } from '../config/database.js';
 
 function getUploadedFiles(req: Request): Express.Multer.File[] {
   const files = (req as Request & { files?: Express.Multer.File[] | Record<string, Express.Multer.File[]> }).files;
@@ -27,10 +24,10 @@ function parseJsonArray(value: unknown): string[] | undefined {
 
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     const data = await violationNoticeService.listViolationNotices({
-      tenantDb: req.tenantDb!,
       userId: req.user!.sub,
-      companyId: req.user!.companyId,
+      companyId,
       filters: {
         status: typeof req.query.status === 'string' ? req.query.status : undefined,
         search: typeof req.query.search === 'string' ? req.query.search : undefined,
@@ -50,7 +47,6 @@ export async function list(req: Request, res: Response, next: NextFunction) {
 export async function getById(req: Request, res: Response, next: NextFunction) {
   try {
     const data = await violationNoticeService.getViolationNotice({
-      tenantDb: req.tenantDb!,
       userId: req.user!.sub,
       vnId: req.params.id as string,
     });
@@ -62,9 +58,9 @@ export async function getById(req: Request, res: Response, next: NextFunction) {
 
 export async function create(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     const data = await violationNoticeService.createViolationNotice({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
+      companyId,
       userId: req.user!.sub,
       description: String(req.body.description ?? ''),
       targetUserIds: req.body.targetUserIds,
@@ -77,9 +73,9 @@ export async function create(req: Request, res: Response, next: NextFunction) {
 
 export async function confirm(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     const data = await violationNoticeService.confirmViolationNotice({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
+      companyId,
       userId: req.user!.sub,
       vnId: req.params.id as string,
     });
@@ -91,9 +87,9 @@ export async function confirm(req: Request, res: Response, next: NextFunction) {
 
 export async function reject(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     const data = await violationNoticeService.rejectViolationNotice({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
+      companyId,
       userId: req.user!.sub,
       vnId: req.params.id as string,
       rejectionReason: String(req.body.rejectionReason ?? ''),
@@ -106,9 +102,9 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
 
 export async function issue(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     const data = await violationNoticeService.issueViolationNotice({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
+      companyId,
       userId: req.user!.sub,
       vnId: req.params.id as string,
     });
@@ -121,10 +117,10 @@ export async function issue(req: Request, res: Response, next: NextFunction) {
 export async function uploadIssuanceFile(req: Request, res: Response, next: NextFunction) {
   try {
     const file = getUploadedFiles(req)[0];
+    const { companyId, companyStorageRoot } = req.companyContext!;
     const data = await violationNoticeService.uploadIssuanceFile({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
-      companyStorageRoot: req.companyContext?.companyStorageRoot ?? '',
+      companyId,
+      companyStorageRoot,
       userId: req.user!.sub,
       vnId: req.params.id as string,
       file,
@@ -137,9 +133,9 @@ export async function uploadIssuanceFile(req: Request, res: Response, next: Next
 
 export async function confirmIssuance(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     const data = await violationNoticeService.confirmIssuance({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
+      companyId,
       userId: req.user!.sub,
       vnId: req.params.id as string,
     });
@@ -152,10 +148,10 @@ export async function confirmIssuance(req: Request, res: Response, next: NextFun
 export async function uploadDisciplinaryFile(req: Request, res: Response, next: NextFunction) {
   try {
     const file = getUploadedFiles(req)[0];
+    const { companyId, companyStorageRoot } = req.companyContext!;
     const data = await violationNoticeService.uploadDisciplinaryFile({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
-      companyStorageRoot: req.companyContext?.companyStorageRoot ?? '',
+      companyId,
+      companyStorageRoot,
       userId: req.user!.sub,
       vnId: req.params.id as string,
       file,
@@ -172,9 +168,9 @@ export async function complete(req: Request, res: Response, next: NextFunction) 
     if (isNaN(epiDecrease) || epiDecrease < 0 || epiDecrease > 5) {
       throw new AppError(400, 'epiDecrease must be a number between 0 and 5');
     }
+    const { companyId } = req.companyContext!;
     const data = await violationNoticeService.completeViolationNotice({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
+      companyId,
       userId: req.user!.sub,
       vnId: req.params.id as string,
       epiDecrease,
@@ -188,7 +184,6 @@ export async function complete(req: Request, res: Response, next: NextFunction) 
 export async function listMessages(req: Request, res: Response, next: NextFunction) {
   try {
     const data = await violationNoticeService.listVNMessages({
-      tenantDb: req.tenantDb!,
       vnId: req.params.id as string,
     });
     res.json({ success: true, data });
@@ -199,10 +194,10 @@ export async function listMessages(req: Request, res: Response, next: NextFuncti
 
 export async function sendMessage(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId, companyStorageRoot } = req.companyContext!;
     const data = await violationNoticeService.sendMessage({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
-      companyStorageRoot: req.companyContext?.companyStorageRoot ?? '',
+      companyId,
+      companyStorageRoot,
       userId: req.user!.sub,
       vnId: req.params.id as string,
       content: String(req.body.content ?? ''),
@@ -221,9 +216,9 @@ export async function sendMessage(req: Request, res: Response, next: NextFunctio
 
 export async function editMessage(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     const data = await violationNoticeService.editMessage({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
+      companyId,
       userId: req.user!.sub,
       vnId: req.params.id as string,
       messageId: req.params.messageId as string,
@@ -237,9 +232,9 @@ export async function editMessage(req: Request, res: Response, next: NextFunctio
 
 export async function deleteMessage(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     await violationNoticeService.deleteMessage({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
+      companyId,
       userId: req.user!.sub,
       permissions: req.user!.permissions,
       vnId: req.params.id as string,
@@ -253,9 +248,9 @@ export async function deleteMessage(req: Request, res: Response, next: NextFunct
 
 export async function toggleReaction(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     const data = await violationNoticeService.toggleReaction({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
+      companyId,
       userId: req.user!.sub,
       vnId: req.params.id as string,
       messageId: req.params.messageId as string,
@@ -270,7 +265,6 @@ export async function toggleReaction(req: Request, res: Response, next: NextFunc
 export async function markRead(req: Request, res: Response, next: NextFunction) {
   try {
     const data = await violationNoticeService.markVNRead({
-      tenantDb: req.tenantDb!,
       userId: req.user!.sub,
       vnId: req.params.id as string,
     });
@@ -283,7 +277,6 @@ export async function markRead(req: Request, res: Response, next: NextFunction) 
 export async function leave(req: Request, res: Response, next: NextFunction) {
   try {
     const data = await violationNoticeService.leaveDiscussion({
-      tenantDb: req.tenantDb!,
       userId: req.user!.sub,
       vnId: req.params.id as string,
     });
@@ -296,7 +289,6 @@ export async function leave(req: Request, res: Response, next: NextFunction) {
 export async function mute(req: Request, res: Response, next: NextFunction) {
   try {
     const data = await violationNoticeService.toggleMute({
-      tenantDb: req.tenantDb!,
       userId: req.user!.sub,
       vnId: req.params.id as string,
     });
@@ -320,9 +312,13 @@ export async function mentionables(req: Request, res: Response, next: NextFuncti
 export async function groupedUsers(req: Request, res: Response, next: NextFunction) {
   try {
     const auditId = String(req.query.auditId ?? '').trim();
-    const auditContext = auditId ? await resolveGlobalStoreAuditContext(auditId) : null;
+    let auditCompanyId: string | null = null;
+    if (auditId) {
+      const auditRow = await db.getDb()('store_audits').where({ id: auditId }).first('company_id');
+      auditCompanyId = auditRow?.company_id ?? null;
+    }
     const data = await violationNoticeService.getGroupedUsersForVN({
-      companyId: auditContext?.company.id ?? req.user!.companyId,
+      companyId: auditCompanyId ?? req.user!.companyId,
     });
     res.json({ success: true, data });
   } catch (error) {
@@ -332,9 +328,9 @@ export async function groupedUsers(req: Request, res: Response, next: NextFuncti
 
 export async function createFromCaseReport(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     const data = await violationNoticeService.createViolationNotice({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
+      companyId,
       userId: req.user!.sub,
       description: String(req.body.description ?? ''),
       targetUserIds: req.body.targetUserIds,
@@ -350,14 +346,13 @@ export async function createFromCaseReport(req: Request, res: Response, next: Ne
 export async function createFromStoreAudit(req: Request, res: Response, next: NextFunction) {
   try {
     const auditId = String(req.body.auditId ?? '');
-    const auditContext = await resolveGlobalStoreAuditContext(auditId);
-    if (!auditContext) {
+    const auditRow = await db.getDb()('store_audits').where({ id: auditId }).first('company_id');
+    if (!auditRow) {
       throw new AppError(404, 'Store audit not found');
     }
 
     const data = await violationNoticeService.createViolationNotice({
-      tenantDb: auditContext.tenantDb,
-      companyId: auditContext.company.id,
+      companyId: auditRow.company_id,
       userId: req.user!.sub,
       description: String(req.body.description ?? ''),
       targetUserIds: req.body.targetUserIds,
@@ -365,15 +360,11 @@ export async function createFromStoreAudit(req: Request, res: Response, next: Ne
       sourceStoreAuditId: auditId,
     });
     if (auditId) {
-      await auditContext.tenantDb('store_audits').where({ id: auditId }).update({
+      await db.getDb()('store_audits').where({ id: auditId }).update({
         vn_requested: true,
         updated_at: new Date(),
       });
-      await syncGlobalStoreAuditProjectionByAuditId({
-        companyId: auditContext.company.id,
-        auditId,
-      });
-      emitStoreAuditEvent(auditContext.company.id, 'store-audit:updated', { id: auditId });
+      emitStoreAuditEvent(auditRow.company_id, 'store-audit:updated', { id: auditId });
     }
     res.status(201).json({ success: true, data });
   } catch (error) {

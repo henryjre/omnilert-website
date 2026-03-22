@@ -1,10 +1,12 @@
 import type { Request, Response, NextFunction } from 'express';
 import { PERMISSIONS } from '@omnilert/shared';
 import { AppError } from '../middleware/errorHandler.js';
+import { db } from '../config/database.js';
 
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const user = req.user!;
     const includeInactive = req.query.includeInactive === 'true';
 
@@ -30,7 +32,8 @@ export async function list(req: Request, res: Response, next: NextFunction) {
 
 export async function create(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const { name, address, odooBranchId, isMainBranch } = req.body;
 
     const [branch] = await tenantDb('branches')
@@ -50,7 +53,8 @@ export async function create(req: Request, res: Response, next: NextFunction) {
 
 export async function update(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const { id } = req.params;
     const updates: Record<string, unknown> = { updated_at: new Date() };
 
@@ -71,7 +75,8 @@ export async function update(req: Request, res: Response, next: NextFunction) {
 
 export async function remove(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const { id } = req.params;
 
     const [branch] = await tenantDb('branches')

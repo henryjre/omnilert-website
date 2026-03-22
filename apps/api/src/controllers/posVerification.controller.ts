@@ -1,5 +1,4 @@
 import type { Request, Response, NextFunction } from 'express';
-import type { Knex } from 'knex';
 import { PERMISSIONS } from '@omnilert/shared';
 import { getIO } from '../config/socket.js';
 import { AppError } from '../middleware/errorHandler.js';
@@ -9,15 +8,16 @@ import { buildTenantStoragePrefix, uploadFile } from '../services/storage.servic
 import { createAndDispatchNotification } from '../services/notification.service.js';
 import { db } from '../config/database.js';
 
-async function resolveUserName(_db: Knex, userId: string | null | undefined): Promise<string | null> {
+async function resolveUserName(userId: string | null | undefined): Promise<string | null> {
   if (!userId) return null;
-  const user = await db.getMasterDb()('users').where({ id: userId }).select('first_name', 'last_name').first();
+  const user = await db.getDb()('users').where({ id: userId }).select('first_name', 'last_name').first();
   return user ? `${user.first_name} ${user.last_name}` : null;
 }
 
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const user = req.user!;
     const branchIdsParam = req.query.branchIds as string | undefined;
     const branchId = req.query.branchId as string | undefined;
@@ -74,7 +74,7 @@ export async function list(req: Request, res: Response, next: NextFunction) {
     ];
     const customerNames: Record<string, string> = {};
     if (customerUserIds.length > 0) {
-      const customerUsers = await db.getMasterDb()('users')
+      const customerUsers = await db.getDb()('users')
         .whereIn('id', customerUserIds)
         .select('id', 'first_name', 'last_name');
       for (const u of customerUsers) {
@@ -96,7 +96,8 @@ export async function list(req: Request, res: Response, next: NextFunction) {
 
 export async function get(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const { id } = req.params;
 
     const verification = await tenantDb('pos_verifications').where({ id }).first();
@@ -113,10 +114,10 @@ export async function get(req: Request, res: Response, next: NextFunction) {
 
 export async function uploadImage(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId, companyStorageRoot } = req.companyContext!;
+    const tenantDb = db.getDb();
     const verificationId = req.params.id as string;
     const user = req.user!;
-    const companyStorageRoot = req.companyContext?.companyStorageRoot ?? '';
 
     const verification = await tenantDb('pos_verifications').where({ id: verificationId }).first();
     if (!verification) throw new AppError(404, 'Verification not found');
@@ -168,7 +169,8 @@ export async function uploadImage(req: Request, res: Response, next: NextFunctio
 
 export async function confirm(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const { id } = req.params;
     const user = req.user!;
     const { notes, breakdownItems } = req.body as {
@@ -224,7 +226,7 @@ export async function confirm(req: Request, res: Response, next: NextFunction) {
         .returning('*');
 
       const images = await tenantDb('pos_verification_images').where('pos_verification_id', id);
-      const reviewer_name = await resolveUserName(tenantDb, user.sub);
+      const reviewer_name = await resolveUserName(user.sub);
 
       try {
         const io = getIO();
@@ -237,7 +239,6 @@ export async function confirm(req: Request, res: Response, next: NextFunction) {
       // Notify the customer
       if (verification.customer_user_id) {
         await createAndDispatchNotification({
-          tenantDb,
           userId: verification.customer_user_id,
           title: 'Token Pay Order Requires Your Verification',
           message: `A Token Pay Order (${verification.title}) requires your verification. Please review and confirm or reject.`,
@@ -280,7 +281,7 @@ export async function confirm(req: Request, res: Response, next: NextFunction) {
 
     const images = await tenantDb('pos_verification_images')
       .where('pos_verification_id', id);
-    const reviewer_name = await resolveUserName(tenantDb, user.sub);
+    const reviewer_name = await resolveUserName(user.sub);
 
     try {
       const io = getIO();
@@ -337,7 +338,8 @@ export async function confirm(req: Request, res: Response, next: NextFunction) {
 
 export async function reject(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const { id } = req.params;
     const user = req.user!;
 
@@ -380,7 +382,7 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
 
     const images = await tenantDb('pos_verification_images')
       .where('pos_verification_id', id);
-    const reviewer_name = await resolveUserName(tenantDb, user.sub);
+    const reviewer_name = await resolveUserName(user.sub);
 
     try {
       const io = getIO();
@@ -403,7 +405,8 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
 
 export async function auditVerification(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const { id } = req.params;
     const user = req.user!;
     const { rating, details } = req.body as { rating: number; details?: string };
@@ -430,7 +433,7 @@ export async function auditVerification(req: Request, res: Response, next: NextF
       .returning('*');
 
     const images = await tenantDb('pos_verification_images').where('pos_verification_id', id);
-    const auditor_name = await resolveUserName(tenantDb, user.sub);
+    const auditor_name = await resolveUserName(user.sub);
 
     try {
       const io = getIO();
@@ -453,7 +456,8 @@ export async function auditVerification(req: Request, res: Response, next: NextF
 
 export async function customerVerify(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const { id } = req.params;
     const user = req.user!;
 
@@ -485,7 +489,6 @@ export async function customerVerify(req: Request, res: Response, next: NextFunc
     // Notify the cashier
     if (verification.cashier_user_id) {
       await createAndDispatchNotification({
-        tenantDb,
         userId: verification.cashier_user_id,
         title: 'Token Pay Order Verified',
         message: `The customer verified the Token Pay Order (${verification.title}).`,
@@ -502,7 +505,8 @@ export async function customerVerify(req: Request, res: Response, next: NextFunc
 
 export async function customerReject(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const { id } = req.params;
     const user = req.user!;
     const { reason } = req.body as { reason?: string };
@@ -542,7 +546,6 @@ export async function customerReject(req: Request, res: Response, next: NextFunc
         ? `The customer rejected the Token Pay Order (${verification.title}). Reason: ${reason}`
         : `The customer rejected the Token Pay Order (${verification.title}).`;
       await createAndDispatchNotification({
-        tenantDb,
         userId: verification.cashier_user_id,
         title: 'Token Pay Order Rejected by Customer',
         message: rejectionMsg,
@@ -559,7 +562,8 @@ export async function customerReject(req: Request, res: Response, next: NextFunc
 
 export async function submitBreakdown(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const { id } = req.params;
     const { items, notes } = req.body as {
       items: { denomination: number; quantity: number }[];

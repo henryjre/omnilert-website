@@ -8,7 +8,8 @@ import { logger } from '../utils/logger.js';
 
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const user = req.user!;
     const branchIdsParam = req.query.branchIds as string | undefined;
     const branchId = req.query.branchId as string | undefined;
@@ -70,7 +71,8 @@ export async function list(req: Request, res: Response, next: NextFunction) {
 
 export async function get(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const id = req.params.id as string;
 
     const shift = await tenantDb('employee_shifts').where({ id }).first();
@@ -90,7 +92,7 @@ export async function get(req: Request, res: Response, next: NextFunction) {
       .filter(Boolean) as string[];
     const resolvers: Record<string, string> = {};
     if (resolvedByIds.length > 0) {
-      const users = await db.getMasterDb()('users').whereIn('id', resolvedByIds).select('id', 'first_name', 'last_name');
+      const users = await db.getDb()('users').whereIn('id', resolvedByIds).select('id', 'first_name', 'last_name');
       for (const u of users) resolvers[u.id] = `${u.first_name} ${u.last_name}`;
     }
     const authorizationsWithResolver = authorizations.map((a: Record<string, unknown>) => ({
@@ -107,7 +109,8 @@ export async function get(req: Request, res: Response, next: NextFunction) {
 
 export async function endShift(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const managerId = req.user!.sub;
     const id = req.params.id as string;
 
@@ -138,8 +141,7 @@ export async function endShift(req: Request, res: Response, next: NextFunction) 
     const shiftBranch = await tenantDb('branches').where({ id: shift.branch_id }).first('odoo_branch_id');
     if (shiftBranch?.odoo_branch_id && shift.user_id) {
       enqueuePeerEvaluationJob({
-        companyDbName: req.user!.companyDbName,
-        companyId: req.companyContext!.companyId,
+        companyId,
         shiftId: id,
         branchId: shift.branch_id,
         shiftUserId: shift.user_id,

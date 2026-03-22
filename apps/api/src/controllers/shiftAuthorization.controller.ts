@@ -9,7 +9,7 @@ import { db } from '../config/database.js';
 /** Employee submits a reason for tardiness / late_check_out */
 export async function submitReason(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
     const userId = req.user!.sub;
     const id = req.params.id as string;
     const { reason } = req.body as { reason: string };
@@ -18,6 +18,7 @@ export async function submitReason(req: Request, res: Response, next: NextFuncti
       throw new AppError(400, 'Reason is required');
     }
 
+    const tenantDb = db.getDb();
     const auth = await tenantDb('shift_authorizations').where({ id }).first();
     if (!auth) throw new AppError(404, 'Authorization not found');
     if (auth.user_id !== userId) throw new AppError(403, 'Not your authorization');
@@ -51,10 +52,11 @@ export async function submitReason(req: Request, res: Response, next: NextFuncti
 /** Manager approves an authorization */
 export async function approve(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
     const managerId = req.user!.sub;
     const id = req.params.id as string;
 
+    const tenantDb = db.getDb();
     const auth = await tenantDb('shift_authorizations').where({ id }).first();
     if (!auth) throw new AppError(404, 'Authorization not found');
     if (auth.status !== 'pending') {
@@ -92,7 +94,7 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
       .decrement('pending_approvals', 1);
 
     // Create resolution shift_log
-    const managerUser = await db.getMasterDb()('users').where({ id: managerId }).select('id', 'first_name', 'last_name').first();
+    const managerUser = await db.getDb()('users').where({ id: managerId }).select('id', 'first_name', 'last_name').first();
     const managerName = managerUser ? `${managerUser.first_name} ${managerUser.last_name}` : managerId;
     const [resolutionLog] = await tenantDb('shift_logs')
       .insert({
@@ -116,7 +118,6 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
     if (auth.user_id) {
       const label = authTypeLabel(auth.auth_type);
       await createAndDispatchNotification({
-        tenantDb,
         userId: auth.user_id,
         title: `${label} Approved`,
         message: `Your ${label.toLowerCase()} authorization has been approved.`,
@@ -134,7 +135,7 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
     }
 
     // Sync with Odoo for tardiness approval
-    await syncOdooAttendance(tenantDb, auth, 'approve');
+    await syncOdooAttendance(auth, 'approve');
 
     res.json({ success: true, data: updated });
   } catch (err) {
@@ -145,7 +146,7 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
 /** Manager rejects an authorization */
 export async function reject(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
     const managerId = req.user!.sub;
     const id = req.params.id as string;
     const { reason } = req.body as { reason: string };
@@ -154,6 +155,7 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
       throw new AppError(400, 'Rejection reason is required');
     }
 
+    const tenantDb = db.getDb();
     const auth = await tenantDb('shift_authorizations').where({ id }).first();
     if (!auth) throw new AppError(404, 'Authorization not found');
     if (auth.status !== 'pending') {
@@ -177,7 +179,7 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
       .decrement('pending_approvals', 1);
 
     // Create resolution shift_log
-    const managerUser = await db.getMasterDb()('users').where({ id: managerId }).select('id', 'first_name', 'last_name').first();
+    const managerUser = await db.getDb()('users').where({ id: managerId }).select('id', 'first_name', 'last_name').first();
     const managerName = managerUser ? `${managerUser.first_name} ${managerUser.last_name}` : managerId;
     const [resolutionLog] = await tenantDb('shift_logs')
       .insert({
@@ -201,7 +203,6 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
     if (auth.user_id) {
       const label = authTypeLabel(auth.auth_type);
       await createAndDispatchNotification({
-        tenantDb,
         userId: auth.user_id,
         title: `${label} Rejected`,
         message: `Your ${label.toLowerCase()} authorization has been rejected: ${reason.trim()}`,
@@ -219,7 +220,7 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
     }
 
     // Sync with Odoo for early_check_in and late_check_out rejection
-    await syncOdooAttendance(tenantDb, auth, 'reject');
+    await syncOdooAttendance(auth, 'reject');
 
     res.json({ success: true, data: updated });
   } catch (err) {
@@ -240,15 +241,14 @@ function authTypeLabel(authType: string): string {
 
 /**
  * Updates Odoo attendance based on authorization type and action
- * @param tenantDb - The tenant database connection
  * @param auth - The shift authorization record
  * @param action - 'approve' or 'reject'
  */
 async function syncOdooAttendance(
-  tenantDb: ReturnType<typeof import('knex').default>,
   auth: Record<string, unknown>,
   action: "approve" | "reject"
 ): Promise<void> {
+  const tenantDb = db.getDb();
   // Get the shift_log to find odoo_attendance_id
   const shiftLog = await tenantDb("shift_logs").where({ id: auth.shift_log_id }).first();
   if (!shiftLog || !shiftLog.odoo_attendance_id) {

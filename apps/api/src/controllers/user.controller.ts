@@ -139,7 +139,7 @@ export async function assignBranches(req: Request, res: Response, next: NextFunc
 
 export async function getMe(req: Request, res: Response, next: NextFunction) {
   try {
-    const masterDb = db.getMasterDb();
+    const masterDb = db.getDb();
     const userId = req.user!.sub;
 
     const user = await masterDb('users')
@@ -185,7 +185,7 @@ export async function updateMe(req: Request, res: Response, next: NextFunction) 
 
 export async function getPin(req: Request, res: Response, next: NextFunction) {
   try {
-    const masterDb = db.getMasterDb();
+    const masterDb = db.getDb();
     const userId = req.user!.sub;
 
     const user = await masterDb('users')
@@ -203,7 +203,7 @@ export async function getPin(req: Request, res: Response, next: NextFunction) {
 
 export async function changeMyPassword(req: Request, res: Response, next: NextFunction) {
   try {
-    const masterDb = db.getMasterDb();
+    const masterDb = db.getDb();
     const userId = req.user!.sub;
     const { currentPassword, newPassword, currentRefreshToken } = req.body;
 
@@ -226,7 +226,7 @@ export async function changeMyPassword(req: Request, res: Response, next: NextFu
     const passwordHash = await hashPassword(newPassword);
     // Ensure provided refresh token belongs to this user/session context
     const refreshPayload = verifyRefreshToken(currentRefreshToken);
-    if (refreshPayload.sub !== userId || refreshPayload.companyDbName !== req.user!.companyDbName) {
+    if (refreshPayload.sub !== userId || refreshPayload.companyId !== req.companyContext!.companyId) {
       throw new AppError(401, 'Invalid current session token');
     }
 
@@ -252,7 +252,7 @@ export async function changeMyPassword(req: Request, res: Response, next: NextFu
 
 export async function setPin(req: Request, res: Response, next: NextFunction) {
   try {
-    const masterDb = db.getMasterDb();
+    const masterDb = db.getDb();
     const userId = req.user!.sub;
     const { companyId } = req.body;
 
@@ -300,7 +300,7 @@ function generateFourDigitPin(): string {
 
 export async function resetPin(req: Request, res: Response, next: NextFunction) {
   try {
-    const masterDb = db.getMasterDb();
+    const masterDb = db.getDb();
     const userId = req.user!.sub;
 
     const user = await masterDb('users')
@@ -341,7 +341,7 @@ export async function resetPin(req: Request, res: Response, next: NextFunction) 
  */
 export async function uploadAvatar(req: Request, res: Response, next: NextFunction) {
   try {
-    const masterDb = db.getMasterDb();
+    const masterDb = db.getDb();
     const userId = req.user!.sub;
     const companyStorageRoot = req.companyContext?.companyStorageRoot ?? '';
     const file = req.file as Express.Multer.File | undefined;

@@ -17,21 +17,17 @@ const {
   createGlobalStoreAuditService,
 } = await import('./globalStoreAudit.service.js');
 
-function createProjectionRow(
+function createAuditRow(
   overrides: Partial<Record<string, unknown>> = {},
 ) {
   return {
+    id: 'audit-1',
     company_id: 'company-a',
     company_name: 'Alpha Foods',
-    company_slug: 'alpha-foods',
-    company_db_name: 'tenant_alpha',
-    audit_id: 'audit-1',
     type: 'customer_service',
     status: 'pending',
     branch_id: 'branch-1',
-    branch_name: 'Main Branch',
     auditor_user_id: null,
-    auditor_name: null,
     monetary_reward: '150.00',
     completed_at: null,
     processing_started_at: null,
@@ -47,8 +43,8 @@ function createProjectionRow(
     css_cashier_user_key: 'user-key-1',
     css_date_order: '2026-03-22T01:10:00.000Z',
     css_amount_total: '399.00',
-    css_order_lines: [{ product_name: 'Waffle', qty: 1, price_unit: 399 }],
-    css_payments: [{ name: 'Cash', amount: 399 }],
+    css_order_lines: null,
+    css_payments: null,
     css_star_rating: null,
     css_criteria_scores: null,
     css_audit_log: null,
@@ -67,23 +63,21 @@ function createProjectionRow(
   };
 }
 
-test('listStoreAudits returns projection-backed items with company metadata and global processing audit id', async () => {
+test('listStoreAudits returns enriched items with company metadata and global processing audit id', async () => {
   const service = createGlobalStoreAuditService({
-    listProjectionRows: async () => ({
+    listStoreAuditRows: async () => ({
       total: 2,
       rows: [
-        createProjectionRow({
-          audit_id: 'audit-css',
+        createAuditRow({
+          id: 'audit-css',
           company_id: 'company-a',
           company_name: 'Alpha Foods',
-          company_slug: 'alpha-foods',
         }),
-        createProjectionRow({
-          audit_id: 'audit-comp',
+        createAuditRow({
+          id: 'audit-comp',
           type: 'compliance',
           company_id: 'company-b',
           company_name: 'Beta Retail',
-          company_slug: 'beta-retail',
           css_odoo_order_id: null,
           css_cashier_name: null,
           comp_odoo_employee_id: 55,
@@ -93,10 +87,8 @@ test('listStoreAudits returns projection-backed items with company metadata and 
       ],
     }),
     getProcessingAuditIdByUser: async () => 'audit-comp',
-    getProjectionByAuditId: async () => null,
-    resolveAuditContext: async () => null,
-    reserveProcessingAudit: async () => 'ok',
-    syncProjectionByAuditId: async () => undefined,
+    getAuditById: async () => null,
+    resolveAuditCompanyContext: async () => null,
     listStoreAuditMessages: async () => [],
     sendStoreAuditMessage: async () => {
       throw new Error('not used');
@@ -105,10 +97,10 @@ test('listStoreAudits returns projection-backed items with company metadata and 
       throw new Error('not used');
     },
     deleteStoreAuditMessage: async () => undefined,
-    processStoreAuditTenant: async () => {
+    processStoreAudit: async () => {
       throw new Error('not used');
     },
-    completeStoreAuditTenant: async () => {
+    completeStoreAudit: async () => {
       throw new Error('not used');
     },
   });
@@ -123,50 +115,29 @@ test('listStoreAudits returns projection-backed items with company metadata and 
 
   assert.equal(result.total, 2);
   assert.equal(result.processingAuditId, 'audit-comp');
-  assert.equal(result.items[0]?.company?.name, 'Alpha Foods');
-  assert.equal(result.items[1]?.company?.name, 'Beta Retail');
-  assert.equal(result.items[1]?.type, 'compliance');
+  assert.equal(result.items[0]?.company?.id, 'company-a');
   assert.equal(result.items[1]?.comp_employee_name, 'Employee Two');
+  assert.equal(result.items[1]?.type, 'compliance');
 });
 
-test('processAudit reserves the global lock, executes the tenant claim, syncs the projection, and returns the synced audit', async () => {
+test('processAudit resolves company context and delegates to processStoreAudit dep', async () => {
   const calls: string[] = [];
-  const syncedProjection = createProjectionRow({
-    audit_id: 'audit-locked',
+  const processedRow = createAuditRow({
+    id: 'audit-locked',
     status: 'processing',
     auditor_user_id: 'auditor-1',
-    auditor_name: 'Auditor One',
     processing_started_at: '2026-03-22T03:00:00.000Z',
   });
 
   const service = createGlobalStoreAuditService({
-    listProjectionRows: async () => ({ total: 0, rows: [] }),
+    listStoreAuditRows: async () => ({ total: 0, rows: [] }),
     getProcessingAuditIdByUser: async () => null,
-    getProjectionByAuditId: async (auditId) => (
-      auditId === 'audit-locked' ? syncedProjection as any : null
-    ),
-    resolveAuditContext: async (auditId) => (
+    getAuditById: async (auditId) => (auditId === 'audit-locked' ? processedRow : null),
+    resolveAuditCompanyContext: async (auditId) => (
       auditId === 'audit-locked'
-        ? {
-            projection: createProjectionRow({ audit_id: 'audit-locked' }) as any,
-            company: {
-              id: 'company-a',
-              name: 'Alpha Foods',
-              slug: 'alpha-foods',
-              dbName: 'tenant_alpha',
-            },
-            companyStorageRoot: 'alpha-foods-dev',
-            tenantDb: {} as never,
-          }
+        ? { companyId: 'company-a', companySlug: 'alpha-foods', companyStorageRoot: 'alpha-foods-dev' }
         : null
     ),
-    reserveProcessingAudit: async () => {
-      calls.push('reserve');
-      return 'ok';
-    },
-    syncProjectionByAuditId: async () => {
-      calls.push('sync');
-    },
     listStoreAuditMessages: async () => [],
     sendStoreAuditMessage: async () => {
       throw new Error('not used');
@@ -175,11 +146,11 @@ test('processAudit reserves the global lock, executes the tenant claim, syncs th
       throw new Error('not used');
     },
     deleteStoreAuditMessage: async () => undefined,
-    processStoreAuditTenant: async () => {
-      calls.push('tenant');
-      return {} as never;
+    processStoreAudit: async ({ auditId, userId, companyId }) => {
+      calls.push(`process:${auditId}:${userId}:${companyId}`);
+      return processedRow as any;
     },
-    completeStoreAuditTenant: async () => {
+    completeStoreAudit: async () => {
       throw new Error('not used');
     },
   });
@@ -189,32 +160,17 @@ test('processAudit reserves the global lock, executes the tenant claim, syncs th
     userId: 'auditor-1',
   });
 
-  assert.deepEqual(calls, ['reserve', 'tenant', 'sync']);
+  assert.deepEqual(calls, ['process:audit-locked:auditor-1:company-a']);
   assert.equal(audit.status, 'processing');
-  assert.equal(audit.company?.name, 'Alpha Foods');
   assert.equal(audit.auditor_user_id, 'auditor-1');
 });
 
-test('processAudit rejects users who already have a global active audit before touching the tenant', async () => {
-  let tenantCalled = false;
-
+test('processAudit throws 404 if audit company context cannot be resolved', async () => {
   const service = createGlobalStoreAuditService({
-    listProjectionRows: async () => ({ total: 0, rows: [] }),
+    listStoreAuditRows: async () => ({ total: 0, rows: [] }),
     getProcessingAuditIdByUser: async () => null,
-    getProjectionByAuditId: async () => null,
-    resolveAuditContext: async () => ({
-      projection: createProjectionRow() as any,
-      company: {
-        id: 'company-a',
-        name: 'Alpha Foods',
-        slug: 'alpha-foods',
-        dbName: 'tenant_alpha',
-      },
-      companyStorageRoot: 'alpha-foods-dev',
-      tenantDb: {} as never,
-    }),
-    reserveProcessingAudit: async () => 'user_has_active',
-    syncProjectionByAuditId: async () => undefined,
+    getAuditById: async () => null,
+    resolveAuditCompanyContext: async () => null,
     listStoreAuditMessages: async () => [],
     sendStoreAuditMessage: async () => {
       throw new Error('not used');
@@ -223,19 +179,16 @@ test('processAudit rejects users who already have a global active audit before t
       throw new Error('not used');
     },
     deleteStoreAuditMessage: async () => undefined,
-    processStoreAuditTenant: async () => {
-      tenantCalled = true;
-      return {} as never;
+    processStoreAudit: async () => {
+      throw new Error('should not be called');
     },
-    completeStoreAuditTenant: async () => {
+    completeStoreAudit: async () => {
       throw new Error('not used');
     },
   });
 
   await assert.rejects(
-    () => service.processAudit({ auditId: 'audit-1', userId: 'auditor-1' }),
-    /already have an active audit in progress/i,
+    () => service.processAudit({ auditId: 'nonexistent', userId: 'auditor-1' }),
+    /store audit not found/i,
   );
-
-  assert.equal(tenantCalled, false);
 });

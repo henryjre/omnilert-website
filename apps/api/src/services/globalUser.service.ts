@@ -1,4 +1,3 @@
-import type { Knex } from 'knex';
 import { db } from '../config/database.js';
 
 export type GlobalRole = {
@@ -38,23 +37,23 @@ export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-export async function getGlobalUserByEmail(masterDb: Knex, email: string): Promise<GlobalUser | null> {
-  const row = await masterDb('users')
+export async function getGlobalUserByEmail(email: string): Promise<GlobalUser | null> {
+  const row = await db.getDb()('users')
     .whereRaw('LOWER(email) = ?', [normalizeEmail(email)])
     .first();
   return (row as GlobalUser | undefined) ?? null;
 }
 
-export async function getGlobalUserById(masterDb: Knex, userId: string): Promise<GlobalUser | null> {
-  const row = await masterDb('users').where({ id: userId }).first();
+export async function getGlobalUserById(userId: string): Promise<GlobalUser | null> {
+  const row = await db.getDb()('users').where({ id: userId }).first();
   return (row as GlobalUser | undefined) ?? null;
 }
 
-export async function loadGlobalUserRolesAndPermissions(masterDb: Knex, userId: string): Promise<{
+export async function loadGlobalUserRolesAndPermissions(userId: string): Promise<{
   roles: GlobalRole[];
   permissions: string[];
 }> {
-  const roles = (await masterDb('user_roles')
+  const roles = (await db.getDb()('user_roles')
     .join('roles', 'user_roles.role_id', 'roles.id')
     .where('user_roles.user_id', userId)
     .select('roles.id', 'roles.name', 'roles.color', 'roles.priority')
@@ -65,7 +64,7 @@ export async function loadGlobalUserRolesAndPermissions(masterDb: Knex, userId: 
     return { roles, permissions: [] };
   }
 
-  const permissions = await masterDb('role_permissions')
+  const permissions = await db.getDb()('role_permissions')
     .join('permissions', 'role_permissions.permission_id', 'permissions.id')
     .whereIn('role_permissions.role_id', roleIds)
     .distinct('permissions.key')
@@ -78,28 +77,26 @@ export async function loadGlobalUserRolesAndPermissions(masterDb: Knex, userId: 
 }
 
 export async function loadUserCompanyBranchIds(
-  masterDb: Knex,
   userId: string,
   companyId: string,
 ): Promise<string[]> {
-  const rows = await masterDb('user_company_branches')
+  const rows = await db.getDb()('user_company_branches')
     .where({ user_id: userId, company_id: companyId })
     .select('branch_id');
   return rows.map((row: any) => row.branch_id as string);
 }
 
 export async function userHasCompanyAccess(
-  masterDb: Knex,
   userId: string,
   companyId: string,
 ): Promise<boolean> {
-  const row = await masterDb('user_company_access')
+  const row = await db.getDb()('user_company_access')
     .where({ user_id: userId, company_id: companyId, is_active: true })
     .first('id');
   return Boolean(row);
 }
 
-export async function listGlobalRoles(masterDb?: Knex): Promise<Array<{
+export async function listGlobalRoles(): Promise<Array<{
   id: string;
   name: string;
   color: string | null;
@@ -109,24 +106,20 @@ export async function listGlobalRoles(masterDb?: Knex): Promise<Array<{
   created_at: Date;
   updated_at: Date;
 }>> {
-  const conn = masterDb ?? db.getMasterDb();
-  return conn('roles').orderBy('priority', 'desc').orderBy('name', 'asc');
+  return db.getDb()('roles').orderBy('priority', 'desc').orderBy('name', 'asc');
 }
 
-export async function listGlobalPermissions(masterDb?: Knex): Promise<any[]> {
-  const conn = masterDb ?? db.getMasterDb();
-  return conn('permissions').orderBy('category').orderBy('key');
+export async function listGlobalPermissions(): Promise<any[]> {
+  return db.getDb()('permissions').orderBy('category').orderBy('key');
 }
 
 export async function hydrateUsersByIds(
   userIds: string[],
   fields: Array<keyof GlobalUser> = ['id', 'first_name', 'last_name', 'email', 'avatar_url'],
-  masterDb?: Knex,
 ): Promise<Record<string, Partial<GlobalUser>>> {
   const uniqueIds = Array.from(new Set(userIds.filter(Boolean)));
   if (uniqueIds.length === 0) return {};
-  const conn = masterDb ?? db.getMasterDb();
-  const rows = await conn('users').whereIn('id', uniqueIds).select(fields as string[]);
+  const rows = await db.getDb()('users').whereIn('id', uniqueIds).select(fields as string[]);
   const map: Record<string, Partial<GlobalUser>> = {};
   for (const row of rows as any[]) {
     map[row.id] = row;
@@ -135,28 +128,29 @@ export async function hydrateUsersByIds(
 }
 
 export async function loadUserWorkScope(
-  masterDb: Knex,
   userId: string,
   currentCompanyId: string,
 ): Promise<UserWorkScope> {
-  const company = await masterDb('companies')
+  const company = await db.getDb()('companies')
     .where({ id: currentCompanyId })
     .first('id', 'name');
 
-  const currentCompanyBranches = await masterDb('user_company_branches as ucb')
+  const currentCompanyBranches = await db.getDb()('user_company_branches as ucb')
     .join('companies as companies', 'ucb.company_id', 'companies.id')
+    .join('branches as branches', 'ucb.branch_id', 'branches.id')
     .where('ucb.user_id', userId)
     .andWhere('ucb.company_id', currentCompanyId)
     .select(
       'ucb.company_id',
       'companies.name as company_name',
       'ucb.branch_id',
-      'ucb.branch_name',
+      'branches.name as branch_name',
       'ucb.assignment_type',
     );
 
-  const homeResident = await masterDb('user_company_branches as ucb')
+  const homeResident = await db.getDb()('user_company_branches as ucb')
     .join('companies as companies', 'ucb.company_id', 'companies.id')
+    .join('branches as branches', 'ucb.branch_id', 'branches.id')
     .where('ucb.user_id', userId)
     .andWhere('ucb.assignment_type', 'resident')
     .orderBy('ucb.created_at', 'asc')
@@ -164,7 +158,7 @@ export async function loadUserWorkScope(
       'ucb.company_id',
       'companies.name as company_name',
       'ucb.branch_id',
-      'ucb.branch_name',
+      'branches.name as branch_name',
     );
 
   const residentInCurrentCompany = currentCompanyBranches.find(

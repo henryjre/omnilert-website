@@ -20,7 +20,7 @@ export async function list(req: Request, res: Response, next: NextFunction) {
       canManage,
     };
 
-    const result = await peerEvaluationService.listPeerEvaluations(req.tenantDb!, filters);
+    const result = await peerEvaluationService.listPeerEvaluations(filters);
     res.json({ success: true, data: result });
   } catch (err) {
     next(err);
@@ -31,7 +31,7 @@ export async function getById(req: Request, res: Response, next: NextFunction) {
   try {
     const id = req.params.id as string;
     const canManage = req.user!.permissions.includes(PERMISSIONS.PEER_EVALUATION_MANAGE);
-    const evaluation = await peerEvaluationService.getPeerEvaluationById(req.tenantDb!, id, {
+    const evaluation = await peerEvaluationService.getPeerEvaluationById(id, {
       requesterUserId: req.user!.sub,
       canManage,
     });
@@ -45,7 +45,7 @@ export async function getById(req: Request, res: Response, next: NextFunction) {
 export async function getMyPending(req: Request, res: Response, next: NextFunction) {
   try {
     const userId = req.user!.sub;
-    const evaluations = await peerEvaluationService.getPendingForUser(req.tenantDb!, userId);
+    const evaluations = await peerEvaluationService.getPendingForUser(userId);
     res.json({ success: true, data: evaluations });
   } catch (err) {
     next(err);
@@ -56,11 +56,12 @@ export async function submit(req: Request, res: Response, next: NextFunction) {
   try {
     const id = req.params.id as string;
     const userId = req.user!.sub;
+    const { companyId } = req.companyContext!;
 
-    const result = await peerEvaluationService.submitEvaluation(req.tenantDb!, id, userId, req.body, req.companyContext!.companyId);
+    const result = await peerEvaluationService.submitEvaluation(id, userId, req.body, companyId);
 
     try {
-      getIO().of('/peer-evaluations').to('company:' + req.companyContext!.companyId).emit('peer-evaluation:completed', { id });
+      getIO().of('/peer-evaluations').to('company:' + companyId).emit('peer-evaluation:completed', { id });
     } catch { /* socket might not be ready */ }
 
     res.json({ success: true, data: result });

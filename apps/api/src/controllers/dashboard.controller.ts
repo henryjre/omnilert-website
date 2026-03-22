@@ -25,7 +25,7 @@ function parseMonthKey(monthKeyParam: string | undefined): string {
 
 export async function getPerformanceIndex(req: Request, res: Response, next: NextFunction) {
   try {
-    const masterDb = db.getMasterDb();
+    const masterDb = db.getDb();
     const userId = req.user!.sub;
     const currentUser = await masterDb('users').where({ id: userId }).select('user_key').first();
     const userKey = currentUser?.user_key as string | undefined;
@@ -71,7 +71,7 @@ export async function getPerformanceIndex(req: Request, res: Response, next: Nex
 
 export async function getPayslip(req: Request, res: Response, next: NextFunction) {
   try {
-    const masterDb = db.getMasterDb();
+    const masterDb = db.getDb();
     // Get companyId (Odoo company ID) from query params
     const companyIdParam = req.query.companyId as string | undefined;
     
@@ -283,8 +283,8 @@ export async function getEPILeaderboard(req: Request, res: Response, next: NextF
 
 export async function getPayslipBranches(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
-    const branches = await tenantDb('branches')
+    const { companyId } = req.companyContext!;
+    const branches = await db.getDb()('branches')
       .select('id', 'name', 'odoo_branch_id', 'is_active')
       .orderBy('name');
 

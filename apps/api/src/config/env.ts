@@ -9,11 +9,11 @@ const envSchema = z.object({
   CLIENT_URL: z.string().default('http://localhost:5173'),
   TRUST_PROXY: z.string().optional(),
 
-  MASTER_DB_HOST: z.string().default('localhost'),
-  MASTER_DB_PORT: z.coerce.number().default(5432),
-  MASTER_DB_NAME: z.string().default('omnilert_master'),
-  MASTER_DB_USER: z.string().default('postgres'),
-  MASTER_DB_PASSWORD: z.string().default('postgres'),
+  DB_HOST: z.string().default('localhost'),
+  DB_PORT: z.coerce.number().default(5432),
+  DB_NAME: z.string().default('omnilert'),
+  DB_USER: z.string().default('postgres'),
+  DB_PASSWORD: z.string().default('postgres'),
 
   JWT_SECRET: z.string().min(16),
   JWT_REFRESH_SECRET: z.string().min(16),

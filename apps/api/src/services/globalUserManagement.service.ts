@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import type { Knex } from 'knex';
 import { db } from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { hashPassword } from '../utils/password.js';
@@ -29,7 +28,6 @@ type ResolvedAssignment = {
   companyId: string;
   companyName: string;
   companySlug: string;
-  companyDbName: string;
   companyCode: string;
   branches: Array<{ id: string; name: string; odooBranchId: number }>;
 };
@@ -79,7 +77,6 @@ function inferImageMimeAndExt(buffer: Buffer): { mime: string; ext: string } {
 }
 
 async function resolveCompanyAssignments(
-  masterDb: Knex,
   companyAssignments: CompanyAssignmentInput[],
 ): Promise<ResolvedAssignment[]> {
   if (!Array.isArray(companyAssignments) || companyAssignments.length === 0) {
@@ -105,9 +102,9 @@ async function resolveCompanyAssignments(
   const resolved: ResolvedAssignment[] = [];
 
   for (const assignment of normalized) {
-    const company = await masterDb('companies')
+    const company = await db.getDb()('companies')
       .where({ id: assignment.companyId, is_active: true })
-      .first('id', 'name', 'slug', 'db_name', 'company_code');
+      .first('id', 'name', 'slug', 'company_code');
     if (!company) {
       throw new AppError(400, `Selected company is invalid or inactive: ${assignment.companyId}`);
     }
@@ -117,10 +114,9 @@ async function resolveCompanyAssignments(
       throw new AppError(400, `Company "${company.name}" is missing a company code`);
     }
 
-    const tenantDb = await db.getTenantDb(String(company.db_name));
-    const branches = await tenantDb('branches')
+    const branches = await db.getDb()('branches')
       .whereIn('id', assignment.branchIds)
-      .where({ is_active: true })
+      .where({ is_active: true, company_id: assignment.companyId })
       .select('id', 'name', 'odoo_branch_id');
 
     if (branches.length !== assignment.branchIds.length) {
@@ -146,7 +142,6 @@ async function resolveCompanyAssignments(
       companyId: company.id as string,
       companyName: company.name as string,
       companySlug: company.slug as string,
-      companyDbName: company.db_name as string,
       companyCode,
       branches: resolvedBranches,
     });
@@ -155,11 +150,12 @@ async function resolveCompanyAssignments(
   return resolved;
 }
 
-async function getNextEmployeeNumber(masterDb: Knex): Promise<number> {
-  const userMax = await masterDb('users')
+async function getNextEmployeeNumber(): Promise<number> {
+  const knex = db.getDb();
+  const userMax = await knex('users')
     .max<{ max: string | number | null }>('employee_number as max')
     .first();
-  const identityMax = await masterDb('employee_identities')
+  const identityMax = await knex('employee_identities')
     .max<{ max: string | number | null }>('employee_number as max')
     .first();
   return Math.max(Number(userMax?.max ?? 0), Number(identityMax?.max ?? 0)) + 1;
@@ -303,12 +299,11 @@ async function syncOdooEmployeesForAssignments(input: {
 }
 
 async function writeCompanyAccessAndBranchSnapshots(input: {
-  masterDb: Knex;
   userId: string;
   assignments: ResolvedAssignment[];
   successfulBranches: Array<{ companyId: string; branchId: string; branchName: string; odooBranchId: number }>;
 }): Promise<void> {
-  await input.masterDb.transaction(async (trx) => {
+  await db.getDb().transaction(async (trx) => {
     await trx('user_company_access').where({ user_id: input.userId }).delete();
     await trx('user_company_access').insert(
       input.assignments.map((assignment) => ({
@@ -338,7 +333,7 @@ async function writeCompanyAccessAndBranchSnapshots(input: {
 }
 
 export async function listGlobalUsers() {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const users = await masterDb('users')
     .select(
       'id',
@@ -420,7 +415,7 @@ export async function listGlobalUsers() {
 }
 
 export async function getGlobalUserAssignmentOptions() {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const roles = await masterDb('roles')
     .select('id', 'name', 'color', 'priority')
     .orderBy('priority', 'desc')
@@ -428,7 +423,7 @@ export async function getGlobalUserAssignmentOptions() {
 
   const companies = await masterDb('companies')
     .where({ is_active: true })
-    .select('id', 'name', 'slug', 'db_name')
+    .select('id', 'name', 'slug')
     .orderBy('name', 'asc');
 
   const companyOptions: Array<{
@@ -439,9 +434,8 @@ export async function getGlobalUserAssignmentOptions() {
   }> = [];
 
   for (const company of companies) {
-    const tenantDb = await db.getTenantDb(String(company.db_name));
-    const branches = await tenantDb('branches')
-      .where({ is_active: true })
+    const branches = await db.getDb()('branches')
+      .where({ is_active: true, company_id: company.id })
       .select('id', 'name', 'odoo_branch_id')
       .orderBy('name', 'asc');
 
@@ -472,7 +466,7 @@ export async function createGlobalUser(input: {
   companyAssignments: CompanyAssignmentInput[];
   avatarStorageRoot?: string | null;
 }) {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const email = normalizeEmail(input.email);
 
   const existing = await masterDb('users').whereRaw('LOWER(email) = ?', [email]).first('id');
@@ -480,7 +474,7 @@ export async function createGlobalUser(input: {
     throw new AppError(409, 'Email already exists');
   }
 
-  const assignments = await resolveCompanyAssignments(masterDb, input.companyAssignments);
+  const assignments = await resolveCompanyAssignments(input.companyAssignments);
 
   const existingRoles = input.roleIds && input.roleIds.length > 0
     ? await masterDb('roles').whereIn('id', input.roleIds).select('id')
@@ -489,7 +483,7 @@ export async function createGlobalUser(input: {
     throw new AppError(400, 'One or more selected roles are invalid');
   }
 
-  const employeeNumber = input.employeeNumber ?? (await getNextEmployeeNumber(masterDb));
+  const employeeNumber = input.employeeNumber ?? (await getNextEmployeeNumber());
   const passwordHash = await hashPassword(input.password);
 
   const [created] = await masterDb('users')
@@ -530,7 +524,6 @@ export async function createGlobalUser(input: {
   });
 
   await writeCompanyAccessAndBranchSnapshots({
-    masterDb,
     userId: created.id as string,
     assignments,
     successfulBranches: provisioning.successfulBranches,
@@ -628,7 +621,7 @@ export async function createGlobalUser(input: {
           userId: created.id as string,
           bankId: existingBankInfo.bankId,
           accountNumber: existingBankInfo.accountNumber,
-          companyDbNames: assignments.map((a) => a.companyDbName),
+          companyIds: assignments.map((a) => a.companyId),
         });
       }
     } catch (error) {
@@ -658,7 +651,7 @@ export async function updateGlobalUser(input: {
   employeeNumber?: number;
   isActive?: boolean;
 }) {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const updates: Record<string, unknown> = { updated_at: new Date() };
 
   if (input.email !== undefined) updates.email = normalizeEmail(input.email);
@@ -680,7 +673,7 @@ export async function assignGlobalRoles(input: {
   userId: string;
   roleIds: string[];
 }) {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const user = await masterDb('users').where({ id: input.userId }).first('id');
   if (!user) throw new AppError(404, 'User not found');
 
@@ -705,7 +698,7 @@ export async function assignGlobalCompanyBranches(input: {
   userId: string;
   companyAssignments: CompanyAssignmentInput[];
 }) {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const user = await masterDb('users')
     .where({ id: input.userId })
     .first(
@@ -728,10 +721,10 @@ export async function assignGlobalCompanyBranches(input: {
   if (!user) throw new AppError(404, 'User not found');
   if (!user.user_key) throw new AppError(400, 'User key is required before assigning company branches');
 
-  const assignments = await resolveCompanyAssignments(masterDb, input.companyAssignments);
+  const assignments = await resolveCompanyAssignments(input.companyAssignments);
   const employeeNumber = Number(user.employee_number ?? 0) > 0
     ? Number(user.employee_number)
-    : await getNextEmployeeNumber(masterDb);
+    : await getNextEmployeeNumber();
 
   if (!user.employee_number) {
     await masterDb('users').where({ id: input.userId }).update({
@@ -754,7 +747,6 @@ export async function assignGlobalCompanyBranches(input: {
   });
 
   await writeCompanyAccessAndBranchSnapshots({
-    masterDb,
     userId: input.userId,
     assignments,
     successfulBranches: provisioning.successfulBranches,
@@ -809,7 +801,7 @@ export async function assignGlobalCompanyBranches(input: {
 }
 
 export async function deactivateGlobalUser(userId: string) {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const [user] = await masterDb('users')
     .where({ id: userId })
     .update({
@@ -822,7 +814,7 @@ export async function deactivateGlobalUser(userId: string) {
 }
 
 export async function deleteGlobalUser(userId: string) {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const count = await masterDb('users').where({ id: userId }).delete();
   if (!count) throw new AppError(404, 'User not found');
 }

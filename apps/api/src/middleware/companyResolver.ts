@@ -1,5 +1,4 @@
 import type { Request, Response, NextFunction } from 'express';
-import type { Knex } from 'knex';
 import { db } from '../config/database.js';
 import { getCompanyStorageRoot } from '../services/storage.service.js';
 
@@ -13,7 +12,6 @@ declare global {
     }
 
     interface Request {
-      tenantDb?: Knex;
       companyContext?: CompanyContext;
     }
   }
@@ -30,14 +28,9 @@ export async function resolveCompany(
   }
 
   try {
-    const masterDb = db.getMasterDb();
-    const company = await masterDb('companies')
-      .where({
-        id: req.user.companyId,
-        db_name: req.user.companyDbName,
-        is_active: true,
-      })
-      .first('id', 'name', 'slug', 'db_name');
+    const company = await db.getDb()('companies')
+      .where({ id: req.user.companyId, is_active: true })
+      .first('id', 'name', 'slug');
 
     if (!company) {
       res.status(401).json({
@@ -47,7 +40,6 @@ export async function resolveCompany(
       return;
     }
 
-    req.tenantDb = await db.getTenantDb(company.db_name as string);
     req.companyContext = {
       companyId: String(company.id),
       companySlug: String(company.slug),

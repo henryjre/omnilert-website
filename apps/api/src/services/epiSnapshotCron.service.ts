@@ -224,7 +224,7 @@ function scheduleTimeoutUntil(job: ScheduledSnapshotJob, target: Date, callback:
 }
 
 async function claimScheduledJobRun(jobName: string, scheduledFor: Date): Promise<boolean> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const scheduledForKey = formatScheduledForKey(scheduledFor);
   const scheduledForManila = formatManilaDateTime(scheduledFor);
   const now = new Date();
@@ -300,7 +300,7 @@ function getExpectedSnapshotType(job: ScheduledSnapshotJob): EpiHistoryEntry['ty
 }
 
 async function hasExistingSnapshotHistory(job: ScheduledSnapshotJob, scheduledFor: Date): Promise<boolean> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const snapshotType = getExpectedSnapshotType(job);
   const snapshotDate = getExpectedSnapshotDate(job, scheduledFor);
   const jsonPath = `$[*] ? (@.type == "${snapshotType}" && @.date == "${snapshotDate}")`;
@@ -318,7 +318,7 @@ async function hasExistingSnapshotHistory(job: ScheduledSnapshotJob, scheduledFo
 }
 
 async function recordSuccessfulScheduledJobRun(jobName: string, scheduledFor: Date): Promise<void> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const now = new Date();
 
   await masterDb('scheduled_job_runs')
@@ -345,7 +345,7 @@ async function recordSuccessfulScheduledJobRun(jobName: string, scheduledFor: Da
 }
 
 async function markScheduledJobRunSuccess(jobName: string, scheduledFor: Date): Promise<void> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const scheduledForKey = formatScheduledForKey(scheduledFor);
   const now = new Date();
 
@@ -359,7 +359,7 @@ async function markScheduledJobRunSuccess(jobName: string, scheduledFor: Date): 
 }
 
 async function markScheduledJobRunFailure(jobName: string, scheduledFor: Date, error: unknown): Promise<void> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const scheduledForKey = formatScheduledForKey(scheduledFor);
   const now = new Date();
   const errorMessage = error instanceof Error ? error.message : String(error);
@@ -457,7 +457,7 @@ export async function reconcileJobsSequentially<T>(
 }
 
 async function getActiveServiceCrewUsers(): Promise<MasterUserRow[]> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
 
   return masterDb('users as u')
     .join('user_roles as ur', 'u.id', 'ur.user_id')
@@ -484,7 +484,7 @@ export async function runWeeklyEpiSnapshot(input?: { scheduledFor?: Date }): Pro
 
   logger.info({ snapshotDate }, 'EPI weekly snapshot started');
 
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const users = await getActiveServiceCrewUsers();
   const reportDataList: EpiReportData[] = [];
 
@@ -630,7 +630,7 @@ export async function runMonthlyEpiSnapshot(input?: { scheduledFor?: Date }): Pr
 
   logger.info({ snapshotDate }, 'EPI monthly snapshot started');
 
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const users = await getActiveServiceCrewUsers();
 
   for (const user of users) {

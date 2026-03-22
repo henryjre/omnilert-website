@@ -5,15 +5,14 @@ import { logger } from '../utils/logger.js';
 let cronHandle: NodeJS.Timeout | null = null;
 
 export async function runPeerEvaluationExpiryRun(): Promise<void> {
-  const companies = await db.getMasterDb()('companies')
+  const companies = await db.getDb()('companies')
     .where({ is_active: true })
-    .select('id', 'db_name');
+    .select('id');
 
   for (const company of companies) {
     try {
-      const tenantDb = await db.getTenantDb(company.db_name as string);
-
-      const count = await tenantDb('peer_evaluations')
+      const count = await db.getDb()('peer_evaluations')
+        .where('company_id', company.id)
         .where('status', 'pending')
         .where('expires_at', '<', new Date())
         .update({ status: 'expired', updated_at: new Date() });
@@ -32,13 +31,13 @@ export async function runPeerEvaluationExpiryRun(): Promise<void> {
         }
 
         logger.info(
-          { companyId: company.id, dbName: company.db_name, expiredCount: count },
+          { companyId: company.id, expiredCount: count },
           'Peer evaluations expired',
         );
       }
     } catch (error) {
       logger.error(
-        { err: error, companyId: company.id, dbName: company.db_name },
+        { err: error, companyId: company.id },
         'Peer evaluation expiry cron failed for company',
       );
     }

@@ -1,5 +1,4 @@
 import { randomInt } from 'node:crypto';
-import type { Knex } from 'knex';
 import { AppError } from '../middleware/errorHandler.js';
 import { hydrateUsersByIds } from './globalUser.service.js';
 import { db } from '../config/database.js';
@@ -78,7 +77,6 @@ async function hydrateRows(rows: PeerEvaluationRow[]): Promise<PeerEvaluationWit
 // ─── Service Functions ────────────────────────────────────────────────────────
 
 export async function listPeerEvaluations(
-  tenantDb: Knex,
   filters: ListPeerEvaluationsFilters,
 ): Promise<{ data: PeerEvaluationWithUsers[]; total: number; page: number; pageSize: number }> {
   const {
@@ -102,7 +100,7 @@ export async function listPeerEvaluations(
   const offset = (page - 1) * pageSize;
 
   const buildQuery = () => {
-    let q = tenantDb('peer_evaluations');
+    let q = db.getDb()('peer_evaluations');
     if (!canManage) {
       q = q.where((builder) => {
         builder
@@ -137,11 +135,10 @@ export async function listPeerEvaluations(
 }
 
 export async function getPeerEvaluationById(
-  tenantDb: Knex,
   id: string,
   access: { requesterUserId: string; canManage: boolean },
 ): Promise<PeerEvaluationWithUsers | null> {
-  const row = await tenantDb('peer_evaluations').where({ id }).first();
+  const row = await db.getDb()('peer_evaluations').where({ id }).first();
   if (!row) return null;
   if (!access.canManage) {
     const requesterUserId = access.requesterUserId;
@@ -156,10 +153,9 @@ export async function getPeerEvaluationById(
 }
 
 export async function getPendingForUser(
-  tenantDb: Knex,
   userId: string,
 ): Promise<PeerEvaluationWithUsers[]> {
-  const rows = await tenantDb('peer_evaluations')
+  const rows = await db.getDb()('peer_evaluations')
     .where('evaluator_user_id', userId)
     .where('status', 'pending')
     .whereRaw('expires_at > now()')
@@ -170,13 +166,12 @@ export async function getPendingForUser(
 }
 
 export async function submitEvaluation(
-  tenantDb: Knex,
   id: string,
   userId: string,
   body: SubmitEvaluationBody,
   companyId: string,
 ): Promise<PeerEvaluationRow> {
-  const evaluation = await tenantDb('peer_evaluations').where({ id }).first() as PeerEvaluationRow | undefined;
+  const evaluation = await db.getDb()('peer_evaluations').where({ id }).first() as PeerEvaluationRow | undefined;
 
   if (!evaluation) {
     throw new AppError(404, 'Peer evaluation not found');
@@ -195,7 +190,7 @@ export async function submitEvaluation(
   }
 
   const now = new Date();
-  const [updated] = await tenantDb('peer_evaluations')
+  const [updated] = await db.getDb()('peer_evaluations')
     .where({ id })
     .update({
       q1_score: body.q1_score,
@@ -211,7 +206,7 @@ export async function submitEvaluation(
   const completed = updated as PeerEvaluationRow;
 
   // Append snapshot to master users.peer_evaluations for the evaluated user
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const averageScore = (completed.q1_score + completed.q2_score + completed.q3_score) / 3;
   const wrsDelayDays = randomInt(0, 11); // 0..10 inclusive
   const submittedAt = completed.submitted_at ? new Date(completed.submitted_at) : now;

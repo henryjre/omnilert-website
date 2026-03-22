@@ -12,9 +12,10 @@ import { listShiftExchangeRequestsForAuthorization } from '../services/shiftExch
  */
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const userPermissions = new Set(req.user!.permissions);
-    const currentCompanyId = req.user!.companyId;
+    const currentCompanyId = companyId;
     const { branchIds, status } = req.query as Record<string, string>;
 
     const branchIdList: string[] = branchIds ? branchIds.split(',').filter(Boolean) : [];
@@ -65,7 +66,7 @@ export async function list(req: Request, res: Response, next: NextFunction) {
       );
       let namesById: Record<string, string> = {};
       if (userIds.length > 0) {
-        const users = await db.getMasterDb()('users')
+        const users = await db.getDb()('users')
           .whereIn('id', userIds)
           .select('id', 'first_name', 'last_name');
         namesById = Object.fromEntries(
@@ -106,7 +107,8 @@ export async function list(req: Request, res: Response, next: NextFunction) {
  */
 export async function approve(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const reviewerId = req.user!.sub;
     const id = req.params.id as string;
 
@@ -124,7 +126,6 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
     if (authReq.user_id) {
       const label = requestTypeLabel(authReq.request_type);
       await createAndDispatchNotification({
-        tenantDb,
         userId: authReq.user_id,
         title: `${label} Approved`,
         message: `Your ${label.toLowerCase()} has been approved.`,
@@ -145,7 +146,8 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
  */
 export async function reject(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const reviewerId = req.user!.sub;
     const id = req.params.id as string;
     const { reason } = req.body as { reason: string };
@@ -172,7 +174,6 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
     if (authReq.user_id) {
       const label = requestTypeLabel(authReq.request_type);
       await createAndDispatchNotification({
-        tenantDb,
         userId: authReq.user_id,
         title: `${label} Rejected`,
         message: `Your ${label.toLowerCase()} has been rejected: ${reason.trim()}`,

@@ -3,7 +3,8 @@ import * as departmentService from '../services/department.service.js';
 
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
-    const data = await departmentService.listDepartments(req.tenantDb!, req.user!.companyId);
+    const { companyId } = req.companyContext!;
+    const data = await departmentService.listDepartments(companyId);
     res.json({ success: true, data });
   } catch (error) {
     next(error);
@@ -21,9 +22,9 @@ export async function listMemberOptions(req: Request, res: Response, next: NextF
 
 export async function create(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     const data = await departmentService.createDepartment({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
+      companyId,
       name: req.body.name,
       headUserId: req.body.headUserId ?? null,
       memberUserIds: req.body.memberUserIds ?? [],
@@ -36,9 +37,9 @@ export async function create(req: Request, res: Response, next: NextFunction) {
 
 export async function update(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     const data = await departmentService.updateDepartment({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
+      companyId,
       departmentId: req.params.id as string,
       name: req.body.name,
       headUserId: req.body.headUserId ?? null,

@@ -1,4 +1,3 @@
-import type { Knex } from 'knex';
 import type {
   CssCriteriaScores,
   ListStoreAuditsResponse,
@@ -7,43 +6,78 @@ import type {
   StoreAuditStatus,
   StoreAuditType,
 } from '@omnilert/shared';
+import { db } from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
-import {
-  getGlobalProcessingAuditIdByUser,
-  getGlobalStoreAuditProjectionByAuditId,
-  listGlobalStoreAuditProjectionRows,
-  mapProjectionRowToStoreAudit,
-  reserveGlobalProcessingAudit,
-  resolveGlobalStoreAuditContext,
-  syncGlobalStoreAuditProjectionByAuditId,
-  type ResolvedGlobalStoreAuditContext,
-} from './globalStoreAuditIndex.service.js';
+import { hydrateUsersByIds } from './globalUser.service.js';
+import { getCompanyStorageRoot } from './storage.service.js';
+
+function parseJsonField<T>(value: unknown, fallback: T): T {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return fallback;
+    }
+  }
+  return value as T;
+}
+
+function normalizeAuditRow(row: any): StoreAudit {
+  return {
+    ...row,
+    css_order_lines: parseJsonField(row.css_order_lines, null),
+    css_payments: parseJsonField(row.css_payments, null),
+    css_criteria_scores: parseJsonField(row.css_criteria_scores, null),
+    comp_extra_fields: parseJsonField(row.comp_extra_fields, null),
+  };
+}
+
+async function enrichAuditRows(rows: any[]): Promise<StoreAudit[]> {
+  if (rows.length === 0) return [];
+
+  const branchIds = [...new Set(rows.map((r) => r.branch_id).filter(Boolean))] as string[];
+  const auditorIds = [...new Set(rows.map((r) => r.auditor_user_id).filter(Boolean))] as string[];
+
+  const [branches, auditors] = await Promise.all([
+    branchIds.length > 0
+      ? db.getDb()('branches').whereIn('id', branchIds).select('id', 'name')
+      : Promise.resolve([]),
+    auditorIds.length > 0
+      ? hydrateUsersByIds(auditorIds, ['id', 'first_name', 'last_name'])
+      : Promise.resolve({} as Record<string, any>),
+  ]);
+
+  const branchMap = new Map(branches.map((b: any) => [b.id as string, b.name as string]));
+
+  return rows.map((row) => {
+    const normalized = normalizeAuditRow(row);
+    const auditor = auditorIds.length > 0 && normalized.auditor_user_id
+      ? auditors[normalized.auditor_user_id]
+      : null;
+    return {
+      ...normalized,
+      branch_name: branchMap.get(normalized.branch_id) ?? null,
+      auditor_name: auditor
+        ? `${auditor.first_name ?? ''} ${auditor.last_name ?? ''}`.trim() || null
+        : null,
+      company_name: (row as any).company_name ?? null,
+    };
+  });
+}
 
 type GlobalStoreAuditServiceDeps = {
-  listProjectionRows: (input: {
+  listStoreAuditRows: (input: {
     type?: StoreAuditType | 'all';
     status?: StoreAuditStatus;
     page?: number;
     pageSize?: number;
-  }) => Promise<{ rows: Array<Record<string, unknown>>; total: number }>;
+  }) => Promise<{ rows: any[]; total: number }>;
   getProcessingAuditIdByUser: (userId: string) => Promise<string | null>;
-  getProjectionByAuditId: (auditId: string) => Promise<Record<string, unknown> | null>;
-  resolveAuditContext: (auditId: string) => Promise<ResolvedGlobalStoreAuditContext | null>;
-  reserveProcessingAudit: (input: {
-    companyId: string;
-    auditId: string;
-    userId: string;
-  }) => Promise<'ok' | 'user_has_active' | 'already_claimed' | 'not_found'>;
-  syncProjectionByAuditId: (input: {
-    companyId: string;
-    auditId: string;
-  }) => Promise<Record<string, unknown> | null | undefined | void>;
-  listStoreAuditMessages: (input: {
-    tenantDb: Knex;
-    auditId: string;
-  }) => Promise<StoreAuditMessage[]>;
+  getAuditById: (auditId: string) => Promise<any | null>;
+  resolveAuditCompanyContext: (auditId: string) => Promise<{ companyId: string; companySlug: string; companyStorageRoot: string } | null>;
+  listStoreAuditMessages: (input: { auditId: string }) => Promise<StoreAuditMessage[]>;
   sendStoreAuditMessage: (input: {
-    tenantDb: Knex;
     companyId: string;
     companyStorageRoot: string;
     auditId: string;
@@ -52,7 +86,6 @@ type GlobalStoreAuditServiceDeps = {
     files: Array<{ buffer: Buffer; originalname: string; mimetype: string; size: number }>;
   }) => Promise<StoreAuditMessage>;
   editStoreAuditMessage: (input: {
-    tenantDb: Knex;
     companyId: string;
     auditId: string;
     messageId: string;
@@ -60,20 +93,17 @@ type GlobalStoreAuditServiceDeps = {
     content: string;
   }) => Promise<StoreAuditMessage>;
   deleteStoreAuditMessage: (input: {
-    tenantDb: Knex;
     companyId: string;
     auditId: string;
     messageId: string;
     userId: string;
   }) => Promise<void>;
-  processStoreAuditTenant: (input: {
-    tenantDb: Knex;
+  processStoreAudit: (input: {
     auditId: string;
     userId: string;
     companyId: string;
   }) => Promise<StoreAudit>;
-  completeStoreAuditTenant: (input: {
-    tenantDb: Knex;
+  completeStoreAudit: (input: {
     auditId: string;
     userId: string;
     companyId: string;
@@ -83,31 +113,94 @@ type GlobalStoreAuditServiceDeps = {
   }) => Promise<StoreAudit>;
 };
 
-async function requireAuditContext(
-  resolver: GlobalStoreAuditServiceDeps['resolveAuditContext'],
-  auditId: string,
-): Promise<ResolvedGlobalStoreAuditContext> {
-  const context = await resolver(auditId);
-  if (!context) {
-    throw new AppError(404, 'Store audit not found');
+async function defaultListStoreAuditRows(input: {
+  type?: StoreAuditType | 'all';
+  status?: StoreAuditStatus;
+  page?: number;
+  pageSize?: number;
+}): Promise<{ rows: any[]; total: number }> {
+  const page = Math.max(1, Number(input.page ?? 1));
+  const pageSize = Math.min(100, Math.max(1, Number(input.pageSize ?? 20)));
+
+  const query = db.getDb()('store_audits')
+    .leftJoin('companies', 'store_audits.company_id', 'companies.id');
+
+  if (input.type && input.type !== 'all') {
+    query.where('store_audits.type', input.type);
   }
-  return context;
+  if (input.status) {
+    query.where('store_audits.status', input.status);
+  }
+
+  const countRow = await query.clone().count<{ count: string }>({ count: '*' }).first();
+  const total = Number(countRow?.count ?? 0);
+
+  const sortOrder = (() => {
+    if (input.status === 'completed') {
+      return [
+        { column: 'store_audits.completed_at', order: 'desc' as const, nulls: 'last' as const },
+        { column: 'store_audits.created_at', order: 'desc' as const },
+      ];
+    }
+    if (input.status === 'processing') {
+      return [
+        { column: 'store_audits.updated_at', order: 'desc' as const },
+        { column: 'store_audits.created_at', order: 'desc' as const },
+      ];
+    }
+    return [{ column: 'store_audits.created_at', order: 'desc' as const }];
+  })();
+
+  const rows = await query
+    .clone()
+    .select('store_audits.*', 'companies.name as company_name')
+    .orderBy(sortOrder as Array<{ column: string; order: 'asc' | 'desc'; nulls?: 'first' | 'last' }>)
+    .limit(pageSize)
+    .offset((page - 1) * pageSize);
+
+  return { rows, total };
 }
 
-function toStoreAudit(row: Record<string, unknown>): StoreAudit {
-  return mapProjectionRowToStoreAudit(row);
+async function defaultGetProcessingAuditIdByUser(userId: string): Promise<string | null> {
+  const row = await db.getDb()('store_audits')
+    .where({ status: 'processing', auditor_user_id: userId })
+    .first('id');
+  return (row?.id as string | undefined) ?? null;
 }
 
-async function defaultListStoreAuditMessages(input: {
-  tenantDb: Knex;
-  auditId: string;
-}): Promise<StoreAuditMessage[]> {
+async function defaultGetAuditById(auditId: string): Promise<any | null> {
+  const row = await db.getDb()('store_audits')
+    .leftJoin('companies', 'store_audits.company_id', 'companies.id')
+    .where('store_audits.id', auditId)
+    .select('store_audits.*', 'companies.name as company_name')
+    .first();
+  return row ?? null;
+}
+
+async function defaultResolveAuditCompanyContext(auditId: string): Promise<{ companyId: string; companySlug: string; companyStorageRoot: string } | null> {
+  const audit = await db.getDb()('store_audits')
+    .where('store_audits.id', auditId)
+    .first('company_id');
+  if (!audit) return null;
+
+  const company = await db.getDb()('companies')
+    .where({ id: audit.company_id })
+    .first('id', 'slug');
+  if (!company) return null;
+
+  return {
+    companyId: company.id as string,
+    companySlug: company.slug as string,
+    companyStorageRoot: getCompanyStorageRoot(company.slug as string),
+  };
+}
+
+async function defaultListStoreAuditMessages(input: { auditId: string }): Promise<StoreAuditMessage[]> {
   const mod = await import('./storeAudit.service.js');
   return mod.listStoreAuditMessages(input);
 }
 
 async function defaultSendStoreAuditMessage(input: {
-  tenantDb: Knex;
   companyId: string;
   companyStorageRoot: string;
   auditId: string;
@@ -120,7 +213,6 @@ async function defaultSendStoreAuditMessage(input: {
 }
 
 async function defaultEditStoreAuditMessage(input: {
-  tenantDb: Knex;
   companyId: string;
   auditId: string;
   messageId: string;
@@ -132,7 +224,6 @@ async function defaultEditStoreAuditMessage(input: {
 }
 
 async function defaultDeleteStoreAuditMessage(input: {
-  tenantDb: Knex;
   companyId: string;
   auditId: string;
   messageId: string;
@@ -142,8 +233,7 @@ async function defaultDeleteStoreAuditMessage(input: {
   return mod.deleteStoreAuditMessage(input);
 }
 
-async function defaultProcessStoreAuditTenant(input: {
-  tenantDb: Knex;
+async function defaultProcessStoreAudit(input: {
   auditId: string;
   userId: string;
   companyId: string;
@@ -152,8 +242,7 @@ async function defaultProcessStoreAuditTenant(input: {
   return mod.processStoreAudit(input);
 }
 
-async function defaultCompleteStoreAuditTenant(input: {
-  tenantDb: Knex;
+async function defaultCompleteStoreAudit(input: {
   auditId: string;
   userId: string;
   companyId: string;
@@ -169,18 +258,16 @@ export function createGlobalStoreAuditService(
   overrides: Partial<GlobalStoreAuditServiceDeps> = {},
 ) {
   const deps: GlobalStoreAuditServiceDeps = {
-    listProjectionRows: overrides.listProjectionRows ?? listGlobalStoreAuditProjectionRows,
-    getProcessingAuditIdByUser: overrides.getProcessingAuditIdByUser ?? getGlobalProcessingAuditIdByUser,
-    getProjectionByAuditId: overrides.getProjectionByAuditId ?? getGlobalStoreAuditProjectionByAuditId,
-    resolveAuditContext: overrides.resolveAuditContext ?? resolveGlobalStoreAuditContext,
-    reserveProcessingAudit: overrides.reserveProcessingAudit ?? reserveGlobalProcessingAudit,
-    syncProjectionByAuditId: overrides.syncProjectionByAuditId ?? syncGlobalStoreAuditProjectionByAuditId,
+    listStoreAuditRows: overrides.listStoreAuditRows ?? defaultListStoreAuditRows,
+    getProcessingAuditIdByUser: overrides.getProcessingAuditIdByUser ?? defaultGetProcessingAuditIdByUser,
+    getAuditById: overrides.getAuditById ?? defaultGetAuditById,
+    resolveAuditCompanyContext: overrides.resolveAuditCompanyContext ?? defaultResolveAuditCompanyContext,
     listStoreAuditMessages: overrides.listStoreAuditMessages ?? defaultListStoreAuditMessages,
     sendStoreAuditMessage: overrides.sendStoreAuditMessage ?? defaultSendStoreAuditMessage,
     editStoreAuditMessage: overrides.editStoreAuditMessage ?? defaultEditStoreAuditMessage,
     deleteStoreAuditMessage: overrides.deleteStoreAuditMessage ?? defaultDeleteStoreAuditMessage,
-    processStoreAuditTenant: overrides.processStoreAuditTenant ?? defaultProcessStoreAuditTenant,
-    completeStoreAuditTenant: overrides.completeStoreAuditTenant ?? defaultCompleteStoreAuditTenant,
+    processStoreAudit: overrides.processStoreAudit ?? defaultProcessStoreAudit,
+    completeStoreAudit: overrides.completeStoreAudit ?? defaultCompleteStoreAudit,
   };
 
   return {
@@ -195,12 +282,14 @@ export function createGlobalStoreAuditService(
       const pageSize = Math.min(100, Math.max(1, Number(input.pageSize ?? 20)));
 
       const [{ rows, total }, processingAuditId] = await Promise.all([
-        deps.listProjectionRows({ ...input, page, pageSize }),
+        deps.listStoreAuditRows({ ...input, page, pageSize }),
         deps.getProcessingAuditIdByUser(input.userId),
       ]);
 
+      const enriched = await enrichAuditRows(rows);
+
       return {
-        items: rows.map((row) => toStoreAudit(row as unknown as Record<string, unknown>)),
+        items: enriched,
         page,
         pageSize,
         total,
@@ -209,19 +298,16 @@ export function createGlobalStoreAuditService(
     },
 
     async getStoreAuditById(input: { auditId: string }): Promise<StoreAudit> {
-      const row = await deps.getProjectionByAuditId(input.auditId);
+      const row = await deps.getAuditById(input.auditId);
       if (!row) {
         throw new AppError(404, 'Store audit not found');
       }
-      return toStoreAudit(row as unknown as Record<string, unknown>);
+      const [enriched] = await enrichAuditRows([row]);
+      return enriched;
     },
 
     async listMessages(input: { auditId: string }): Promise<StoreAuditMessage[]> {
-      const context = await requireAuditContext(deps.resolveAuditContext, input.auditId);
-      return deps.listStoreAuditMessages({
-        tenantDb: context.tenantDb,
-        auditId: input.auditId,
-      });
+      return deps.listStoreAuditMessages({ auditId: input.auditId });
     },
 
     async sendMessage(input: {
@@ -230,10 +316,10 @@ export function createGlobalStoreAuditService(
       content: string;
       files: Array<{ buffer: Buffer; originalname: string; mimetype: string; size: number }>;
     }): Promise<StoreAuditMessage> {
-      const context = await requireAuditContext(deps.resolveAuditContext, input.auditId);
+      const context = await deps.resolveAuditCompanyContext(input.auditId);
+      if (!context) throw new AppError(404, 'Store audit not found');
       return deps.sendStoreAuditMessage({
-        tenantDb: context.tenantDb,
-        companyId: context.company.id,
+        companyId: context.companyId,
         companyStorageRoot: context.companyStorageRoot,
         auditId: input.auditId,
         userId: input.userId,
@@ -248,10 +334,10 @@ export function createGlobalStoreAuditService(
       userId: string;
       content: string;
     }): Promise<StoreAuditMessage> {
-      const context = await requireAuditContext(deps.resolveAuditContext, input.auditId);
+      const context = await deps.resolveAuditCompanyContext(input.auditId);
+      if (!context) throw new AppError(404, 'Store audit not found');
       return deps.editStoreAuditMessage({
-        tenantDb: context.tenantDb,
-        companyId: context.company.id,
+        companyId: context.companyId,
         auditId: input.auditId,
         messageId: input.messageId,
         userId: input.userId,
@@ -264,10 +350,10 @@ export function createGlobalStoreAuditService(
       messageId: string;
       userId: string;
     }): Promise<void> {
-      const context = await requireAuditContext(deps.resolveAuditContext, input.auditId);
+      const context = await deps.resolveAuditCompanyContext(input.auditId);
+      if (!context) throw new AppError(404, 'Store audit not found');
       await deps.deleteStoreAuditMessage({
-        tenantDb: context.tenantDb,
-        companyId: context.company.id,
+        companyId: context.companyId,
         auditId: input.auditId,
         messageId: input.messageId,
         userId: input.userId,
@@ -278,47 +364,13 @@ export function createGlobalStoreAuditService(
       auditId: string;
       userId: string;
     }): Promise<StoreAudit> {
-      const context = await requireAuditContext(deps.resolveAuditContext, input.auditId);
-      const reservation = await deps.reserveProcessingAudit({
-        companyId: context.company.id,
+      const context = await deps.resolveAuditCompanyContext(input.auditId);
+      if (!context) throw new AppError(404, 'Store audit not found');
+      return deps.processStoreAudit({
         auditId: input.auditId,
         userId: input.userId,
+        companyId: context.companyId,
       });
-
-      if (reservation === 'user_has_active') {
-        throw new AppError(409, 'You already have an active audit in progress');
-      }
-      if (reservation === 'already_claimed') {
-        throw new AppError(409, 'Audit was already claimed');
-      }
-      if (reservation === 'not_found') {
-        throw new AppError(404, 'Store audit not found');
-      }
-
-      try {
-        await deps.processStoreAuditTenant({
-          tenantDb: context.tenantDb,
-          auditId: input.auditId,
-          userId: input.userId,
-          companyId: context.company.id,
-        });
-      } catch (error) {
-        await deps.syncProjectionByAuditId({
-          companyId: context.company.id,
-          auditId: input.auditId,
-        });
-        throw error;
-      }
-
-      const synced = await deps.syncProjectionByAuditId({
-        companyId: context.company.id,
-        auditId: input.auditId,
-      });
-      const currentProjection = synced ?? await deps.getProjectionByAuditId(input.auditId);
-
-      return currentProjection
-        ? toStoreAudit(currentProjection as unknown as Record<string, unknown>)
-        : toStoreAudit(context.projection as unknown as Record<string, unknown>);
     },
 
     async completeAudit(input: {
@@ -328,24 +380,14 @@ export function createGlobalStoreAuditService(
         | { criteria_scores: CssCriteriaScores }
         | { productivity_rate: boolean; uniform: boolean; hygiene: boolean; sop: boolean };
     }): Promise<StoreAudit> {
-      const context = await requireAuditContext(deps.resolveAuditContext, input.auditId);
-      await deps.completeStoreAuditTenant({
-        tenantDb: context.tenantDb,
+      const context = await deps.resolveAuditCompanyContext(input.auditId);
+      if (!context) throw new AppError(404, 'Store audit not found');
+      return deps.completeStoreAudit({
         auditId: input.auditId,
         userId: input.userId,
-        companyId: context.company.id,
+        companyId: context.companyId,
         payload: input.payload,
       });
-
-      const synced = await deps.syncProjectionByAuditId({
-        companyId: context.company.id,
-        auditId: input.auditId,
-      });
-      const currentProjection = synced ?? await deps.getProjectionByAuditId(input.auditId);
-
-      return currentProjection
-        ? toStoreAudit(currentProjection as unknown as Record<string, unknown>)
-        : toStoreAudit(context.projection as unknown as Record<string, unknown>);
     },
   };
 }

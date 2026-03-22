@@ -5,7 +5,7 @@ import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 
 export interface EarlyCheckInAuthJobPayload {
-  companyDbName: string;
+  companyId: string;
   branchId: string;
   shiftId: string;
   shiftLogId: string;
@@ -17,7 +17,7 @@ let boss: PgBoss | null = null;
 let workerId: string | null = null;
 
 function getSingletonKey(payload: EarlyCheckInAuthJobPayload): string {
-  return `${payload.companyDbName}:${payload.shiftLogId}:early_check_in`;
+  return `${payload.companyId}:${payload.shiftLogId}:early_check_in`;
 }
 
 function getRetryLimit(): number {
@@ -26,39 +26,37 @@ function getRetryLimit(): number {
 }
 
 interface EarlyCheckInJobProcessorDeps {
-  getTenantDb: (companyDbName: string) => Promise<unknown>;
-  findShiftById: (tenantDb: unknown, shiftId: string, branchId: string) => Promise<Record<string, unknown> | null>;
-  findShiftLogById: (tenantDb: unknown, shiftLogId: string, branchId: string) => Promise<Record<string, unknown> | null>;
-  findExistingAuthorization: (tenantDb: unknown, shiftLogId: string) => Promise<Record<string, unknown> | null>;
-  createShiftAuthorization: (tenantDb: unknown, input: Record<string, unknown>) => Promise<Record<string, unknown>>;
-  incrementShiftPendingApprovals: (tenantDb: unknown, shiftId: string) => Promise<void>;
+  findShiftById: (shiftId: string, branchId: string) => Promise<Record<string, unknown> | null>;
+  findShiftLogById: (shiftLogId: string, branchId: string) => Promise<Record<string, unknown> | null>;
+  findExistingAuthorization: (shiftLogId: string) => Promise<Record<string, unknown> | null>;
+  createShiftAuthorization: (input: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  incrementShiftPendingApprovals: (shiftId: string) => Promise<void>;
   emitSocketEvent: (event: string, payload: Record<string, unknown>) => void;
   logInfo: (context: Record<string, unknown>, message: string) => void;
 }
 
 const defaultEarlyCheckInJobProcessorDeps: EarlyCheckInJobProcessorDeps = {
-  getTenantDb: (companyDbName) => db.getTenantDb(companyDbName),
-  findShiftById: async (tenantDb, shiftId, branchId) =>
-    (await (tenantDb as Awaited<ReturnType<typeof db.getTenantDb>>)('employee_shifts')
+  findShiftById: async (shiftId, branchId) =>
+    (await db.getDb()('employee_shifts')
       .where({ id: shiftId, branch_id: branchId })
       .first()) as Record<string, unknown> | null,
-  findShiftLogById: async (tenantDb, shiftLogId, branchId) =>
-    (await (tenantDb as Awaited<ReturnType<typeof db.getTenantDb>>)('shift_logs')
+  findShiftLogById: async (shiftLogId, branchId) =>
+    (await db.getDb()('shift_logs')
       .where({ id: shiftLogId, branch_id: branchId })
       .first()) as Record<string, unknown> | null,
-  findExistingAuthorization: async (tenantDb, shiftLogId) =>
-    (await (tenantDb as Awaited<ReturnType<typeof db.getTenantDb>>)('shift_authorizations')
+  findExistingAuthorization: async (shiftLogId) =>
+    (await db.getDb()('shift_authorizations')
       .where({
         shift_log_id: shiftLogId,
         auth_type: 'early_check_in',
       })
       .first()) as Record<string, unknown> | null,
-  createShiftAuthorization: async (tenantDb, input) =>
-    (await (tenantDb as Awaited<ReturnType<typeof db.getTenantDb>>)('shift_authorizations')
+  createShiftAuthorization: async (input) =>
+    (await db.getDb()('shift_authorizations')
       .insert(input)
       .returning('*'))[0] as Record<string, unknown>,
-  incrementShiftPendingApprovals: async (tenantDb, shiftId) => {
-    await (tenantDb as Awaited<ReturnType<typeof db.getTenantDb>>)('employee_shifts')
+  incrementShiftPendingApprovals: async (shiftId) => {
+    await db.getDb()('employee_shifts')
       .where({ id: shiftId })
       .increment('pending_approvals', 1);
   },
@@ -86,9 +84,8 @@ export function createEarlyCheckInJobProcessor(
     job: Pick<Job<EarlyCheckInAuthJobPayload>, 'id' | 'data'>,
   ): Promise<void> {
     const payload = job.data;
-    const tenantDb = await deps.getTenantDb(payload.companyDbName);
 
-    const shift = await deps.findShiftById(tenantDb, payload.shiftId, payload.branchId);
+    const shift = await deps.findShiftById(payload.shiftId, payload.branchId);
     if (!shift) {
       deps.logInfo(
         {
@@ -101,7 +98,7 @@ export function createEarlyCheckInJobProcessor(
       return;
     }
 
-    const shiftLog = await deps.findShiftLogById(tenantDb, payload.shiftLogId, payload.branchId);
+    const shiftLog = await deps.findShiftLogById(payload.shiftLogId, payload.branchId);
     if (!shiftLog || shiftLog.log_type !== 'check_in') {
       deps.logInfo(
         {
@@ -128,7 +125,7 @@ export function createEarlyCheckInJobProcessor(
       return;
     }
 
-    const existingAuth = await deps.findExistingAuthorization(tenantDb, payload.shiftLogId);
+    const existingAuth = await deps.findExistingAuthorization(payload.shiftLogId);
     if (existingAuth) {
       deps.logInfo(
         {
@@ -160,7 +157,7 @@ export function createEarlyCheckInJobProcessor(
       return;
     }
 
-    const auth = await deps.createShiftAuthorization(tenantDb, {
+    const auth = await deps.createShiftAuthorization({
       shift_id: shift.id as string,
       shift_log_id: payload.shiftLogId,
       branch_id: payload.branchId,
@@ -171,7 +168,7 @@ export function createEarlyCheckInJobProcessor(
       status: 'pending',
     });
 
-    await deps.incrementShiftPendingApprovals(tenantDb, shift.id as string);
+    await deps.incrementShiftPendingApprovals(shift.id as string);
     deps.emitSocketEvent('shift:authorization-new', auth);
 
     deps.logInfo(
@@ -192,11 +189,11 @@ export async function initAttendanceQueue(): Promise<void> {
   if (boss) return;
 
   boss = new PgBoss({
-    host: env.MASTER_DB_HOST,
-    port: env.MASTER_DB_PORT,
-    database: env.MASTER_DB_NAME,
-    user: env.MASTER_DB_USER,
-    password: env.MASTER_DB_PASSWORD,
+    host: env.DB_HOST,
+    port: env.DB_PORT,
+    database: env.DB_NAME,
+    user: env.DB_USER,
+    password: env.DB_PASSWORD,
     schema: env.QUEUE_SCHEMA,
   });
 

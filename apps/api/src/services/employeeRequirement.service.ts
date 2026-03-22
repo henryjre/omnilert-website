@@ -1,4 +1,3 @@
-import type { Knex } from 'knex';
 import { AppError } from '../middleware/errorHandler.js';
 import { db } from '../config/database.js';
 
@@ -10,8 +9,8 @@ function displayStatusFromSubmission(status: string | null): 'complete' | 'rejec
   return 'pending';
 }
 
-export async function listServiceCrewRequirements(tenantDb: Knex, companyId: string) {
-  const masterDb = db.getMasterDb();
+export async function listServiceCrewRequirements(companyId: string) {
+  const masterDb = db.getDb();
   const employees = await masterDb('users as users')
     .join('user_company_access as uca', 'users.id', 'uca.user_id')
     .join('user_roles as ur', 'users.id', 'ur.user_id')
@@ -22,7 +21,7 @@ export async function listServiceCrewRequirements(tenantDb: Knex, companyId: str
     .andWhere('users.is_active', true)
     .distinct('users.id', 'users.first_name', 'users.last_name', 'users.email', 'users.avatar_url');
 
-  const requirementTypes = await tenantDb('employment_requirement_types')
+  const requirementTypes = await db.getDb()('employment_requirement_types')
     .where({ is_active: true })
     .select('code')
     .orderBy('sort_order', 'asc');
@@ -33,7 +32,7 @@ export async function listServiceCrewRequirements(tenantDb: Knex, companyId: str
   }
 
   const userIds = employees.map((employee: any) => employee.id);
-  const latestRowsResult = await tenantDb.raw(
+  const latestRowsResult = await db.getDb().raw(
     `
       SELECT DISTINCT ON (user_id, requirement_code)
         user_id,
@@ -83,8 +82,8 @@ export async function listServiceCrewRequirements(tenantDb: Knex, companyId: str
   });
 }
 
-export async function getServiceCrewRequirementDetail(tenantDb: Knex, userId: string, companyId: string) {
-  const masterDb = db.getMasterDb();
+export async function getServiceCrewRequirementDetail(userId: string, companyId: string) {
+  const masterDb = db.getDb();
   const employee = await masterDb('users as users')
     .join('user_company_access as uca', 'users.id', 'uca.user_id')
     .join('user_roles', 'users.id', 'user_roles.user_id')
@@ -108,12 +107,12 @@ export async function getServiceCrewRequirementDetail(tenantDb: Knex, userId: st
     throw new AppError(404, 'Service Crew employee not found');
   }
 
-  const requirementTypes = await tenantDb('employment_requirement_types')
+  const requirementTypes = await db.getDb()('employment_requirement_types')
     .where({ is_active: true })
     .select('code', 'label', 'sort_order')
     .orderBy('sort_order', 'asc');
 
-  const latestRowsResult = await tenantDb.raw(
+  const latestRowsResult = await db.getDb().raw(
     `
       SELECT DISTINCT ON (requirement_code)
         id,

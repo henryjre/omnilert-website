@@ -7,7 +7,8 @@ import { db } from '../config/database.js';
 
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const user = req.user!;
     const branchIdsParam = req.query.branchIds as string | undefined;
     const branchId = req.query.branchId as string | undefined;
@@ -80,7 +81,8 @@ export async function list(req: Request, res: Response, next: NextFunction) {
 
 export async function get(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const { id } = req.params;
 
     const session = await tenantDb('pos_sessions').where({ id }).first();
@@ -115,7 +117,7 @@ export async function get(req: Request, res: Response, next: NextFunction) {
     ];
     const users =
       userIds.length > 0
-        ? await db.getMasterDb()('users').whereIn('id', userIds).select('id', 'first_name', 'last_name')
+        ? await db.getDb()('users').whereIn('id', userIds).select('id', 'first_name', 'last_name')
         : [];
     const userMap = new Map(
       users.map((u: { id: string; first_name: string; last_name: string }) => [
@@ -139,7 +141,8 @@ export async function get(req: Request, res: Response, next: NextFunction) {
 
 export async function auditComplete(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const { id } = req.params;
     const user = req.user!;
 

@@ -439,7 +439,7 @@ export function applyGlobalLeaderboardFilters(query: any, masterDb: any) {
 }
 
 export async function getEpiDashboard(userId: string): Promise<EpiDashboardResponse> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const row = await masterDb('users')
     .where({ id: userId })
     .first(
@@ -481,7 +481,7 @@ export async function getEpiDashboard(userId: string): Promise<EpiDashboardRespo
 }
 
 export async function getEpiLeaderboard(currentUserId: string, monthKey: string): Promise<EpiLeaderboardSummaryEntry[]> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const currentMonthKey = getCurrentMonthKey();
 
   const rows = await applyGlobalLeaderboardFilters(masterDb('users as u'), masterDb)
@@ -509,7 +509,7 @@ export async function getEpiLeaderboardDetail(
   userId: string,
   monthKey: string,
 ): Promise<EpiLeaderboardDetailResponse | null> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const currentMonthKey = getCurrentMonthKey();
   const isCurrentMonth = isCurrentMonthSelection(monthKey, currentMonthKey);
 

@@ -26,7 +26,6 @@ function toDisplayStatus(status: string | null): 'complete' | 'rejected' | 'veri
 }
 
 async function notifyUser(
-  tenantDb: any,
   userId: string,
   title: string,
   message: string,
@@ -34,7 +33,6 @@ async function notifyUser(
   linkUrl: string,
 ) {
   await createAndDispatchNotification({
-    tenantDb,
     userId,
     title,
     message,
@@ -136,10 +134,10 @@ function emitEmployeeRequirementUpdated(payload: {
 }
 
 async function resolveAndValidateBranchId(
-  tenantDb: any,
   userId: string,
   branchIdInput: unknown,
 ): Promise<string> {
+  const tenantDb = db.getDb();
   const branchId = typeof branchIdInput === 'string' ? branchIdInput.trim() : '';
   if (!branchId) {
     throw new AppError(400, 'Branch is required');
@@ -172,7 +170,8 @@ async function resolveAndValidateBranchId(
 
 export async function getSchedule(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const userId = req.user!.sub;
 
     const shifts = await tenantDb('employee_shifts')
@@ -189,7 +188,8 @@ export async function getSchedule(req: Request, res: Response, next: NextFunctio
 
 export async function getScheduleBranches(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
 
     const branches = await tenantDb('branches')
       .select('id', 'name', 'is_active')
@@ -203,8 +203,9 @@ export async function getScheduleBranches(req: Request, res: Response, next: Nex
 
 export async function getScheduleShift(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
-    const masterDb = db.getMasterDb();
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
+    const masterDb = db.getDb();
     const userId = req.user!.sub;
     const id = req.params.id as string;
 
@@ -245,7 +246,8 @@ export async function getScheduleShift(req: Request, res: Response, next: NextFu
 
 export async function getAuthorizationRequests(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const userId = req.user!.sub;
 
     const requests = await tenantDb('authorization_requests')
@@ -260,11 +262,12 @@ export async function getAuthorizationRequests(req: Request, res: Response, next
 
 export async function createAuthorizationRequest(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
-    const masterDb = db.getMasterDb();
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
+    const masterDb = db.getDb();
     const userId = req.user!.sub;
     const { requestType, description, level, reference, requestedAmount, bankName, accountName, accountNumber } = req.body;
-    const branchId = await resolveAndValidateBranchId(tenantDb, userId, req.body.branchId);
+    const branchId = await resolveAndValidateBranchId(userId, req.body.branchId);
 
     const requestLevel: string = level || 'management';
 
@@ -303,7 +306,8 @@ export async function createAuthorizationRequest(req: Request, res: Response, ne
 
 export async function getCashRequests(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const userId = req.user!.sub;
 
     const requests = await tenantDb('cash_requests')
@@ -319,7 +323,6 @@ export async function getCashRequests(req: Request, res: Response, next: NextFun
 export async function getAuditResults(req: Request, res: Response, next: NextFunction) {
   try {
     const data = await listAccountAuditResults({
-      tenantDb: req.tenantDb!,
       userId: req.user!.sub,
       type: req.query.type as 'customer_service' | 'compliance' | 'all' | undefined,
       page: req.query.page ? Number(req.query.page) : undefined,
@@ -335,7 +338,6 @@ export async function getAuditResults(req: Request, res: Response, next: NextFun
 export async function getAuditResultById(req: Request, res: Response, next: NextFunction) {
   try {
     const data = await getAccountAuditResultById({
-      tenantDb: req.tenantDb!,
       userId: req.user!.sub,
       auditId: String(req.params.id),
     });
@@ -348,12 +350,12 @@ export async function getAuditResultById(req: Request, res: Response, next: Next
 
 export async function createCashRequest(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
-    const masterDb = db.getMasterDb();
+    const { companyId, companyStorageRoot } = req.companyContext!;
+    const tenantDb = db.getDb();
+    const masterDb = db.getDb();
     const userId = req.user!.sub;
-    const companyStorageRoot = req.companyContext?.companyStorageRoot ?? '';
     const { requestType, reference, amount, bankName, accountName, accountNumber } = req.body;
-    const branchId = await resolveAndValidateBranchId(tenantDb, userId, req.body.branchId);
+    const branchId = await resolveAndValidateBranchId(userId, req.body.branchId);
     const attachmentFile = (req as any).file as Express.Multer.File | undefined;
 
     if (!requestType) throw new AppError(400, 'Request type is required');
@@ -406,7 +408,8 @@ export async function createCashRequest(req: Request, res: Response, next: NextF
 
 export async function getNotificationCount(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const userId = req.user!.sub;
 
     const result = await tenantDb('employee_notifications')
@@ -430,7 +433,8 @@ export async function getPushConfig(_req: Request, res: Response, next: NextFunc
 
 export async function getNotifications(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const userId = req.user!.sub;
 
     const notifications = await tenantDb('employee_notifications')
@@ -463,7 +467,8 @@ export async function getNotifications(req: Request, res: Response, next: NextFu
 
 export async function markNotificationRead(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const { id } = req.params;
 
     await tenantDb('employee_notifications')
@@ -478,8 +483,9 @@ export async function markNotificationRead(req: Request, res: Response, next: Ne
 
 export async function getTokenPayVerification(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
-    const masterDb = db.getMasterDb();
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
+    const masterDb = db.getDb();
     const user = req.user!;
     const { id } = req.params;
 
@@ -504,7 +510,8 @@ export async function getTokenPayVerification(req: Request, res: Response, next:
 
 export async function markAllNotificationsRead(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const userId = req.user!.sub;
 
     await tenantDb('employee_notifications')
@@ -519,7 +526,7 @@ export async function markAllNotificationsRead(req: Request, res: Response, next
 
 export async function getPushPreferences(req: Request, res: Response, next: NextFunction) {
   try {
-    const masterDb = db.getMasterDb();
+    const masterDb = db.getDb();
     const userId = req.user!.sub;
 
     const user = await masterDb('users')
@@ -540,7 +547,7 @@ export async function getPushPreferences(req: Request, res: Response, next: Next
 
 export async function updatePushPreferences(req: Request, res: Response, next: NextFunction) {
   try {
-    const masterDb = db.getMasterDb();
+    const masterDb = db.getDb();
     const userId = req.user!.sub;
     const { enabled } = req.body as { enabled?: unknown };
 
@@ -566,8 +573,8 @@ export async function updatePushPreferences(req: Request, res: Response, next: N
 
 export async function upsertPushSubscription(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
-    const masterDb = db.getMasterDb();
+    const { companyId } = req.companyContext!;
+    const masterDb = db.getDb();
     const userId = req.user!.sub;
     const { endpoint, keys, userAgent } = req.body as {
       endpoint?: unknown;
@@ -584,7 +591,6 @@ export async function upsertPushSubscription(req: Request, res: Response, next: 
     }
 
     await registerPushSubscription({
-      tenantDb,
       userId,
       endpoint: normalizedEndpoint,
       p256dh,
@@ -607,14 +613,14 @@ export async function upsertPushSubscription(req: Request, res: Response, next: 
 
 export async function removePushSubscription(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
     const userId = req.user!.sub;
     const endpoint = typeof req.body?.endpoint === 'string' ? req.body.endpoint.trim() : '';
     if (!endpoint) {
       throw new AppError(400, 'endpoint is required');
     }
 
-    await unregisterPushSubscription(tenantDb, userId, endpoint);
+    await unregisterPushSubscription(userId, endpoint);
     res.json({ success: true });
   } catch (err) {
     next(err);
@@ -623,10 +629,10 @@ export async function removePushSubscription(req: Request, res: Response, next: 
 
 export async function getProfile(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
-    const masterDb = db.getMasterDb();
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
+    const masterDb = db.getDb();
     const userId = req.user!.sub;
-    const companyId = req.user!.companyId;
 
     const user = await masterDb('users as users')
       .where('users.id', userId)
@@ -708,7 +714,7 @@ export async function getProfile(req: Request, res: Response, next: NextFunction
       reviewedAtRaw && !Number.isNaN(reviewedAtRaw.getTime()) ? reviewedAtRaw : null,
     );
 
-    const workScope = await loadUserWorkScope(db.getMasterDb(), userId, companyId);
+    const workScope = await loadUserWorkScope(userId, companyId);
 
     res.json({
       success: true,
@@ -751,7 +757,7 @@ export async function getProfile(req: Request, res: Response, next: NextFunction
 
 export async function updateAccountEmail(req: Request, res: Response, next: NextFunction) {
   try {
-    const masterDb = db.getMasterDb();
+    const masterDb = db.getDb();
     const userId = req.user!.sub;
     const email = normalizeEmail(String(req.body.email));
 
@@ -808,8 +814,9 @@ export async function updateAccountEmail(req: Request, res: Response, next: Next
 
 export async function submitPersonalInformationVerification(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
-    const masterDb = db.getMasterDb();
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
+    const masterDb = db.getDb();
     const userId = req.user!.sub;
 
     const user = await masterDb('users')
@@ -954,7 +961,6 @@ export async function submitPersonalInformationVerification(req: Request, res: R
       .update({ is_read: true });
 
     await notifyUser(
-      tenantDb,
       userId,
       'Personal Information Submitted',
       'Your personal information changes were submitted for verification.',
@@ -978,8 +984,9 @@ export async function submitPersonalInformationVerification(req: Request, res: R
 
 export async function submitBankInformationVerification(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
-    const masterDb = db.getMasterDb();
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
+    const masterDb = db.getDb();
     const userId = req.user!.sub;
     const bankId = Number(req.body.bankId);
     const accountNumber = String(req.body.accountNumber).trim();
@@ -1026,7 +1033,6 @@ export async function submitBankInformationVerification(req: Request, res: Respo
       .returning('*');
 
     await notifyUser(
-      tenantDb,
       userId,
       'Bank Information Submitted',
       'Your bank information was submitted for verification.',
@@ -1050,9 +1056,9 @@ export async function submitBankInformationVerification(req: Request, res: Respo
 
 export async function uploadValidId(req: Request, res: Response, next: NextFunction) {
   try {
-    const masterDb = db.getMasterDb();
+    const { companyStorageRoot } = req.companyContext!;
+    const masterDb = db.getDb();
     const userId = req.user!.sub;
-    const companyStorageRoot = req.companyContext?.companyStorageRoot ?? '';
     const file = (req as any).file as Express.Multer.File | undefined;
     if (!file) throw new AppError(400, 'No document uploaded');
 
@@ -1081,8 +1087,9 @@ export async function uploadValidId(req: Request, res: Response, next: NextFunct
 
 export async function getEmploymentRequirements(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
-    const masterDb = db.getMasterDb();
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
+    const masterDb = db.getDb();
     const userId = req.user!.sub;
 
     const user = await masterDb('users').where({ id: userId }).select('valid_id_url').first();
@@ -1146,10 +1153,10 @@ export async function getEmploymentRequirements(req: Request, res: Response, nex
 
 export async function submitEmploymentRequirement(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
-    const masterDb = db.getMasterDb();
+    const { companyId, companyStorageRoot } = req.companyContext!;
+    const tenantDb = db.getDb();
+    const masterDb = db.getDb();
     const userId = req.user!.sub;
-    const companyStorageRoot = req.companyContext?.companyStorageRoot ?? '';
     const requirementCode = req.params.requirementCode as string;
     const file = (req as any).file as Express.Multer.File | undefined;
 
@@ -1214,7 +1221,6 @@ export async function submitEmploymentRequirement(req: Request, res: Response, n
     }
 
     await notifyUser(
-      tenantDb,
       userId,
       'Employment Requirement Submitted',
       'Your employment requirement was submitted for verification.',

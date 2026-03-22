@@ -165,7 +165,6 @@ export async function deleteCurrent(req: Request, res: Response, next: NextFunct
     logger.warn(
       {
         companyId: user.companyId,
-        companyDbName: user.companyDbName,
         deletedByUserId: user.sub,
       },
       'Company deleted via superuser action',

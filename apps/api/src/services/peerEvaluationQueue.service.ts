@@ -7,7 +7,6 @@ import { callOdooKw } from './odoo.service.js';
 import { createAndDispatchNotification } from './notification.service.js';
 
 export interface PeerEvaluationJobPayload {
-  companyDbName: string;
   companyId: string;
   shiftId: string;
   branchId: string;
@@ -21,17 +20,17 @@ let boss: PgBoss | null = null;
 let workerId: string | null = null;
 
 function getSingletonKey(payload: PeerEvaluationJobPayload): string {
-  return `${payload.companyDbName}:${payload.shiftId}:peer_evaluation`;
+  return `${payload.companyId}:${payload.shiftId}:peer_evaluation`;
 }
 
 async function processPeerEvaluationJob(job: Job<PeerEvaluationJobPayload>): Promise<void> {
   const payload = job.data;
 
   // Step 1: Get tenant DB
-  const tenantDb = await db.getTenantDb(payload.companyDbName);
+  // single DB
 
   // Step 2: Validate shift still ended
-  const shift = await tenantDb('employee_shifts')
+  const shift = await db.getDb()('employee_shifts')
     .where({ id: payload.shiftId, status: 'ended' })
     .first();
   if (!shift) {
@@ -128,7 +127,7 @@ async function processPeerEvaluationJob(job: Job<PeerEvaluationJobPayload>): Pro
     .filter((k): k is string => Boolean(k));
 
   // ONE batch query instead of N serial queries
-  const masterUsers = await db.getMasterDb()('users').whereIn('id', websiteKeys).select('id');
+  const masterUsers = await db.getDb()('users').whereIn('id', websiteKeys).select('id');
   const masterUserSet = new Set(masterUsers.map((u) => String(u.id)));
 
   const qualifyingCoworkers: Array<{ userId: string; overlapMinutes: number }> = [];
@@ -186,7 +185,7 @@ async function processPeerEvaluationJob(job: Job<PeerEvaluationJobPayload>): Pro
   let firstInsertedId: string | null = null;
 
   for (const coworker of qualifyingCoworkers) {
-    const rows = await tenantDb('peer_evaluations')
+    const rows = await db.getDb()('peer_evaluations')
       .insert({
         evaluator_user_id: payload.shiftUserId,
         evaluated_user_id: coworker.userId,
@@ -224,7 +223,6 @@ async function processPeerEvaluationJob(job: Job<PeerEvaluationJobPayload>): Pro
 
   // Step 9: Send ONE notification to evaluator
   await createAndDispatchNotification({
-    tenantDb,
     userId: payload.shiftUserId,
     title: 'Peer Evaluation Available',
     message: `You have ${insertedCount} peer evaluation(s) to complete from your last shift. They expire in 24 hours.`,
@@ -256,11 +254,11 @@ export async function initPeerEvaluationQueue(): Promise<void> {
   if (boss) return;
 
   boss = new PgBoss({
-    host: env.MASTER_DB_HOST,
-    port: env.MASTER_DB_PORT,
-    database: env.MASTER_DB_NAME,
-    user: env.MASTER_DB_USER,
-    password: env.MASTER_DB_PASSWORD,
+    host: env.DB_HOST,
+    port: env.DB_PORT,
+    database: env.DB_NAME,
+    user: env.DB_USER,
+    password: env.DB_PASSWORD,
     schema: env.QUEUE_SCHEMA,
   });
 

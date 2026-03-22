@@ -19,7 +19,6 @@ type ProbeResult = {
 type CompanyContext = {
   id: string;
   slug: string;
-  dbName: string;
 };
 
 type HttpProbe = {
@@ -41,7 +40,7 @@ type DbSettings = {
   port: number;
   user: string;
   password: string;
-  masterDatabase: string;
+  database: string;
 };
 
 const __filename = fileURLToPath(import.meta.url);
@@ -70,11 +69,11 @@ function toQueryString(query: Record<string, string> | undefined): string {
 
 function readDbSettings(): DbSettings {
   return {
-    host: process.env.MASTER_DB_HOST ?? 'localhost',
-    port: Number(process.env.MASTER_DB_PORT ?? 5432),
-    user: process.env.MASTER_DB_USER ?? 'postgres',
-    password: process.env.MASTER_DB_PASSWORD ?? 'postgres',
-    masterDatabase: process.env.MASTER_DB_NAME ?? 'omnilert_master',
+    host: process.env.DB_HOST ?? 'localhost',
+    port: Number(process.env.DB_PORT ?? 5432),
+    user: process.env.DB_USER ?? 'postgres',
+    password: process.env.DB_PASSWORD ?? 'postgres',
+    database: process.env.DB_NAME ?? 'omnilert',
   };
 }
 
@@ -103,7 +102,6 @@ function createTokenFactory(
       sub: randomUUID(),
       companyId: company.id,
       companySlug: company.slug,
-      companyDbName: company.dbName,
       roles: [] as string[],
       permissions,
       branchIds,
@@ -315,41 +313,38 @@ function renderMarkdown(results: ProbeResult[]): string {
 
 async function resolveCompanyAndBranches(
   settings: DbSettings,
-): Promise<{ company: CompanyContext; branchIds: string[]; tenantDb: Knex }> {
-  const masterDb = createDbConnection(settings, settings.masterDatabase);
+): Promise<{ company: CompanyContext; branchIds: string[]; singleDb: Knex }> {
+  const singleDb = createDbConnection(settings, settings.database);
 
-  const companyRow = await masterDb('companies')
+  const companyRow = await singleDb('companies')
     .where({ is_active: true })
     .orderBy('created_at', 'asc')
-    .first('id', 'slug', 'db_name');
+    .first('id', 'slug');
 
-  await masterDb.destroy();
-
-  if (!companyRow?.id || !companyRow?.slug || !companyRow?.db_name) {
-    throw new Error('No active company found in master database.');
+  if (!companyRow?.id || !companyRow?.slug) {
+    await singleDb.destroy();
+    throw new Error('No active company found in database.');
   }
 
-  const tenantDb = createDbConnection(settings, String(companyRow.db_name));
-  const branchRows = await tenantDb('branches')
+  const branchRows = await singleDb('branches')
     .select('id')
-    .where({ is_active: true })
+    .where({ is_active: true, company_id: companyRow.id })
     .orderBy('created_at', 'asc')
     .limit(10);
 
   const branchIds = branchRows.map((branch) => String(branch.id)).filter(Boolean);
   if (branchIds.length === 0) {
-    await tenantDb.destroy();
-    throw new Error(`No active branches found in tenant database "${String(companyRow.db_name)}".`);
+    await singleDb.destroy();
+    throw new Error(`No active branches found for company "${String(companyRow.id)}".`);
   }
 
   return {
     company: {
       id: String(companyRow.id),
       slug: String(companyRow.slug),
-      dbName: String(companyRow.db_name),
     },
     branchIds,
-    tenantDb,
+    singleDb,
   };
 }
 
@@ -364,10 +359,10 @@ async function main(): Promise<void> {
   const socketOrigin = apiBaseUrl.replace(/\/api$/, '');
   const jwtExpiresIn = process.env.JWT_EXPIRES_IN ?? '15m';
 
-  let tenantDb: Knex | null = null;
+  let singleDb: Knex | null = null;
   try {
     const companyData = await resolveCompanyAndBranches(settings);
-    tenantDb = companyData.tenantDb;
+    singleDb = companyData.singleDb;
 
     const assignedBranchId = companyData.branchIds[0];
     const otherBranchId = companyData.branchIds[1] ?? companyData.branchIds[0];
@@ -520,8 +515,8 @@ async function main(): Promise<void> {
       process.exitCode = 1;
     }
   } finally {
-    if (tenantDb) {
-      await tenantDb.destroy();
+    if (singleDb) {
+      await singleDb.destroy();
     }
   }
 }

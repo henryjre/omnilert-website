@@ -194,7 +194,6 @@ test('listAccountAuditResults returns only owned completed audits with normalize
   });
 
   const result = await service.listAccountAuditResults({
-    tenantDb: {} as never,
     userId: 'viewer-1',
     type: 'all',
     page: 1,
@@ -236,7 +235,6 @@ test('getAccountAuditResultById returns a sanitized read-only detail payload', a
   });
 
   const result = await service.getAccountAuditResultById({
-    tenantDb: {} as never,
     userId: 'viewer-1',
     auditId: 'audit-safe',
   });
@@ -289,7 +287,6 @@ test('getAccountAuditResultById rejects audits not owned by the viewer', async (
   await assert.rejects(
     () =>
       service.getAccountAuditResultById({
-        tenantDb: {} as never,
         userId: 'viewer-1',
         auditId: 'audit-other',
       }),

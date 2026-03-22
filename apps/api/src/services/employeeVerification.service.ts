@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import type { Knex } from 'knex';
 import { AppError } from '../middleware/errorHandler.js';
 import { createPartnerBankAndAssignEmployees, syncUserProfileToOdoo } from './odoo.service.js';
 import { getIO } from '../config/socket.js';
@@ -55,7 +54,6 @@ function emitEmployeeRequirementUpdated(payload: {
 }
 
 async function notifyUser(
-  tenantDb: Knex,
   userId: string,
   title: string,
   message: string,
@@ -63,7 +61,6 @@ async function notifyUser(
   linkUrl: string,
 ): Promise<void> {
   await createAndDispatchNotification({
-    tenantDb,
     userId,
     title,
     message,
@@ -72,14 +69,14 @@ async function notifyUser(
   });
 }
 
-export async function listEmployeeVerifications(tenantDb: Knex) {
-  const masterDb = db.getMasterDb();
+export async function listEmployeeVerifications() {
+  const masterDb = db.getDb();
   const [registration, personalInformation, employmentRequirements, bankInformation] = await Promise.all([
     listRegistrationRequests(),
-    tenantDb('personal_information_verifications')
+    db.getDb()('personal_information_verifications')
       .select('personal_information_verifications.*')
       .orderBy('personal_information_verifications.created_at', 'desc'),
-    tenantDb('employment_requirement_submissions')
+    db.getDb()('employment_requirement_submissions')
       .join(
         'employment_requirement_types',
         'employment_requirement_submissions.requirement_code',
@@ -90,7 +87,7 @@ export async function listEmployeeVerifications(tenantDb: Knex) {
         'employment_requirement_types.label as requirement_label',
       )
       .orderBy('employment_requirement_submissions.created_at', 'desc'),
-    tenantDb('bank_information_verifications')
+    db.getDb()('bank_information_verifications')
       .select(
         'bank_information_verifications.*',
       )
@@ -190,7 +187,6 @@ export async function listRegistrationVerifications() {
 }
 
 export async function approvePersonalInformationVerification(input: {
-  tenantDb: Knex;
   companyId: string;
   verificationId: string;
   reviewerId: string;
@@ -213,8 +209,8 @@ export async function approvePersonalInformationVerification(input: {
     emergencyRelationship?: string;
   };
 }) {
-  const masterDb = db.getMasterDb();
-  const verification = await input.tenantDb('personal_information_verifications')
+  const masterDb = db.getDb();
+  const verification = await db.getDb()('personal_information_verifications')
     .where({ id: input.verificationId })
     .first();
   if (!verification) {
@@ -292,7 +288,7 @@ export async function approvePersonalInformationVerification(input: {
     updates.emergency_relationship = approved.emergencyRelationship;
   }
 
-  await input.tenantDb.transaction(async (trx) => {
+  await db.getDb().transaction(async (trx) => {
     await trx('personal_information_verifications')
       .where({ id: input.verificationId })
       .update({
@@ -305,7 +301,7 @@ export async function approvePersonalInformationVerification(input: {
   });
   await masterDb('users').where({ id: user.id }).update(updates);
 
-  const activeBranches = await input.tenantDb('branches')
+  const activeBranches = await db.getDb()('branches')
     .where({ is_active: true })
     .select('is_main_branch', 'odoo_branch_id');
   const branchesWithCompanyId = activeBranches
@@ -335,7 +331,6 @@ export async function approvePersonalInformationVerification(input: {
   });
 
   await notifyUser(
-    input.tenantDb,
     user.id,
     'Personal Information Verified',
     'Your personal information verification request has been approved.',
@@ -353,13 +348,12 @@ export async function approvePersonalInformationVerification(input: {
 }
 
 export async function rejectPersonalInformationVerification(input: {
-  tenantDb: Knex;
   companyId: string;
   verificationId: string;
   reviewerId: string;
   reason: string;
 }) {
-  const verification = await input.tenantDb('personal_information_verifications')
+  const verification = await db.getDb()('personal_information_verifications')
     .where({ id: input.verificationId })
     .first();
   if (!verification) {
@@ -369,7 +363,7 @@ export async function rejectPersonalInformationVerification(input: {
     throw new AppError(400, 'Verification is already resolved');
   }
 
-  await input.tenantDb('personal_information_verifications')
+  await db.getDb()('personal_information_verifications')
     .where({ id: input.verificationId })
     .update({
       status: 'rejected',
@@ -380,7 +374,6 @@ export async function rejectPersonalInformationVerification(input: {
     });
 
   await notifyUser(
-    input.tenantDb,
     verification.user_id as string,
     'Personal Information Rejected',
     `Your personal information verification was rejected: ${input.reason.trim()}`,
@@ -398,18 +391,17 @@ export async function rejectPersonalInformationVerification(input: {
 }
 
 export async function approveEmploymentRequirementSubmission(input: {
-  tenantDb: Knex;
   companyId: string;
   submissionId: string;
   reviewerId: string;
 }) {
-  const submission = await input.tenantDb('employment_requirement_submissions')
+  const submission = await db.getDb()('employment_requirement_submissions')
     .where({ id: input.submissionId })
     .first();
   if (!submission) throw new AppError(404, 'Employment requirement submission not found');
   if (submission.status !== 'pending') throw new AppError(400, 'Submission is already resolved');
 
-  await input.tenantDb.transaction(async (trx) => {
+  await db.getDb().transaction(async (trx) => {
     await trx('employment_requirement_submissions')
       .where({ id: input.submissionId })
       .update({
@@ -421,7 +413,7 @@ export async function approveEmploymentRequirementSubmission(input: {
 
     // Shared canonical valid ID sync from requirement submission.
     if (submission.requirement_code === 'government_issued_id') {
-      await db.getMasterDb()('users')
+      await db.getDb()('users')
         .where({ id: submission.user_id })
         .update({
           valid_id_url: submission.document_url,
@@ -432,7 +424,6 @@ export async function approveEmploymentRequirementSubmission(input: {
   });
 
   await notifyUser(
-    input.tenantDb,
     submission.user_id as string,
     'Employment Requirement Approved',
     'Your employment requirement submission has been approved.',
@@ -457,19 +448,18 @@ export async function approveEmploymentRequirementSubmission(input: {
 }
 
 export async function rejectEmploymentRequirementSubmission(input: {
-  tenantDb: Knex;
   companyId: string;
   submissionId: string;
   reviewerId: string;
   reason: string;
 }) {
-  const submission = await input.tenantDb('employment_requirement_submissions')
+  const submission = await db.getDb()('employment_requirement_submissions')
     .where({ id: input.submissionId })
     .first();
   if (!submission) throw new AppError(404, 'Employment requirement submission not found');
   if (submission.status !== 'pending') throw new AppError(400, 'Submission is already resolved');
 
-  await input.tenantDb('employment_requirement_submissions')
+  await db.getDb()('employment_requirement_submissions')
     .where({ id: input.submissionId })
     .update({
       status: 'rejected',
@@ -480,7 +470,6 @@ export async function rejectEmploymentRequirementSubmission(input: {
     });
 
   await notifyUser(
-    input.tenantDb,
     submission.user_id as string,
     'Employment Requirement Rejected',
     `Your employment requirement submission was rejected: ${input.reason.trim()}`,
@@ -505,13 +494,12 @@ export async function rejectEmploymentRequirementSubmission(input: {
 }
 
 export async function approveBankInformationVerification(input: {
-  tenantDb: Knex;
   companyId: string;
   verificationId: string;
   reviewerId: string;
 }) {
-  const masterDb = db.getMasterDb();
-  const verification = await input.tenantDb('bank_information_verifications')
+  const masterDb = db.getDb();
+  const verification = await db.getDb()('bank_information_verifications')
     .where({ id: input.verificationId })
     .first();
   if (!verification) {
@@ -536,7 +524,7 @@ export async function approveBankInformationVerification(input: {
     accountNumber: String(verification.account_number),
   });
 
-  await input.tenantDb.transaction(async (trx) => {
+  await db.getDb().transaction(async (trx) => {
     await trx('bank_information_verifications')
       .where({ id: input.verificationId })
       .update({
@@ -556,7 +544,6 @@ export async function approveBankInformationVerification(input: {
     });
 
   await notifyUser(
-    input.tenantDb,
     user.id as string,
     'Bank Information Approved',
     'Your bank information verification has been approved.',
@@ -574,13 +561,12 @@ export async function approveBankInformationVerification(input: {
 }
 
 export async function rejectBankInformationVerification(input: {
-  tenantDb: Knex;
   companyId: string;
   verificationId: string;
   reviewerId: string;
   reason: string;
 }) {
-  const verification = await input.tenantDb('bank_information_verifications')
+  const verification = await db.getDb()('bank_information_verifications')
     .where({ id: input.verificationId })
     .first();
   if (!verification) {
@@ -590,7 +576,7 @@ export async function rejectBankInformationVerification(input: {
     throw new AppError(400, 'Verification is already resolved');
   }
 
-  await input.tenantDb('bank_information_verifications')
+  await db.getDb()('bank_information_verifications')
     .where({ id: input.verificationId })
     .update({
       status: 'rejected',
@@ -601,7 +587,6 @@ export async function rejectBankInformationVerification(input: {
     });
 
   await notifyUser(
-    input.tenantDb,
     verification.user_id as string,
     'Bank Information Rejected',
     `Your bank information verification was rejected: ${input.reason.trim()}`,
@@ -622,51 +607,46 @@ export async function seedApprovedBankVerification(input: {
   userId: string;
   bankId: number;
   accountNumber: string;
-  companyDbNames: string[];
+  companyIds: string[];
 }): Promise<void> {
-  for (const dbName of input.companyDbNames) {
-    try {
-      const tenantDb = await db.getTenantDb(dbName);
+  try {
+    const existing = await db.getDb()('bank_information_verifications')
+      .where({ user_id: input.userId, status: 'approved' })
+      .first('id');
 
-      const existing = await tenantDb('bank_information_verifications')
-        .where({ user_id: input.userId, status: 'approved' })
-        .first('id');
-
-      if (existing) {
-        logger.info(
-          { userId: input.userId, dbName },
-          'Skipping bank verification seed: approved record already exists',
-        );
-        continue;
-      }
-
-      await tenantDb('bank_information_verifications').insert({
-        id: randomUUID(),
-        user_id: input.userId,
-        bank_id: input.bankId,
-        account_number: input.accountNumber,
-        status: 'approved',
-        reviewed_by: null,
-        reviewed_at: new Date(),
-        rejection_reason: null,
-        odoo_partner_bank_id: null,
-        created_at: new Date(),
-        updated_at: new Date(),
-      });
-
+    if (existing) {
       logger.info(
-        { userId: input.userId, dbName, bankId: input.bankId },
-        'Seeded approved bank verification record for new global user',
+        { userId: input.userId },
+        'Skipping bank verification seed: approved record already exists',
       );
-    } catch (error) {
-      logger.warn(
-        {
-          userId: input.userId,
-          dbName,
-          error: error instanceof Error ? error.message : String(error),
-        },
-        'Failed to seed approved bank verification record in tenant DB during global user creation',
-      );
+      return;
     }
+
+    await db.getDb()('bank_information_verifications').insert({
+      id: randomUUID(),
+      user_id: input.userId,
+      bank_id: input.bankId,
+      account_number: input.accountNumber,
+      status: 'approved',
+      reviewed_by: null,
+      reviewed_at: new Date(),
+      rejection_reason: null,
+      odoo_partner_bank_id: null,
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+
+    logger.info(
+      { userId: input.userId, bankId: input.bankId },
+      'Seeded approved bank verification record for new global user',
+    );
+  } catch (error) {
+    logger.warn(
+      {
+        userId: input.userId,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      'Failed to seed approved bank verification record during global user creation',
+    );
   }
 }

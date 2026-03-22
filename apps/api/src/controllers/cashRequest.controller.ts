@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { AppError } from '../middleware/errorHandler.js';
 import { createAndDispatchNotification } from '../services/notification.service.js';
+import { db } from '../config/database.js';
 
 /**
  * GET /cash-requests
@@ -8,7 +9,8 @@ import { createAndDispatchNotification } from '../services/notification.service.
  */
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const { branchIds, status } = req.query as Record<string, string>;
 
     const branchIdList: string[] = branchIds ? branchIds.split(',').filter(Boolean) : [];
@@ -37,7 +39,8 @@ export async function list(req: Request, res: Response, next: NextFunction) {
  */
 export async function approve(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const reviewerId = req.user!.sub;
     const id = req.params.id as string;
 
@@ -54,7 +57,6 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
     if (cashReq.user_id) {
       const label = requestTypeLabel(cashReq.request_type);
       await createAndDispatchNotification({
-        tenantDb,
         userId: cashReq.user_id,
         title: `${label} Approved`,
         message: `Your ${label.toLowerCase()} has been approved.`,
@@ -74,7 +76,8 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
  */
 export async function reject(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const reviewerId = req.user!.sub;
     const id = req.params.id as string;
     const { reason } = req.body as { reason: string };
@@ -100,7 +103,6 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
     if (cashReq.user_id) {
       const label = requestTypeLabel(cashReq.request_type);
       await createAndDispatchNotification({
-        tenantDb,
         userId: cashReq.user_id,
         title: `${label} Rejected`,
         message: `Your ${label.toLowerCase()} has been rejected: ${reason.trim()}`,
@@ -120,7 +122,8 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
  */
 export async function disburse(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const disbursedBy = req.user!.sub;
     const id = req.params.id as string;
 
@@ -137,7 +140,6 @@ export async function disburse(req: Request, res: Response, next: NextFunction) 
     if (cashReq.user_id) {
       const label = requestTypeLabel(cashReq.request_type);
       await createAndDispatchNotification({
-        tenantDb,
         userId: cashReq.user_id,
         title: `${label} Disbursed`,
         message: `Your ${label.toLowerCase()} has been disbursed.`,

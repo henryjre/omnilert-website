@@ -7,10 +7,8 @@ import type {
   ListAccountAuditResultsResponse,
   StoreAuditType,
 } from '@omnilert/shared';
-import type { Knex } from 'knex';
 import { db } from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
-import { resolveGlobalStoreAuditContext } from './globalStoreAuditIndex.service.js';
 import { listEmployeeIdsByWebsiteUserKey } from './odoo.service.js';
 
 type AuditRowSource = {
@@ -64,15 +62,12 @@ type ViewerIdentity = {
 type AccountAuditResultServiceDeps = {
   resolveViewerIdentity: (input: { userId: string }) => Promise<ViewerIdentity>;
   listCompletedAuditRows: (input: {
-    tenantDb: Knex;
     type?: StoreAuditType;
   }) => Promise<AuditRowSource[]>;
   getAuditRowById: (input: {
-    tenantDb: Knex;
     auditId: string;
   }) => Promise<AuditRowSource | null>;
   listAuditMessages: (input: {
-    tenantDb: Knex;
     auditId: string;
   }) => Promise<AuditMessageSource[]>;
 };
@@ -244,7 +239,7 @@ function sortCompletedRowsDesc(left: AuditRowSource, right: AuditRowSource): num
 }
 
 async function defaultResolveViewerIdentity(input: { userId: string }): Promise<ViewerIdentity> {
-  const user = await db.getMasterDb()('users')
+  const user = await db.getDb()('users')
     .where({ id: input.userId })
     .first('user_key');
 
@@ -260,10 +255,9 @@ async function defaultResolveViewerIdentity(input: { userId: string }): Promise<
 }
 
 async function defaultListCompletedAuditRows(input: {
-  tenantDb: Knex;
   type?: StoreAuditType;
 }): Promise<AuditRowSource[]> {
-  const query = db.getMasterDb()('global_store_audits as audits')
+  const query = db.getDb()('global_store_audits as audits')
     .where('audits.status', 'completed')
     .select(
       'audits.company_id',
@@ -299,10 +293,9 @@ async function defaultListCompletedAuditRows(input: {
 }
 
 async function defaultGetAuditRowById(input: {
-  tenantDb: Knex;
   auditId: string;
 }): Promise<AuditRowSource | null> {
-  const row = await db.getMasterDb()('global_store_audits as audits')
+  const row = await db.getDb()('global_store_audits as audits')
     .where('audits.audit_id', input.auditId)
     .first(
       'audits.company_id',
@@ -334,15 +327,14 @@ async function defaultGetAuditRowById(input: {
 }
 
 async function defaultListAuditMessages(input: {
-  tenantDb: Knex;
   auditId: string;
 }): Promise<AuditMessageSource[]> {
-  const context = await resolveGlobalStoreAuditContext(input.auditId);
-  if (!context) {
+  const auditExists = await db.getDb()('store_audits').where({ id: input.auditId }).first('id');
+  if (!auditExists) {
     return [];
   }
 
-  const messageRows = await context.tenantDb('store_audit_messages')
+  const messageRows = await db.getDb()('store_audit_messages')
     .where({ store_audit_id: input.auditId })
     .orderBy('created_at', 'asc')
     .select('id', 'content', 'is_deleted', 'created_at');
@@ -352,7 +344,7 @@ async function defaultListAuditMessages(input: {
   }
 
   const messageIds = messageRows.map((row) => String(row.id));
-  const attachmentRows = await context.tenantDb('store_audit_attachments')
+  const attachmentRows = await db.getDb()('store_audit_attachments')
     .whereIn('message_id', messageIds)
     .orderBy('created_at', 'asc')
     .select('id', 'message_id', 'file_url', 'file_name', 'file_size', 'content_type', 'created_at');
@@ -395,7 +387,6 @@ export function createAccountAuditResultService(
 
   return {
     async listAccountAuditResults(input: {
-      tenantDb: Knex;
       userId: string;
       type?: StoreAuditType | 'all';
       page?: number;
@@ -405,7 +396,7 @@ export function createAccountAuditResultService(
       const pageSize = Math.min(100, Math.max(1, Number(input.pageSize ?? 10)));
       const viewerIdentity = await deps.resolveViewerIdentity({ userId: input.userId });
       const rows = await deps.listCompletedAuditRows({
-        tenantDb: input.tenantDb,
+        
         type: input.type && input.type !== 'all' ? input.type : undefined,
       });
 
@@ -429,13 +420,12 @@ export function createAccountAuditResultService(
     },
 
     async getAccountAuditResultById(input: {
-      tenantDb: Knex;
       userId: string;
       auditId: string;
     }): Promise<AccountAuditResultDetail> {
       const viewerIdentity = await deps.resolveViewerIdentity({ userId: input.userId });
       const row = await deps.getAuditRowById({
-        tenantDb: input.tenantDb,
+        
         auditId: input.auditId,
       });
 
@@ -444,7 +434,7 @@ export function createAccountAuditResultService(
       }
 
       const messages = await deps.listAuditMessages({
-        tenantDb: input.tenantDb,
+        
         auditId: input.auditId,
       });
 

@@ -1,4 +1,3 @@
-import type { Knex } from 'knex';
 import { AppError } from '../middleware/errorHandler.js';
 import { db } from '../config/database.js';
 import { assignGlobalCompanyBranches } from './globalUserManagement.service.js';
@@ -51,14 +50,13 @@ type UserBranchSummary = {
 type CompanyAssignmentInput = { companyId: string; branchIds: string[] };
 
 async function loadUserBranchSummaryMap(
-  masterDb: Knex,
   userIds: string[],
 ): Promise<Record<string, UserBranchSummary>> {
   const uniqueUserIds = Array.from(new Set(userIds.filter(Boolean)));
   if (uniqueUserIds.length === 0) return {};
 
   const [companyRows, branchRows] = await Promise.all([
-    masterDb('user_company_access as uca')
+    db.getDb()('user_company_access as uca')
       .join('companies as companies', 'uca.company_id', 'companies.id')
       .whereIn('uca.user_id', uniqueUserIds)
       .andWhere('uca.is_active', true)
@@ -69,7 +67,7 @@ async function loadUserBranchSummaryMap(
         'companies.theme_color as company_theme_color',
       )
       .orderBy('companies.name', 'asc'),
-    masterDb('user_company_branches as ucb')
+    db.getDb()('user_company_branches as ucb')
       .join('companies as companies', 'ucb.company_id', 'companies.id')
       .whereIn('ucb.user_id', uniqueUserIds)
       .select(
@@ -166,7 +164,6 @@ function areCompanyAssignmentsEqual(
 }
 
 export async function listEmployeeProfiles(input: {
-  tenantDb: Knex;
   status: 'all' | 'active' | 'resigned' | 'inactive' | 'suspended';
   page: number;
   pageSize: number;
@@ -177,12 +174,12 @@ export async function listEmployeeProfiles(input: {
   sortDirection?: 'asc' | 'desc';
   excludedEmails?: string[];
 }) {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const excludedEmails = (input.excludedEmails ?? [])
     .map((email) => String(email).trim().toLowerCase())
     .filter((email) => email.length > 0);
 
-  const baseQuery = masterDb('users as users')
+  const baseQuery = db.getDb()('users as users')
     .whereExists((builder) => {
       builder
         .select(masterDb.raw('1'))
@@ -265,12 +262,12 @@ export async function listEmployeeProfiles(input: {
     .limit(input.pageSize);
 
   const userIds = rows.map((row: any) => row.id as string);
-  const branchSummaryByUserId = await loadUserBranchSummaryMap(masterDb, userIds);
+  const branchSummaryByUserId = await loadUserBranchSummaryMap(userIds);
   const departmentIds = Array.from(new Set(rows
     .map((row: any) => row.department_id as string | null)
     .filter(Boolean) as string[]));
   const departments = departmentIds.length > 0
-    ? await input.tenantDb('departments').whereIn('id', departmentIds).select('id', 'name')
+    ? await db.getDb()('departments').whereIn('id', departmentIds).select('id', 'name')
     : [];
   const departmentNameById = new Map(departments.map((d: any) => [d.id as string, d.name as string]));
 
@@ -309,16 +306,15 @@ export async function listEmployeeProfiles(input: {
 }
 
 export async function getEmployeeProfileDetail(
-  tenantDb: Knex,
   userId: string,
   excludedEmails?: string[],
 ) {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const normalizedExcludedEmails = (excludedEmails ?? [])
     .map((email) => String(email).trim().toLowerCase())
     .filter((email) => email.length > 0);
 
-  const user = await masterDb('users as users')
+  const user = await db.getDb()('users as users')
     .where('users.id', userId)
     .whereExists((builder) => {
       builder
@@ -368,25 +364,25 @@ export async function getEmployeeProfileDetail(
     throw new AppError(404, 'Employee not found');
   }
 
-  const roles = await masterDb('user_roles')
+  const roles = await db.getDb()('user_roles')
     .join('roles', 'user_roles.role_id', 'roles.id')
     .where('user_roles.user_id', userId)
     .select('roles.id', 'roles.name', 'roles.color')
     .orderBy('roles.priority', 'desc');
 
-  const departmentOptions = await tenantDb('departments')
+  const departmentOptions = await db.getDb()('departments')
     .select('id', 'name')
     .orderBy('name', 'asc');
   const department = user.department_id
-    ? await tenantDb('departments').where({ id: user.department_id }).first('name')
+    ? await db.getDb()('departments').where({ id: user.department_id }).first('name')
     : null;
 
   const dateStartedEffective = toDateOnly(user.date_started ?? user.created_at);
   const daysOfEmployment = computeDaysOfEmployment(user.date_started, user.created_at);
   const employmentStatus = normalizeEmploymentStatus(user.employment_status, user.is_active);
   const [branchSummaryByUserId, company] = await Promise.all([
-    loadUserBranchSummaryMap(masterDb, [userId]),
-    masterDb('user_company_access as uca')
+    loadUserBranchSummaryMap([userId]),
+    db.getDb()('user_company_access as uca')
       .join('companies as companies', 'uca.company_id', 'companies.id')
       .where('uca.user_id', userId)
       .andWhere('uca.is_active', true)
@@ -400,7 +396,7 @@ export async function getEmployeeProfileDetail(
     borrow_branches: [],
     branch_options: [],
   };
-  const fallbackWorkScope = await loadUserWorkScope(masterDb, userId, String(company?.id ?? ''));
+  const fallbackWorkScope = await loadUserWorkScope(userId, String(company?.id ?? ''));
 
   return {
     id: user.id as string,
@@ -460,7 +456,6 @@ export async function getEmployeeProfileDetail(
 }
 
 export async function updateEmployeeWorkInformation(input: {
-  tenantDb: Knex;
   userId: string;
   departmentId: string | null;
   positionTitle: string | null;
@@ -471,12 +466,12 @@ export async function updateEmployeeWorkInformation(input: {
   dateStarted: string | null;
   excludedEmails?: string[];
 }) {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const normalizedExcludedEmails = (input.excludedEmails ?? [])
     .map((email) => String(email).trim().toLowerCase())
     .filter((email) => email.length > 0);
 
-  const existingUser = await masterDb('users')
+  const existingUser = await db.getDb()('users')
     .where({ id: input.userId })
     .first('id', 'email');
   if (!existingUser) {
@@ -487,7 +482,7 @@ export async function updateEmployeeWorkInformation(input: {
   }
 
   if (input.departmentId) {
-    const department = await input.tenantDb('departments')
+    const department = await db.getDb()('departments')
       .where({ id: input.departmentId })
       .first('id');
     if (!department) {
@@ -514,7 +509,7 @@ export async function updateEmployeeWorkInformation(input: {
       throw new AppError(400, 'Selected resident branch must be included in company assignments');
     }
 
-    const branchSummaryByUserId = await loadUserBranchSummaryMap(masterDb, [input.userId]);
+    const branchSummaryByUserId = await loadUserBranchSummaryMap([input.userId]);
     const currentAssignments = toCompanyAssignmentsFromBranches(
       branchSummaryByUserId[input.userId]?.branch_options ?? [],
     );
@@ -559,19 +554,18 @@ export async function updateEmployeeWorkInformation(input: {
   });
 
   return getEmployeeProfileDetail(
-    input.tenantDb,
     input.userId,
     normalizedExcludedEmails,
   );
 }
 
-export async function getEmployeeProfileFilterOptions(tenantDb: Knex) {
-  const masterDb = db.getMasterDb();
+export async function getEmployeeProfileFilterOptions() {
+  const masterDb = db.getDb();
   const [departments, roles] = await Promise.all([
-    tenantDb('departments')
+    db.getDb()('departments')
       .select('id', 'name')
       .orderBy('name', 'asc'),
-    masterDb('roles')
+    db.getDb()('roles')
       .select('id', 'name')
       .orderBy('priority', 'desc')
       .orderBy('name', 'asc'),

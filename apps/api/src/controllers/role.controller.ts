@@ -5,7 +5,7 @@ import { buildRoleUpdates } from './roleUpdatePolicy.js';
 
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
-    const masterDb = db.getMasterDb();
+    const masterDb = db.getDb();
     const roles = await masterDb('roles').orderBy('priority', 'desc');
     res.json({ success: true, data: roles });
   } catch (err) {
@@ -15,7 +15,7 @@ export async function list(req: Request, res: Response, next: NextFunction) {
 
 export async function create(req: Request, res: Response, next: NextFunction) {
   try {
-    const masterDb = db.getMasterDb();
+    const masterDb = db.getDb();
     const user = req.user!;
     const { name, description, color, priority, permissionIds } = req.body;
 
@@ -53,7 +53,7 @@ export async function create(req: Request, res: Response, next: NextFunction) {
 
 export async function update(req: Request, res: Response, next: NextFunction) {
   try {
-    const masterDb = db.getMasterDb();
+    const masterDb = db.getDb();
     const { id } = req.params;
 
     const existing = await masterDb('roles').where({ id }).first();
@@ -69,7 +69,7 @@ export async function update(req: Request, res: Response, next: NextFunction) {
 
 export async function remove(req: Request, res: Response, next: NextFunction) {
   try {
-    const masterDb = db.getMasterDb();
+    const masterDb = db.getDb();
     const { id } = req.params;
 
     const role = await masterDb('roles').where({ id }).first();
@@ -85,7 +85,7 @@ export async function remove(req: Request, res: Response, next: NextFunction) {
 
 export async function getPermissions(req: Request, res: Response, next: NextFunction) {
   try {
-    const masterDb = db.getMasterDb();
+    const masterDb = db.getDb();
     const { id } = req.params;
 
     const permissions = await masterDb('role_permissions')
@@ -101,7 +101,7 @@ export async function getPermissions(req: Request, res: Response, next: NextFunc
 
 export async function setPermissions(req: Request, res: Response, next: NextFunction) {
   try {
-    const masterDb = db.getMasterDb();
+    const masterDb = db.getDb();
     const { id } = req.params;
     const { permissionIds } = req.body;
 
@@ -124,7 +124,7 @@ export async function setPermissions(req: Request, res: Response, next: NextFunc
 
 export async function listAllPermissions(req: Request, res: Response, next: NextFunction) {
   try {
-    const masterDb = db.getMasterDb();
+    const masterDb = db.getDb();
     const permissions = await masterDb('permissions').orderBy('category').orderBy('key');
     res.json({ success: true, data: permissions });
   } catch (err) {
