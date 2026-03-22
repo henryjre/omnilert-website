@@ -11,7 +11,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -19,7 +19,7 @@ jobs:
           version: 9.15.0
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: pnpm
@@ -72,8 +72,7 @@ jobs:
             git clean -fdx -e apps/api/.env -e apps/api/uploads/
             pnpm install --frozen-lockfile --config.confirmModulesPurge=false
             pnpm --filter @omnilert/shared build
-            pnpm -C apps/api migrate:master
-            pnpm -C apps/api migrate:tenant
+            pnpm -C apps/api migrate
             TURBO_CONCURRENCY=1 pnpm build
             if pm2 describe omnilert-api >/dev/null 2>&1; then
               pm2 restart omnilert-api --update-env
