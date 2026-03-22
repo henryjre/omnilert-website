@@ -8,8 +8,9 @@ Internal ops platform for branch-based PH businesses. Monorepo: `pnpm` + Turbo. 
 pnpm install && pnpm dev       # install + run all dev servers (from root)
 pnpm build                     # build all
 # from apps/api/ — run migrations
-npx knex migrate:latest --knexfile src/config/knex.ts
-npx knex migrate:rollback --knexfile src/config/knex.ts
+pnpm migrate             # run pending migrations
+pnpm migrate:rollback    # rollback last batch
+pnpm migrate:status      # check migration status
 ```
 
 ## Architecture
