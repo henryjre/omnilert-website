@@ -45,7 +45,7 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
   const updateUser = useAuthStore((s) => s.updateUser);
   const setTokens = useAuthStore((s) => s.setTokens);
   const logoutStore = useAuthStore((s) => s.logout);
-  const { branches, fetchBranches, setSelectedBranchIds } = useBranchStore();
+  const { fetchBranches, setSelectedBranchIds } = useBranchStore();
   const { hasPermission } = usePermission();
   const navigate = useNavigate();
   const socket = useSocket('/notifications');
@@ -223,7 +223,7 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
   const unreadNotifications = notifications.filter((n) => !n.is_read);
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-gray-200 bg-white px-3 sm:px-6">
+    <header className="sticky top-0 z-30 flex h-16 items-center border-b border-gray-200 bg-white px-3 sm:px-6 relative">
       <div className="flex items-center lg:hidden">
         <button
           type="button"
@@ -235,9 +235,12 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
         </button>
       </div>
 
-      <div className="ml-auto flex items-center gap-4">
+      {/* BranchSelector: centered on mobile, right-aligned before bell on desktop */}
+      <div className="absolute left-1/2 -translate-x-1/2 md:static md:ml-auto md:translate-x-0">
         <BranchSelector />
+      </div>
 
+      <div className="ml-auto flex items-center gap-3 md:ml-3">
         {/* Notification bell */}
         <div className="relative" ref={dropdownRef}>
           <button

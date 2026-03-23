@@ -13,6 +13,7 @@
     }
   },
   "scripts": {
+    "dev": "tsc --watch --preserveWatchOutput",
     "build": "rimraf dist tsconfig.tsbuildinfo && tsc",
     "clean": "rimraf dist"
   },
