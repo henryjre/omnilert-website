@@ -96,8 +96,11 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
     // Create resolution shift_log
     const managerUser = await db.getDb()('users').where({ id: managerId }).select('id', 'first_name', 'last_name').first();
     const managerName = managerUser ? `${managerUser.first_name} ${managerUser.last_name}` : managerId;
+    const resolvedCompanyId = (auth.company_id as string | null | undefined) ?? companyId;
+    if (!resolvedCompanyId) throw new AppError(400, 'Company context is required');
     const [resolutionLog] = await tenantDb('shift_logs')
       .insert({
+        company_id: resolvedCompanyId,
         shift_id: auth.shift_id,
         branch_id: auth.branch_id,
         log_type: 'authorization_resolved',
@@ -137,7 +140,7 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
     // Sync with Odoo for tardiness approval
     await syncOdooAttendance(auth, 'approve');
 
-    res.json({ success: true, data: updated });
+    res.json({ success: true, data: { ...updated, resolved_by_name: managerName } });
   } catch (err) {
     next(err);
   }
@@ -181,8 +184,11 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
     // Create resolution shift_log
     const managerUser = await db.getDb()('users').where({ id: managerId }).select('id', 'first_name', 'last_name').first();
     const managerName = managerUser ? `${managerUser.first_name} ${managerUser.last_name}` : managerId;
+    const resolvedCompanyId = (auth.company_id as string | null | undefined) ?? companyId;
+    if (!resolvedCompanyId) throw new AppError(400, 'Company context is required');
     const [resolutionLog] = await tenantDb('shift_logs')
       .insert({
+        company_id: resolvedCompanyId,
         shift_id: auth.shift_id,
         branch_id: auth.branch_id,
         log_type: 'authorization_resolved',
@@ -222,7 +228,7 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
     // Sync with Odoo for early_check_in and late_check_out rejection
     await syncOdooAttendance(auth, 'reject');
 
-    res.json({ success: true, data: updated });
+    res.json({ success: true, data: { ...updated, resolved_by_name: managerName } });
   } catch (err) {
     next(err);
   }

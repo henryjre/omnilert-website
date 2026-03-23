@@ -1,4 +1,3 @@
-import { randomInt } from 'node:crypto';
 import { AppError } from '../middleware/errorHandler.js';
 import { hydrateUsersByIds } from './globalUser.service.js';
 import { db } from '../config/database.js';
@@ -169,7 +168,6 @@ export async function submitEvaluation(
   id: string,
   userId: string,
   body: SubmitEvaluationBody,
-  companyId: string,
 ): Promise<PeerEvaluationRow> {
   const evaluation = await db.getDb()('peer_evaluations').where({ id }).first() as PeerEvaluationRow | undefined;
 
@@ -203,38 +201,5 @@ export async function submitEvaluation(
     })
     .returning('*');
 
-  const completed = updated as PeerEvaluationRow;
-
-  // Append snapshot to master users.peer_evaluations for the evaluated user
-  const masterDb = db.getDb();
-  const averageScore = (completed.q1_score + completed.q2_score + completed.q3_score) / 3;
-  const wrsDelayDays = randomInt(0, 11); // 0..10 inclusive
-  const submittedAt = completed.submitted_at ? new Date(completed.submitted_at) : now;
-  const submittedAtTime = Number.isNaN(submittedAt.getTime()) ? now : submittedAt;
-  const wrsEffectiveAt = new Date(submittedAtTime.getTime() + wrsDelayDays * 24 * 60 * 60 * 1000);
-  const entry = {
-    id: completed.id,
-    company_id: companyId,
-    evaluator_user_id: completed.evaluator_user_id,
-    shift_id: completed.shift_id,
-    q1_score: completed.q1_score,
-    q2_score: completed.q2_score,
-    q3_score: completed.q3_score,
-    average_score: Math.round(averageScore * 100) / 100,
-    additional_message: completed.additional_message,
-    submitted_at: submittedAtTime.toISOString(),
-    wrs_delay_days: wrsDelayDays,
-    wrs_effective_at: wrsEffectiveAt.toISOString(),
-  };
-
-  await masterDb('users')
-    .where({ id: completed.evaluated_user_id })
-    .update({
-      peer_evaluations: masterDb.raw(
-        `coalesce(peer_evaluations, '[]'::jsonb) || ?::jsonb`,
-        [JSON.stringify([entry])],
-      ),
-    });
-
-  return completed;
+  return updated as PeerEvaluationRow;
 }

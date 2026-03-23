@@ -86,6 +86,7 @@ export async function getServiceCrewRequirementDetail(userId: string, companyId:
   const masterDb = db.getDb();
   const employee = await masterDb('users as users')
     .join('user_company_access as uca', 'users.id', 'uca.user_id')
+    .leftJoin('user_sensitive_info as usi', 'usi.user_id', 'users.id')
     .join('user_roles', 'users.id', 'user_roles.user_id')
     .join('roles', 'user_roles.role_id', 'roles.id')
     .where('users.id', userId)
@@ -99,7 +100,7 @@ export async function getServiceCrewRequirementDetail(userId: string, companyId:
       'users.last_name',
       'users.email',
       'users.avatar_url',
-      'users.valid_id_url',
+      'usi.valid_id_url',
     )
     .first();
 

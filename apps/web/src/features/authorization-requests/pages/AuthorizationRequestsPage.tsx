@@ -180,6 +180,30 @@ function ManagementDetailPanel({
             )}
             <span className="text-gray-500">Submitted</span>
             <span className="font-medium text-gray-900">{fmtDate(request.created_at)}</span>
+            {request.status !== 'pending' && (request.reviewed_by_name || request.reviewed_by) && (
+              <>
+                <span className="text-gray-500">
+                  {request.status === 'approved'
+                    ? 'Approved by'
+                    : request.status === 'rejected'
+                      ? 'Rejected by'
+                      : 'Reviewed by'}
+                </span>
+                <span className="font-medium text-gray-900">{request.reviewed_by_name || request.reviewed_by}</span>
+              </>
+            )}
+            {request.status !== 'pending' && request.reviewed_at && (
+              <>
+                <span className="text-gray-500">
+                  {request.status === 'approved'
+                    ? 'Approved at'
+                    : request.status === 'rejected'
+                      ? 'Rejected at'
+                      : 'Reviewed at'}
+                </span>
+                <span className="font-medium text-gray-900">{fmtDate(request.reviewed_at)}</span>
+              </>
+            )}
           </div>
         </div>
 
@@ -401,6 +425,30 @@ function ServiceCrewDetailPanel({
           )}
           <span className="text-gray-500">Submitted</span>
           <span className="font-medium text-gray-900">{fmtDate(auth.created_at)}</span>
+          {auth.status !== 'pending' && (auth.resolved_by_name || auth.resolved_by) && (
+            <>
+              <span className="text-gray-500">
+                {auth.status === 'approved'
+                  ? 'Approved by'
+                  : auth.status === 'rejected'
+                    ? 'Rejected by'
+                    : 'Resolved by'}
+              </span>
+              <span className="font-medium text-gray-900">{auth.resolved_by_name || auth.resolved_by}</span>
+            </>
+          )}
+          {auth.status !== 'pending' && auth.resolved_at && (
+            <>
+              <span className="text-gray-500">
+                {auth.status === 'approved'
+                  ? 'Approved at'
+                  : auth.status === 'rejected'
+                    ? 'Rejected at'
+                    : 'Resolved at'}
+              </span>
+              <span className="font-medium text-gray-900">{fmtDate(auth.resolved_at)}</span>
+            </>
+          )}
         </div>
 
         {auth.status === 'pending' && auth.needs_employee_reason && !auth.employee_reason && (
@@ -563,6 +611,16 @@ function ManagementRequestCard({ request, onClick }: { request: any; onClick: ()
                 </p>
               )}
               <p className="mt-1 text-xs text-gray-400">{fmtDate(request.created_at)}</p>
+              {request.status !== 'pending' && (request.reviewed_by_name || request.reviewed_by) && (
+                <p className="mt-0.5 text-xs text-gray-500">
+                  {request.status === 'approved'
+                    ? 'Approved by '
+                    : request.status === 'rejected'
+                      ? 'Rejected by '
+                      : 'Reviewed by '}
+                  {request.reviewed_by_name || request.reviewed_by}
+                </p>
+              )}
             </div>
             <Badge variant={STATUS_VARIANT[request.status] ?? 'warning'}>
               {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
@@ -657,6 +715,16 @@ function ServiceCrewRequestCard({ auth, onClick }: { auth: any; onClick: () => v
                     {auth.duty_type ? ` · ${auth.duty_type}` : ''}
                   </p>
                   <p className="mt-1 text-xs text-gray-400">{fmtDate(auth.created_at)}</p>
+                  {auth.status !== 'pending' && (auth.resolved_by_name || auth.resolved_by) && (
+                    <p className="mt-0.5 text-xs text-gray-500">
+                      {auth.status === 'approved'
+                        ? 'Approved by '
+                        : auth.status === 'rejected'
+                          ? 'Rejected by '
+                          : 'Resolved by '}
+                      {auth.resolved_by_name || auth.resolved_by}
+                    </p>
+                  )}
                 </div>
                 <Badge variant={STATUS_VARIANT[auth.status] ?? 'warning'}>
                   {auth.status.charAt(0).toUpperCase() + auth.status.slice(1)}

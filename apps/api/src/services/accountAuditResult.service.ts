@@ -257,17 +257,19 @@ async function defaultResolveViewerIdentity(input: { userId: string }): Promise<
 async function defaultListCompletedAuditRows(input: {
   type?: StoreAuditType;
 }): Promise<AuditRowSource[]> {
-  const query = db.getDb()('global_store_audits as audits')
+  const query = db.getDb()('store_audits as audits')
+    .join('companies as companies', 'audits.company_id', 'companies.id')
+    .join('branches as branches', 'audits.branch_id', 'branches.id')
     .where('audits.status', 'completed')
     .select(
       'audits.company_id',
-      'audits.company_name',
-      'audits.company_slug',
-      'audits.audit_id as id',
+      'companies.name as company_name',
+      'companies.slug as company_slug',
+      'audits.id',
       'audits.type',
       'audits.status',
       'audits.branch_id',
-      'audits.branch_name',
+      'branches.name as branch_name',
       'audits.completed_at',
       'audits.created_at',
       'audits.css_cashier_user_key',
@@ -295,17 +297,19 @@ async function defaultListCompletedAuditRows(input: {
 async function defaultGetAuditRowById(input: {
   auditId: string;
 }): Promise<AuditRowSource | null> {
-  const row = await db.getDb()('global_store_audits as audits')
-    .where('audits.audit_id', input.auditId)
+  const row = await db.getDb()('store_audits as audits')
+    .join('companies as companies', 'audits.company_id', 'companies.id')
+    .join('branches as branches', 'audits.branch_id', 'branches.id')
+    .where('audits.id', input.auditId)
     .first(
       'audits.company_id',
-      'audits.company_name',
-      'audits.company_slug',
-      'audits.audit_id as id',
+      'companies.name as company_name',
+      'companies.slug as company_slug',
+      'audits.id',
       'audits.type',
       'audits.status',
       'audits.branch_id',
-      'audits.branch_name',
+      'branches.name as branch_name',
       'audits.completed_at',
       'audits.created_at',
       'audits.css_cashier_user_key',

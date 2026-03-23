@@ -142,25 +142,26 @@ export async function getMe(req: Request, res: Response, next: NextFunction) {
     const masterDb = db.getDb();
     const userId = req.user!.sub;
 
-    const user = await masterDb('users')
-      .where({ id: userId })
+    const user = await masterDb('users as users')
+      .leftJoin('user_sensitive_info as usi', 'usi.user_id', 'users.id')
+      .where('users.id', userId)
       .select(
-        'id',
-        'email',
-        'first_name',
-        'last_name',
-        'user_key',
-        'mobile_number',
-        'legal_name',
-        'birthday',
-        'gender',
-        'avatar_url',
-        'pin',
-        'valid_id_url',
-        'emergency_contact',
-        'emergency_phone',
-        'bank_id',
-        'bank_account_number',
+        'users.id',
+        'users.email',
+        'users.first_name',
+        'users.last_name',
+        'users.user_key',
+        'users.mobile_number',
+        'usi.legal_name',
+        'usi.birthday',
+        'usi.gender',
+        'users.avatar_url',
+        'usi.pin',
+        'usi.valid_id_url',
+        'usi.emergency_contact',
+        'usi.emergency_phone',
+        'usi.bank_id',
+        'usi.bank_account_number',
       )
       .first();
 
@@ -188,9 +189,10 @@ export async function getPin(req: Request, res: Response, next: NextFunction) {
     const masterDb = db.getDb();
     const userId = req.user!.sub;
 
-    const user = await masterDb('users')
-      .where({ id: userId })
-      .select('id', 'pin')
+    const user = await masterDb('users as users')
+      .leftJoin('user_sensitive_info as usi', 'usi.user_id', 'users.id')
+      .where('users.id', userId)
+      .select('users.id', 'usi.pin')
       .first();
 
     if (!user) throw new AppError(404, 'User not found');
@@ -257,9 +259,10 @@ export async function setPin(req: Request, res: Response, next: NextFunction) {
     const { companyId } = req.body;
 
     // Get user to check if already has pin
-    const existingUser = await masterDb('users')
-      .where({ id: userId })
-      .select('id', 'pin', 'user_key')
+    const existingUser = await masterDb('users as users')
+      .leftJoin('user_sensitive_info as usi', 'usi.user_id', 'users.id')
+      .where('users.id', userId)
+      .select('users.id', 'usi.pin', 'users.user_key')
       .first();
 
     if (!existingUser) throw new AppError(404, 'User not found');
@@ -284,9 +287,18 @@ export async function setPin(req: Request, res: Response, next: NextFunction) {
     }
 
     // Save pin to user
-    await masterDb('users')
-      .where({ id: userId })
-      .update({ pin, updated_at: new Date() });
+    const now = new Date();
+    await masterDb('user_sensitive_info')
+      .insert({
+        user_id: userId,
+        pin,
+        updated_at: now,
+      })
+      .onConflict('user_id')
+      .merge({
+        pin,
+        updated_at: now,
+      });
 
     res.json({ success: true, data: { pin } });
   } catch (err) {
@@ -325,9 +337,18 @@ export async function resetPin(req: Request, res: Response, next: NextFunction) 
       throw new AppError(404, 'No employee records found in Odoo for this user');
     }
 
-    await masterDb('users')
-      .where({ id: userId })
-      .update({ pin, updated_at: new Date() });
+    const now = new Date();
+    await masterDb('user_sensitive_info')
+      .insert({
+        user_id: userId,
+        pin,
+        updated_at: now,
+      })
+      .onConflict('user_id')
+      .merge({
+        pin,
+        updated_at: now,
+      });
 
     res.json({ success: true, data: { pin } });
   } catch (err) {

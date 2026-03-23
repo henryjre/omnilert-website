@@ -421,7 +421,11 @@ async function main(): Promise<void> {
       { id: 'socket.store-audits', namespace: '/store-audits', requiredAny: [PERMISSIONS.STORE_AUDIT_VIEW] },
       { id: 'socket.case-reports', namespace: '/case-reports', requiredAny: [PERMISSIONS.CASE_REPORT_VIEW] },
       { id: 'socket.violation-notices', namespace: '/violation-notices', requiredAny: [PERMISSIONS.VIOLATION_NOTICE_VIEW] },
-      { id: 'socket.employee-requirements', namespace: '/employee-requirements', requiredAny: [PERMISSIONS.SHIFT_VIEW_ALL] },
+      {
+        id: 'socket.employee-requirements',
+        namespace: '/employee-requirements',
+        requiredAny: [PERMISSIONS.EMPLOYEE_REQUIREMENTS_APPROVE, PERMISSIONS.SHIFT_VIEW_ALL],
+      },
       { id: 'socket.peer-evaluations', namespace: '/peer-evaluations', requiredAny: [PERMISSIONS.PEER_EVALUATION_VIEW, PERMISSIONS.PEER_EVALUATION_MANAGE] },
     ];
 

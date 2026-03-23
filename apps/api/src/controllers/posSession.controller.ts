@@ -40,7 +40,9 @@ export async function list(req: Request, res: Response, next: NextFunction) {
 
     const verifications =
       sessionIds.length > 0
-        ? await tenantDb('pos_verifications').whereIn('pos_session_id', sessionIds)
+        ? await tenantDb('pos_verifications')
+          .whereIn('pos_session_id', sessionIds)
+          .orderBy([{ column: 'pos_session_id', order: 'asc' }, { column: 'created_at', order: 'asc' }])
         : [];
 
     const vIds = verifications.map((v: { id: string }) => v.id);
@@ -89,7 +91,8 @@ export async function get(req: Request, res: Response, next: NextFunction) {
     if (!session) throw new AppError(404, 'Session not found');
 
     const verifications = await tenantDb('pos_verifications')
-      .where('pos_session_id', id as string);
+      .where('pos_session_id', id as string)
+      .orderBy('created_at', 'asc');
 
     const vIds = verifications.map((v: { id: string }) => v.id);
     const images =

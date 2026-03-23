@@ -141,45 +141,43 @@ export function BranchManagementPage() {
               placeholder="Maps to Odoo branch identifier"
             />
             {editingId && (
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2">
-                  <span className="text-sm font-medium text-gray-700">Active</span>
-                  <button
-                    type="button"
-                    onClick={() => setFormData((prev) => ({ ...prev, isActive: !prev.isActive }))}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      formData.isActive ? 'bg-primary-600' : 'bg-gray-300'
+              <div className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2">
+                <span className="text-sm font-medium text-gray-700">Active</span>
+                <button
+                  type="button"
+                  onClick={() => setFormData((prev) => ({ ...prev, isActive: !prev.isActive }))}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    formData.isActive ? 'bg-primary-600' : 'bg-gray-300'
+                  }`}
+                  aria-label="Toggle Active"
+                  aria-pressed={formData.isActive}
+                >
+                  <span
+                    className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                      formData.isActive ? 'translate-x-5' : 'translate-x-1'
                     }`}
-                    aria-label="Toggle Active"
-                    aria-pressed={formData.isActive}
-                  >
-                    <span
-                      className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
-                        formData.isActive ? 'translate-x-5' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
-                </div>
-                <div className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2">
-                  <span className="text-sm font-medium text-gray-700">Main Branch</span>
-                  <button
-                    type="button"
-                    onClick={() => setFormData((prev) => ({ ...prev, isMainBranch: !prev.isMainBranch }))}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      formData.isMainBranch ? 'bg-primary-600' : 'bg-gray-300'
-                    }`}
-                    aria-label="Toggle Main Branch"
-                    aria-pressed={formData.isMainBranch}
-                  >
-                    <span
-                      className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
-                        formData.isMainBranch ? 'translate-x-5' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
-                </div>
+                  />
+                </button>
               </div>
             )}
+            <div className="flex items-center justify-between rounded-lg border border-gray-200 px-3 py-2">
+              <span className="text-sm font-medium text-gray-700">Main Branch</span>
+              <button
+                type="button"
+                onClick={() => setFormData((prev) => ({ ...prev, isMainBranch: !prev.isMainBranch }))}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  formData.isMainBranch ? 'bg-primary-600' : 'bg-gray-300'
+                }`}
+                aria-label="Toggle Main Branch"
+                aria-pressed={formData.isMainBranch}
+              >
+                <span
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                    formData.isMainBranch ? 'translate-x-5' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
             <div className="flex gap-2">
               <Button onClick={handleSubmit} disabled={!formData.name}>
                 {editingId ? 'Update' : 'Create'}

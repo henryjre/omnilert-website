@@ -87,6 +87,7 @@ export function CaseReportsPage() {
   const canCreate = hasPermission(PERMISSIONS.CASE_REPORT_CREATE);
   const canClose = hasPermission(PERMISSIONS.CASE_REPORT_CLOSE);
   const canManage = hasPermission(PERMISSIONS.CASE_REPORT_MANAGE);
+  const canRequestVN = hasPermission(PERMISSIONS.VIOLATION_NOTICE_REQUEST);
 
   const hasActiveFilters =
     Boolean(filters.search) ||
@@ -139,13 +140,18 @@ export function CaseReportsPage() {
   }, []);
 
   useEffect(() => {
+    if (!canRequestVN) {
+      setGroupedUsers(null);
+      setLoadingGroupedUsers(false);
+      return;
+    }
     setLoadingGroupedUsers(true);
     void getGroupedUsers().then((data) => {
       setGroupedUsers(data);
     }).catch(() => undefined).finally(() => {
       setLoadingGroupedUsers(false);
     });
-  }, []);
+  }, [canRequestVN]);
 
   useEffect(() => {
     if (!selectedCaseId) {
@@ -441,6 +447,7 @@ export function CaseReportsPage() {
           users={users}
           roles={roles}
           canManage={canManage}
+          canRequestVN={canRequestVN}
           canClose={canClose}
           initialFlashMessageId={initialFlashMessageId}
           onFlashMessageConsumed={() => setInitialFlashMessageId(null)}
@@ -468,7 +475,7 @@ export function CaseReportsPage() {
             await fetchReports(true);
           }}
           onRequestVN={async () => {
-            if (!selectedCaseId) return;
+            if (!selectedCaseId || !canRequestVN) return;
             setShowRequestVNModal(true);
           }}
           onUploadAttachment={async (file) => {
@@ -563,7 +570,7 @@ export function CaseReportsPage() {
       <RequestVNModal
         isOpen={showRequestVNModal}
         onClose={() => setShowRequestVNModal(false)}
-        onCreated={(_vn) => {
+        onCreated={() => {
           setShowRequestVNModal(false);
           void fetchReports(true);
           if (selectedCaseId) void fetchDetail(selectedCaseId);

@@ -17,6 +17,7 @@ interface CaseReportDetailPanelProps {
   users: MentionableUser[];
   roles: MentionableRole[];
   canManage: boolean;
+  canRequestVN: boolean;
   canClose: boolean;
   initialFlashMessageId?: string | null;
   onFlashMessageConsumed?: () => void;
@@ -52,6 +53,7 @@ export function CaseReportDetailPanel({
   users,
   roles,
   canManage,
+  canRequestVN,
   canClose,
   initialFlashMessageId,
   onFlashMessageConsumed,
@@ -227,7 +229,7 @@ export function CaseReportDetailPanel({
                   Close Case
                 </Button>
               )}
-              {!report.vn_requested && !report.linked_vn_id && (
+              {canRequestVN && !report.vn_requested && !report.linked_vn_id && (
                 <Button variant="danger" onClick={() => void onRequestVN()}>Request VN</Button>
               )}
             </div>

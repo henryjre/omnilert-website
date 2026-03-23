@@ -134,6 +134,7 @@ function emitEmployeeRequirementUpdated(payload: {
 }
 
 async function resolveAndValidateBranchId(
+  companyId: string,
   userId: string,
   branchIdInput: unknown,
 ): Promise<string> {
@@ -144,7 +145,7 @@ async function resolveAndValidateBranchId(
   }
 
   const branch = await tenantDb('branches')
-    .where({ id: branchId })
+    .where({ id: branchId, company_id: companyId, is_active: true })
     .select('id', 'is_active')
     .first();
 
@@ -153,7 +154,7 @@ async function resolveAndValidateBranchId(
   }
 
   const assignedBranches = await tenantDb('user_branches')
-    .where({ user_id: userId })
+    .where({ company_id: companyId, user_id: userId })
     .select('branch_id');
 
   if (assignedBranches.length > 0) {
@@ -176,8 +177,13 @@ export async function getSchedule(req: Request, res: Response, next: NextFunctio
 
     const shifts = await tenantDb('employee_shifts')
       .leftJoin('branches', 'employee_shifts.branch_id', 'branches.id')
+      .leftJoin('users', 'employee_shifts.user_id', 'users.id')
       .where('employee_shifts.user_id', userId)
-      .select('employee_shifts.*', 'branches.name as branch_name')
+      .select(
+        'employee_shifts.*',
+        'branches.name as branch_name',
+        'users.avatar_url as user_avatar_url',
+      )
       .orderBy('shift_start', 'asc');
 
     res.json({ success: true, data: shifts });
@@ -211,9 +217,14 @@ export async function getScheduleShift(req: Request, res: Response, next: NextFu
 
     const shift = await tenantDb('employee_shifts')
       .leftJoin('branches', 'employee_shifts.branch_id', 'branches.id')
+      .leftJoin('users', 'employee_shifts.user_id', 'users.id')
       .where('employee_shifts.id', id)
       .where('employee_shifts.user_id', userId)
-      .select('employee_shifts.*', 'branches.name as branch_name')
+      .select(
+        'employee_shifts.*',
+        'branches.name as branch_name',
+        'users.avatar_url as user_avatar_url',
+      )
       .first();
     if (!shift) throw new AppError(404, 'Shift not found');
 
@@ -251,7 +262,7 @@ export async function getAuthorizationRequests(req: Request, res: Response, next
     const userId = req.user!.sub;
 
     const requests = await tenantDb('authorization_requests')
-      .where('user_id', userId)
+      .where({ company_id: companyId, user_id: userId })
       .orderBy('created_at', 'desc');
 
     res.json({ success: true, data: requests });
@@ -264,10 +275,9 @@ export async function createAuthorizationRequest(req: Request, res: Response, ne
   try {
     const { companyId } = req.companyContext!;
     const tenantDb = db.getDb();
-    const masterDb = db.getDb();
     const userId = req.user!.sub;
     const { requestType, description, level, reference, requestedAmount, bankName, accountName, accountNumber } = req.body;
-    const branchId = await resolveAndValidateBranchId(userId, req.body.branchId);
+    const branchId = await resolveAndValidateBranchId(companyId, userId, req.body.branchId);
 
     const requestLevel: string = level || 'management';
 
@@ -278,12 +288,9 @@ export async function createAuthorizationRequest(req: Request, res: Response, ne
       }
     }
 
-    // Denormalize creator name for display
-    const creator = await masterDb('users').where({ id: userId }).select('first_name', 'last_name').first();
-    const createdByName = creator ? `${creator.first_name} ${creator.last_name}` : null;
-
     const [request] = await tenantDb('authorization_requests')
       .insert({
+        company_id: companyId,
         user_id: userId,
         branch_id: branchId,
         request_type: requestType,
@@ -294,7 +301,6 @@ export async function createAuthorizationRequest(req: Request, res: Response, ne
         bank_name: bankName || null,
         account_name: accountName || null,
         account_number: accountNumber || null,
-        created_by_name: createdByName,
       })
       .returning('*');
 
@@ -311,7 +317,7 @@ export async function getCashRequests(req: Request, res: Response, next: NextFun
     const userId = req.user!.sub;
 
     const requests = await tenantDb('cash_requests')
-      .where('user_id', userId)
+      .where({ company_id: companyId, user_id: userId })
       .orderBy('created_at', 'desc');
 
     res.json({ success: true, data: requests });
@@ -352,10 +358,9 @@ export async function createCashRequest(req: Request, res: Response, next: NextF
   try {
     const { companyId, companyStorageRoot } = req.companyContext!;
     const tenantDb = db.getDb();
-    const masterDb = db.getDb();
     const userId = req.user!.sub;
     const { requestType, reference, amount, bankName, accountName, accountNumber } = req.body;
-    const branchId = await resolveAndValidateBranchId(userId, req.body.branchId);
+    const branchId = await resolveAndValidateBranchId(companyId, userId, req.body.branchId);
     const attachmentFile = (req as any).file as Express.Multer.File | undefined;
 
     if (!requestType) throw new AppError(400, 'Request type is required');
@@ -366,9 +371,6 @@ export async function createCashRequest(req: Request, res: Response, next: NextF
     if (requestType === 'expense_reimbursement' && !attachmentFile) {
       throw new AppError(400, 'Receipt attachment is required for expense reimbursement');
     }
-
-    const user = await masterDb('users').where({ id: userId }).first('first_name', 'last_name');
-    const createdByName = user ? `${user.first_name} ${user.last_name}` : null;
 
     // Upload attachment to S3 if provided
     let attachmentUrl: string | null = null;
@@ -387,6 +389,7 @@ export async function createCashRequest(req: Request, res: Response, next: NextF
 
     const [request] = await tenantDb('cash_requests')
       .insert({
+        company_id: companyId,
         user_id: userId,
         branch_id: branchId,
         request_type: requestType,
@@ -396,7 +399,6 @@ export async function createCashRequest(req: Request, res: Response, next: NextF
         account_name: accountName || null,
         account_number: accountNumber || null,
         attachment_url: attachmentUrl,
-        created_by_name: createdByName,
       })
       .returning('*');
 
@@ -635,6 +637,13 @@ export async function getProfile(req: Request, res: Response, next: NextFunction
     const userId = req.user!.sub;
 
     const user = await masterDb('users as users')
+      .leftJoin('user_sensitive_info as usi', 'usi.user_id', 'users.id')
+      .leftJoin('user_company_access as uca_profile', (join) => {
+        join
+          .on('uca_profile.user_id', '=', 'users.id')
+          .andOnVal('uca_profile.company_id', companyId)
+          .andOnVal('uca_profile.is_active', true);
+      })
       .where('users.id', userId)
       .select(
         'users.id',
@@ -642,26 +651,26 @@ export async function getProfile(req: Request, res: Response, next: NextFunction
         'users.first_name',
         'users.last_name',
         'users.mobile_number',
-        'users.legal_name',
-        'users.birthday',
-        'users.gender',
-        'users.address',
-        'users.sss_number',
-        'users.tin_number',
-        'users.pagibig_number',
-        'users.philhealth_number',
-        'users.marital_status',
+        'usi.legal_name',
+        'usi.birthday',
+        'usi.gender',
+        'usi.address',
+        'usi.sss_number',
+        'usi.tin_number',
+        'usi.pagibig_number',
+        'usi.philhealth_number',
+        'usi.marital_status',
         'users.avatar_url',
-        'users.pin',
-        'users.valid_id_url',
-        'users.emergency_contact',
-        'users.emergency_phone',
-        'users.emergency_relationship',
-        'users.bank_account_number',
-        'users.bank_id',
+        'usi.pin',
+        'usi.valid_id_url',
+        'usi.emergency_contact',
+        'usi.emergency_phone',
+        'usi.emergency_relationship',
+        'usi.bank_account_number',
+        'usi.bank_id',
         'users.department_id',
-        'users.position_title',
-        'users.date_started',
+        'uca_profile.position_title',
+        'uca_profile.date_started',
         'users.employment_status',
         'users.is_active',
         'users.created_at',
@@ -678,7 +687,7 @@ export async function getProfile(req: Request, res: Response, next: NextFunction
       : null;
 
     const personalVerification = await tenantDb('personal_information_verifications')
-      .where({ user_id: userId })
+      .where({ company_id: companyId, user_id: userId })
       .orderBy('created_at', 'desc')
       .first(
         'id',
@@ -690,7 +699,7 @@ export async function getProfile(req: Request, res: Response, next: NextFunction
       );
 
     const bankVerification = await tenantDb('bank_information_verifications')
-      .where({ user_id: userId })
+      .where({ company_id: companyId, user_id: userId })
       .orderBy('created_at', 'desc')
       .first(
         'id',
@@ -703,7 +712,7 @@ export async function getProfile(req: Request, res: Response, next: NextFunction
       );
 
     const latestApprovedBank = await tenantDb('bank_information_verifications')
-      .where({ user_id: userId, status: 'approved' })
+      .where({ company_id: companyId, user_id: userId, status: 'approved' })
       .orderBy('reviewed_at', 'desc')
       .first('reviewed_at');
 
@@ -819,27 +828,28 @@ export async function submitPersonalInformationVerification(req: Request, res: R
     const masterDb = db.getDb();
     const userId = req.user!.sub;
 
-    const user = await masterDb('users')
-      .where({ id: userId })
+    const user = await masterDb('users as users')
+      .leftJoin('user_sensitive_info as usi', 'usi.user_id', 'users.id')
+      .where('users.id', userId)
       .select(
-        'id',
-        'first_name',
-        'last_name',
-        'email',
-        'mobile_number',
-        'legal_name',
-        'birthday',
-        'gender',
-        'address',
-        'sss_number',
-        'tin_number',
-        'pagibig_number',
-        'philhealth_number',
-        'marital_status',
-        'valid_id_url',
-        'emergency_contact',
-        'emergency_phone',
-        'emergency_relationship',
+        'users.id',
+        'users.first_name',
+        'users.last_name',
+        'users.email',
+        'users.mobile_number',
+        'usi.legal_name',
+        'usi.birthday',
+        'usi.gender',
+        'usi.address',
+        'usi.sss_number',
+        'usi.tin_number',
+        'usi.pagibig_number',
+        'usi.philhealth_number',
+        'usi.marital_status',
+        'usi.valid_id_url',
+        'usi.emergency_contact',
+        'usi.emergency_phone',
+        'usi.emergency_relationship',
       )
       .first();
     if (!user) throw new AppError(404, 'User not found');
@@ -848,7 +858,7 @@ export async function submitPersonalInformationVerification(req: Request, res: R
     }
 
     const pending = await tenantDb('personal_information_verifications')
-      .where({ user_id: userId, status: 'pending' })
+      .where({ company_id: companyId, user_id: userId, status: 'pending' })
       .first('id');
     if (pending) {
       throw new AppError(409, 'You already have a pending personal information verification');
@@ -943,6 +953,7 @@ export async function submitPersonalInformationVerification(req: Request, res: R
 
     const [verification] = await tenantDb('personal_information_verifications')
       .insert({
+        company_id: companyId,
         user_id: userId,
         status: 'pending',
         requested_changes: JSON.stringify(requestedChanges),
@@ -997,7 +1008,7 @@ export async function submitBankInformationVerification(req: Request, res: Respo
     }
 
     const pending = await tenantDb('bank_information_verifications')
-      .where({ user_id: userId, status: 'pending' })
+      .where({ company_id: companyId, user_id: userId, status: 'pending' })
       .first('id');
     if (pending) {
       throw new AppError(409, 'You already have a pending bank information verification');
@@ -1005,7 +1016,7 @@ export async function submitBankInformationVerification(req: Request, res: Respo
 
     if (env.NODE_ENV === 'production') {
       const latestApproved = await tenantDb('bank_information_verifications')
-        .where({ user_id: userId, status: 'approved' })
+        .where({ company_id: companyId, user_id: userId, status: 'approved' })
         .orderBy('reviewed_at', 'desc')
         .first('reviewed_at');
       if (latestApproved?.reviewed_at) {
@@ -1024,6 +1035,7 @@ export async function submitBankInformationVerification(req: Request, res: Respo
 
     const [verification] = await tenantDb('bank_information_verifications')
       .insert({
+        company_id: companyId,
         user_id: userId,
         bank_id: bankId,
         account_number: accountNumber,
@@ -1071,12 +1083,19 @@ export async function uploadValidId(req: Request, res: Response, next: NextFunct
     );
     if (!validIdUrl) throw new AppError(500, 'Failed to upload valid ID');
 
-    await masterDb('users')
-      .where({ id: userId })
-      .update({
+    const now = new Date();
+    await masterDb('user_sensitive_info')
+      .insert({
+        user_id: userId,
         valid_id_url: validIdUrl,
-        valid_id_updated_at: new Date(),
-        updated_at: new Date(),
+        valid_id_updated_at: now,
+        updated_at: now,
+      })
+      .onConflict('user_id')
+      .merge({
+        valid_id_url: validIdUrl,
+        valid_id_updated_at: now,
+        updated_at: now,
       });
 
     res.json({ success: true, data: { validIdUrl } });
@@ -1092,7 +1111,10 @@ export async function getEmploymentRequirements(req: Request, res: Response, nex
     const masterDb = db.getDb();
     const userId = req.user!.sub;
 
-    const user = await masterDb('users').where({ id: userId }).select('valid_id_url').first();
+    const userSensitiveInfo = await masterDb('user_sensitive_info')
+      .where({ user_id: userId })
+      .select('valid_id_url')
+      .first();
     const types = await tenantDb('employment_requirement_types')
       .where({ is_active: true })
       .select('code', 'label', 'sort_order')
@@ -1112,9 +1134,10 @@ export async function getEmploymentRequirements(req: Request, res: Response, nex
         updated_at
       FROM employment_requirement_submissions
       WHERE user_id = ?
+        AND company_id = ?
       ORDER BY requirement_code, created_at DESC
       `,
-      [userId],
+      [userId, companyId],
     );
     const latestRows = latestRowsResult.rows as Array<{
       id: string;
@@ -1133,7 +1156,7 @@ export async function getEmploymentRequirements(req: Request, res: Response, nex
       const latest = latestByCode.get(type.code) ?? null;
       const documentUrl = latest?.document_url ?? null;
       const sharedDocument = type.code === 'government_issued_id'
-        ? (documentUrl ?? user?.valid_id_url ?? null)
+        ? (documentUrl ?? userSensitiveInfo?.valid_id_url ?? null)
         : documentUrl;
       return {
         code: type.code,
@@ -1166,7 +1189,7 @@ export async function submitEmploymentRequirement(req: Request, res: Response, n
     if (!requirement) throw new AppError(404, 'Requirement type not found');
 
     const pending = await tenantDb('employment_requirement_submissions')
-      .where({ user_id: userId, requirement_code: requirementCode, status: 'pending' })
+      .where({ company_id: companyId, user_id: userId, requirement_code: requirementCode, status: 'pending' })
       .first('id');
     if (pending) {
       throw new AppError(409, 'You already have a pending submission for this requirement');
@@ -1188,20 +1211,21 @@ export async function submitEmploymentRequirement(req: Request, res: Response, n
       );
       if (!documentUrl) throw new AppError(500, 'Failed to upload requirement document');
     } else if (requirementCode === 'government_issued_id') {
-      const user = await masterDb('users')
-        .where({ id: userId })
+      const userSensitiveInfo = await masterDb('user_sensitive_info')
+        .where({ user_id: userId })
         .select('valid_id_url')
         .first();
-      if (!user?.valid_id_url) {
+      if (!userSensitiveInfo?.valid_id_url) {
         throw new AppError(400, 'No document uploaded and no existing valid ID available');
       }
-      documentUrl = user.valid_id_url as string;
+      documentUrl = userSensitiveInfo.valid_id_url as string;
     } else {
       throw new AppError(400, 'No document uploaded');
     }
 
     const [submission] = await tenantDb('employment_requirement_submissions')
       .insert({
+        company_id: companyId,
         user_id: userId,
         requirement_code: requirementCode,
         document_url: documentUrl as string,
@@ -1211,12 +1235,19 @@ export async function submitEmploymentRequirement(req: Request, res: Response, n
       .returning('*');
 
     if (requirementCode === 'government_issued_id' && file) {
-      await masterDb('users')
-        .where({ id: userId })
-        .update({
+      const now = new Date();
+      await masterDb('user_sensitive_info')
+        .insert({
+          user_id: userId,
           valid_id_url: documentUrl as string,
-          valid_id_updated_at: new Date(),
-          updated_at: new Date(),
+          valid_id_updated_at: now,
+          updated_at: now,
+        })
+        .onConflict('user_id')
+        .merge({
+          valid_id_url: documentUrl as string,
+          valid_id_updated_at: now,
+          updated_at: now,
         });
     }
 

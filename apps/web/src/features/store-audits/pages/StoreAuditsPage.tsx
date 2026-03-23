@@ -7,7 +7,6 @@ import type {
   StoreAuditType,
   GroupedUsersResponse,
   ListStoreAuditsResponse,
-  ViolationNotice,
 } from '@omnilert/shared';
 import { PERMISSIONS } from '@omnilert/shared';
 import { ClipboardList, LayoutGrid, ShieldCheck, Star, X } from 'lucide-react';
@@ -43,7 +42,7 @@ export function StoreAuditsPage() {
   const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const currentUserId = useAuthStore((state) => state.user?.id ?? null);
   const canProcessAudit = hasPermission(PERMISSIONS.STORE_AUDIT_PROCESS);
-  const canRequestVN = hasPermission(PERMISSIONS.VIOLATION_NOTICE_CREATE);
+  const canRequestVN = hasPermission(PERMISSIONS.VIOLATION_NOTICE_REQUEST);
   const [searchParams, setSearchParams] = useSearchParams();
   const initialAuditIdRef = useRef<string | null>(searchParams.get('auditId'));
 
@@ -241,7 +240,7 @@ export function StoreAuditsPage() {
 
   const canClaimAudit = canProcessAudit && processingAuditId === null;
 
-  const handleVNCreated = (_vn: ViolationNotice) => {
+  const handleVNCreated = () => {
     setShowRequestVNModal(false);
     if (selectedAuditId) {
       setAudits((prev) =>

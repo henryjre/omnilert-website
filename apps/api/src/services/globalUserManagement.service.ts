@@ -322,8 +322,6 @@ async function writeCompanyAccessAndBranchSnapshots(input: {
           user_id: input.userId,
           company_id: branch.companyId,
           branch_id: branch.branchId,
-          branch_odoo_id: String(branch.odooBranchId),
-          branch_name: branch.branchName,
           assignment_type: 'borrow',
           updated_at: new Date(),
         })),
@@ -364,13 +362,14 @@ export async function listGlobalUsers() {
       .select('uca.user_id', 'companies.id as company_id', 'companies.name as company_name', 'companies.slug as company_slug'),
     masterDb('user_company_branches as ucb')
       .join('companies as companies', 'ucb.company_id', 'companies.id')
+      .join('branches as branches', 'ucb.branch_id', 'branches.id')
       .whereIn('ucb.user_id', userIds)
       .select(
         'ucb.user_id',
         'ucb.company_id',
         'companies.name as company_name',
         'ucb.branch_id',
-        'ucb.branch_name',
+        'branches.name as branch_name',
         'ucb.assignment_type',
       ),
   ]);
@@ -607,9 +606,15 @@ export async function createGlobalUser(input: {
     try {
       const existingBankInfo = await getEmployeeLinkedBankInfoByWebsiteUserKey(createdUserKey, email);
       if (existingBankInfo) {
-        await masterDb('users')
-          .where({ id: created.id })
-          .update({
+        await masterDb('user_sensitive_info')
+          .insert({
+            user_id: created.id,
+            bank_id: existingBankInfo.bankId,
+            bank_account_number: existingBankInfo.accountNumber,
+            updated_at: new Date(),
+          })
+          .onConflict('user_id')
+          .merge({
             bank_id: existingBankInfo.bankId,
             bank_account_number: existingBankInfo.accountNumber,
             updated_at: new Date(),

@@ -300,8 +300,9 @@ export async function mute(req: Request, res: Response, next: NextFunction) {
 
 export async function mentionables(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     const data = await violationNoticeService.getMentionables({
-      companyId: req.user!.companyId,
+      companyId,
     });
     res.json({ success: true, data });
   } catch (error) {
@@ -311,6 +312,7 @@ export async function mentionables(req: Request, res: Response, next: NextFuncti
 
 export async function groupedUsers(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     const auditId = String(req.query.auditId ?? '').trim();
     let auditCompanyId: string | null = null;
     if (auditId) {
@@ -318,7 +320,7 @@ export async function groupedUsers(req: Request, res: Response, next: NextFuncti
       auditCompanyId = auditRow?.company_id ?? null;
     }
     const data = await violationNoticeService.getGroupedUsersForVN({
-      companyId: auditCompanyId ?? req.user!.companyId,
+      companyId: auditCompanyId ?? companyId,
     });
     res.json({ success: true, data });
   } catch (error) {

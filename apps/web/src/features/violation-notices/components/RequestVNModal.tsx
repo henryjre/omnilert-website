@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import { X, FileText } from 'lucide-react';
-import type { ViolationNotice, GroupedUsersResponse } from '@omnilert/shared';
+import type { GroupedUsersResponse } from '@omnilert/shared';
 import { Button } from '@/shared/components/ui/Button';
-import { createVNFromCaseReport, createVNFromStoreAudit } from '../services/violationNotice.api';
+import { requestViolationNotice } from '@/features/case-reports/services/caseReport.api';
+import { createVNFromStoreAudit } from '../services/violationNotice.api';
 import { GroupedUserSelect } from './GroupedUserSelect';
 
 export interface RequestVNModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreated: (vn: ViolationNotice) => void;
+  onCreated: () => void;
   groupedUsers: GroupedUsersResponse | null;
   loadingUsers?: boolean;
   // Source context — one of these will be provided:
@@ -41,15 +42,13 @@ export function RequestVNModal({
     setSubmitting(true);
     setError('');
     try {
-      let vn: ViolationNotice;
       if (sourceCaseReportId) {
-        vn = await createVNFromCaseReport({
-          caseId: sourceCaseReportId,
+        await requestViolationNotice(sourceCaseReportId, {
           description: description.trim(),
           targetUserIds,
         });
       } else if (sourceStoreAuditId) {
-        vn = await createVNFromStoreAudit({
+        await createVNFromStoreAudit({
           auditId: sourceStoreAuditId,
           description: description.trim(),
           targetUserIds,
@@ -57,7 +56,7 @@ export function RequestVNModal({
       } else {
         throw new Error('No source context provided.');
       }
-      onCreated(vn);
+      onCreated();
       // Reset form
       setDescription('');
       setTargetUserIds([]);

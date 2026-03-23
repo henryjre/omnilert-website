@@ -7,6 +7,7 @@ import type {
   ViolationNoticeMention,
   GroupedUsersResponse,
 } from '@omnilert/shared';
+import type { Knex } from 'knex';
 import { PERMISSIONS, SYSTEM_ROLES } from '@omnilert/shared';
 import { db } from '../config/database.js';
 import { getIO } from '../config/socket.js';
@@ -131,8 +132,10 @@ async function upsertParticipant(
   vnId: string,
   userId: string,
   patch: Partial<Pick<VNParticipantRow, 'is_joined' | 'is_muted' | 'last_read_at'>>,
+  trx?: Knex.Transaction,
 ): Promise<void> {
-  const existing = await db.getDb()('violation_notice_participants')
+  const knex = trx ?? db.getDb();
+  const existing = await knex('violation_notice_participants')
     .where({ violation_notice_id: vnId, user_id: userId })
     .first();
   const next = {
@@ -143,13 +146,13 @@ async function upsertParticipant(
   };
 
   if (existing) {
-    await db.getDb()('violation_notice_participants')
+    await knex('violation_notice_participants')
       .where({ violation_notice_id: vnId, user_id: userId })
       .update(next);
     return;
   }
 
-  await db.getDb()('violation_notice_participants').insert({
+  await knex('violation_notice_participants').insert({
     violation_notice_id: vnId,
     user_id: userId,
     ...next,
@@ -161,8 +164,10 @@ async function createSystemMessage(
   vnId: string,
   userId: string,
   content: string,
+  trx?: Knex.Transaction,
 ): Promise<VNMessageRow> {
-  const [message] = await db.getDb()('violation_notice_messages')
+  const knex = trx ?? db.getDb();
+  const [message] = await knex('violation_notice_messages')
     .insert({
       violation_notice_id: vnId,
       user_id: userId,
@@ -171,6 +176,43 @@ async function createSystemMessage(
     })
     .returning('*');
   return message as VNMessageRow;
+}
+
+async function getNextCompanySequence(
+  trx: Knex.Transaction,
+  companyId: string,
+  sequenceName: 'case_number' | 'vn_number',
+): Promise<number> {
+  await trx('company_sequences')
+    .insert({
+      company_id: companyId,
+      sequence_name: sequenceName,
+      current_value: 0,
+    })
+    .onConflict(['company_id', 'sequence_name'])
+    .ignore();
+
+  const sequenceRow = await trx('company_sequences')
+    .where({
+      company_id: companyId,
+      sequence_name: sequenceName,
+    })
+    .forUpdate()
+    .first('id', 'current_value') as { id: string; current_value: number } | undefined;
+
+  if (!sequenceRow) {
+    throw new AppError(500, `Failed to allocate ${sequenceName}`);
+  }
+
+  const nextValue = Number(sequenceRow.current_value) + 1;
+  await trx('company_sequences')
+    .where({ id: sequenceRow.id })
+    .update({
+      current_value: nextValue,
+      updated_at: new Date(),
+    });
+
+  return nextValue;
 }
 
 async function resolveUserNames(userIds: string[]): Promise<Record<string, string>> {
@@ -603,8 +645,11 @@ export async function createViolationNotice(input: {
   const userNames = await resolveUserNames([input.userId]);
 
   const vn = await db.getDb().transaction(async (trx) => {
+    const vnNumber = await getNextCompanySequence(trx, input.companyId, 'vn_number');
     const [created] = await trx('violation_notices')
       .insert({
+        company_id: input.companyId,
+        vn_number: vnNumber,
         status: 'queued',
         category: input.category ?? 'manual',
         description,
@@ -624,12 +669,13 @@ export async function createViolationNotice(input: {
     await upsertParticipant(created.id, input.userId, {
       is_joined: true,
       last_read_at: new Date(),
-    });
+    }, trx);
 
     await createSystemMessage(
       created.id,
       input.userId,
       `${userNames[input.userId] ?? 'Someone'} created this violation notice`,
+      trx,
     );
 
     return created as VNRow;
@@ -892,12 +938,10 @@ export async function uploadDisciplinaryFile(input: {
   return enriched;
 }
 
-async function appendViolationNoticeToTargetUsers(input: {
+async function notifyViolationNoticeCompletionTargets(input: {
   companyId: string;
   vnId: string;
   vnNumber: number;
-  description: string;
-  completedAt: Date;
   epiDecrease: number;
 }): Promise<void> {
   const targets = await db.getDb()('violation_notice_targets')
@@ -905,27 +949,24 @@ async function appendViolationNoticeToTargetUsers(input: {
     .select('user_id');
   if (targets.length === 0) return;
 
-  const masterDb = db.getDb();
-  const entry = JSON.stringify([{
-    vn_id: input.vnId,
-    vn_number: input.vnNumber,
-    company_id: input.companyId,
-    description: input.description,
-    completed_at: input.completedAt.toISOString(),
-    epi_decrease: input.epiDecrease,
-  }]);
+  const vnLabel = `VN-${String(input.vnNumber).padStart(4, '0')}`;
+  const epiMessage =
+    input.epiDecrease > 0
+      ? ` EPI decrease applied: ${input.epiDecrease.toFixed(1)}.`
+      : '';
 
-  for (const target of targets) {
-    await masterDb('users')
-      .where({ id: target.user_id })
-      .update({
-        violation_notices: masterDb.raw(
-          `COALESCE(violation_notices, '[]'::jsonb) || ?::jsonb`,
-          [entry],
-        ),
-        updated_at: new Date(),
+  await Promise.all(
+    targets.map(async (target: any) => {
+      await createAndDispatchNotification({
+        userId: String(target.user_id),
+        companyId: input.companyId,
+        title: 'Violation notice completed',
+        message: `Violation Notice ${vnLabel} has been completed.${epiMessage}`,
+        type: input.epiDecrease > 0 ? 'warning' : 'info',
+        linkUrl: `/violation-notices?vnId=${input.vnId}`,
       });
-  }
+    }),
+  );
 }
 
 export async function completeViolationNotice(input: {
@@ -962,16 +1003,14 @@ export async function completeViolationNotice(input: {
   });
 
   try {
-    await appendViolationNoticeToTargetUsers({
+    await notifyViolationNoticeCompletionTargets({
       companyId: input.companyId,
       vnId: input.vnId,
       vnNumber: record.vn_number,
-      description: record.description,
-      completedAt,
       epiDecrease: input.epiDecrease,
     });
   } catch (err) {
-    logger.error({ err, vnId: input.vnId }, 'Failed to append VN to target users in master DB');
+    logger.error({ err, vnId: input.vnId }, 'Failed to notify VN completion to target users');
   }
 
   const updated = await getVNOrThrow(input.vnId);

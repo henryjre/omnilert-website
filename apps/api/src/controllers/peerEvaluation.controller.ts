@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { PERMISSIONS } from '@omnilert/shared';
 import { getIO } from '../config/socket.js';
+import { db } from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import * as peerEvaluationService from '../services/peerEvaluation.service.js';
 
@@ -58,10 +59,39 @@ export async function submit(req: Request, res: Response, next: NextFunction) {
     const userId = req.user!.sub;
     const { companyId } = req.companyContext!;
 
-    const result = await peerEvaluationService.submitEvaluation(id, userId, req.body, companyId);
+    const result = await peerEvaluationService.submitEvaluation(id, userId, req.body);
+    const shift = await db.getDb()('employee_shifts')
+      .where({ id: result.shift_id })
+      .select('branch_id')
+      .first();
+
+    let submittedLog: Record<string, unknown> | null = null;
+    if (shift?.branch_id) {
+      [submittedLog] = await db.getDb()('shift_logs')
+        .insert({
+          company_id: companyId,
+          shift_id: result.shift_id,
+          branch_id: shift.branch_id,
+          log_type: 'peer_evaluation_submitted',
+          changes: JSON.stringify({
+            peer_evaluation_id: result.id,
+            evaluator_user_id: result.evaluator_user_id,
+            evaluated_user_id: result.evaluated_user_id,
+            submitted_by: userId,
+            note: 'Peer evaluation has been submitted.',
+          }),
+          event_time: result.submitted_at ? new Date(result.submitted_at) : new Date(),
+          odoo_payload: JSON.stringify({}),
+        })
+        .returning('*');
+    }
 
     try {
-      getIO().of('/peer-evaluations').to('company:' + companyId).emit('peer-evaluation:completed', { id });
+      const io = getIO();
+      io.of('/peer-evaluations').to('company:' + companyId).emit('peer-evaluation:completed', { id });
+      if (submittedLog && shift?.branch_id) {
+        io.of('/employee-shifts').to(`branch:${shift.branch_id}`).emit('shift:log-new', submittedLog);
+      }
     } catch { /* socket might not be ready */ }
 
     res.json({ success: true, data: result });

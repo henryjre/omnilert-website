@@ -10,7 +10,7 @@ export async function list(req: Request, res: Response, next: NextFunction) {
     const user = req.user!;
     const includeInactive = req.query.includeInactive === 'true';
 
-    let query = tenantDb('branches');
+    let query = tenantDb('branches').where('company_id', companyId);
 
     if (!includeInactive) {
       query = query.where('is_active', true);
@@ -38,6 +38,7 @@ export async function create(req: Request, res: Response, next: NextFunction) {
 
     const [branch] = await tenantDb('branches')
       .insert({
+        company_id: companyId,
         name,
         address: address || null,
         odoo_branch_id: odooBranchId || null,
@@ -64,7 +65,7 @@ export async function update(req: Request, res: Response, next: NextFunction) {
     if (req.body.isMainBranch !== undefined) updates.is_main_branch = req.body.isMainBranch;
     if (req.body.odooBranchId !== undefined) updates.odoo_branch_id = req.body.odooBranchId;
 
-    const [branch] = await tenantDb('branches').where({ id }).update(updates).returning('*');
+    const [branch] = await tenantDb('branches').where({ id, company_id: companyId }).update(updates).returning('*');
     if (!branch) throw new AppError(404, 'Branch not found');
 
     res.json({ success: true, data: branch });
@@ -80,7 +81,7 @@ export async function remove(req: Request, res: Response, next: NextFunction) {
     const { id } = req.params;
 
     const [branch] = await tenantDb('branches')
-      .where({ id })
+      .where({ id, company_id: companyId })
       .update({ is_active: false, updated_at: new Date() })
       .returning('*');
 

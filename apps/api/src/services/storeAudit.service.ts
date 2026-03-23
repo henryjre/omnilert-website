@@ -358,58 +358,6 @@ function formatAuditReportSections(sections: AuditReportSections): string {
     .trim();
 }
 
-async function appendCssAuditResult(
-  userKey: string,
-  payload: {
-    audit_id: string;
-    star_rating: number;
-    criteria_scores: CssCriteriaScores;
-    audited_at: string;
-  },
-): Promise<void> {
-  const masterDb = db.getDb();
-  const targetUser = await masterDb('users').where({ user_key: userKey }).first('id');
-  if (!targetUser) return;
-
-  await masterDb('users')
-    .where({ id: targetUser.id })
-    .update({
-      css_audits: masterDb.raw(`COALESCE(css_audits, '[]'::jsonb) || ?::jsonb`, [
-        JSON.stringify([payload]),
-      ]),
-      updated_at: new Date(),
-    });
-}
-
-async function updateComplianceAuditResult(
-  odooEmployeeId: number,
-  payload: {
-    audit_id: string;
-    answers: {
-      productivity_rate: boolean;
-      uniform: boolean;
-      hygiene: boolean;
-      sop: boolean;
-    };
-    audited_at: string;
-  },
-): Promise<void> {
-  const websiteKey = await getEmployeeWebsiteKeyByEmployeeId(odooEmployeeId);
-  if (!websiteKey) return;
-
-  const masterDb = db.getDb();
-  const targetUser = await masterDb('users').where({ user_key: websiteKey }).first('id');
-  if (!targetUser) return;
-
-  await masterDb('users')
-    .where({ id: targetUser.id })
-    .update({
-      compliance_audit: masterDb.raw(`COALESCE(compliance_audit, '[]'::jsonb) || ?::jsonb`, [
-        JSON.stringify([payload]),
-      ]),
-      updated_at: new Date(),
-    });
-}
 
 async function getWebsiteKeyByUserId(userId: string): Promise<string | null> {
   const row = await db.getDb()('users').where({ id: userId }).first('user_key');
@@ -884,13 +832,6 @@ export async function completeStoreAudit(input: {
       .returning('*');
 
     if (audit.css_cashier_user_key) {
-      await appendCssAuditResult(String(audit.css_cashier_user_key), {
-        audit_id: input.auditId,
-        star_rating: starRating,
-        criteria_scores,
-        audited_at: completedAt.toISOString(),
-      });
-
       const monetaryReward = Number(audit.monetary_reward ?? 0);
       if (monetaryReward > 0) {
         const description = `CSS Audit ${input.auditId} - ${formatDescriptionTimestamp(completedAt)}`;
@@ -928,17 +869,6 @@ export async function completeStoreAudit(input: {
       .returning('*');
 
     if (audit.comp_odoo_employee_id) {
-      await updateComplianceAuditResult(Number(audit.comp_odoo_employee_id), {
-        audit_id: input.auditId,
-        answers: {
-          productivity_rate: compPayload.productivity_rate,
-          uniform: compPayload.uniform,
-          hygiene: compPayload.hygiene,
-          sop: compPayload.sop,
-        },
-        audited_at: completedAt.toISOString(),
-      });
-
       const monetaryReward = Number(audit.monetary_reward ?? 0);
       if (monetaryReward > 0) {
         const description = `Compliance Audit ${input.auditId} - ${formatDescriptionTimestamp(completedAt)}`;

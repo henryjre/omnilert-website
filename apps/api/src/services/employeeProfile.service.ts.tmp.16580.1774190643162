@@ -69,18 +69,17 @@ async function loadUserBranchSummaryMap(
       .orderBy('companies.name', 'asc'),
     db.getDb()('user_company_branches as ucb')
       .join('companies as companies', 'ucb.company_id', 'companies.id')
-      .join('branches as branches', 'ucb.branch_id', 'branches.id')
       .whereIn('ucb.user_id', uniqueUserIds)
       .select(
         'ucb.user_id',
         'ucb.company_id',
         'companies.name as company_name',
         'ucb.branch_id',
-        'branches.name as branch_name',
+        'ucb.branch_name',
         'ucb.assignment_type',
       )
       .orderBy('companies.name', 'asc')
-      .orderBy('branches.name', 'asc'),
+      .orderBy('ucb.branch_name', 'asc'),
   ]);
 
   const out: Record<string, UserBranchSummary> = {};
@@ -536,16 +535,9 @@ export async function updateEmployeeWorkInformation(input: {
       .where({ id: input.userId })
       .update({
         department_id: input.departmentId,
+        position_title: input.positionTitle,
         employment_status: employmentStatus,
         is_active: employmentStatus === 'active',
-        updated_at: new Date(),
-      });
-
-    // position_title and date_started live on user_company_access
-    await trx('user_company_access')
-      .where({ user_id: input.userId, is_active: true })
-      .update({
-        position_title: input.positionTitle,
         date_started: input.dateStarted,
         updated_at: new Date(),
       });

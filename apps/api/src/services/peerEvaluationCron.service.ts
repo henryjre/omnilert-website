@@ -4,6 +4,12 @@ import { logger } from '../utils/logger.js';
 
 let cronHandle: NodeJS.Timeout | null = null;
 
+type ExpiredPeerEvaluationRow = {
+  id: string;
+  shift_id: string;
+  evaluator_user_id: string;
+};
+
 export async function runPeerEvaluationExpiryRun(): Promise<void> {
   const companies = await db.getDb()('companies')
     .where({ is_active: true })
@@ -11,13 +17,83 @@ export async function runPeerEvaluationExpiryRun(): Promise<void> {
 
   for (const company of companies) {
     try {
-      const count = await db.getDb()('peer_evaluations')
+      const now = new Date();
+      const expiredRows = await db.getDb()('peer_evaluations')
         .where('company_id', company.id)
         .where('status', 'pending')
-        .where('expires_at', '<', new Date())
-        .update({ status: 'expired', updated_at: new Date() });
+        .where('expires_at', '<', now)
+        .update({ status: 'expired', updated_at: now })
+        .returning(['id', 'shift_id', 'evaluator_user_id']) as ExpiredPeerEvaluationRow[];
+
+      const count = expiredRows.length;
 
       if (count > 0) {
+        const shiftIds = [...new Set(expiredRows.map((row) => row.shift_id).filter(Boolean))];
+        const shifts = shiftIds.length > 0
+          ? await db.getDb()('employee_shifts')
+            .whereIn('id', shiftIds)
+            .select('id', 'branch_id')
+          : [];
+        const branchIdByShiftId = new Map<string, string>();
+        for (const shift of shifts as Array<{ id: string; branch_id: string }>) {
+          branchIdByShiftId.set(shift.id, shift.branch_id);
+        }
+
+        const grouped = new Map<string, { shiftId: string; evaluatorUserId: string; peerEvaluationIds: string[] }>();
+        for (const row of expiredRows) {
+          const key = `${row.shift_id}:${row.evaluator_user_id}`;
+          const existing = grouped.get(key);
+          if (existing) {
+            existing.peerEvaluationIds.push(row.id);
+            continue;
+          }
+          grouped.set(key, {
+            shiftId: row.shift_id,
+            evaluatorUserId: row.evaluator_user_id,
+            peerEvaluationIds: [row.id],
+          });
+        }
+
+        const logsToInsert: Array<Record<string, unknown>> = [];
+        for (const group of grouped.values()) {
+          const branchId = branchIdByShiftId.get(group.shiftId);
+          if (!branchId) continue;
+          logsToInsert.push({
+            company_id: company.id,
+            shift_id: group.shiftId,
+            branch_id: branchId,
+            log_type: 'peer_evaluation_expired',
+            changes: JSON.stringify({
+              evaluator_user_id: group.evaluatorUserId,
+              peer_evaluation_ids: group.peerEvaluationIds,
+              peer_evaluation_count: group.peerEvaluationIds.length,
+              note: group.peerEvaluationIds.length === 1
+                ? 'Peer evaluation expired before submission.'
+                : `${group.peerEvaluationIds.length} peer evaluations expired before submission.`,
+            }),
+            event_time: now,
+            odoo_payload: JSON.stringify({}),
+          });
+        }
+
+        if (logsToInsert.length > 0) {
+          const insertedLogs = await db.getDb()('shift_logs')
+            .insert(logsToInsert)
+            .returning('*');
+          try {
+            const io = getIO();
+            for (const log of insertedLogs as Array<{ branch_id?: string }>) {
+              if (!log.branch_id) continue;
+              io.of('/employee-shifts').to(`branch:${log.branch_id}`).emit('shift:log-new', log);
+            }
+          } catch {
+            logger.warn(
+              { companyId: company.id },
+              'Socket.IO not available for peer evaluation shift-log expiry emits',
+            );
+          }
+        }
+
         try {
           getIO()
             .of('/peer-evaluations')

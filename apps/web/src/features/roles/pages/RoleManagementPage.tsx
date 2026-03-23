@@ -26,6 +26,29 @@ interface Permission {
   category: string;
 }
 
+const CATEGORY_NORMALIZATION_ALIASES: Record<string, string> = {
+  shift: 'shift',
+  shifts: 'shift',
+  auth_request: 'auth_request',
+  auth_requests: 'auth_request',
+  cash_request: 'cash_request',
+  cash_requests: 'cash_request',
+};
+
+function normalizePermissionCategory(category: string): string {
+  return CATEGORY_NORMALIZATION_ALIASES[category] ?? category;
+}
+
+function permissionBelongsToCategory(
+  permission: Permission,
+  categoryKey: string,
+  categoryPermissionKeys: string[],
+): boolean {
+  // Prefer canonical key matching so category renames/build drift cannot hide permissions.
+  if (categoryPermissionKeys.includes(permission.key)) return true;
+  return normalizePermissionCategory(permission.category) === normalizePermissionCategory(categoryKey);
+}
+
 export function RoleManagementPage() {
   const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const [roles, setRoles] = useState<Role[]>([]);
@@ -412,7 +435,9 @@ export function RoleManagementPage() {
                         <h4 className="mb-2 text-sm font-semibold text-gray-700">{category.label}</h4>
                         <div className="space-y-1">
                           {permissions
-                            .filter((permission) => permission.category === key)
+                            .filter((permission) =>
+                              permissionBelongsToCategory(permission, key, category.permissions),
+                            )
                             .map((permission) => (
                               <label
                                 key={permission.id}

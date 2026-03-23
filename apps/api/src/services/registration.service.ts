@@ -740,8 +740,6 @@ export async function approveRegistrationRequest(input: {
       user_id: string;
       company_id: string;
       branch_id: string;
-      branch_odoo_id: string;
-      branch_name: string;
       assignment_type: 'resident' | 'borrow';
     }> = [];
     for (const assignment of assignments) {
@@ -751,8 +749,6 @@ export async function approveRegistrationRequest(input: {
           user_id: userId,
           company_id: assignment.companyId,
           branch_id: branch.id,
-          branch_odoo_id: String(branch.odooBranchId),
-          branch_name: branch.name,
           assignment_type: isResident ? 'resident' : 'borrow',
         });
       }

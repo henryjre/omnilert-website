@@ -1,4 +1,5 @@
 import { db } from '../config/database.js';
+import { getIO } from '../config/socket.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import { createAndDispatchNotification } from './notification.service.js';
@@ -143,10 +144,12 @@ type ShiftExchangeDetail = {
 };
 
 type ApproverMode = 'hr' | 'management_fallback';
+type ShiftExchangeLogResolution = 'requested' | 'awaiting_hr' | 'approved' | 'rejected';
 
 const SHIFT_EXCHANGE_TABLE = 'shift_exchange_requests';
 const HR_ROLE_NAME = 'human resources';
 const MANAGEMENT_ROLE_NAME = 'management';
+const SHIFT_EXCHANGE_AUTH_TYPE = 'shift_exchange';
 
 function roleNameEquals(value: string, expectedLowercase: string): boolean {
   return value.trim().toLowerCase() === expectedLowercase;
@@ -701,6 +704,18 @@ export async function createShiftExchangeRequest(input: {
 
   const users = await loadUsersByIds([input.requesterUserId, chosen.user_id]);
   const requesterName = formatUserName(users[input.requesterUserId] ?? null);
+  const acceptingName = formatUserName(users[chosen.user_id] ?? null);
+  await appendShiftExchangeLogsForBothShifts({
+    row: created as ShiftExchangeRequestRow,
+    resolution: 'requested',
+    actorName: requesterName,
+    requesterName,
+    acceptingName,
+    requesterNote: `Requested a shift exchange with ${acceptingName}.`,
+    acceptingNote: `${requesterName} requested a shift exchange with you.`,
+    eventTime: now,
+  });
+
   await createAndDispatchNotification({
     userId: chosen.user_id,
     title: 'Shift Exchange Request',
@@ -765,6 +780,8 @@ export async function respondToShiftExchange(input: {
   if (isSuspended(requester) || isSuspended(accepting)) {
     throw new AppError(409, 'Suspended employees cannot continue shift exchanges');
   }
+  const requesterName = formatUserName(requester);
+  const acceptingName = formatUserName(accepting);
 
   const now = new Date();
   let updated: ShiftExchangeRequestRow;
@@ -780,9 +797,20 @@ export async function respondToShiftExchange(input: {
       })
       .returning('*');
     updated = result as ShiftExchangeRequestRow;
+    const rejectionReason = input.reason?.trim() || null;
+    await appendShiftExchangeLogsForBothShifts({
+      row: updated,
+      resolution: 'rejected',
+      actorName: acceptingName,
+      requesterName,
+      acceptingName,
+      requesterNote: `${acceptingName} rejected the shift exchange request.`,
+      acceptingNote: `You rejected the shift exchange request from ${requesterName}.`,
+      rejectionReason,
+      eventTime: now,
+    });
 
-    const acceptingName = formatUserName(accepting);
-    const reasonSuffix = input.reason?.trim() ? ` Reason: ${input.reason.trim()}` : '';
+    const reasonSuffix = rejectionReason ? ` Reason: ${rejectionReason}` : '';
     await createAndDispatchNotification({
       userId: row.requester_user_id,
       title: 'Shift Exchange Rejected',
@@ -801,13 +829,21 @@ export async function respondToShiftExchange(input: {
       })
       .returning('*');
     updated = result as ShiftExchangeRequestRow;
+    await appendShiftExchangeLogsForBothShifts({
+      row: updated,
+      resolution: 'awaiting_hr',
+      actorName: acceptingName,
+      requesterName,
+      acceptingName,
+      requesterNote: `${acceptingName} accepted the request. Waiting for approval.`,
+      acceptingNote: 'You accepted the request. Waiting for approval.',
+      eventTime: now,
+    });
 
     const approverResult = await listApprovers({
       companyIds: [row.requester_company_id, row.accepting_company_id],
       excludeUserIds: [row.requester_user_id, row.accepting_user_id],
     });
-    const requesterName = formatUserName(requester);
-    const acceptingName = formatUserName(accepting);
     await Promise.all(
       approverResult.approvers.map(async (approver) => {
         await createAndDispatchNotification({
@@ -835,6 +871,90 @@ function toStageLabel(row: Pick<ShiftExchangeRequestRow, 'status' | 'approval_st
   if (row.approval_stage === 'awaiting_employee') return 'Awaiting Employee Acceptance';
   if (row.approval_stage === 'awaiting_hr') return 'Pending HR Approval';
   return 'Pending';
+}
+
+async function appendShiftExchangeLog(input: {
+  companyId: string;
+  branchId: string;
+  shiftId: string;
+  requestId: string;
+  actorName: string;
+  counterpartName: string;
+  exchangeSide: 'requester' | 'accepting';
+  resolution: ShiftExchangeLogResolution;
+  eventTime: Date;
+  note: string;
+  rejectionReason?: string | null;
+}) {
+  const [log] = await db.getDb()('shift_logs')
+    .insert({
+      company_id: input.companyId,
+      shift_id: input.shiftId,
+      branch_id: input.branchId,
+      log_type: 'authorization_resolved',
+      changes: JSON.stringify({
+        shift_exchange_request_id: input.requestId,
+        auth_type: SHIFT_EXCHANGE_AUTH_TYPE,
+        shift_exchange_side: input.exchangeSide,
+        resolution: input.resolution,
+        resolved_by_name: input.actorName,
+        counterpart_name: input.counterpartName,
+        note: input.note,
+        ...(input.rejectionReason ? { rejection_reason: input.rejectionReason } : {}),
+      }),
+      event_time: input.eventTime,
+      odoo_payload: JSON.stringify({}),
+    })
+    .returning('*');
+
+  try {
+    getIO().of('/employee-shifts').to(`branch:${input.branchId}`).emit('shift:log-new', log);
+  } catch {
+    logger.warn('Socket.IO unavailable for shift exchange log emit');
+  }
+
+  return log;
+}
+
+async function appendShiftExchangeLogsForBothShifts(input: {
+  row: ShiftExchangeRequestRow;
+  resolution: ShiftExchangeLogResolution;
+  actorName: string;
+  requesterName: string;
+  acceptingName: string;
+  requesterNote: string;
+  acceptingNote: string;
+  rejectionReason?: string | null;
+  eventTime: Date;
+}) {
+  await Promise.all([
+    appendShiftExchangeLog({
+      companyId: input.row.requester_company_id,
+      branchId: input.row.requester_branch_id,
+      shiftId: input.row.requester_shift_id,
+      requestId: input.row.id,
+      actorName: input.actorName,
+      counterpartName: input.acceptingName,
+      exchangeSide: 'requester',
+      resolution: input.resolution,
+      eventTime: input.eventTime,
+      note: input.requesterNote,
+      rejectionReason: input.rejectionReason,
+    }),
+    appendShiftExchangeLog({
+      companyId: input.row.accepting_company_id,
+      branchId: input.row.accepting_branch_id,
+      shiftId: input.row.accepting_shift_id,
+      requestId: input.row.id,
+      actorName: input.actorName,
+      counterpartName: input.requesterName,
+      exchangeSide: 'accepting',
+      resolution: input.resolution,
+      eventTime: input.eventTime,
+      note: input.acceptingNote,
+      rejectionReason: input.rejectionReason,
+    }),
+  ]);
 }
 
 function parsePositiveInt(value: string | number | null | undefined, fieldLabel: string): number {
@@ -951,6 +1071,19 @@ export async function approveShiftExchange(input: {
       updated_at: now,
     })
     .returning('*');
+  const requesterName = formatUserName(requesterUser);
+  const acceptingName = formatUserName(acceptingUser);
+  const approverName = formatUserName(approverUser);
+  await appendShiftExchangeLogsForBothShifts({
+    row: updated as ShiftExchangeRequestRow,
+    resolution: 'approved',
+    actorName: approverName,
+    requesterName,
+    acceptingName,
+    requesterNote: `Shift exchange approved by ${approverName}.`,
+    acceptingNote: `Shift exchange approved by ${approverName}.`,
+    eventTime: now,
+  });
 
   await Promise.all([
     createAndDispatchNotification({
@@ -999,6 +1132,15 @@ export async function rejectShiftExchange(input: {
     companyIds: [row.requester_company_id, row.accepting_company_id],
   });
 
+  const users = await loadUsersByIds([
+    row.requester_user_id,
+    row.accepting_user_id,
+    input.actingUserId,
+  ]);
+  const requesterName = formatUserName(users[row.requester_user_id] ?? null);
+  const acceptingName = formatUserName(users[row.accepting_user_id] ?? null);
+  const approverName = formatUserName(users[input.actingUserId] ?? null);
+
   const now = new Date();
   const [updated] = await db.getDb()(SHIFT_EXCHANGE_TABLE)
     .where({ id: row.id })
@@ -1011,6 +1153,17 @@ export async function rejectShiftExchange(input: {
       updated_at: now,
     })
     .returning('*');
+  await appendShiftExchangeLogsForBothShifts({
+    row: updated as ShiftExchangeRequestRow,
+    resolution: 'rejected',
+    actorName: approverName,
+    requesterName,
+    acceptingName,
+    requesterNote: `Shift exchange rejected by ${approverName}.`,
+    acceptingNote: `Shift exchange rejected by ${approverName}.`,
+    rejectionReason: reason,
+    eventTime: now,
+  });
 
   await Promise.all([
     createAndDispatchNotification({

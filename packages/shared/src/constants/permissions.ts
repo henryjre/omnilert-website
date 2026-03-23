@@ -68,6 +68,7 @@ export const PERMISSIONS = {
 
   // Violation Notices
   VIOLATION_NOTICE_VIEW: 'violation_notice.view',
+  VIOLATION_NOTICE_REQUEST: 'violation_notice.request',
   VIOLATION_NOTICE_CREATE: 'violation_notice.create',
   VIOLATION_NOTICE_CONFIRM: 'violation_notice.confirm',
   VIOLATION_NOTICE_REJECT: 'violation_notice.reject',
@@ -140,7 +141,7 @@ export const PERMISSION_CATEGORIES: Record<string, { label: string; permissions:
         PERMISSIONS.EMPLOYEE_EDIT_WORK_PROFILE,
       ],
     },
-    shifts: {
+    shift: {
       label: 'Employee Schedule',
       permissions: [
         PERMISSIONS.SHIFT_VIEW_ALL,
@@ -148,7 +149,7 @@ export const PERMISSION_CATEGORIES: Record<string, { label: string; permissions:
         PERMISSIONS.SHIFT_END_SHIFT,
       ],
     },
-    auth_requests: {
+    auth_request: {
       label: 'Authorization Requests',
       permissions: [
         PERMISSIONS.AUTH_REQUEST_APPROVE_MANAGEMENT,
@@ -156,7 +157,7 @@ export const PERMISSION_CATEGORIES: Record<string, { label: string; permissions:
         PERMISSIONS.AUTH_REQUEST_APPROVE_SERVICE_CREW,
       ],
     },
-    cash_requests: {
+    cash_request: {
       label: 'Cash Requests',
       permissions: [
         PERMISSIONS.CASH_REQUEST_VIEW_ALL,
@@ -193,6 +194,7 @@ export const PERMISSION_CATEGORIES: Record<string, { label: string; permissions:
       label: 'Violation Notices',
       permissions: [
         PERMISSIONS.VIOLATION_NOTICE_VIEW,
+        PERMISSIONS.VIOLATION_NOTICE_REQUEST,
         PERMISSIONS.VIOLATION_NOTICE_CREATE,
         PERMISSIONS.VIOLATION_NOTICE_CONFIRM,
         PERMISSIONS.VIOLATION_NOTICE_REJECT,

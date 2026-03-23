@@ -193,73 +193,54 @@ export async function up(knex: Knex): Promise<void> {
   // -------------------------------------------------------------------------
   await knex.schema.createTable('role_permissions', (table) => {
     table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
-    table
-      .uuid('role_id')
-      .notNullable()
-      .references('id')
-      .inTable('roles')
-      .onDelete('CASCADE');
-    table
-      .uuid('permission_id')
-      .notNullable()
-      .references('id')
-      .inTable('permissions')
-      .onDelete('CASCADE');
+    table.uuid('role_id').notNullable();
+    table.uuid('permission_id').notNullable();
     table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
-    table.unique(['role_id', 'permission_id']);
+    table.foreign('role_id').references('id').inTable('roles').onDelete('CASCADE');
+    table.foreign('permission_id').references('id').inTable('permissions').onDelete('CASCADE');
   });
+  await knex.raw(`
+    CREATE UNIQUE INDEX role_permissions_role_id_permission_id_unique
+    ON role_permissions (role_id, permission_id)
+  `);
 
   // -------------------------------------------------------------------------
   // 11. user_roles
   // -------------------------------------------------------------------------
   await knex.schema.createTable('user_roles', (table) => {
     table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
-    table
-      .uuid('user_id')
-      .notNullable()
-      .references('id')
-      .inTable('users')
-      .onDelete('CASCADE');
-    table
-      .uuid('role_id')
-      .notNullable()
-      .references('id')
-      .inTable('roles')
-      .onDelete('CASCADE');
-    table
-      .uuid('assigned_by')
-      .nullable()
-      .references('id')
-      .inTable('users')
-      .onDelete('SET NULL');
+    table.uuid('user_id').notNullable();
+    table.uuid('role_id').notNullable();
+    table.uuid('assigned_by').nullable();
     table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
-    table.unique(['user_id', 'role_id']);
+    table.foreign('user_id').references('id').inTable('users').onDelete('CASCADE');
+    table.foreign('role_id').references('id').inTable('roles').onDelete('CASCADE');
+    table.foreign('assigned_by').references('id').inTable('users').onDelete('SET NULL');
   });
+  await knex.raw(`
+    CREATE UNIQUE INDEX user_roles_user_id_role_id_unique
+    ON user_roles (user_id, role_id)
+  `);
 
   // -------------------------------------------------------------------------
   // 12. user_company_access
   // -------------------------------------------------------------------------
   await knex.schema.createTable('user_company_access', (table) => {
     table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
-    table
-      .uuid('user_id')
-      .notNullable()
-      .references('id')
-      .inTable('users')
-      .onDelete('CASCADE');
-    table
-      .uuid('company_id')
-      .notNullable()
-      .references('id')
-      .inTable('companies')
-      .onDelete('CASCADE');
+    table.uuid('user_id').notNullable();
+    table.uuid('company_id').notNullable();
     table.string('position_title', 255).nullable();
     table.date('date_started').nullable();
     table.boolean('is_active').notNullable().defaultTo(true);
     table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
     table.timestamp('updated_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
-    table.unique(['user_id', 'company_id']);
+    table.foreign('user_id').references('id').inTable('users').onDelete('CASCADE');
+    table.foreign('company_id').references('id').inTable('companies').onDelete('CASCADE');
   });
+  await knex.raw(`
+    CREATE UNIQUE INDEX user_company_access_user_id_company_id_unique
+    ON user_company_access (user_id, company_id)
+  `);
 
   // -------------------------------------------------------------------------
   // 13. branches (must exist before user_company_branches, shift_exchange_requests, etc.)
@@ -296,60 +277,39 @@ export async function up(knex: Knex): Promise<void> {
   // -------------------------------------------------------------------------
   await knex.schema.createTable('user_branches', (table) => {
     table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
-    table
-      .uuid('company_id')
-      .notNullable()
-      .references('id')
-      .inTable('companies')
-      .onDelete('CASCADE');
-    table
-      .uuid('user_id')
-      .notNullable()
-      .references('id')
-      .inTable('users')
-      .onDelete('CASCADE');
-    table
-      .uuid('branch_id')
-      .notNullable()
-      .references('id')
-      .inTable('branches')
-      .onDelete('CASCADE');
+    table.uuid('company_id').notNullable();
+    table.uuid('user_id').notNullable();
+    table.uuid('branch_id').notNullable();
     table.boolean('is_primary').notNullable().defaultTo(false);
     table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
-    table.unique(['user_id', 'branch_id']);
+    table.foreign('company_id').references('id').inTable('companies').onDelete('CASCADE');
+    table.foreign('user_id').references('id').inTable('users').onDelete('CASCADE');
+    table.foreign('branch_id').references('id').inTable('branches').onDelete('CASCADE');
   });
+  await knex.raw(`
+    CREATE UNIQUE INDEX user_branches_user_id_branch_id_unique
+    ON user_branches (user_id, branch_id)
+  `);
 
   // -------------------------------------------------------------------------
   // 15. user_company_branches
   // -------------------------------------------------------------------------
   await knex.schema.createTable('user_company_branches', (table) => {
     table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
-    table
-      .uuid('user_id')
-      .notNullable()
-      .references('id')
-      .inTable('users')
-      .onDelete('CASCADE');
-    table
-      .uuid('company_id')
-      .notNullable()
-      .references('id')
-      .inTable('companies')
-      .onDelete('CASCADE');
-    table
-      .uuid('branch_id')
-      .notNullable()
-      .references('id')
-      .inTable('branches')
-      .onDelete('CASCADE');
-    table
-      .string('assignment_type', 20)
-      .notNullable()
-      .checkIn(['resident', 'borrow']);
+    table.uuid('user_id').notNullable();
+    table.uuid('company_id').notNullable();
+    table.uuid('branch_id').notNullable();
+    table.string('assignment_type', 20).notNullable().checkIn(['resident', 'borrow']);
     table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
     table.timestamp('updated_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
-    table.unique(['user_id', 'company_id', 'branch_id']);
+    table.foreign('user_id').references('id').inTable('users').onDelete('CASCADE');
+    table.foreign('company_id').references('id').inTable('companies').onDelete('CASCADE');
+    table.foreign('branch_id').references('id').inTable('branches').onDelete('CASCADE');
   });
+  await knex.raw(`
+    CREATE UNIQUE INDEX user_company_branches_user_id_company_id_branch_id_unique
+    ON user_company_branches (user_id, company_id, branch_id)
+  `);
 
   // -------------------------------------------------------------------------
   // 16. pos_sessions
@@ -418,8 +378,11 @@ export async function up(knex: Knex): Promise<void> {
     table.jsonb('odoo_payload').notNullable();
     table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
     table.timestamp('updated_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
-    table.unique(['odoo_shift_id', 'branch_id']);
   });
+  await knex.raw(`
+    CREATE UNIQUE INDEX employee_shifts_odoo_shift_id_branch_id_unique
+    ON employee_shifts (odoo_shift_id, branch_id)
+  `);
 
   await knex.raw(`
     CREATE INDEX employee_shifts_company_id_branch_id_idx
@@ -526,7 +489,7 @@ export async function up(knex: Knex): Promise<void> {
       .string('status', 20)
       .notNullable()
       .defaultTo('pending')
-      .checkIn(['pending', 'confirmed', 'rejected']);
+      .checkIn(['pending', 'awaiting_customer', 'confirmed', 'rejected']);
     table
       .string('verification_type', 50)
       .nullable()
@@ -535,9 +498,11 @@ export async function up(knex: Knex): Promise<void> {
         'pcf_breakdown',
         'closing_pcf_breakdown',
         'discount_order',
+        'refund_order',
         'token_pay_order',
         'ispe_purchase_order',
-        'register_cash',
+        'register_cash_in',
+        'register_cash_out',
         'non_cash_order',
       ]);
     table
@@ -646,7 +611,7 @@ export async function up(knex: Knex): Promise<void> {
     table
       .string('log_type', 30)
       .notNullable()
-      .checkIn(['shift_updated', 'check_in', 'check_out']);
+      .checkIn(['shift_updated', 'check_in', 'check_out', 'shift_ended', 'authorization_resolved']);
     table.jsonb('changes').nullable();
     table.integer('odoo_attendance_id').nullable();
     table.timestamp('event_time', { useTz: true }).notNullable();
@@ -679,7 +644,7 @@ export async function up(knex: Knex): Promise<void> {
     table
       .string('auth_type', 50)
       .notNullable()
-      .checkIn(['early_check_in', 'tardiness', 'early_check_out', 'late_check_out']);
+      .checkIn(['early_check_in', 'tardiness', 'early_check_out', 'late_check_out', 'overtime']);
     table.integer('diff_minutes').notNullable();
     table.boolean('needs_employee_reason').notNullable().defaultTo(false);
     table
@@ -1048,47 +1013,37 @@ export async function up(knex: Knex): Promise<void> {
   // -------------------------------------------------------------------------
   await knex.schema.createTable('case_reactions', (table) => {
     table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
-    table
-      .uuid('message_id')
-      .notNullable()
-      .references('id')
-      .inTable('case_messages')
-      .onDelete('CASCADE');
-    table
-      .uuid('user_id')
-      .notNullable()
-      .references('id')
-      .inTable('users')
-      .onDelete('CASCADE');
+    table.uuid('message_id').notNullable();
+    table.uuid('user_id').notNullable();
     table.string('emoji', 20).notNullable();
     table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
-    table.unique(['message_id', 'user_id', 'emoji']);
+    table.foreign('message_id').references('id').inTable('case_messages').onDelete('CASCADE');
+    table.foreign('user_id').references('id').inTable('users').onDelete('CASCADE');
   });
+  await knex.raw(`
+    CREATE UNIQUE INDEX case_reactions_message_id_user_id_emoji_unique
+    ON case_reactions (message_id, user_id, emoji)
+  `);
 
   // -------------------------------------------------------------------------
   // 33. case_participants
   // -------------------------------------------------------------------------
   await knex.schema.createTable('case_participants', (table) => {
     table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
-    table
-      .uuid('case_id')
-      .notNullable()
-      .references('id')
-      .inTable('case_reports')
-      .onDelete('CASCADE');
-    table
-      .uuid('user_id')
-      .notNullable()
-      .references('id')
-      .inTable('users')
-      .onDelete('CASCADE');
+    table.uuid('case_id').notNullable();
+    table.uuid('user_id').notNullable();
     table.boolean('is_joined').notNullable().defaultTo(true);
     table.boolean('is_muted').notNullable().defaultTo(false);
     table.timestamp('last_read_at', { useTz: true }).nullable();
     table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
     table.timestamp('updated_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
-    table.unique(['case_id', 'user_id']);
+    table.foreign('case_id').references('id').inTable('case_reports').onDelete('CASCADE');
+    table.foreign('user_id').references('id').inTable('users').onDelete('CASCADE');
   });
+  await knex.raw(`
+    CREATE UNIQUE INDEX case_participants_case_id_user_id_unique
+    ON case_participants (case_id, user_id)
+  `);
 
   // -------------------------------------------------------------------------
   // 34. case_mentions
@@ -1207,21 +1162,16 @@ export async function up(knex: Knex): Promise<void> {
   // -------------------------------------------------------------------------
   await knex.schema.createTable('violation_notice_targets', (table) => {
     table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
-    table
-      .uuid('violation_notice_id')
-      .notNullable()
-      .references('id')
-      .inTable('violation_notices')
-      .onDelete('CASCADE');
-    table
-      .uuid('user_id')
-      .notNullable()
-      .references('id')
-      .inTable('users')
-      .onDelete('CASCADE');
+    table.uuid('violation_notice_id').notNullable();
+    table.uuid('user_id').notNullable();
     table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
-    table.unique(['violation_notice_id', 'user_id']);
+    table.foreign('violation_notice_id').references('id').inTable('violation_notices').onDelete('CASCADE');
+    table.foreign('user_id').references('id').inTable('users').onDelete('CASCADE');
   });
+  await knex.raw(`
+    CREATE UNIQUE INDEX violation_notice_targets_vn_id_user_id_unique
+    ON violation_notice_targets (violation_notice_id, user_id)
+  `);
 
   // -------------------------------------------------------------------------
   // 37. violation_notice_messages
@@ -1300,47 +1250,37 @@ export async function up(knex: Knex): Promise<void> {
   // -------------------------------------------------------------------------
   await knex.schema.createTable('violation_notice_reactions', (table) => {
     table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
-    table
-      .uuid('message_id')
-      .notNullable()
-      .references('id')
-      .inTable('violation_notice_messages')
-      .onDelete('CASCADE');
-    table
-      .uuid('user_id')
-      .notNullable()
-      .references('id')
-      .inTable('users')
-      .onDelete('CASCADE');
+    table.uuid('message_id').notNullable();
+    table.uuid('user_id').notNullable();
     table.string('emoji', 20).notNullable();
     table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
-    table.unique(['message_id', 'user_id', 'emoji']);
+    table.foreign('message_id').references('id').inTable('violation_notice_messages').onDelete('CASCADE');
+    table.foreign('user_id').references('id').inTable('users').onDelete('CASCADE');
   });
+  await knex.raw(`
+    CREATE UNIQUE INDEX violation_notice_reactions_message_id_user_id_emoji_unique
+    ON violation_notice_reactions (message_id, user_id, emoji)
+  `);
 
   // -------------------------------------------------------------------------
   // 40. violation_notice_participants
   // -------------------------------------------------------------------------
   await knex.schema.createTable('violation_notice_participants', (table) => {
     table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
-    table
-      .uuid('violation_notice_id')
-      .notNullable()
-      .references('id')
-      .inTable('violation_notices')
-      .onDelete('CASCADE');
-    table
-      .uuid('user_id')
-      .notNullable()
-      .references('id')
-      .inTable('users')
-      .onDelete('CASCADE');
+    table.uuid('violation_notice_id').notNullable();
+    table.uuid('user_id').notNullable();
     table.boolean('is_joined').notNullable().defaultTo(true);
     table.boolean('is_muted').notNullable().defaultTo(false);
     table.timestamp('last_read_at', { useTz: true }).nullable();
     table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
     table.timestamp('updated_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
-    table.unique(['violation_notice_id', 'user_id']);
+    table.foreign('violation_notice_id').references('id').inTable('violation_notices').onDelete('CASCADE');
+    table.foreign('user_id').references('id').inTable('users').onDelete('CASCADE');
   });
+  await knex.raw(`
+    CREATE UNIQUE INDEX violation_notice_participants_vn_id_user_id_unique
+    ON violation_notice_participants (violation_notice_id, user_id)
+  `);
 
   // -------------------------------------------------------------------------
   // 41. violation_notice_mentions
@@ -1379,52 +1319,27 @@ export async function up(knex: Knex): Promise<void> {
   // -------------------------------------------------------------------------
   await knex.schema.createTable('violation_notice_reads', (table) => {
     table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
-    table
-      .uuid('violation_notice_id')
-      .notNullable()
-      .references('id')
-      .inTable('violation_notices')
-      .onDelete('CASCADE');
-    table
-      .uuid('user_id')
-      .notNullable()
-      .references('id')
-      .inTable('users')
-      .onDelete('CASCADE');
+    table.uuid('violation_notice_id').notNullable();
+    table.uuid('user_id').notNullable();
     table.timestamp('last_read_at', { useTz: true }).notNullable();
     table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
-    table.unique(['violation_notice_id', 'user_id']);
+    table.foreign('violation_notice_id').references('id').inTable('violation_notices').onDelete('CASCADE');
+    table.foreign('user_id').references('id').inTable('users').onDelete('CASCADE');
   });
+  await knex.raw(`
+    CREATE UNIQUE INDEX violation_notice_reads_vn_id_user_id_unique
+    ON violation_notice_reads (violation_notice_id, user_id)
+  `);
 
   // -------------------------------------------------------------------------
   // 43. peer_evaluations
   // -------------------------------------------------------------------------
   await knex.schema.createTable('peer_evaluations', (table) => {
     table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
-    table
-      .uuid('company_id')
-      .notNullable()
-      .references('id')
-      .inTable('companies')
-      .onDelete('CASCADE');
-    table
-      .uuid('evaluator_user_id')
-      .notNullable()
-      .references('id')
-      .inTable('users')
-      .onDelete('CASCADE');
-    table
-      .uuid('evaluated_user_id')
-      .notNullable()
-      .references('id')
-      .inTable('users')
-      .onDelete('CASCADE');
-    table
-      .uuid('shift_id')
-      .notNullable()
-      .references('id')
-      .inTable('employee_shifts')
-      .onDelete('CASCADE');
+    table.uuid('company_id').notNullable();
+    table.uuid('evaluator_user_id').notNullable();
+    table.uuid('evaluated_user_id').notNullable();
+    table.uuid('shift_id').notNullable();
     table.string('status', 20).notNullable().defaultTo('pending');
     table.integer('q1_score').notNullable().defaultTo(5);
     table.integer('q2_score').notNullable().defaultTo(5);
@@ -1435,8 +1350,15 @@ export async function up(knex: Knex): Promise<void> {
     table.timestamp('submitted_at', { useTz: true }).nullable();
     table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
     table.timestamp('updated_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
-    table.unique(['evaluator_user_id', 'evaluated_user_id', 'shift_id']);
+    table.foreign('company_id').references('id').inTable('companies').onDelete('CASCADE');
+    table.foreign('evaluator_user_id').references('id').inTable('users').onDelete('CASCADE');
+    table.foreign('evaluated_user_id').references('id').inTable('users').onDelete('CASCADE');
+    table.foreign('shift_id').references('id').inTable('employee_shifts').onDelete('CASCADE');
   });
+  await knex.raw(`
+    CREATE UNIQUE INDEX peer_evaluations_evaluator_evaluated_shift_unique
+    ON peer_evaluations (evaluator_user_id, evaluated_user_id, shift_id)
+  `);
 
   await knex.raw(`
     CREATE INDEX peer_evaluations_evaluator_user_id_status_idx
@@ -1630,40 +1552,42 @@ export async function up(knex: Knex): Promise<void> {
   // -------------------------------------------------------------------------
   await knex.schema.createTable('registration_request_company_assignments', (table) => {
     table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
+    table.uuid('registration_request_id').notNullable();
+    table.uuid('company_id').notNullable();
+    table.string('company_name', 255).nullable();
+    table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
     table
-      .uuid('registration_request_id')
-      .notNullable()
+      .foreign('registration_request_id')
       .references('id')
       .inTable('registration_requests')
       .onDelete('CASCADE');
-    table
-      .uuid('company_id')
-      .notNullable()
-      .references('id')
-      .inTable('companies')
-      .onDelete('CASCADE');
-    table.string('company_name', 255).nullable();
-    table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
-    table.unique(['registration_request_id', 'company_id']);
+    table.foreign('company_id').references('id').inTable('companies').onDelete('CASCADE');
   });
+  await knex.raw(`
+    CREATE UNIQUE INDEX rrca_registration_request_id_company_id_unique
+    ON registration_request_company_assignments (registration_request_id, company_id)
+  `);
 
   // -------------------------------------------------------------------------
   // 50. registration_request_assignment_branches
   // -------------------------------------------------------------------------
   await knex.schema.createTable('registration_request_assignment_branches', (table) => {
     table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
-    table
-      .uuid('registration_request_company_assignment_id')
-      .notNullable()
-      .references('id')
-      .inTable('registration_request_company_assignments')
-      .onDelete('CASCADE');
+    table.uuid('registration_request_company_assignment_id').notNullable();
     table.uuid('branch_id').notNullable();
     table.string('branch_name', 255).nullable();
     table.string('branch_odoo_id', 100).nullable();
     table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
-    table.unique(['registration_request_company_assignment_id', 'branch_id']);
+    table
+      .foreign('registration_request_company_assignment_id')
+      .references('id')
+      .inTable('registration_request_company_assignments')
+      .onDelete('CASCADE');
   });
+  await knex.raw(`
+    CREATE UNIQUE INDEX rrab_assignment_id_branch_id_unique
+    ON registration_request_assignment_branches (registration_request_company_assignment_id, branch_id)
+  `);
 
   // -------------------------------------------------------------------------
   // 51. refresh_tokens
@@ -1770,18 +1694,17 @@ export async function up(knex: Knex): Promise<void> {
   // -------------------------------------------------------------------------
   await knex.schema.createTable('company_sequences', (table) => {
     table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
-    table
-      .uuid('company_id')
-      .notNullable()
-      .references('id')
-      .inTable('companies')
-      .onDelete('CASCADE');
+    table.uuid('company_id').notNullable();
     table.string('sequence_name', 50).notNullable();
     table.integer('current_value').notNullable().defaultTo(0);
     table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
     table.timestamp('updated_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
-    table.unique(['company_id', 'sequence_name']);
+    table.foreign('company_id').references('id').inTable('companies').onDelete('CASCADE');
   });
+  await knex.raw(`
+    CREATE UNIQUE INDEX company_sequences_company_id_sequence_name_unique
+    ON company_sequences (company_id, sequence_name)
+  `);
 
   // ===========================================================================
   // SEEDING
@@ -1813,9 +1736,9 @@ export async function up(knex: Knex): Promise<void> {
       category: 'employee',
       keys: ['view_own_profile', 'edit_own_profile', 'view_all_profiles', 'edit_work_profile'],
     },
-    { category: 'shifts', keys: ['view_all', 'approve_authorizations', 'end_shift'] },
-    { category: 'auth_requests', keys: ['approve_management', 'view_all', 'approve_service_crew'] },
-    { category: 'cash_requests', keys: ['view_all', 'approve'] },
+    { category: 'shift', keys: ['view_all', 'approve_authorizations', 'end_shift'] },
+    { category: 'auth_request', keys: ['approve_management', 'view_all', 'approve_service_crew'] },
+    { category: 'cash_request', keys: ['view_all', 'approve'] },
     {
       category: 'employee_verifications',
       // These keys already contain dots — use as-is (do NOT prepend category)
@@ -1831,7 +1754,7 @@ export async function up(knex: Knex): Promise<void> {
     { category: 'case_report', keys: ['view', 'create', 'close', 'manage'] },
     {
       category: 'violation_notice',
-      keys: ['view', 'create', 'confirm', 'reject', 'issue', 'complete', 'manage'],
+      keys: ['view', 'request', 'create', 'confirm', 'reject', 'issue', 'complete', 'manage'],
     },
     { category: 'peer_evaluation', keys: ['view', 'manage'] },
   ];

@@ -78,7 +78,7 @@ router.patch(
   caseReportController.updateResolution,
 );
 router.post('/:id/close', requirePermission(PERMISSIONS.CASE_REPORT_CLOSE), caseReportController.close);
-router.post('/:id/request-vn', requirePermission(PERMISSIONS.CASE_REPORT_MANAGE), validateBody(requestVNSchema), caseReportController.requestViolationNotice);
+router.post('/:id/request-vn', requirePermission(PERMISSIONS.VIOLATION_NOTICE_REQUEST), validateBody(requestVNSchema), caseReportController.requestViolationNotice);
 router.post(
   '/:id/attachments',
   requirePermission(PERMISSIONS.CASE_REPORT_VIEW),

@@ -11,6 +11,7 @@ import { usePermission } from '@/shared/hooks/usePermission';
 import { useAppToast } from '@/shared/hooks/useAppToast';
 import { api } from '@/shared/services/api.client';
 import { ShiftExchangeFlowModal } from '@/features/shift-exchange/components/ShiftExchangeFlowModal';
+import { PeerEvaluationModal } from '@/features/peer-evaluations/components/PeerEvaluationModal';
 import { PERMISSIONS } from '@omnilert/shared';
 import { ArrowDown, ArrowUp, Calendar, CheckCircle, ChevronDown, ChevronUp, Clock, AlertTriangle, Filter, LogIn, LogOut, RefreshCw, Square, X, XCircle } from 'lucide-react';
 
@@ -70,6 +71,10 @@ function parseEmployeeName(raw: string): { prefix: string; name: string } {
   return { prefix: '', name: raw };
 }
 
+function resolveShiftAvatarUrl(shift: any): string | null {
+  return shift?.user_avatar_url || shift?.employee_avatar_url || null;
+}
+
 function AvatarFallback({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' }) {
   const initials = name
     .split(' ')
@@ -100,6 +105,7 @@ const AUTH_TYPE_CONFIG: Record<string, { label: string; color: string; Icon: Rea
   early_check_out: { label: 'Early Check Out', color: 'yellow', Icon: LogOut, diffLabel: 'early' },
   late_check_out: { label: 'Late Check Out', color: 'purple', Icon: Clock, diffLabel: 'after shift end' },
   overtime: { label: 'Overtime', color: 'red', Icon: Clock, diffLabel: 'overtime' },
+  shift_exchange: { label: 'Shift Exchange', color: 'indigo', Icon: RefreshCw, diffLabel: '' },
 };
 
 const STATUS_VARIANT: Record<string, 'warning' | 'success' | 'danger' | 'default'> = {
@@ -164,6 +170,7 @@ function AuthorizationCard({
     blue: 'bg-blue-100 text-blue-600',
     orange: 'bg-orange-100 text-orange-600',
     yellow: 'bg-yellow-100 text-yellow-600',
+    indigo: 'bg-indigo-100 text-indigo-600',
     purple: 'bg-purple-100 text-purple-600',
     red: 'bg-red-100 text-red-600',
     gray: 'bg-gray-100 text-gray-600',
@@ -427,6 +434,7 @@ function ShiftCard({
   onExchangeShift: (shift: any) => void;
 }) {
   const { prefix, name } = parseEmployeeName(shift.employee_name);
+  const avatarUrl = resolveShiftAvatarUrl(shift);
   const dutyColor = DUTY_COLORS[shift.duty_color] ?? '#e5e7eb';
   const [avatarError, setAvatarError] = useState(false);
   const statusCfg = SHIFT_STATUS_CONFIG[shift.status] ?? { label: shift.status, cls: 'bg-gray-100 text-gray-700' };
@@ -442,9 +450,9 @@ function ShiftCard({
       <Card className="flex h-full flex-col gap-4 p-4">
         {/* Header */}
         <div className="flex items-center gap-3">
-          {shift.employee_avatar_url && !avatarError ? (
+          {avatarUrl && !avatarError ? (
             <img
-              src={shift.employee_avatar_url}
+              src={avatarUrl}
               alt={name}
               className="h-12 w-12 rounded-full object-cover"
               onError={() => setAvatarError(true)}
@@ -560,7 +568,19 @@ function ShiftCard({
 
 // --- Log Entry ---
 
-function LogEntry({ log, isLast }: { log: any; isLast: boolean }) {
+function LogEntry({
+  log,
+  isLast,
+  currentUserId,
+  shiftOwnerUserId,
+  onOpenPeerEvaluation,
+}: {
+  log: any;
+  isLast: boolean;
+  currentUserId: string;
+  shiftOwnerUserId: string | null;
+  onOpenPeerEvaluation: (evaluationId: string) => void;
+}) {
   const payload = log.odoo_payload as Record<string, unknown> | null;
   const empName = payload?.x_employee_contact_name
     ? parseEmployeeName(String(payload.x_employee_contact_name)).name
@@ -662,30 +682,69 @@ function LogEntry({ log, isLast }: { log: any; isLast: boolean }) {
   if (log.log_type === 'authorization_resolved') {
     const changes = log.changes as Record<string, unknown> | null;
     const resolution = changes?.resolution as string | undefined;
+    const resolvedByName = typeof changes?.resolved_by_name === 'string'
+      ? changes.resolved_by_name
+      : null;
+    const counterpartName = typeof changes?.counterpart_name === 'string'
+      ? changes.counterpart_name
+      : null;
+    const showCounterpartLine = Boolean(counterpartName && counterpartName !== resolvedByName);
     const isApproved = resolution === 'approved';
+    const isRejected = resolution === 'rejected';
+    const isPendingLike = !isApproved && !isRejected;
     const authLabel = AUTH_TYPE_CONFIG[changes?.auth_type as string]?.label ?? (changes?.auth_type as string ?? '');
+    const shiftExchangeTitle = (() => {
+      switch (resolution) {
+        case 'requested':
+          return 'Shift Exchange Requested';
+        case 'awaiting_hr':
+          return 'Shift Exchange Awaiting Approval';
+        case 'approved':
+          return 'Shift Exchange Approved';
+        case 'rejected':
+          return 'Shift Exchange Rejected';
+        default:
+          return 'Shift Exchange Updated';
+      }
+    })();
     return (
       <div className="flex gap-3">
         <div className="flex flex-col items-center">
-          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${isApproved ? 'bg-green-100' : 'bg-red-100'}`}>
-            {isApproved ? <CheckCircle className="h-4 w-4 text-green-600" /> : <XCircle className="h-4 w-4 text-red-600" />}
+          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+            isApproved ? 'bg-green-100' : isRejected ? 'bg-red-100' : 'bg-yellow-100'
+          }`}>
+            {isApproved ? (
+              <CheckCircle className="h-4 w-4 text-green-600" />
+            ) : isRejected ? (
+              <XCircle className="h-4 w-4 text-red-600" />
+            ) : (
+              <Clock className="h-4 w-4 text-yellow-700" />
+            )}
           </div>
           {!isLast && <div className="w-px flex-1 bg-gray-200" />}
         </div>
         <div className="pb-4">
           <p className="font-medium text-gray-900">
-            {authLabel} {isApproved ? 'Approved' : 'Rejected'}
+            {changes?.auth_type === 'shift_exchange'
+              ? shiftExchangeTitle
+              : `${authLabel} ${isApproved ? 'Approved' : 'Rejected'}`}
           </p>
           <p className="text-xs text-gray-500">{fmtTime(log.event_time)}</p>
-          {!!changes?.resolved_by_name && (
-            <p className="text-xs text-gray-500">By {String(changes!.resolved_by_name)}</p>
+          {resolvedByName && (
+            <p className="text-xs text-gray-500">By {resolvedByName}</p>
           )}
-          {isApproved && !!changes?.overtime_type && (
+          {showCounterpartLine && counterpartName && (
+            <p className="text-xs text-gray-500">Counterpart: {counterpartName}</p>
+          )}
+          {!!changes?.note && (
+            <p className="mt-1 text-xs text-gray-600">{String(changes.note)}</p>
+          )}
+          {!isPendingLike && isApproved && !!changes?.overtime_type && (
             <p className="text-xs text-blue-600">
               Type: {OVERTIME_TYPE_LABELS[changes!.overtime_type as string] ?? String(changes!.overtime_type)}
             </p>
           )}
-          {!isApproved && !!changes?.rejection_reason && (
+          {isRejected && !!changes?.rejection_reason && (
             <p className="mt-1 text-xs text-red-600">Reason: {String(changes!.rejection_reason)}</p>
           )}
         </div>
@@ -710,6 +769,91 @@ function LogEntry({ log, isLast }: { log: any; isLast: boolean }) {
     );
   }
 
+  if (log.log_type === 'peer_evaluation_available') {
+    const changes = log.changes as Record<string, unknown> | null;
+    const evaluationId = typeof changes?.peer_evaluation_id === 'string'
+      ? changes.peer_evaluation_id
+      : null;
+    const evaluationCount = Number(changes?.peer_evaluation_count ?? 1);
+    const canReview = Boolean(
+      evaluationId
+      && shiftOwnerUserId
+      && currentUserId
+      && shiftOwnerUserId === currentUserId,
+    );
+
+    return (
+      <div className="flex gap-3">
+        <div className="flex flex-col items-center">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100">
+            <Clock className="h-4 w-4 text-blue-600" />
+          </div>
+          {!isLast && <div className="w-px flex-1 bg-gray-200" />}
+        </div>
+        <div className="pb-4">
+          <p className="font-medium text-gray-900">Peer Evaluation Available</p>
+          <p className="text-xs text-gray-500">{fmtTime(log.event_time)}</p>
+          <p className="mt-1 text-xs text-gray-600">
+            {evaluationCount === 1
+              ? 'You have a peer evaluation to complete for this shift.'
+              : `You have ${evaluationCount} peer evaluations to complete for this shift.`}
+          </p>
+          {canReview && evaluationId && (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="mt-2"
+              onClick={() => onOpenPeerEvaluation(evaluationId)}
+            >
+              Review Evaluation
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (log.log_type === 'peer_evaluation_submitted') {
+    return (
+      <div className="flex gap-3">
+        <div className="flex flex-col items-center">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-100">
+            <CheckCircle className="h-4 w-4 text-green-600" />
+          </div>
+          {!isLast && <div className="w-px flex-1 bg-gray-200" />}
+        </div>
+        <div className="pb-4">
+          <p className="font-medium text-gray-900">Peer Evaluation Submitted</p>
+          <p className="text-xs text-gray-500">{fmtTime(log.event_time)}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (log.log_type === 'peer_evaluation_expired') {
+    const changes = log.changes as Record<string, unknown> | null;
+    const evaluationCount = Number(changes?.peer_evaluation_count ?? 1);
+    return (
+      <div className="flex gap-3">
+        <div className="flex flex-col items-center">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-100">
+            <XCircle className="h-4 w-4 text-red-600" />
+          </div>
+          {!isLast && <div className="w-px flex-1 bg-gray-200" />}
+        </div>
+        <div className="pb-4">
+          <p className="font-medium text-gray-900">Peer Evaluation Expired</p>
+          <p className="text-xs text-gray-500">{fmtTime(log.event_time)}</p>
+          <p className="mt-1 text-xs text-gray-600">
+            {evaluationCount === 1
+              ? 'The pending peer evaluation for this shift has expired.'
+              : `${evaluationCount} pending peer evaluations for this shift have expired.`}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return null;
 }
 
@@ -723,6 +867,7 @@ function ShiftDetailPanel({
   canSubmitPublicAuthRequest,
   onClose,
   onAuthorizationUpdate,
+  onOpenPeerEvaluation,
 }: {
   shift: any;
   branchName?: string;
@@ -731,8 +876,10 @@ function ShiftDetailPanel({
   canSubmitPublicAuthRequest: boolean;
   onClose: () => void;
   onAuthorizationUpdate: (updatedAuth: any) => void;
+  onOpenPeerEvaluation: (evaluationId: string) => void;
 }) {
   const { prefix, name } = parseEmployeeName(shift.employee_name);
+  const avatarUrl = resolveShiftAvatarUrl(shift);
   const dutyColor = DUTY_COLORS[shift.duty_color] ?? '#e5e7eb';
   const [avatarError, setAvatarError] = useState(false);
   const logs: any[] = shift.logs ?? [];
@@ -760,9 +907,9 @@ function ShiftDetailPanel({
       {/* Header */}
       <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
         <div className="flex min-w-0 items-center gap-3">
-          {shift.employee_avatar_url && !avatarError ? (
+          {avatarUrl && !avatarError ? (
             <img
-              src={shift.employee_avatar_url}
+              src={avatarUrl}
               alt={name}
               className="h-8 w-8 rounded-full object-cover"
               onError={() => setAvatarError(true)}
@@ -880,7 +1027,14 @@ function ShiftDetailPanel({
           ) : (
             <div>
               {logs.map((log: any, idx: number) => (
-                <LogEntry key={log.id} log={log} isLast={idx === logs.length - 1} />
+                <LogEntry
+                  key={log.id}
+                  log={log}
+                  isLast={idx === logs.length - 1}
+                  currentUserId={currentUserId}
+                  shiftOwnerUserId={shift.user_id ?? null}
+                  onOpenPeerEvaluation={onOpenPeerEvaluation}
+                />
               ))}
             </div>
           )}
@@ -919,6 +1073,7 @@ export function EmployeeShiftsPage() {
   const [selectedShift, setSelectedShift] = useState<any | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [exchangeShiftSource, setExchangeShiftSource] = useState<any | null>(null);
+  const [peerEvaluationModalId, setPeerEvaluationModalId] = useState<string | null>(null);
   const [isSuspendedSelf, setIsSuspendedSelf] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('active');
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
@@ -1033,7 +1188,7 @@ export function EmployeeShiftsPage() {
     socket.on('shift:updated', (data: any) => {
       setShifts((prev) =>
         prev
-          .map((s) => (s.id === data.id ? { ...data, logs: s.logs } : s))
+          .map((s) => (s.id === data.id ? { ...s, ...data, logs: s.logs } : s))
           .filter((s) => activeTab === 'all' || s.status === activeTab),
       );
       setSelectedShift((prev: any) =>
@@ -1427,6 +1582,7 @@ export function EmployeeShiftsPage() {
                 return { ...prev, authorizations: updatedAuths, pending_approvals: newPending };
               });
             }}
+            onOpenPeerEvaluation={(evaluationId) => setPeerEvaluationModalId(evaluationId)}
           />
         ) : null}
       </div>
@@ -1444,6 +1600,12 @@ export function EmployeeShiftsPage() {
         onCreated={() => {
           fetchShifts();
         }}
+      />
+
+      <PeerEvaluationModal
+        isOpen={Boolean(peerEvaluationModalId)}
+        initialEvaluationId={peerEvaluationModalId}
+        onClose={() => setPeerEvaluationModalId(null)}
       />
     </>
   );

@@ -229,7 +229,9 @@ export function initializeSocket(
     if (!token) return next(new Error('Authentication required'));
     try {
       const payload = verifyAccessToken(token);
-      if (!payload.permissions.includes(PERMISSIONS.SHIFT_VIEW_ALL)) {
+      const canAccessEmployeeRequirements = payload.permissions.includes(PERMISSIONS.EMPLOYEE_REQUIREMENTS_APPROVE)
+        || payload.permissions.includes(PERMISSIONS.SHIFT_VIEW_ALL);
+      if (!canAccessEmployeeRequirements) {
         return next(new Error('Insufficient permissions'));
       }
       socket.data.user = payload;

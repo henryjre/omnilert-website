@@ -5,6 +5,7 @@ import type {
   CaseReaction,
   CaseReport,
 } from '@omnilert/shared';
+import type { Knex } from 'knex';
 import { PERMISSIONS } from '@omnilert/shared';
 import { db } from '../config/database.js';
 import { getIO } from '../config/socket.js';
@@ -119,8 +120,10 @@ async function upsertParticipant(
   caseId: string,
   userId: string,
   patch: Partial<Pick<CaseParticipantRow, 'is_joined' | 'is_muted' | 'last_read_at'>>,
+  trx?: Knex.Transaction,
 ): Promise<void> {
-  const existing = await db.getDb()('case_participants').where({ case_id: caseId, user_id: userId }).first();
+  const knex = trx ?? db.getDb();
+  const existing = await knex('case_participants').where({ case_id: caseId, user_id: userId }).first();
   const next = {
     is_joined: patch.is_joined ?? existing?.is_joined ?? true,
     is_muted: patch.is_muted ?? existing?.is_muted ?? false,
@@ -129,11 +132,11 @@ async function upsertParticipant(
   };
 
   if (existing) {
-    await db.getDb()('case_participants').where({ case_id: caseId, user_id: userId }).update(next);
+    await knex('case_participants').where({ case_id: caseId, user_id: userId }).update(next);
     return;
   }
 
-  await db.getDb()('case_participants').insert({
+  await knex('case_participants').insert({
     case_id: caseId,
     user_id: userId,
     ...next,
@@ -143,8 +146,10 @@ async function upsertParticipant(
 
 async function createSystemMessage(
   input: { caseId: string; userId: string; content: string },
+  trx?: Knex.Transaction,
 ): Promise<CaseMessageRow> {
-  const [message] = await db.getDb()('case_messages')
+  const knex = trx ?? db.getDb();
+  const [message] = await knex('case_messages')
     .insert({
       case_id: input.caseId,
       user_id: input.userId,
@@ -153,6 +158,43 @@ async function createSystemMessage(
     })
     .returning('*');
   return message as CaseMessageRow;
+}
+
+async function getNextCompanySequence(
+  trx: Knex.Transaction,
+  companyId: string,
+  sequenceName: 'case_number' | 'vn_number',
+): Promise<number> {
+  await trx('company_sequences')
+    .insert({
+      company_id: companyId,
+      sequence_name: sequenceName,
+      current_value: 0,
+    })
+    .onConflict(['company_id', 'sequence_name'])
+    .ignore();
+
+  const sequenceRow = await trx('company_sequences')
+    .where({
+      company_id: companyId,
+      sequence_name: sequenceName,
+    })
+    .forUpdate()
+    .first('id', 'current_value') as { id: string; current_value: number } | undefined;
+
+  if (!sequenceRow) {
+    throw new AppError(500, `Failed to allocate ${sequenceName}`);
+  }
+
+  const nextValue = Number(sequenceRow.current_value) + 1;
+  await trx('company_sequences')
+    .where({ id: sequenceRow.id })
+    .update({
+      current_value: nextValue,
+      updated_at: new Date(),
+    });
+
+  return nextValue;
 }
 
 async function resolveUserNames(userIds: string[]): Promise<Record<string, string>> {
@@ -539,18 +581,25 @@ export async function createCaseReport(input: {
   const userNames = await resolveUserNames([input.userId]);
 
   const report = await db.getDb().transaction(async (trx) => {
+    const caseNumber = await getNextCompanySequence(trx, input.companyId, 'case_number');
     const [created] = await trx('case_reports')
-      .insert({ title, description, created_by: input.userId })
+      .insert({
+        company_id: input.companyId,
+        case_number: caseNumber,
+        title,
+        description,
+        created_by: input.userId,
+      })
       .returning('*');
     await upsertParticipant(created.id, input.userId, {
       is_joined: true,
       last_read_at: new Date(),
-    });
+    }, trx);
     await createSystemMessage({
       caseId: created.id,
       userId: input.userId,
       content: `${userNames[input.userId] ?? 'Someone'} created this case`,
-    });
+    }, trx);
     return created as CaseReportRow;
   });
 

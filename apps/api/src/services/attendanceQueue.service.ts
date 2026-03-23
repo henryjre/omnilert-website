@@ -158,6 +158,7 @@ export function createEarlyCheckInJobProcessor(
     }
 
     const auth = await deps.createShiftAuthorization({
+      company_id: payload.companyId,
       shift_id: shift.id as string,
       shift_log_id: payload.shiftLogId,
       branch_id: payload.branchId,

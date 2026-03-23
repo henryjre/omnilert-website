@@ -23,9 +23,67 @@ interface EpiHistoryEntry {
   raw_delta: number;
 }
 
-interface DashboardUserRow extends UserKpiData {
+interface DashboardUserRow {
+  userId: string;
+  userKey: string;
   epi_score: number | string | null;
   epi_history: unknown;
+}
+
+async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKpiData> {
+  const dbConn = db.getDb();
+  const [cssAudits, peerEvaluations, complianceAuditRows, violationNotices] = await Promise.all([
+    // CSS audits: the user was the cashier being audited (identified by user_key UUID)
+    dbConn('store_audits')
+      .where({ css_cashier_user_key: userId, type: 'customer_service', status: 'completed' })
+      .select(dbConn.raw(`css_star_rating as star_rating`), dbConn.raw(`completed_at::text as audited_at`)),
+    dbConn('peer_evaluations')
+      .where({ evaluated_user_id: userId })
+      .whereNotNull('submitted_at')
+      .select(
+        dbConn.raw(`(q1_score + q2_score + q3_score) / 3.0 as average_score`),
+        dbConn.raw(`submitted_at::text`),
+        dbConn.raw(`NULL::text as wrs_effective_at`),
+      ),
+    // Compliance audits: the user was the auditor
+    dbConn('store_audits')
+      .where({ auditor_user_id: userId, type: 'compliance', status: 'completed' })
+      .select(
+        'comp_productivity_rate',
+        'comp_uniform',
+        'comp_hygiene',
+        'comp_sop',
+        dbConn.raw(`completed_at::text as audited_at`),
+      ),
+    dbConn('violation_notices')
+      .whereExists(
+        dbConn('violation_notice_targets').whereRaw('violation_notice_id = violation_notices.id').where({ user_id: userId }),
+      )
+      .where({ status: 'completed' })
+      .select('epi_decrease', dbConn.raw(`updated_at::text as completed_at`)),
+  ]);
+
+  // Shape compliance rows into { answers, audited_at } format expected by epiCalculation
+  const complianceAudit = complianceAuditRows.length
+    ? complianceAuditRows.map((r: any) => ({
+        answers: {
+          productivity_rate: r.comp_productivity_rate ?? false,
+          uniform: r.comp_uniform ?? false,
+          hygiene: r.comp_hygiene ?? false,
+          sop: r.comp_sop ?? false,
+        },
+        audited_at: r.audited_at,
+      }))
+    : null;
+
+  return {
+    userId,
+    userKey,
+    cssAudits: cssAudits.length ? cssAudits : null,
+    peerEvaluations: peerEvaluations.length ? peerEvaluations : null,
+    complianceAudit,
+    violationNotices: violationNotices.length ? violationNotices : null,
+  };
 }
 
 interface LeaderboardIdentityRow extends DashboardUserRow {
@@ -442,16 +500,7 @@ export async function getEpiDashboard(userId: string): Promise<EpiDashboardRespo
   const masterDb = db.getDb();
   const row = await masterDb('users')
     .where({ id: userId })
-    .first(
-      'id as userId',
-      'user_key as userKey',
-      'epi_score',
-      'epi_history',
-      'css_audits as cssAudits',
-      'peer_evaluations as peerEvaluations',
-      'compliance_audit as complianceAudit',
-      'violation_notices as violationNotices',
-    ) as DashboardUserRow | undefined;
+    .first('id as userId', 'user_key as userKey', 'epi_score', 'epi_history') as DashboardUserRow | undefined;
 
   if (!row) {
     return {
@@ -467,7 +516,8 @@ export async function getEpiDashboard(userId: string): Promise<EpiDashboardRespo
 
   let currentLive: CurrentLiveSnapshot | null = null;
   try {
-    currentLive = await buildCurrentLiveSnapshot(row);
+    const kpiData = await fetchUserKpiData(row.userId, row.userKey);
+    currentLive = await buildCurrentLiveSnapshot(kpiData);
   } catch (error) {
     logger.error({ err: error, userId }, 'Failed to build live EPI dashboard snapshot');
   }
@@ -523,10 +573,6 @@ export async function getEpiLeaderboardDetail(
       'u.user_key as userKey',
       'u.epi_score',
       'u.epi_history',
-      'u.css_audits as cssAudits',
-      'u.peer_evaluations as peerEvaluations',
-      'u.compliance_audit as complianceAudit',
-      'u.violation_notices as violationNotices',
     ) as LeaderboardIdentityRow | undefined;
 
   if (!row) {
@@ -544,7 +590,8 @@ export async function getEpiLeaderboardDetail(
   let currentLive: CurrentLiveSnapshot | null = null;
   if (isCurrentMonth) {
     try {
-      currentLive = await buildCurrentLiveSnapshot(row);
+      const kpiData = await fetchUserKpiData(row.userId, row.userKey);
+      currentLive = await buildCurrentLiveSnapshot(kpiData);
     } catch (error) {
       logger.error({ err: error, userId: row.userId }, 'Failed to build live leaderboard detail snapshot');
     }

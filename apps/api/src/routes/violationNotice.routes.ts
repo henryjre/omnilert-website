@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { PERMISSIONS } from '@omnilert/shared';
 import { authenticate } from '../middleware/auth.js';
 import { resolveCompany } from '../middleware/companyResolver.js';
-import { requirePermission } from '../middleware/rbac.js';
+import { requireAnyPermission, requirePermission } from '../middleware/rbac.js';
 import { validateBody } from '../middleware/validateRequest.js';
 import * as violationNoticeController from '../controllers/violationNotice.controller.js';
 
@@ -73,17 +73,27 @@ const router = Router();
 router.use(authenticate, resolveCompany);
 
 // Static paths before /:id
-router.get('/grouped-users', requirePermission(PERMISSIONS.VIOLATION_NOTICE_CREATE), violationNoticeController.groupedUsers);
+router.get(
+  '/grouped-users',
+  requireAnyPermission(
+    PERMISSIONS.VIOLATION_NOTICE_REQUEST,
+    PERMISSIONS.VIOLATION_NOTICE_CREATE,
+    PERMISSIONS.VIOLATION_NOTICE_VIEW,
+    PERMISSIONS.PEER_EVALUATION_VIEW,
+    PERMISSIONS.PEER_EVALUATION_MANAGE,
+  ),
+  violationNoticeController.groupedUsers,
+);
 router.get('/mentionables', requirePermission(PERMISSIONS.VIOLATION_NOTICE_VIEW), violationNoticeController.mentionables);
 router.post(
   '/from-case-report',
-  requirePermission(PERMISSIONS.VIOLATION_NOTICE_CREATE),
+  requirePermission(PERMISSIONS.VIOLATION_NOTICE_REQUEST),
   validateBody(fromCaseReportSchema),
   violationNoticeController.createFromCaseReport,
 );
 router.post(
   '/from-store-audit',
-  requirePermission(PERMISSIONS.VIOLATION_NOTICE_CREATE),
+  requirePermission(PERMISSIONS.VIOLATION_NOTICE_REQUEST),
   validateBody(fromStoreAuditSchema),
   violationNoticeController.createFromStoreAudit,
 );

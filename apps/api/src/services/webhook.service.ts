@@ -425,6 +425,10 @@ export async function processPlanningSlotDelete(
   }
 
   await db.getDb().transaction(async (trx) => {
+    await trx('shift_exchange_requests')
+      .where('requester_shift_id', existing.id)
+      .orWhere('accepting_shift_id', existing.id)
+      .delete();
     await trx('shift_authorizations').where({ shift_id: existing.id }).delete();
     await trx('shift_logs').where({ shift_id: existing.id }).delete();
     await trx('employee_shifts').where({ id: existing.id }).delete();
@@ -466,12 +470,21 @@ export async function reassignUserToSingleCheckedInBranch(
   branchId: string,
 ) {
   await db.getDb().transaction(async (trx) => {
+    const branch = await trx('branches')
+      .where({ id: branchId })
+      .first('company_id');
+
+    if (!branch?.company_id) {
+      throw new AppError(404, `Branch not found for reassignment: ${branchId}`);
+    }
+
     await trx('user_branches')
       .where({ user_id: userId })
       .delete();
 
     await trx('user_branches')
       .insert({
+        company_id: branch.company_id,
         user_id: userId,
         branch_id: branchId,
         is_primary: false,
@@ -1695,4 +1708,3 @@ export async function createCssAudit(payload: {
 
   emitStoreAuditEvent(String(company.id), 'store-audit:new', audit);
 }
-
