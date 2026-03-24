@@ -156,6 +156,22 @@ function BranchSelectorContent({
           })}
         </div>
       </div>
+
+      {/* Footer */}
+      <div className="flex items-center gap-2 border-t border-gray-100 px-3 py-3">
+        <button
+          type="button"
+          className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-800"
+        >
+          Discard
+        </button>
+        <button
+          type="button"
+          className="flex-1 rounded-xl bg-primary-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-700"
+        >
+          Apply
+        </button>
+      </div>
     </div>
   );
 }
@@ -233,7 +249,7 @@ export function BranchSelector() {
   };
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative pointer-events-auto">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -243,7 +259,7 @@ export function BranchSelector() {
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600">
           <GitBranch className="h-4 w-4" />
         </span>
-        <span className="hidden min-w-0 max-w-[12rem] truncate text-sm font-semibold text-gray-700 sm:block lg:max-w-[16rem]">
+        <span className="min-w-0 max-w-[8rem] truncate text-sm font-semibold text-gray-700 sm:max-w-[12rem] lg:max-w-[16rem]">
           {label}
         </span>
         <ChevronDown
@@ -270,10 +286,10 @@ export function BranchSelector() {
 
             {/* Mobile panel */}
             <motion.div
-              initial={{ opacity: 0, y: 16 }}
+              initial={{ opacity: 0, y: -8 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 16 }}
-              transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.15, ease: [0.2, 0, 0, 1] }}
               className="fixed inset-x-3 top-[4.5rem] bottom-3 z-50 md:hidden"
             >
               <BranchSelectorContent

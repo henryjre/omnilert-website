@@ -236,7 +236,7 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
       </div>
 
       {/* BranchSelector: centered on mobile, right-aligned before bell on desktop */}
-      <div className="absolute left-1/2 -translate-x-1/2 md:static md:ml-auto md:translate-x-0">
+      <div className="pointer-events-none absolute inset-x-0 flex justify-center md:pointer-events-auto md:static md:ml-auto md:block">
         <BranchSelector />
       </div>
 
