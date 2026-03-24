@@ -3,6 +3,7 @@ import {
   createCompanyBySuperAdminSchema,
   updateCompanySchema,
   deleteCurrentCompanySchema,
+  deleteCompanyByIdSchema,
   superAdminBootstrapSchema,
   superAdminLoginSchema,
 } from '@omnilert/shared';
@@ -16,6 +17,8 @@ const router = Router();
 
 // Public - list companies (for login dropdown)
 router.get('/companies', companyController.listPublic);
+// Authenticated admin - list all companies
+router.get('/companies/all', authenticate, companyController.list);
 router.post(
   '/bootstrap',
   validateBody(superAdminBootstrapSchema),
@@ -54,6 +57,20 @@ router.put(
   authenticateSuperAdmin,
   validateBody(updateCompanySchema),
   companyController.update,
+);
+// Admin-accessible update (no super admin token needed)
+router.put(
+  '/companies/:id/update',
+  authenticate,
+  validateBody(updateCompanySchema),
+  companyController.updateByAdmin,
+);
+// Super admin delete by ID
+router.post(
+  '/companies/:id/delete',
+  authenticateSuperAdmin,
+  validateBody(deleteCompanyByIdSchema),
+  companyController.deleteById,
 );
 
 export default router;

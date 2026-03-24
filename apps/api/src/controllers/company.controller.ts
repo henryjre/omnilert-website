@@ -21,6 +21,7 @@ function mapCompany(company: any) {
     dbHost: company.db_host,
     dbPort: company.db_port,
     isActive: company.is_active,
+    isRoot: company.is_root ?? false,
     odooApiKey: company.odoo_api_key,
     themeColor: company.theme_color ?? '#2563EB',
     companyCode: company.company_code ?? null,
@@ -79,8 +80,9 @@ export async function createPublic(req: Request, res: Response, next: NextFuncti
 
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
+    ensureAdministrator(req);
     const companies = await companyService.listCompanies();
-    res.json({ success: true, data: companies });
+    res.json({ success: true, data: companies.map(mapCompany) });
   } catch (err) {
     next(err);
   }
@@ -168,6 +170,43 @@ export async function deleteCurrent(req: Request, res: Response, next: NextFunct
         deletedByUserId: user.sub,
       },
       'Company deleted via superuser action',
+    );
+
+    res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function updateByAdmin(req: Request, res: Response, next: NextFunction) {
+  try {
+    ensureAdministrator(req);
+    const id = req.params.id as string;
+    const company = await companyService.updateCompany(id, req.body);
+    res.json({ success: true, data: mapCompany(company) });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function deleteById(req: Request, res: Response, next: NextFunction) {
+  try {
+    const superAdmin = req.superAdmin;
+    if (!superAdmin) {
+      throw new AppError(401, 'Unauthorized');
+    }
+
+    const companyId = req.params.id as string;
+    const result = await companyService.deleteCompanyById({
+      companyId,
+      typedCompanyName: req.body.companyName,
+      superAdminEmail: req.body.superAdminEmail,
+      superAdminPassword: req.body.superAdminPassword,
+    });
+
+    logger.warn(
+      { companyId, deletedBySuperAdminId: superAdmin.sub },
+      'Company deleted by super admin',
     );
 
     res.json({ success: true, data: result });

@@ -80,12 +80,14 @@ export {
   createCompanyBySuperAdminSchema,
   updateCompanySchema,
   deleteCurrentCompanySchema,
+  deleteCompanyByIdSchema,
 } from './validation/company.schema.js';
 export type {
   CreateCompanyInput,
   CreateCompanyBySuperAdminInput,
   UpdateCompanyInput,
   DeleteCurrentCompanyInput,
+  DeleteCompanyByIdInput,
 } from './validation/company.schema.js';
 
 export {

@@ -422,6 +422,10 @@ export async function deleteCurrentCompany(
     throw new AppError(409, 'Company is already inactive');
   }
 
+  if (company.is_root) {
+    throw new AppError(403, 'The root company cannot be deleted');
+  }
+
   const currentUser = await knex('users')
     .where({ id: input.userId, is_active: true })
     .select('email')
@@ -510,6 +514,121 @@ export async function deleteCurrentCompany(
   const queueCleanup = await cleanupQueueRecordsForCompanyId(input.companyId);
 
   // Delete company-scoped data and then the company record
+  await knex('companies').where({ id: input.companyId }).delete();
+
+  const warnings: string[] = [];
+  if (prefixDeleteResult.error) {
+    warnings.push(`Tenant storage prefix cleanup failed: ${prefixDeleteResult.error}.`);
+  } else if (prefixDeleteResult.failedKeys.length > 0) {
+    warnings.push(
+      `Some tenant storage objects could not be deleted by prefix cleanup (${prefixDeleteResult.failedKeys.length}).`,
+    );
+  }
+  if (failedFileDeletes.length > 0) {
+    warnings.push(
+      `Some legacy URL-referenced files could not be deleted (${failedFileDeletes.length}).`,
+    );
+  }
+  if (legacyFolderCleanup.failedFolders.length > 0) {
+    warnings.push(
+      `Some legacy user folders could not be deleted (${legacyFolderCleanup.failedFolders.length}).`,
+    );
+  }
+  if (queueCleanup.warning) {
+    warnings.push(queueCleanup.warning);
+  }
+
+  return {
+    companyId: input.companyId,
+    companyName: company.name as string,
+    warnings,
+  };
+}
+
+interface DeleteCompanyByIdInput {
+  companyId: string;
+  typedCompanyName: string;
+  superAdminEmail: string;
+  superAdminPassword: string;
+}
+
+export async function deleteCompanyById(
+  input: DeleteCompanyByIdInput,
+): Promise<DeleteCurrentCompanyResult> {
+  const knex = db.getDb();
+  const company = await knex('companies').where({ id: input.companyId }).first();
+  if (!company) {
+    throw new AppError(404, 'Company not found');
+  }
+
+  if (!company.is_active) {
+    throw new AppError(409, 'Company is already inactive');
+  }
+
+  if (company.is_root) {
+    throw new AppError(403, 'The root company cannot be deleted');
+  }
+
+  // Verify super admin credentials
+  await superAdminService.loginSuperAdmin(input.superAdminEmail, input.superAdminPassword);
+
+  if (normalizeComparable(input.typedCompanyName) !== normalizeComparable(company.name as string)) {
+    throw new AppError(400, 'Company name confirmation does not match');
+  }
+
+  await knex('companies')
+    .where({ id: input.companyId })
+    .update({ is_active: false, updated_at: new Date() });
+
+  const tenantUserIds = await knex('user_company_access')
+    .where({ company_id: input.companyId, is_active: true })
+    .pluck('user_id') as string[];
+
+  await knex('refresh_tokens')
+    .where({ company_id: input.companyId, is_revoked: false })
+    .update({ is_revoked: true });
+
+  emitForceLogoutToUsers(tenantUserIds, input.companyId, input.companyId);
+
+  const companyStorageRoot = getCompanyStorageRoot(String(company.slug));
+  const prefixDeleteResult = await deletePrefixRecursive(`${companyStorageRoot}/`);
+  logger.info(
+    {
+      companyId: input.companyId,
+      companySlug: company.slug,
+      companyStorageRoot,
+      prefix: prefixDeleteResult.prefix,
+      attemptedCount: prefixDeleteResult.attemptedCount,
+      deletedCount: prefixDeleteResult.deletedCount,
+      failedCount: prefixDeleteResult.failedKeys.length,
+      error: prefixDeleteResult.error ?? null,
+    },
+    'Company storage prefix cleanup completed',
+  );
+
+  const managedFileUrls = await collectManagedFileUrls(input.companyId);
+  const failedFileDeletes = await deleteManagedFiles(managedFileUrls);
+  logger.info(
+    {
+      companyId: input.companyId,
+      attemptedCount: managedFileUrls.length,
+      failedCount: failedFileDeletes.length,
+    },
+    'Company legacy URL cleanup completed',
+  );
+
+  const legacyFolderCleanup = await cleanupLegacyUserFolders(tenantUserIds);
+  logger.info(
+    {
+      companyId: input.companyId,
+      attemptedCount: legacyFolderCleanup.attemptedCount,
+      failedCount: legacyFolderCleanup.failedFolders.length,
+    },
+    'Company legacy folder cleanup completed',
+  );
+
+  const queueCleanup = await cleanupQueueRecordsForCompanyId(input.companyId);
+
   await knex('companies').where({ id: input.companyId }).delete();
 
   const warnings: string[] = [];
