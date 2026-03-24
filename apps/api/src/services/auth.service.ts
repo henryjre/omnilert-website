@@ -94,11 +94,23 @@ async function ensureSystemRolePermissionDefaults(): Promise<void> {
   systemRoleDefaultsEnsured = true;
 }
 
-async function loadAllActiveBranchIdsForCompany(companyId: string): Promise<string[]> {
-  const rows = await db.getDb()('branches')
-    .where({ company_id: companyId, is_active: true })
-    .select('id');
-  return rows.map((row: any) => row.id as string);
+async function loadUserAssignedBranchIds(userId: string, isSuperAdmin: boolean): Promise<string[]> {
+  if (isSuperAdmin) {
+    const rows = await db.getDb()('branches as b')
+      .join('companies as c', 'b.company_id', 'c.id')
+      .where('b.is_active', true)
+      .where('c.is_active', true)
+      .where('c.is_root', false)
+      .select('b.id');
+    return rows.map((row: any) => String(row.id));
+  }
+
+  const rows = await db.getDb()('user_company_branches as ucb')
+    .join('branches as b', 'ucb.branch_id', 'b.id')
+    .where('ucb.user_id', userId)
+    .where('b.is_active', true)
+    .select('b.id');
+  return rows.map((row: any) => String(row.id));
 }
 
 async function listAccessibleCompanies(input: {
@@ -131,47 +143,20 @@ async function listAccessibleCompanies(input: {
   return rows as CompanyRow[];
 }
 
-async function resolveCompanyForLogin(input: {
-  user: any;
-  isSuperAdmin: boolean;
-  companySlug?: string;
-}): Promise<CompanyRow> {
-  if (input.companySlug) {
-    const requested = await db.getDb()('companies')
-      .where({ slug: input.companySlug, is_active: true })
-      .first('id', 'name', 'slug', 'theme_color');
-    if (!requested) {
-      throw new AppError(404, 'Company not found');
-    }
-    if (!input.isSuperAdmin) {
-      const hasCompanyAccess = await db.getDb()('user_company_access')
-        .where({ user_id: input.user.id, company_id: requested.id, is_active: true })
-        .first('id');
-      if (!hasCompanyAccess) {
-        throw new AppError(403, 'You are not assigned to this company');
-      }
-    }
-    return requested as CompanyRow;
+async function resolveCompanyForLogin(): Promise<CompanyRow> {
+  const root = await db.getDb()('companies')
+    .where({ is_root: true, is_active: true })
+    .first('id', 'name', 'slug', 'theme_color');
+
+  if (!root) {
+    throw new AppError(500, 'Omnilert root company is not configured');
   }
 
-  const accessible = await listAccessibleCompanies({
-    userId: input.user.id as string,
-    isSuperAdmin: input.isSuperAdmin,
-  });
-
-  if (accessible.length === 0) {
-    throw new AppError(403, 'No accessible company assigned');
-  }
-
-  const lastCompanyId = (input.user.last_company_id as string | null) ?? null;
-  if (lastCompanyId) {
-    const preferred = accessible.find((company) => company.id === lastCompanyId);
-    if (preferred) return preferred;
-  }
-
-  return accessible[0];
+  return root as CompanyRow;
 }
 
+// TODO: nudge queries using company_id currently reference the Omnilert root company and will
+// return no results. These should be refactored to use the user's primary assigned company.
 async function runLoginNudges(input: {
   companyId: string;
   companySlug: string;
@@ -311,7 +296,7 @@ async function issueCompanySession(input: {
   const permissions = input.isSuperAdmin
     ? await loadAllPermissionKeys()
     : rolePermissions;
-  const branchIds = await loadAllActiveBranchIdsForCompany(input.company.id);
+  const branchIds = await loadUserAssignedBranchIds(input.resolvedUser.id, input.isSuperAdmin);
 
   const accessToken = signAccessToken({
     sub: input.resolvedUser.id,
@@ -499,23 +484,7 @@ export async function loginTenantUser(email: string, password: string, companySl
     await ensureAdministratorRoleAssignment(resolvedUser.id);
   }
 
-  const selectedCompany = await resolveCompanyForLogin({
-    user: resolvedUser,
-    isSuperAdmin,
-    companySlug,
-  });
-
-  if (isSuperAdminFallback) {
-    await db.getDb()('user_company_access')
-      .insert({
-        user_id: resolvedUser.id,
-        company_id: selectedCompany.id,
-        is_active: true,
-        updated_at: new Date(),
-      })
-      .onConflict(['user_id', 'company_id'])
-      .merge({ is_active: true, updated_at: new Date() });
-  }
+  const selectedCompany = await resolveCompanyForLogin();
 
   return issueCompanySession({
     resolvedUser,
@@ -552,7 +521,8 @@ export async function listLoginCompanies(userId: string): Promise<Array<{
   }));
 }
 
-export async function switchCompany(userId: string, companySlug: string) {
+/** @deprecated Company switching is no longer used. Always resolves to the Omnilert root company. */
+export async function switchCompany(userId: string, _companySlug: string) {
   await ensureSystemRolePermissionDefaults();
   const user = await db.getDb()('users').where({ id: userId, is_active: true }).first();
   if (!user) throw new AppError(401, 'User not found');
@@ -564,11 +534,7 @@ export async function switchCompany(userId: string, companySlug: string) {
     await ensureAdministratorRoleAssignment(user.id as string);
   }
 
-  const selectedCompany = await resolveCompanyForLogin({
-    user,
-    isSuperAdmin,
-    companySlug,
-  });
+  const selectedCompany = await resolveCompanyForLogin();
 
   return issueCompanySession({
     resolvedUser: user,
@@ -617,7 +583,7 @@ export async function refreshTokens(refreshTokenStr: string) {
   const permissions = isSuperAdmin
     ? await loadAllPermissionKeys()
     : rolePermissions;
-  const branchIds = await loadAllActiveBranchIdsForCompany(company.id as string);
+  const branchIds = await loadUserAssignedBranchIds(user.id as string, isSuperAdmin);
 
   const newAccessToken = signAccessToken({
     sub: user.id,

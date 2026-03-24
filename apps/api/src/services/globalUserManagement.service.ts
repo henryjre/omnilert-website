@@ -704,24 +704,25 @@ export async function assignGlobalCompanyBranches(input: {
   companyAssignments: CompanyAssignmentInput[];
 }) {
   const masterDb = db.getDb();
-  const user = await masterDb('users')
-    .where({ id: input.userId })
+  const user = await masterDb('users as u')
+    .leftJoin('user_sensitive_info as usi', 'usi.user_id', 'u.id')
+    .where({ 'u.id': input.userId })
     .first(
-      'id',
-      'email',
-      'first_name',
-      'last_name',
-      'user_key',
-      'employee_number',
-      'mobile_number',
-      'avatar_url',
-      'legal_name',
-      'birthday',
-      'gender',
-      'marital_status',
-      'address',
-      'emergency_contact',
-      'emergency_phone',
+      'u.id',
+      'u.email',
+      'u.first_name',
+      'u.last_name',
+      'u.user_key',
+      'u.employee_number',
+      'u.mobile_number',
+      'u.avatar_url',
+      'usi.legal_name',
+      'usi.birthday',
+      'usi.gender',
+      'usi.marital_status',
+      'usi.address',
+      'usi.emergency_contact',
+      'usi.emergency_phone',
     );
   if (!user) throw new AppError(404, 'User not found');
   if (!user.user_key) throw new AppError(400, 'User key is required before assigning company branches');

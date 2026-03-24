@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { useAuthStore } from '@/features/auth/store/authSlice';
+import { useBranchStore } from '@/shared/store/branchStore';
 
 const api = axios.create({
   baseURL: '/api/v1',
@@ -20,6 +21,17 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+
+  // Derive operating company from the first selected branch and send as header.
+  // Backend companyResolver uses this to scope queries to the correct company.
+  const { selectedBranchIds, branches } = useBranchStore.getState();
+  if (selectedBranchIds.length > 0 && branches.length > 0) {
+    const firstBranch = branches.find((b) => b.id === selectedBranchIds[0]);
+    if (firstBranch?.companyId) {
+      config.headers['X-Company-Id'] = firstBranch.companyId;
+    }
+  }
+
   return config;
 });
 
