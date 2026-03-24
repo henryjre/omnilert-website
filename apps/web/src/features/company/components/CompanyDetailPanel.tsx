@@ -6,6 +6,7 @@ import { api } from '@/shared/services/api.client';
 import { isValidHexColor } from '@/shared/utils/theme';
 import { useAppToast } from '@/shared/hooks/useAppToast';
 import type { Company } from './CompanyCard';
+import { BranchSection } from './BranchSection';
 
 const PRESET_COLORS = ['#2563EB', '#16A34A', '#DC2626', '#EA580C', '#7C3AED', '#0D9488'];
 const COMPANY_CODE_RE = /^[A-Z0-9]{2,10}$/;
@@ -175,6 +176,13 @@ export function CompanyDetailPanel({
               </Button>
             </div>
           </div>
+
+          {/* Branch management */}
+          {company && (
+            <div className="mt-8 border-t border-gray-200 pt-6">
+              <BranchSection companyId={company.id} />
+            </div>
+          )}
 
           {/* Danger zone */}
           {company && (

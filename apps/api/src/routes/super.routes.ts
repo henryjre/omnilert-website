@@ -6,12 +6,15 @@ import {
   deleteCompanyByIdSchema,
   superAdminBootstrapSchema,
   superAdminLoginSchema,
+  PERMISSIONS,
 } from '@omnilert/shared';
 import { validateBody } from '../middleware/validateRequest.js';
 import { authenticate } from '../middleware/auth.js';
 import { authenticateSuperAdmin } from '../middleware/superAdminAuth.js';
+import { requirePermission } from '../middleware/rbac.js';
 import * as companyController from '../controllers/company.controller.js';
 import * as superAdminController from '../controllers/superAdmin.controller.js';
+import * as branchController from '../controllers/branch.controller.js';
 
 const router = Router();
 
@@ -72,5 +75,11 @@ router.post(
   validateBody(deleteCompanyByIdSchema),
   companyController.deleteById,
 );
+
+// Admin-accessible branch management per company
+router.get('/companies/:companyId/branches', authenticate, branchController.superList);
+router.post('/companies/:companyId/branches', authenticate, requirePermission(PERMISSIONS.ADMIN_MANAGE_BRANCHES), branchController.superCreate);
+router.put('/companies/:companyId/branches/:branchId', authenticate, requirePermission(PERMISSIONS.ADMIN_MANAGE_BRANCHES), branchController.superUpdate);
+router.delete('/companies/:companyId/branches/:branchId', authenticate, requirePermission(PERMISSIONS.ADMIN_MANAGE_BRANCHES), branchController.superRemove);
 
 export default router;

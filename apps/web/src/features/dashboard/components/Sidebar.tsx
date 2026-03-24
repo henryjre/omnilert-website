@@ -7,7 +7,6 @@ import {
   Monitor,
   Calendar,
   Users,
-  GitBranch,
   Building2,
   Shield,
   LogOut,
@@ -307,7 +306,6 @@ export function Sidebar({ className = '' }: SidebarProps) {
         {hasAnyPermission(
           PERMISSIONS.ADMIN_MANAGE_USERS,
           PERMISSIONS.ADMIN_MANAGE_ROLES,
-          PERMISSIONS.ADMIN_MANAGE_BRANCHES,
         ) && (
           <>
             <div className="my-2 border-t border-gray-200" />
@@ -322,12 +320,6 @@ export function Sidebar({ className = '' }: SidebarProps) {
               <NavLink to="/admin/roles" className={linkClass}>
                 <Shield className="h-5 w-5" />
                 Roles
-              </NavLink>
-            )}
-            {hasPermission(PERMISSIONS.ADMIN_MANAGE_BRANCHES) && (
-              <NavLink to="/admin/branches" className={linkClass}>
-                <GitBranch className="h-5 w-5" />
-                Branches
               </NavLink>
             )}
             {hasPermission(PERMISSIONS.ADMIN_MANAGE_USERS) && (

@@ -18,7 +18,6 @@ import { PosSessionPage } from '@/features/pos-session/pages/PosSessionPage';
 import { EmployeeShiftsPage } from '@/features/employee-shifts/pages/EmployeeShiftsPage';
 import { EmployeeRequirementsPage } from '@/features/employee-requirements/pages/EmployeeRequirementsPage';
 import { RoleManagementPage } from '@/features/roles/pages/RoleManagementPage';
-import { BranchManagementPage } from '@/features/company/pages/BranchManagementPage';
 import { UserManagementPage } from '@/features/company/pages/UserManagementPage';
 import { CompanyPage } from '@/features/company/pages/CompanyPage';
 import { DepartmentManagementPage } from '@/features/company/pages/DepartmentManagementPage';
@@ -239,14 +238,6 @@ export const router = createBrowserRouter([
             element: (
               <PermissionGuard permission={PERMISSIONS.ADMIN_MANAGE_USERS}>
                 <UserManagementPage />
-              </PermissionGuard>
-            ),
-          },
-          {
-            path: 'admin/branches',
-            element: (
-              <PermissionGuard permission={PERMISSIONS.ADMIN_MANAGE_BRANCHES}>
-                <BranchManagementPage />
               </PermissionGuard>
             ),
           },
