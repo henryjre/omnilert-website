@@ -1,7 +1,6 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { ProtectedRoute } from '@/features/auth/components/ProtectedRoute';
 import { PermissionGuard } from '@/features/auth/components/PermissionGuard';
-import { AdminRoleGuard } from '@/features/auth/components/AdminRoleGuard';
 import { DashboardLayout } from '@/features/dashboard/components/DashboardLayout';
 import { LoginPage } from '@/features/auth/pages/LoginPage';
 import { DashboardPage } from '@/features/dashboard/pages/DashboardPage';
@@ -16,7 +15,6 @@ import { EmploymentTab } from '@/features/account/components/EmploymentTab';
 import { PosVerificationPage } from '@/features/pos-verification/pages/PosVerificationPage';
 import { PosSessionPage } from '@/features/pos-session/pages/PosSessionPage';
 import { EmployeeShiftsPage } from '@/features/employee-shifts/pages/EmployeeShiftsPage';
-import { EmployeeRequirementsPage } from '@/features/employee-requirements/pages/EmployeeRequirementsPage';
 import { RoleManagementPage } from '@/features/roles/pages/RoleManagementPage';
 import { UserManagementPage } from '@/features/company/pages/UserManagementPage';
 import { CompanyPage } from '@/features/company/pages/CompanyPage';
@@ -65,16 +63,12 @@ export const router = createBrowserRouter([
           },
           {
             path: 'account/payslip',
-            element: (
-              <PermissionGuard permission={PERMISSIONS.DASHBOARD_VIEW_PAYSLIP}>
-                <PayslipPage />
-              </PermissionGuard>
-            ),
+            element: <PayslipPage />,
           },
           {
             path: 'account/authorization-requests',
             element: (
-              <PermissionGuard permission={PERMISSIONS.ACCOUNT_VIEW_AUTH_REQUESTS}>
+              <PermissionGuard permission={PERMISSIONS.ACCOUNT_MANAGE_AUTH_REQUEST}>
                 <AuthorizationRequestsTab />
               </PermissionGuard>
             ),
@@ -82,7 +76,7 @@ export const router = createBrowserRouter([
           {
             path: 'account/cash-requests',
             element: (
-              <PermissionGuard permission={PERMISSIONS.ACCOUNT_VIEW_CASH_REQUESTS}>
+              <PermissionGuard permission={PERMISSIONS.ACCOUNT_MANAGE_CASH_REQUEST}>
                 <CashRequestsTab />
               </PermissionGuard>
             ),
@@ -97,11 +91,7 @@ export const router = createBrowserRouter([
           },
           {
             path: 'account/notifications',
-            element: (
-              <PermissionGuard permission={PERMISSIONS.ACCOUNT_VIEW_NOTIFICATIONS}>
-                <EmployeeNotificationsTab />
-              </PermissionGuard>
-            ),
+            element: <EmployeeNotificationsTab />,
           },
           {
             path: 'account/settings',
@@ -109,11 +99,7 @@ export const router = createBrowserRouter([
           },
           {
             path: 'account/profile',
-            element: (
-              <PermissionGuard permission={PERMISSIONS.EMPLOYEE_VIEW_OWN_PROFILE}>
-                <EmploymentTab />
-              </PermissionGuard>
-            ),
+            element: <EmploymentTab />,
           },
           {
             path: 'account/employment',
@@ -122,7 +108,7 @@ export const router = createBrowserRouter([
           {
             path: 'pos-verification',
             element: (
-              <PermissionGuard permission={PERMISSIONS.POS_VERIFICATION_VIEW}>
+              <PermissionGuard permission={PERMISSIONS.POS_VIEW}>
                 <PosVerificationPage />
               </PermissionGuard>
             ),
@@ -130,7 +116,7 @@ export const router = createBrowserRouter([
           {
             path: 'pos-sessions',
             element: (
-              <PermissionGuard permission={PERMISSIONS.POS_SESSION_VIEW}>
+              <PermissionGuard permission={PERMISSIONS.POS_VIEW}>
                 <PosSessionPage />
               </PermissionGuard>
             ),
@@ -138,7 +124,7 @@ export const router = createBrowserRouter([
           {
             path: 'employee-schedule',
             element: (
-              <PermissionGuard permission={PERMISSIONS.SHIFT_VIEW_ALL}>
+              <PermissionGuard permission={PERMISSIONS.SCHEDULE_VIEW}>
                 <EmployeeShiftsPage />
               </PermissionGuard>
             ),
@@ -146,13 +132,7 @@ export const router = createBrowserRouter([
           {
             path: 'authorization-requests',
             element: (
-              <PermissionGuard
-                anyPermission={[
-                  PERMISSIONS.AUTH_REQUEST_APPROVE_MANAGEMENT,
-                  PERMISSIONS.AUTH_REQUEST_VIEW_ALL,
-                  PERMISSIONS.AUTH_REQUEST_APPROVE_SERVICE_CREW,
-                ]}
-              >
+              <PermissionGuard permission={PERMISSIONS.AUTH_REQUEST_VIEW_PAGE}>
                 <AuthorizationRequestsPage />
               </PermissionGuard>
             ),
@@ -160,7 +140,7 @@ export const router = createBrowserRouter([
           {
             path: 'cash-requests',
             element: (
-              <PermissionGuard permission={PERMISSIONS.CASH_REQUEST_VIEW_ALL}>
+              <PermissionGuard permission={PERMISSIONS.CASH_REQUESTS_VIEW}>
                 <CashRequestsPage />
               </PermissionGuard>
             ),
@@ -168,7 +148,7 @@ export const router = createBrowserRouter([
           {
             path: 'employee-verifications',
             element: (
-              <PermissionGuard permission={PERMISSIONS.EMPLOYEE_VERIFICATION_VIEW}>
+              <PermissionGuard permission={PERMISSIONS.EMPLOYEE_VERIFICATION_VIEW_PAGE}>
                 <EmployeeVerificationsPage />
               </PermissionGuard>
             ),
@@ -176,7 +156,7 @@ export const router = createBrowserRouter([
           {
             path: 'employee-profiles',
             element: (
-              <PermissionGuard permission={PERMISSIONS.EMPLOYEE_VIEW_ALL_PROFILES}>
+              <PermissionGuard permission={PERMISSIONS.EMPLOYEE_PROFILES_VIEW}>
                 <EmployeeProfilesPage />
               </PermissionGuard>
             ),
@@ -208,7 +188,7 @@ export const router = createBrowserRouter([
           {
             path: 'workplace-relations',
             element: (
-              <PermissionGuard anyPermission={[PERMISSIONS.PEER_EVALUATION_VIEW, PERMISSIONS.PEER_EVALUATION_MANAGE]}>
+              <PermissionGuard permission={PERMISSIONS.WORKPLACE_RELATIONS_VIEW}>
                 <PeerEvaluationsPage />
               </PermissionGuard>
             ),
@@ -219,11 +199,7 @@ export const router = createBrowserRouter([
           },
           {
             path: 'employee-requirements',
-            element: (
-              <PermissionGuard permission={PERMISSIONS.EMPLOYEE_REQUIREMENTS_APPROVE}>
-                <EmployeeRequirementsPage />
-              </PermissionGuard>
-            ),
+            element: <Navigate to="/employee-profiles" replace />,
           },
           {
             path: 'admin/roles',
@@ -244,7 +220,7 @@ export const router = createBrowserRouter([
           {
             path: 'admin/departments',
             element: (
-              <PermissionGuard permission={PERMISSIONS.ADMIN_MANAGE_USERS}>
+              <PermissionGuard permission={PERMISSIONS.ADMIN_MANAGE_DEPARTMENTS}>
                 <DepartmentManagementPage />
               </PermissionGuard>
             ),
@@ -252,9 +228,9 @@ export const router = createBrowserRouter([
           {
             path: 'admin/company',
             element: (
-              <AdminRoleGuard>
+              <PermissionGuard permission={PERMISSIONS.ADMIN_MANAGE_COMPANIES}>
                 <CompanyPage />
-              </AdminRoleGuard>
+              </PermissionGuard>
             ),
           },
         ],

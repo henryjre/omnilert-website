@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useState } from 'react';
 import { useNavigate, NavLink, useLocation } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard,
   User,
@@ -30,7 +31,7 @@ import { PERMISSIONS } from '@omnilert/shared';
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
     isActive
-      ? 'bg-primary-50 text-primary-700'
+      ? 'bg-primary-50 text-primary-700 shadow-sm'
       : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
   }`;
 
@@ -40,11 +41,19 @@ const categoryLabel = (label: string) => (
   </p>
 );
 
+const AnimatedNavLink = ({ to, children, className, end, onClick }: { to: string, children: ReactNode, className?: any, end?: boolean, onClick?: () => void }) => (
+  <motion.div whileHover={{ x: 4 }} whileTap={{ scale: 0.98 }} className="block">
+    <NavLink to={to} className={className} end={end} onClick={onClick}>
+      {children}
+    </NavLink>
+  </motion.div>
+);
+
 interface SidebarProps {
   className?: string;
 }
 
-const HR_PATHS = ['/employee-profiles', '/employee-schedule', '/employee-requirements', '/violation-notices', '/workplace-relations'];
+const HR_PATHS = ['/employee-profiles', '/employee-schedule', '/violation-notices', '/workplace-relations'];
 const FINANCE_PATHS = ['/cash-requests'];
 const AUDIT_PATHS = ['/store-audits'];
 
@@ -60,20 +69,36 @@ function SubCategory({
   children: ReactNode;
 }) {
   return (
-    <div>
-      <button
+    <div className="overflow-hidden">
+      <motion.button
         type="button"
         onClick={onToggle}
+        whileHover={{ x: 4 }}
+        whileTap={{ scale: 0.98 }}
         className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
       >
         <span>{label}</span>
-        <ChevronDown className={`h-4 w-4 transition-transform ${expanded ? 'rotate-180' : ''}`} />
-      </button>
-      {expanded && (
-        <div className="ml-3 mt-0.5 space-y-0.5 border-l border-gray-200 pl-3">
-          {children}
-        </div>
-      )}
+        <motion.div
+          animate={{ rotate: expanded ? 180 : 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          <ChevronDown className="h-4 w-4" />
+        </motion.div>
+      </motion.button>
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: 'easeInOut' }}
+          >
+            <div className="ml-3 mt-1 space-y-1 border-l-2 border-gray-100 pl-3">
+              {children}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -83,7 +108,6 @@ export function Sidebar({ className = '' }: SidebarProps) {
   const { logout, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const isAdministrator = (user?.roles ?? []).some((role) => role.name === 'Administrator');
   const pendingVerificationCount = usePosVerificationStore((s) => s.pendingCount);
   const [hrExpanded, setHrExpanded] = useState(() =>
     HR_PATHS.some((path) => location.pathname.startsWith(path)),
@@ -107,103 +131,92 @@ export function Sidebar({ className = '' }: SidebarProps) {
       {/* Logo */}
       <div className="border-b border-gray-200">
         <div className="flex h-16 items-center px-6">
-          <h1 className="text-xl font-bold text-primary-600">Omnilert</h1>
+          <h1 className="text-xl font-bold bg-gradient-to-r from-primary-600 to-primary-400 bg-clip-text text-transparent">Omnilert</h1>
         </div>
       </div>
 
       {/* Navigation */}
       <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-4">
-        <NavLink to="/dashboard" className={linkClass}>
+        <AnimatedNavLink to="/dashboard" className={linkClass}>
           <LayoutDashboard className="h-5 w-5" />
           Dashboard
-        </NavLink>
+        </AnimatedNavLink>
 
         <div className="my-2 border-t border-gray-200" />
         {categoryLabel('My Account')}
         {hasPermission(PERMISSIONS.ACCOUNT_VIEW_SCHEDULE) && (
-          <NavLink to="/account/schedule" className={linkClass}>
+          <AnimatedNavLink to="/account/schedule" className={linkClass}>
             <Calendar className="h-5 w-5" />
-            Schedule
-          </NavLink>
+            My Schedule
+          </AnimatedNavLink>
         )}
-        {hasPermission(PERMISSIONS.DASHBOARD_VIEW_PAYSLIP) && (
-          <NavLink to="/account/payslip" className={linkClass}>
-            <Receipt className="h-5 w-5" />
-            Payslip
-          </NavLink>
-        )}
-        {hasPermission(PERMISSIONS.ACCOUNT_VIEW_AUTH_REQUESTS) && (
-          <NavLink to="/account/authorization-requests" className={linkClass}>
+        <AnimatedNavLink to="/account/payslip" className={linkClass}>
+          <Receipt className="h-5 w-5" />
+          My Payslip
+        </AnimatedNavLink>
+        {hasPermission(PERMISSIONS.ACCOUNT_MANAGE_AUTH_REQUEST) && (
+          <AnimatedNavLink to="/account/authorization-requests" className={linkClass}>
             <FileText className="h-5 w-5" />
-            Authorization Requests
-          </NavLink>
+            My Authorization Requests
+          </AnimatedNavLink>
         )}
-        {hasPermission(PERMISSIONS.ACCOUNT_VIEW_CASH_REQUESTS) && (
-          <NavLink to="/account/cash-requests" className={linkClass}>
+        {hasPermission(PERMISSIONS.ACCOUNT_MANAGE_CASH_REQUEST) && (
+          <AnimatedNavLink to="/account/cash-requests" className={linkClass}>
             <DollarSign className="h-5 w-5" />
-            Cash Requests
-          </NavLink>
+            My Cash Requests
+          </AnimatedNavLink>
         )}
         {hasPermission(PERMISSIONS.ACCOUNT_VIEW_AUDIT_RESULTS) && (
-          <NavLink to="/account/audit-results" className={linkClass}>
+          <AnimatedNavLink to="/account/audit-results" className={linkClass}>
             <ClipboardList className="h-5 w-5" />
-            Audit Results
-          </NavLink>
+            My Audit Results
+          </AnimatedNavLink>
         )}
-        {hasPermission(PERMISSIONS.ACCOUNT_VIEW_NOTIFICATIONS) && (
-          <NavLink to="/account/notifications" className={linkClass}>
-            <Bell className="h-5 w-5" />
-            Notifications
-          </NavLink>
-        )}
-        {hasPermission(PERMISSIONS.EMPLOYEE_VIEW_OWN_PROFILE) && (
-          <NavLink to="/account/profile" className={linkClass}>
-            <IdCard className="h-5 w-5" />
-            Profile
-          </NavLink>
-        )}
-        <NavLink to="/account/settings" className={linkClass}>
+        <AnimatedNavLink to="/account/notifications" className={linkClass}>
+          <Bell className="h-5 w-5" />
+          My Notifications
+        </AnimatedNavLink>
+        <AnimatedNavLink to="/account/profile" className={linkClass}>
+          <IdCard className="h-5 w-5" />
+          My Profile
+        </AnimatedNavLink>
+        <AnimatedNavLink to="/account/settings" className={linkClass}>
           <Settings className="h-5 w-5" />
-          Settings
-        </NavLink>
+          My Settings
+        </AnimatedNavLink>
 
         {/* Management */}
         {hasAnyPermission(
-          PERMISSIONS.AUTH_REQUEST_APPROVE_MANAGEMENT,
-          PERMISSIONS.AUTH_REQUEST_VIEW_ALL,
-          PERMISSIONS.AUTH_REQUEST_APPROVE_SERVICE_CREW,
-          PERMISSIONS.CASH_REQUEST_VIEW_ALL,
-          PERMISSIONS.EMPLOYEE_VERIFICATION_VIEW,
-          PERMISSIONS.EMPLOYEE_VIEW_ALL_PROFILES,
-          PERMISSIONS.SHIFT_VIEW_ALL,
-          PERMISSIONS.EMPLOYEE_REQUIREMENTS_APPROVE,
+          PERMISSIONS.AUTH_REQUEST_VIEW_PAGE,
+          PERMISSIONS.CASH_REQUESTS_VIEW,
+          PERMISSIONS.EMPLOYEE_VERIFICATION_VIEW_PAGE,
+          PERMISSIONS.EMPLOYEE_PROFILES_VIEW,
+          PERMISSIONS.SCHEDULE_VIEW,
+          PERMISSIONS.VIOLATION_NOTICE_VIEW,
+          PERMISSIONS.WORKPLACE_RELATIONS_VIEW,
           PERMISSIONS.STORE_AUDIT_VIEW,
           PERMISSIONS.CASE_REPORT_VIEW,
         ) && (
           <>
             <div className="my-2 border-t border-gray-200" />
             {categoryLabel('Management')}
-            {hasAnyPermission(
-              PERMISSIONS.AUTH_REQUEST_APPROVE_MANAGEMENT,
-              PERMISSIONS.AUTH_REQUEST_VIEW_ALL,
-              PERMISSIONS.AUTH_REQUEST_APPROVE_SERVICE_CREW,
-            ) && (
-              <NavLink to="/authorization-requests" className={linkClass}>
+            {hasPermission(PERMISSIONS.AUTH_REQUEST_VIEW_PAGE) && (
+              <AnimatedNavLink to="/authorization-requests" className={linkClass}>
                 <FileText className="h-5 w-5" />
                 Authorization Requests
-              </NavLink>
+              </AnimatedNavLink>
             )}
-            {hasPermission(PERMISSIONS.EMPLOYEE_VERIFICATION_VIEW) && (
-              <NavLink to="/employee-verifications" className={linkClass}>
+            {hasPermission(PERMISSIONS.EMPLOYEE_VERIFICATION_VIEW_PAGE) && (
+              <AnimatedNavLink to="/employee-verifications" className={linkClass}>
                 <Users className="h-5 w-5" />
                 Employee Verifications
-              </NavLink>
+              </AnimatedNavLink>
             )}
             {hasPermission(PERMISSIONS.CASE_REPORT_VIEW) && (
-              <NavLink to="/case-reports" className={linkClass}>
+              <AnimatedNavLink to="/case-reports" className={linkClass}>
                 <FileWarning className="h-5 w-5" />
                 Case Reports
-              </NavLink>
+              </AnimatedNavLink>
             )}
 
             {hasPermission(PERMISSIONS.STORE_AUDIT_VIEW) && (
@@ -212,78 +225,71 @@ export function Sidebar({ className = '' }: SidebarProps) {
                 expanded={auditExpanded}
                 onToggle={() => setAuditExpanded((value) => !value)}
               >
-                <NavLink to="/store-audits" className={linkClass}>
+                <AnimatedNavLink to="/store-audits" className={linkClass}>
                   <ClipboardList className="h-5 w-5" />
                   Store Audits
-                </NavLink>
+                </AnimatedNavLink>
               </SubCategory>
             )}
 
-            {(hasPermission(PERMISSIONS.EMPLOYEE_VIEW_ALL_PROFILES)
-              || hasPermission(PERMISSIONS.SHIFT_VIEW_ALL)
-              || hasPermission(PERMISSIONS.EMPLOYEE_REQUIREMENTS_APPROVE)
+            {(hasPermission(PERMISSIONS.EMPLOYEE_PROFILES_VIEW)
+              || hasPermission(PERMISSIONS.SCHEDULE_VIEW)
               || hasPermission(PERMISSIONS.VIOLATION_NOTICE_VIEW)
-              || hasPermission(PERMISSIONS.PEER_EVALUATION_VIEW)) && (
+              || hasPermission(PERMISSIONS.WORKPLACE_RELATIONS_VIEW)) && (
               <SubCategory
                 label="Human Resources"
                 expanded={hrExpanded}
                 onToggle={() => setHrExpanded((value) => !value)}
               >
-                {hasPermission(PERMISSIONS.EMPLOYEE_VIEW_ALL_PROFILES) && (
-                  <NavLink to="/employee-profiles" className={linkClass}>
+                {hasPermission(PERMISSIONS.EMPLOYEE_PROFILES_VIEW) && (
+                  <AnimatedNavLink to="/employee-profiles" className={linkClass}>
                     <User className="h-5 w-5" />
                     Employee Profiles
-                  </NavLink>
+                  </AnimatedNavLink>
                 )}
-                {hasPermission(PERMISSIONS.SHIFT_VIEW_ALL) && (
-                  <NavLink to="/employee-schedule" className={linkClass}>
+                {hasPermission(PERMISSIONS.SCHEDULE_VIEW) && (
+                  <AnimatedNavLink to="/employee-schedule" className={linkClass}>
                     <Calendar className="h-5 w-5" />
                     Employee Schedule
-                  </NavLink>
-                )}
-                {hasPermission(PERMISSIONS.EMPLOYEE_REQUIREMENTS_APPROVE) && (
-                  <NavLink to="/employee-requirements" className={linkClass}>
-                    <ClipboardCheck className="h-5 w-5" />
-                    Employee Requirements
-                  </NavLink>
+                  </AnimatedNavLink>
                 )}
                 {hasPermission(PERMISSIONS.VIOLATION_NOTICE_VIEW) && (
-                  <NavLink to="/violation-notices" className={linkClass}>
+                  <AnimatedNavLink to="/violation-notices" className={linkClass}>
                     <TriangleAlert className="h-5 w-5" />
                     Violation Notices
-                  </NavLink>
+                  </AnimatedNavLink>
                 )}
-                {hasPermission(PERMISSIONS.PEER_EVALUATION_VIEW) && (
-                  <NavLink to="/workplace-relations" className={linkClass}>
+                {hasPermission(PERMISSIONS.WORKPLACE_RELATIONS_VIEW) && (
+                  <AnimatedNavLink to="/workplace-relations" className={linkClass}>
                     <Users className="h-5 w-5" />
                     Workplace Relations
-                  </NavLink>
+                  </AnimatedNavLink>
                 )}
               </SubCategory>
             )}
 
-            {hasPermission(PERMISSIONS.CASH_REQUEST_VIEW_ALL) && (
+            {hasPermission(PERMISSIONS.CASH_REQUESTS_VIEW) && (
               <SubCategory
                 label="Accounting and Finance"
                 expanded={financeExpanded}
                 onToggle={() => setFinanceExpanded((value) => !value)}
               >
-                <NavLink to="/cash-requests" className={linkClass}>
+                <AnimatedNavLink to="/cash-requests" className={linkClass}>
                   <DollarSign className="h-5 w-5" />
                   Cash Requests
-                </NavLink>
+                </AnimatedNavLink>
               </SubCategory>
             )}
           </>
         )}
 
         {/* Store Operations */}
-        {hasAnyPermission(PERMISSIONS.POS_VERIFICATION_VIEW, PERMISSIONS.POS_SESSION_VIEW) && (
+        {hasPermission(PERMISSIONS.POS_VIEW) && (
           <>
             <div className="my-2 border-t border-gray-200" />
             {categoryLabel('Store Operations')}
-            {hasPermission(PERMISSIONS.POS_VERIFICATION_VIEW) && (
-              <NavLink to="/pos-verification" className={linkClass}>
+            {hasPermission(PERMISSIONS.POS_VIEW) && (
+              <AnimatedNavLink to="/pos-verification" className={linkClass}>
                 <ShieldCheck className="h-5 w-5" />
                 <span className="flex-1">POS Verification</span>
                 {pendingVerificationCount > 0 && (
@@ -291,13 +297,13 @@ export function Sidebar({ className = '' }: SidebarProps) {
                     {pendingVerificationCount > 99 ? '99+' : pendingVerificationCount}
                   </span>
                 )}
-              </NavLink>
+              </AnimatedNavLink>
             )}
-            {hasPermission(PERMISSIONS.POS_SESSION_VIEW) && (
-              <NavLink to="/pos-sessions" className={linkClass}>
+            {hasPermission(PERMISSIONS.POS_VIEW) && (
+              <AnimatedNavLink to="/pos-sessions" className={linkClass}>
                 <Monitor className="h-5 w-5" />
                 POS Sessions
-              </NavLink>
+              </AnimatedNavLink>
             )}
           </>
         )}
@@ -306,33 +312,35 @@ export function Sidebar({ className = '' }: SidebarProps) {
         {hasAnyPermission(
           PERMISSIONS.ADMIN_MANAGE_USERS,
           PERMISSIONS.ADMIN_MANAGE_ROLES,
+          PERMISSIONS.ADMIN_MANAGE_COMPANIES,
+          PERMISSIONS.ADMIN_MANAGE_DEPARTMENTS,
         ) && (
           <>
             <div className="my-2 border-t border-gray-200" />
             {categoryLabel('Administration')}
             {hasPermission(PERMISSIONS.ADMIN_MANAGE_USERS) && (
-              <NavLink to="/admin/users" className={linkClass}>
+              <AnimatedNavLink to="/admin/users" className={linkClass}>
                 <Users className="h-5 w-5" />
                 Users
-              </NavLink>
+              </AnimatedNavLink>
             )}
             {hasPermission(PERMISSIONS.ADMIN_MANAGE_ROLES) && (
-              <NavLink to="/admin/roles" className={linkClass}>
+              <AnimatedNavLink to="/admin/roles" className={linkClass}>
                 <Shield className="h-5 w-5" />
                 Roles
-              </NavLink>
+              </AnimatedNavLink>
             )}
-            {hasPermission(PERMISSIONS.ADMIN_MANAGE_USERS) && (
-              <NavLink to="/admin/departments" className={linkClass}>
+            {hasPermission(PERMISSIONS.ADMIN_MANAGE_DEPARTMENTS) && (
+              <AnimatedNavLink to="/admin/departments" className={linkClass}>
                 <Building2 className="h-5 w-5" />
                 Departments
-              </NavLink>
+              </AnimatedNavLink>
             )}
-            {isAdministrator && (
-              <NavLink to="/admin/company" className={linkClass}>
+            {hasPermission(PERMISSIONS.ADMIN_MANAGE_COMPANIES) && (
+              <AnimatedNavLink to="/admin/company" className={linkClass}>
                 <Building2 className="h-5 w-5" />
                 Company
-              </NavLink>
+              </AnimatedNavLink>
             )}
           </>
         )}
@@ -346,13 +354,15 @@ export function Sidebar({ className = '' }: SidebarProps) {
           </p>
           <p className="text-xs text-gray-500">{user?.email}</p>
         </div>
-        <button
+        <motion.button
           onClick={logout}
-          className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
+          whileHover={{ x: 4 }}
+          whileTap={{ scale: 0.98 }}
+          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
         >
           <LogOut className="h-4 w-4" />
           Sign Out
-        </button>
+        </motion.button>
       </div>
     </aside>
   );
