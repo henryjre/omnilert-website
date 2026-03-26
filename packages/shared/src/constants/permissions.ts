@@ -167,6 +167,8 @@ export const PERMISSION_CATEGORIES: Record<string, { label: string; permissions:
   },
 };
 
+// Prerequisites are single-hop (direct parent only).
+// The role editor UI walks the chain transitively when enabling permissions.
 export const PERMISSION_PREREQUISITES: Partial<Record<PermissionKey, PermissionKey>> = {
   [PERMISSIONS.POS_MANAGE_VERIFICATIONS]: PERMISSIONS.POS_VIEW,
   [PERMISSIONS.POS_MANAGE_AUDITS]: PERMISSIONS.POS_VIEW,
@@ -185,9 +187,10 @@ export const PERMISSION_PREREQUISITES: Partial<Record<PermissionKey, PermissionK
   [PERMISSIONS.SCHEDULE_END_SHIFT]: PERMISSIONS.SCHEDULE_VIEW,
   [PERMISSIONS.VIOLATION_NOTICE_MANAGE]: PERMISSIONS.VIOLATION_NOTICE_VIEW,
   [PERMISSIONS.CASH_REQUESTS_MANAGE]: PERMISSIONS.CASH_REQUESTS_VIEW,
+  [PERMISSIONS.ACCOUNT_MANAGE_SCHEDULE]: PERMISSIONS.ACCOUNT_VIEW_SCHEDULE,
 };
 
-export const PERMISSION_DESCRIPTIONS: Partial<Record<PermissionKey, string>> = {
+export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
   [PERMISSIONS.ADMIN_MANAGE_ROLES]: 'Create, edit, and delete roles and their permissions',
   [PERMISSIONS.ADMIN_MANAGE_USERS]: 'Assign roles and manage user accounts',
   [PERMISSIONS.ADMIN_VIEW_ALL_BRANCHES]: 'View data across all branches regardless of assignment',

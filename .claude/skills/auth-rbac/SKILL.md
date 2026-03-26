@@ -29,36 +29,34 @@ Role/permission CRUD is backed by global `roles`, `permissions`, `role_permissio
 ## All Permission Keys
 
 ```text
-admin.manage_roles | admin.manage_users | admin.manage_branches
-admin.view_all_branches | admin.toggle_branch
+admin.manage_roles | admin.manage_users | admin.view_all_branches | admin.manage_companies | admin.manage_departments
 
-dashboard.view | dashboard.view_performance_index | dashboard.view_payslip
+pos.view | pos.manage_verifications | pos.manage_audits
 
-pos_verification.view | pos_verification.confirm_reject | pos_verification.upload_image
-pos_session.view | pos_session.audit_complete
+account.view_schedule | account.manage_schedule | account.manage_auth_request | account.submit_private_auth_request | account.manage_cash_request | account.manage_employee_requirements | account.view_audit_results
 
-account.view_schedule | account.view_auth_requests
-account.submit_private_auth_request | account.submit_public_auth_request
-account.view_cash_requests | account.submit_cash_request | account.view_notifications
+auth_request.view_page | auth_request.view_private | auth_request.view_public | auth_request.manage_private | auth_request.manage_public
 
-employee.view_own_profile | employee.edit_own_profile
-employee.view_all_profiles | employee.edit_work_profile
+employee_verification.view_page | employee_verification.manage_registration | employee_verification.manage_personal | employee_verification.manage_requirements | employee_verification.manage_bank
 
-shift.view_all | shift.approve_authorizations | shift.end_shift
+case_report.view | case_report.manage
 
-auth_request.approve_management | auth_request.view_all | auth_request.approve_service_crew
-cash_request.view_all | cash_request.approve
+store_audit.view | store_audit.manage
 
-employee_verification.view | registration.approve
-personal_information.approve | employee_requirements.approve | bank_information.approve
+employee_profiles.view | employee_profiles.manage_work
 
-store_audit.view | store_audit.process
+schedule.view | schedule.end_shift
 
-case_report.view | case_report.create | case_report.close | case_report.manage
+violation_notice.view | violation_notice.manage
 
-violation_notice.view | violation_notice.create | violation_notice.confirm
-violation_notice.reject | violation_notice.issue | violation_notice.complete | violation_notice.manage
+workplace_relations.view
+
+cash_requests.view | cash_requests.manage
 ```
+
+## Permission Prerequisites
+
+`PERMISSION_PREREQUISITES` in `packages/shared/src/constants/permissions.ts` encodes prerequisite relationships between permission keys (e.g., `pos.manage_verifications` requires `pos.view`). These are **UI-only** — the role editor walks the chain transitively when enabling permissions. They are **not enforced on the backend**; the backend checks only whether the user holds the specific permission key.
 
 ## `req.companyContext` is your runtime company handle
 
