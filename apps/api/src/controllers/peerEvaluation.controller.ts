@@ -7,7 +7,7 @@ import * as peerEvaluationService from '../services/peerEvaluation.service.js';
 
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
-    const canManage = req.user!.permissions.includes(PERMISSIONS.PEER_EVALUATION_MANAGE);
+    const canManage = req.user!.permissions.includes(PERMISSIONS.WORKPLACE_RELATIONS_VIEW);
     const filters = {
       status: req.query.status as string | undefined,
       dateFrom: (req.query.date_from ?? req.query.dateFrom) as string | undefined,
@@ -17,6 +17,7 @@ export async function list(req: Request, res: Response, next: NextFunction) {
       userId: req.query.user_id as string | undefined,
       page: req.query.page ? Number(req.query.page) : undefined,
       pageSize: req.query.pageSize ? Number(req.query.pageSize) : undefined,
+      companyId: req.companyContext!.companyId,
       requesterUserId: req.user!.sub,
       canManage,
     };
@@ -31,7 +32,7 @@ export async function list(req: Request, res: Response, next: NextFunction) {
 export async function getById(req: Request, res: Response, next: NextFunction) {
   try {
     const id = req.params.id as string;
-    const canManage = req.user!.permissions.includes(PERMISSIONS.PEER_EVALUATION_MANAGE);
+    const canManage = req.user!.permissions.includes(PERMISSIONS.WORKPLACE_RELATIONS_VIEW);
     const evaluation = await peerEvaluationService.getPeerEvaluationById(id, {
       requesterUserId: req.user!.sub,
       canManage,

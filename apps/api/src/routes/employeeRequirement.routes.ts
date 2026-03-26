@@ -9,8 +9,8 @@ const router = Router();
 
 router.use(authenticate, resolveCompany);
 router.use(requireAnyPermission(
-  PERMISSIONS.EMPLOYEE_REQUIREMENTS_APPROVE,
-  PERMISSIONS.SHIFT_VIEW_ALL,
+  PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_REQUIREMENTS,
+  PERMISSIONS.SCHEDULE_VIEW,
 ));
 
 router.get('/', employeeRequirementController.list);

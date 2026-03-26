@@ -222,7 +222,7 @@ async function runLoginNudges(input: {
   }
 
   const permissionSet = new Set(input.sessionPermissions);
-  if (!permissionSet.has(PERMISSIONS.ACCOUNT_SUBMIT_EMPLOYEE_REQUIREMENTS)) return;
+  if (!permissionSet.has(PERMISSIONS.ACCOUNT_MANAGE_EMPLOYEE_REQUIREMENTS)) return;
 
   try {
     const totalResult = await db.getDb()('employment_requirement_types')

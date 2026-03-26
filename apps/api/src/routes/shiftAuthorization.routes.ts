@@ -12,21 +12,21 @@ router.use(authenticate, resolveCompany);
 /** Employee submits reason for tardiness / late_check_out */
 router.post(
   '/:id/reason',
-  requirePermission(PERMISSIONS.ACCOUNT_SUBMIT_PUBLIC_AUTH_REQUEST),
+  requirePermission(PERMISSIONS.ACCOUNT_MANAGE_SCHEDULE),
   shiftAuthorizationController.submitReason,
 );
 
 /** Manager approves an authorization */
 router.post(
   '/:id/approve',
-  requirePermission(PERMISSIONS.SHIFT_APPROVE_AUTHORIZATIONS),
+  requirePermission(PERMISSIONS.AUTH_REQUEST_MANAGE_PUBLIC),
   shiftAuthorizationController.approve,
 );
 
 /** Manager rejects an authorization */
 router.post(
   '/:id/reject',
-  requirePermission(PERMISSIONS.SHIFT_APPROVE_AUTHORIZATIONS),
+  requirePermission(PERMISSIONS.AUTH_REQUEST_MANAGE_PUBLIC),
   shiftAuthorizationController.reject,
 );
 

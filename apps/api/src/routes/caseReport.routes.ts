@@ -34,6 +34,7 @@ const messageUpload = multer({
 const createCaseSchema = z.object({
   title: z.string().trim().min(1).max(255),
   description: z.string().trim().min(1).max(2000),
+  branchId: z.string().uuid().nullable().optional(),
 });
 
 const correctiveActionSchema = z.object({
@@ -63,7 +64,7 @@ router.use(authenticate, resolveCompany);
 
 router.get('/mentionables', requirePermission(PERMISSIONS.CASE_REPORT_VIEW), caseReportController.mentionables);
 router.get('/', requirePermission(PERMISSIONS.CASE_REPORT_VIEW), caseReportController.list);
-router.post('/', requirePermission(PERMISSIONS.CASE_REPORT_CREATE), validateBody(createCaseSchema), caseReportController.create);
+router.post('/', requirePermission(PERMISSIONS.CASE_REPORT_MANAGE), validateBody(createCaseSchema), caseReportController.create);
 router.get('/:id', requirePermission(PERMISSIONS.CASE_REPORT_VIEW), caseReportController.getById);
 router.patch(
   '/:id/corrective-action',
@@ -77,8 +78,8 @@ router.patch(
   validateBody(resolutionSchema),
   caseReportController.updateResolution,
 );
-router.post('/:id/close', requirePermission(PERMISSIONS.CASE_REPORT_CLOSE), caseReportController.close);
-router.post('/:id/request-vn', requirePermission(PERMISSIONS.VIOLATION_NOTICE_REQUEST), validateBody(requestVNSchema), caseReportController.requestViolationNotice);
+router.post('/:id/close', requirePermission(PERMISSIONS.CASE_REPORT_MANAGE), caseReportController.close);
+router.post('/:id/request-vn', requirePermission(PERMISSIONS.VIOLATION_NOTICE_MANAGE), validateBody(requestVNSchema), caseReportController.requestViolationNotice);
 router.post(
   '/:id/attachments',
   requirePermission(PERMISSIONS.CASE_REPORT_VIEW),

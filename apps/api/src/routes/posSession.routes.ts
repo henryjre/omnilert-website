@@ -9,11 +9,11 @@ const router = Router();
 
 router.use(authenticate, resolveCompany);
 
-router.get('/', requirePermission(PERMISSIONS.POS_SESSION_VIEW), posSessionController.list);
-router.get('/:id', requirePermission(PERMISSIONS.POS_SESSION_VIEW), posSessionController.get);
+router.get('/', requirePermission(PERMISSIONS.POS_VIEW), posSessionController.list);
+router.get('/:id', requirePermission(PERMISSIONS.POS_VIEW), posSessionController.get);
 router.post(
   '/:id/audit-complete',
-  requirePermission(PERMISSIONS.POS_SESSION_AUDIT_COMPLETE),
+  requirePermission(PERMISSIONS.POS_MANAGE_AUDITS),
   posSessionController.auditComplete,
 );
 

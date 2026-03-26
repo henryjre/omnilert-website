@@ -17,62 +17,62 @@ router.use(authenticate, resolveCompany);
 
 router.get(
   '/',
-  requirePermission(PERMISSIONS.EMPLOYEE_VERIFICATION_VIEW),
+  requirePermission(PERMISSIONS.EMPLOYEE_VERIFICATION_VIEW_PAGE),
   employeeVerificationController.list,
 );
 
 router.post(
   '/registration/:id/approve',
-  requirePermission(PERMISSIONS.REGISTRATION_APPROVE),
+  requirePermission(PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_REGISTRATION),
   validateBody(approveRegistrationRequestSchema),
   employeeVerificationController.approveRegistration,
 );
 router.post(
   '/registration/:id/reject',
-  requirePermission(PERMISSIONS.REGISTRATION_APPROVE),
+  requirePermission(PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_REGISTRATION),
   validateBody(rejectVerificationSchema),
   employeeVerificationController.rejectRegistration,
 );
 
 router.get(
   '/registration/assignment-options',
-  requirePermission(PERMISSIONS.REGISTRATION_APPROVE),
+  requirePermission(PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_REGISTRATION),
   employeeVerificationController.listRegistrationAssignmentOptions,
 );
 
 router.post(
   '/personal-information/:id/approve',
-  requirePermission(PERMISSIONS.PERSONAL_INFORMATION_APPROVE),
+  requirePermission(PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_PERSONAL),
   validateBody(approvePersonalInformationVerificationSchema),
   employeeVerificationController.approvePersonalInformation,
 );
 router.post(
   '/personal-information/:id/reject',
-  requirePermission(PERMISSIONS.PERSONAL_INFORMATION_APPROVE),
+  requirePermission(PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_PERSONAL),
   validateBody(rejectVerificationSchema),
   employeeVerificationController.rejectPersonalInformation,
 );
 
 router.post(
   '/employment-requirements/:id/approve',
-  requirePermission(PERMISSIONS.EMPLOYEE_REQUIREMENTS_APPROVE),
+  requirePermission(PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_REQUIREMENTS),
   employeeVerificationController.approveEmploymentRequirement,
 );
 router.post(
   '/employment-requirements/:id/reject',
-  requirePermission(PERMISSIONS.EMPLOYEE_REQUIREMENTS_APPROVE),
+  requirePermission(PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_REQUIREMENTS),
   validateBody(rejectVerificationSchema),
   employeeVerificationController.rejectEmploymentRequirement,
 );
 
 router.post(
   '/bank-information/:id/approve',
-  requirePermission(PERMISSIONS.BANK_INFORMATION_APPROVE),
+  requirePermission(PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_BANK),
   employeeVerificationController.approveBankInformation,
 );
 router.post(
   '/bank-information/:id/reject',
-  requirePermission(PERMISSIONS.BANK_INFORMATION_APPROVE),
+  requirePermission(PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_BANK),
   validateBody(rejectVerificationSchema),
   employeeVerificationController.rejectBankInformation,
 );

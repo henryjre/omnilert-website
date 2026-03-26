@@ -30,31 +30,40 @@ export async function list(req: Request, res: Response, next: NextFunction) {
     // Management-level requests
     let managementRows: any[] = [];
     let managementRequests: any[] = [];
-    if (userPermissions.has(PERMISSIONS.AUTH_REQUEST_APPROVE_MANAGEMENT)) {
-      let q = tenantDb('authorization_requests')
-        .whereIn('branch_id', allBranchIds)
-        .where('level', 'management');
-      if (status) q = q.where('status', status);
-      managementRows = await q.orderBy('created_at', 'desc');
+    if (userPermissions.has(PERMISSIONS.AUTH_REQUEST_MANAGE_PRIVATE)) {
+      let q = tenantDb('authorization_requests as ar')
+        .whereIn('ar.branch_id', allBranchIds)
+        .where('ar.level', 'management')
+        .leftJoin('branches as b', 'b.id', 'ar.branch_id')
+        .leftJoin('companies as co', 'co.id', 'ar.company_id')
+        .select(
+          'ar.*',
+          'b.name as branch_name',
+          'co.name as company_name',
+        );
+      if (status) q = q.where('ar.status', status);
+      managementRows = await q.orderBy('ar.created_at', 'desc');
     }
 
     // Service-crew requests (shift_authorizations)
     let authRows: any[] = [];
     let serviceCrewRequests: any[] = [];
     if (
-      userPermissions.has(PERMISSIONS.AUTH_REQUEST_VIEW_ALL) ||
-      userPermissions.has(PERMISSIONS.AUTH_REQUEST_APPROVE_SERVICE_CREW)
+      userPermissions.has(PERMISSIONS.AUTH_REQUEST_VIEW_PAGE) ||
+      userPermissions.has(PERMISSIONS.AUTH_REQUEST_MANAGE_PUBLIC)
     ) {
       let q = tenantDb('shift_authorizations')
         .whereIn('shift_authorizations.branch_id', allBranchIds)
         .leftJoin('employee_shifts', 'shift_authorizations.shift_id', 'employee_shifts.id')
         .leftJoin('branches', 'shift_authorizations.branch_id', 'branches.id')
+        .leftJoin('companies', 'branches.company_id', 'companies.id')
         .select(
           'shift_authorizations.*',
           'employee_shifts.duty_type',
           'employee_shifts.shift_start',
           'employee_shifts.employee_name as shift_employee_name',
           'branches.name as branch_name',
+          'companies.name as company_name',
         );
       if (status) q = q.where('shift_authorizations.status', status);
       authRows = await q.orderBy('shift_authorizations.created_at', 'desc');
@@ -90,8 +99,8 @@ export async function list(req: Request, res: Response, next: NextFunction) {
     }));
 
     if (
-      userPermissions.has(PERMISSIONS.AUTH_REQUEST_VIEW_ALL) ||
-      userPermissions.has(PERMISSIONS.AUTH_REQUEST_APPROVE_SERVICE_CREW)
+      userPermissions.has(PERMISSIONS.AUTH_REQUEST_VIEW_PAGE) ||
+      userPermissions.has(PERMISSIONS.AUTH_REQUEST_MANAGE_PUBLIC)
     ) {
       const mappedAuthRows = authRows.map((row: any) => ({
         ...row,
@@ -154,7 +163,7 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
         title: `${label} Approved`,
         message: `Your ${label.toLowerCase()} has been approved.`,
         type: 'success',
-        linkUrl: '/account/authorization-requests',
+        linkUrl: `/account/authorization-requests?requestId=${id}`,
       });
     }
 
@@ -209,7 +218,7 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
         title: `${label} Rejected`,
         message: `Your ${label.toLowerCase()} has been rejected: ${reason.trim()}`,
         type: 'danger',
-        linkUrl: '/account/authorization-requests',
+        linkUrl: `/account/authorization-requests?requestId=${id}`,
       });
     }
 

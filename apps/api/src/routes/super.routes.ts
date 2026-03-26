@@ -78,8 +78,8 @@ router.post(
 
 // Admin-accessible branch management per company
 router.get('/companies/:companyId/branches', authenticate, branchController.superList);
-router.post('/companies/:companyId/branches', authenticate, requirePermission(PERMISSIONS.ADMIN_MANAGE_BRANCHES), branchController.superCreate);
-router.put('/companies/:companyId/branches/:branchId', authenticate, requirePermission(PERMISSIONS.ADMIN_MANAGE_BRANCHES), branchController.superUpdate);
-router.delete('/companies/:companyId/branches/:branchId', authenticate, requirePermission(PERMISSIONS.ADMIN_MANAGE_BRANCHES), branchController.superRemove);
+router.post('/companies/:companyId/branches', authenticate, requirePermission(PERMISSIONS.ADMIN_MANAGE_COMPANIES), branchController.superCreate);
+router.put('/companies/:companyId/branches/:branchId', authenticate, requirePermission(PERMISSIONS.ADMIN_MANAGE_COMPANIES), branchController.superUpdate);
+router.delete('/companies/:companyId/branches/:branchId', authenticate, requirePermission(PERMISSIONS.ADMIN_MANAGE_COMPANIES), branchController.superRemove);
 
 export default router;

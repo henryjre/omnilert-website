@@ -42,6 +42,7 @@ const multerAny = multer({
 const createVNSchema = z.object({
   description: z.string().trim().min(1).max(2000),
   targetUserIds: z.array(z.string().uuid()).min(1),
+  branchId: z.string().uuid().nullable().optional(),
 });
 
 const rejectSchema = z.object({
@@ -76,54 +77,52 @@ router.use(authenticate, resolveCompany);
 router.get(
   '/grouped-users',
   requireAnyPermission(
-    PERMISSIONS.VIOLATION_NOTICE_REQUEST,
-    PERMISSIONS.VIOLATION_NOTICE_CREATE,
+    PERMISSIONS.VIOLATION_NOTICE_MANAGE,
     PERMISSIONS.VIOLATION_NOTICE_VIEW,
-    PERMISSIONS.PEER_EVALUATION_VIEW,
-    PERMISSIONS.PEER_EVALUATION_MANAGE,
+    PERMISSIONS.WORKPLACE_RELATIONS_VIEW,
   ),
   violationNoticeController.groupedUsers,
 );
 router.get('/mentionables', requirePermission(PERMISSIONS.VIOLATION_NOTICE_VIEW), violationNoticeController.mentionables);
 router.post(
   '/from-case-report',
-  requirePermission(PERMISSIONS.VIOLATION_NOTICE_REQUEST),
+  requirePermission(PERMISSIONS.VIOLATION_NOTICE_MANAGE),
   validateBody(fromCaseReportSchema),
   violationNoticeController.createFromCaseReport,
 );
 router.post(
   '/from-store-audit',
-  requirePermission(PERMISSIONS.VIOLATION_NOTICE_REQUEST),
+  requirePermission(PERMISSIONS.VIOLATION_NOTICE_MANAGE),
   validateBody(fromStoreAuditSchema),
   violationNoticeController.createFromStoreAudit,
 );
 router.get('/', requirePermission(PERMISSIONS.VIOLATION_NOTICE_VIEW), violationNoticeController.list);
-router.post('/', requirePermission(PERMISSIONS.VIOLATION_NOTICE_CREATE), validateBody(createVNSchema), violationNoticeController.create);
+router.post('/', requirePermission(PERMISSIONS.VIOLATION_NOTICE_MANAGE), validateBody(createVNSchema), violationNoticeController.create);
 
 // /:id routes
 router.get('/:id', requirePermission(PERMISSIONS.VIOLATION_NOTICE_VIEW), violationNoticeController.getById);
-router.post('/:id/confirm', requirePermission(PERMISSIONS.VIOLATION_NOTICE_CONFIRM), violationNoticeController.confirm);
+router.post('/:id/confirm', requirePermission(PERMISSIONS.VIOLATION_NOTICE_MANAGE), violationNoticeController.confirm);
 router.post(
   '/:id/reject',
-  requirePermission(PERMISSIONS.VIOLATION_NOTICE_REJECT),
+  requirePermission(PERMISSIONS.VIOLATION_NOTICE_MANAGE),
   validateBody(rejectSchema),
   violationNoticeController.reject,
 );
-router.post('/:id/issue', requirePermission(PERMISSIONS.VIOLATION_NOTICE_ISSUE), violationNoticeController.issue);
+router.post('/:id/issue', requirePermission(PERMISSIONS.VIOLATION_NOTICE_MANAGE), violationNoticeController.issue);
 router.post(
   '/:id/issuance-upload',
-  requirePermission(PERMISSIONS.VIOLATION_NOTICE_ISSUE),
+  requirePermission(PERMISSIONS.VIOLATION_NOTICE_MANAGE),
   pdfUpload.any(),
   violationNoticeController.uploadIssuanceFile,
 );
-router.post('/:id/confirm-issuance', requirePermission(PERMISSIONS.VIOLATION_NOTICE_ISSUE), violationNoticeController.confirmIssuance);
+router.post('/:id/confirm-issuance', requirePermission(PERMISSIONS.VIOLATION_NOTICE_MANAGE), violationNoticeController.confirmIssuance);
 router.post(
   '/:id/disciplinary-upload',
-  requirePermission(PERMISSIONS.VIOLATION_NOTICE_COMPLETE),
+  requirePermission(PERMISSIONS.VIOLATION_NOTICE_MANAGE),
   multerAny.any(),
   violationNoticeController.uploadDisciplinaryFile,
 );
-router.post('/:id/complete', requirePermission(PERMISSIONS.VIOLATION_NOTICE_COMPLETE), violationNoticeController.complete);
+router.post('/:id/complete', requirePermission(PERMISSIONS.VIOLATION_NOTICE_MANAGE), violationNoticeController.complete);
 router.get('/:id/messages', requirePermission(PERMISSIONS.VIOLATION_NOTICE_VIEW), violationNoticeController.listMessages);
 router.post(
   '/:id/messages',
