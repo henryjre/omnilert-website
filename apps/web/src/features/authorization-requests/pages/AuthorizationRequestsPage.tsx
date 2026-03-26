@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Card, CardBody } from '@/shared/components/ui/Card';
+import { createPortal } from 'react-dom';
+import { AnimatePresence } from 'framer-motion';
 import { Badge } from '@/shared/components/ui/Badge';
 import { Button } from '@/shared/components/ui/Button';
-import { Spinner } from '@/shared/components/ui/Spinner';
+import { AnimatedModal } from '@/shared/components/ui/AnimatedModal';
 import { api } from '@/shared/services/api.client';
 import { useBranchStore } from '@/shared/store/branchStore';
 import { usePermission } from '@/shared/hooks/usePermission';
@@ -16,8 +17,20 @@ import {
   XCircle,
   Clock,
   AlertTriangle,
+  AlertCircle,
   LogOut,
   Repeat2,
+  LayoutList,
+  ChevronRight,
+  GitBranch,
+  Building2,
+  Calendar,
+  DollarSign,
+  Landmark,
+  Copy,
+  Check,
+  Briefcase,
+  ArrowLeftRight,
 } from 'lucide-react';
 
 // --- Constants ---
@@ -46,6 +59,15 @@ const STATUS_VARIANT: Record<string, 'success' | 'danger' | 'warning' | 'default
   pending: 'warning',
   no_approval_needed: 'default',
 };
+
+type StatusTab = 'all' | 'pending' | 'approved' | 'rejected';
+
+const STATUS_TABS: { key: StatusTab; label: string; Icon: React.ElementType }[] = [
+  { key: 'all',      label: 'All',      Icon: LayoutList },
+  { key: 'pending',  label: 'Pending',  Icon: Clock },
+  { key: 'approved', label: 'Approved', Icon: CheckCircle },
+  { key: 'rejected', label: 'Rejected', Icon: XCircle },
+];
 
 function fmtAmount(amount: string | number | null) {
   if (amount == null) return '—';
@@ -83,8 +105,45 @@ function ManagementDetailPanel({
   const [rejectText, setRejectText] = useState('');
   const [loading, setLoading] = useState<'approve' | 'reject' | null>(null);
   const [confirmModal, setConfirmModal] = useState<{ action: 'approve' | 'reject'; message: string; onConfirm: () => Promise<void> } | null>(null);
+  const [copiedNumber, setCopiedNumber] = useState(false);
 
   const canAct = canApprove && request.status === 'pending';
+
+  /** Copy text to clipboard with an execCommand fallback for non-HTTPS dev environments. */
+  function copyToClipboard(text: string) {
+    const markCopied = () => {
+      setCopiedNumber(true);
+      setTimeout(() => setCopiedNumber(false), 2000);
+    };
+
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(markCopied).catch(() => {
+        fallbackCopy(text, markCopied);
+      });
+    } else {
+      fallbackCopy(text, markCopied);
+    }
+  }
+
+  function fallbackCopy(text: string, onSuccess: () => void) {
+    const el = document.createElement('textarea');
+    el.value = text;
+    el.style.position = 'fixed';
+    el.style.opacity = '0';
+    document.body.appendChild(el);
+    el.focus();
+    el.select();
+    try {
+      if (document.execCommand('copy')) onSuccess();
+    } finally {
+      document.body.removeChild(el);
+    }
+  }
+
+  function copyAccountNumber() {
+    if (!request.account_number) return;
+    copyToClipboard(String(request.account_number));
+  }
 
   async function handleApprove() {
     setLoading('approve');
@@ -119,21 +178,27 @@ function ManagementDetailPanel({
     <div className="flex h-full flex-col">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-        <div>
-          <p className="font-semibold text-gray-900">
-            {REQUEST_TYPE_LABELS[request.request_type] ?? request.request_type}
-          </p>
-          {request.created_by_name && (
-            <p className="text-xs text-gray-500">By {request.created_by_name}</p>
-          )}
+        <div className="flex items-center gap-3">
+          <FileText className="h-5 w-5 text-primary-600" />
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">
+              {REQUEST_TYPE_LABELS[request.request_type] ?? request.request_type}
+            </h2>
+            {request.created_by_name ? (
+              <p className="text-xs text-gray-500">By {request.created_by_name}</p>
+            ) : (
+              <p className="text-xs text-gray-500">{fmtDate(request.created_at)}</p>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <Badge variant={STATUS_VARIANT[request.status] ?? 'warning'}>
             {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
           </Badge>
           <button
+            type="button"
             onClick={onClose}
-            className="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
           >
             <X className="h-5 w-5" />
           </button>
@@ -141,78 +206,129 @@ function ManagementDetailPanel({
       </div>
 
       {/* Body */}
-      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
-        {/* Payment Details */}
-        <div>
-          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Payment Details
-          </h3>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-            {request.reference && (
-              <>
-                <span className="text-gray-500">Reference</span>
-                <span className="font-medium text-gray-900">{request.reference}</span>
-              </>
-            )}
-            {request.requested_amount != null && (
-              <>
-                <span className="text-gray-500">Amount</span>
-                <span className="font-medium text-gray-900">{fmtAmount(request.requested_amount)}</span>
-              </>
-            )}
-            {request.bank_name && (
-              <>
-                <span className="text-gray-500">Bank</span>
-                <span className="font-medium text-gray-900">{request.bank_name}</span>
-              </>
-            )}
-            {request.account_name && (
-              <>
-                <span className="text-gray-500">Account Name</span>
-                <span className="font-medium text-gray-900">{request.account_name}</span>
-              </>
-            )}
-            {request.account_number && (
-              <>
-                <span className="text-gray-500">Account Number</span>
-                <span className="font-medium text-gray-900">{request.account_number}</span>
-              </>
-            )}
-            <span className="text-gray-500">Submitted</span>
-            <span className="font-medium text-gray-900">{fmtDate(request.created_at)}</span>
-            {request.status !== 'pending' && (request.reviewed_by_name || request.reviewed_by) && (
-              <>
-                <span className="text-gray-500">
-                  {request.status === 'approved'
-                    ? 'Approved by'
-                    : request.status === 'rejected'
-                      ? 'Rejected by'
-                      : 'Reviewed by'}
-                </span>
-                <span className="font-medium text-gray-900">{request.reviewed_by_name || request.reviewed_by}</span>
-              </>
-            )}
-            {request.status !== 'pending' && request.reviewed_at && (
-              <>
-                <span className="text-gray-500">
-                  {request.status === 'approved'
-                    ? 'Approved at'
-                    : request.status === 'rejected'
-                      ? 'Rejected at'
-                      : 'Reviewed at'}
-                </span>
-                <span className="font-medium text-gray-900">{fmtDate(request.reviewed_at)}</span>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Rejection reason display */}
+      <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6">
+        {/* Rejection reason callout */}
         {request.status === 'rejected' && request.rejection_reason && (
-          <div className="rounded bg-red-50 p-3 text-sm text-red-700">
-            <span className="font-medium">Rejection reason: </span>{request.rejection_reason}
+          <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+            <div>
+              <p className="text-xs font-semibold text-red-700">Rejection Reason</p>
+              <p className="mt-0.5 text-sm text-red-600">{request.rejection_reason}</p>
+            </div>
           </div>
         )}
+
+        {/* Branch */}
+        {(request.branch_name || request.company_name) && (
+          <section>
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Branch</h3>
+            <dl className="space-y-2.5">
+              {request.company_name && (
+                <div className="flex items-start gap-2">
+                  <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                  <div>
+                    <dt className="text-xs text-gray-500">Company</dt>
+                    <dd className="text-sm font-medium text-gray-900">{request.company_name}</dd>
+                  </div>
+                </div>
+              )}
+              {request.branch_name && (
+                <div className="flex items-start gap-2">
+                  <GitBranch className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                  <div>
+                    <dt className="text-xs text-gray-500">Branch</dt>
+                    <dd className="text-sm font-medium text-primary-700">{request.branch_name}</dd>
+                  </div>
+                </div>
+              )}
+            </dl>
+          </section>
+        )}
+
+        {/* Financial Details */}
+        <section>
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Financial Details</h3>
+          <dl className="space-y-3">
+            {request.reference && (
+              <div className="flex items-start gap-2">
+                <FileText className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                <div>
+                  <dt className="text-xs text-gray-500">Reference</dt>
+                  <dd className="text-sm font-medium text-gray-900">{request.reference}</dd>
+                </div>
+              </div>
+            )}
+            {request.requested_amount != null && (
+              <div className="flex items-start gap-2">
+                <DollarSign className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                <div>
+                  <dt className="text-xs text-gray-500">Requested Amount</dt>
+                  <dd className="text-sm font-semibold text-gray-900">{fmtAmount(request.requested_amount)}</dd>
+                </div>
+              </div>
+            )}
+            {(request.bank_name ?? request.account_name ?? request.account_number) && (
+              <div className="flex items-start gap-2">
+                <Landmark className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                <div>
+                  <dt className="text-xs text-gray-500">Bank Account</dt>
+                  <dd className="mt-0.5 space-y-0.5 text-sm text-gray-900">
+                    {request.bank_name && <p>{request.bank_name}</p>}
+                    {request.account_name && <p>{request.account_name}</p>}
+                    {request.account_number && (
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-mono text-xs text-gray-600">{String(request.account_number)}</p>
+                        <button
+                          type="button"
+                          onClick={copyAccountNumber}
+                          className="rounded p-0.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                          title="Copy account number"
+                        >
+                          {copiedNumber
+                            ? <Check className="h-3.5 w-3.5 text-green-500" />
+                            : <Copy className="h-3.5 w-3.5" />
+                          }
+                        </button>
+                      </div>
+                    )}
+                  </dd>
+                </div>
+              </div>
+            )}
+          </dl>
+        </section>
+
+        {/* Timeline */}
+        <section>
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Timeline</h3>
+          <dl className="space-y-3">
+            <div className="flex items-start gap-2">
+              <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+              <div>
+                <dt className="text-xs text-gray-500">Submitted</dt>
+                <dd className="text-sm text-gray-900">{fmtDate(request.created_at)}</dd>
+              </div>
+            </div>
+            {request.reviewed_at && (
+              <div className="flex items-start gap-2">
+                <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                <div>
+                  <dt className="text-xs text-gray-500">
+                    {request.status === 'approved'
+                      ? 'Approved by'
+                      : request.status === 'rejected'
+                        ? 'Rejected by'
+                        : 'Reviewed by'}
+                  </dt>
+                  <dd className="text-sm text-gray-900">
+                    {request.reviewed_by_name ?? request.reviewed_by ?? '—'}
+                    <span className="ml-2 text-xs text-gray-500">{fmtDate(request.reviewed_at)}</span>
+                  </dd>
+                </div>
+              </div>
+            )}
+          </dl>
+        </section>
       </div>
 
       {/* Footer actions */}
@@ -275,10 +391,13 @@ function ManagementDetailPanel({
         </div>
       )}
 
-      {/* Confirmation Modal */}
-      {confirmModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-sm rounded-xl bg-white shadow-xl">
+      <AnimatePresence>
+        {confirmModal && (
+          <AnimatedModal
+            maxWidth="max-w-sm"
+            zIndexClass="z-[60]"
+            onBackdropClick={loading !== null ? undefined : () => setConfirmModal(null)}
+          >
             <div className="border-b border-gray-200 px-5 py-4">
               <p className="font-semibold text-gray-900">
                 {confirmModal.action === 'approve' ? 'Confirm Approval' : 'Confirm Rejection'}
@@ -299,13 +418,18 @@ function ManagementDetailPanel({
               >
                 {loading !== null ? 'Processing...' : (confirmModal.action === 'approve' ? 'Approve' : 'Reject')}
               </Button>
-              <Button className="flex-1" variant="secondary" onClick={() => setConfirmModal(null)}>
+              <Button
+                className="flex-1"
+                variant="secondary"
+                disabled={loading !== null}
+                onClick={() => setConfirmModal(null)}
+              >
                 Cancel
               </Button>
             </div>
-          </div>
-        </div>
-      )}
+          </AnimatedModal>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -381,14 +505,15 @@ function ServiceCrewDetailPanel({
     <div className="flex h-full flex-col">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-        <div className="flex items-center gap-2">
-          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${iconColorCls[config.color] ?? iconColorCls.gray}`}>
+        <div className="flex items-center gap-3">
+          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${iconColorCls[config.color] ?? iconColorCls.gray}`}>
             <Icon className="h-4 w-4" />
           </div>
           <div>
-            <p className="font-semibold text-gray-900">{config.label}</p>
-            {auth.employee_name && <p className="text-xs text-gray-500">{auth.employee_name}</p>}
-            {auth.branch_name && <p className="text-xs text-primary-600">{auth.branch_name}</p>}
+            <h2 className="text-base font-semibold text-gray-900">{config.label}</h2>
+            {auth.employee_name && (
+              <p className="text-xs text-gray-500">{auth.employee_name}</p>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -396,8 +521,9 @@ function ServiceCrewDetailPanel({
             {auth.status.charAt(0).toUpperCase() + auth.status.slice(1)}
           </Badge>
           <button
+            type="button"
             onClick={onClose}
-            className="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
           >
             <X className="h-5 w-5" />
           </button>
@@ -405,71 +531,142 @@ function ServiceCrewDetailPanel({
       </div>
 
       {/* Body */}
-      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-        <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-          <span className="text-gray-500">Type</span>
-          <span className="font-medium text-gray-900">{config.label}</span>
-          <span className="text-gray-500">Duration</span>
-          <span className="font-medium text-gray-900">{formatDiffMinutes(auth.diff_minutes)} {config.diffLabel}</span>
-          {auth.duty_type && (
-            <>
-              <span className="text-gray-500">Duty</span>
-              <span className="font-medium text-gray-900">{auth.duty_type}</span>
-            </>
-          )}
-          {auth.shift_start && (
-            <>
-              <span className="text-gray-500">Shift Start</span>
-              <span className="font-medium text-gray-900">{fmtDate(auth.shift_start)}</span>
-            </>
-          )}
-          <span className="text-gray-500">Submitted</span>
-          <span className="font-medium text-gray-900">{fmtDate(auth.created_at)}</span>
-          {auth.status !== 'pending' && (auth.resolved_by_name || auth.resolved_by) && (
-            <>
-              <span className="text-gray-500">
-                {auth.status === 'approved'
-                  ? 'Approved by'
-                  : auth.status === 'rejected'
-                    ? 'Rejected by'
-                    : 'Resolved by'}
-              </span>
-              <span className="font-medium text-gray-900">{auth.resolved_by_name || auth.resolved_by}</span>
-            </>
-          )}
-          {auth.status !== 'pending' && auth.resolved_at && (
-            <>
-              <span className="text-gray-500">
-                {auth.status === 'approved'
-                  ? 'Approved at'
-                  : auth.status === 'rejected'
-                    ? 'Rejected at'
-                    : 'Resolved at'}
-              </span>
-              <span className="font-medium text-gray-900">{fmtDate(auth.resolved_at)}</span>
-            </>
-          )}
-        </div>
-
-        {auth.status === 'pending' && auth.needs_employee_reason && !auth.employee_reason && (
-          <p className="text-xs text-orange-600">Awaiting employee reason before approval.</p>
-        )}
-        {auth.employee_reason && (
-          <div className="rounded bg-gray-50 p-2 text-xs text-gray-700">
-            <span className="font-medium">Employee reason: </span>{auth.employee_reason}
-          </div>
-        )}
+      <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6">
+        {/* Rejection reason callout */}
         {auth.status === 'rejected' && auth.rejection_reason && (
-          <div className="rounded bg-red-50 p-2 text-xs text-red-700">
-            <span className="font-medium">Rejection reason: </span>{auth.rejection_reason}
+          <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+            <div>
+              <p className="text-xs font-semibold text-red-700">Rejection Reason</p>
+              <p className="mt-0.5 text-sm text-red-600">{auth.rejection_reason}</p>
+            </div>
           </div>
         )}
+
+        {/* Awaiting employee reason callout */}
+        {auth.status === 'pending' && auth.needs_employee_reason && !auth.employee_reason && (
+          <div className="flex items-start gap-3 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-orange-500" />
+            <p className="text-sm text-orange-700">Awaiting employee reason before approval.</p>
+          </div>
+        )}
+
+        {/* Employee reason callout */}
+        {auth.employee_reason && (
+          <div className="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
+            <FileText className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+            <div>
+              <p className="text-xs font-semibold text-gray-600">Employee Reason</p>
+              <p className="mt-0.5 text-sm text-gray-700">{auth.employee_reason}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Approved overtime type callout */}
         {auth.status === 'approved' && auth.overtime_type && (
-          <div className="rounded bg-blue-50 p-2 text-xs text-blue-700">
-            <span className="font-medium">Overtime Type: </span>
-            {OVERTIME_TYPE_LABELS[auth.overtime_type] ?? auth.overtime_type}
+          <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
+            <Clock className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
+            <div>
+              <p className="text-xs font-semibold text-blue-700">Overtime Type</p>
+              <p className="mt-0.5 text-sm text-blue-700">
+                {OVERTIME_TYPE_LABELS[auth.overtime_type] ?? auth.overtime_type}
+              </p>
+            </div>
           </div>
         )}
+
+        {/* Branch */}
+        {(auth.branch_name || auth.company_name) && (
+          <section>
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Branch</h3>
+            <dl className="space-y-2.5">
+              {auth.company_name && (
+                <div className="flex items-start gap-2">
+                  <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                  <div>
+                    <dt className="text-xs text-gray-500">Company</dt>
+                    <dd className="text-sm font-medium text-gray-900">{auth.company_name}</dd>
+                  </div>
+                </div>
+              )}
+              {auth.branch_name && (
+                <div className="flex items-start gap-2">
+                  <GitBranch className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                  <div>
+                    <dt className="text-xs text-gray-500">Branch</dt>
+                    <dd className="text-sm font-medium text-primary-700">{auth.branch_name}</dd>
+                  </div>
+                </div>
+              )}
+            </dl>
+          </section>
+        )}
+
+        {/* Attendance Details */}
+        <section>
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Attendance Details</h3>
+          <dl className="space-y-3">
+            <div className="flex items-start gap-2">
+              <Clock className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+              <div>
+                <dt className="text-xs text-gray-500">Duration</dt>
+                <dd className="text-sm font-medium text-gray-900">
+                  {formatDiffMinutes(auth.diff_minutes)} {config.diffLabel}
+                </dd>
+              </div>
+            </div>
+            {auth.duty_type && (
+              <div className="flex items-start gap-2">
+                <Briefcase className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                <div>
+                  <dt className="text-xs text-gray-500">Duty Type</dt>
+                  <dd className="text-sm font-medium text-gray-900">{auth.duty_type}</dd>
+                </div>
+              </div>
+            )}
+            {auth.shift_start && (
+              <div className="flex items-start gap-2">
+                <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                <div>
+                  <dt className="text-xs text-gray-500">Shift Start</dt>
+                  <dd className="text-sm font-medium text-gray-900">{fmtDate(auth.shift_start)}</dd>
+                </div>
+              </div>
+            )}
+          </dl>
+        </section>
+
+        {/* Timeline */}
+        <section>
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Timeline</h3>
+          <dl className="space-y-3">
+            <div className="flex items-start gap-2">
+              <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+              <div>
+                <dt className="text-xs text-gray-500">Submitted</dt>
+                <dd className="text-sm text-gray-900">{fmtDate(auth.created_at)}</dd>
+              </div>
+            </div>
+            {auth.resolved_at && (
+              <div className="flex items-start gap-2">
+                <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                <div>
+                  <dt className="text-xs text-gray-500">
+                    {auth.status === 'approved'
+                      ? 'Approved by'
+                      : auth.status === 'rejected'
+                        ? 'Rejected by'
+                        : 'Resolved by'}
+                  </dt>
+                  <dd className="text-sm text-gray-900">
+                    {auth.resolved_by_name ?? auth.resolved_by ?? '—'}
+                    <span className="ml-2 text-xs text-gray-500">{fmtDate(auth.resolved_at)}</span>
+                  </dd>
+                </div>
+              </div>
+            )}
+          </dl>
+        </section>
       </div>
 
       {/* Footer actions */}
@@ -546,10 +743,13 @@ function ServiceCrewDetailPanel({
         </div>
       )}
 
-      {/* Confirmation Modal */}
-      {confirmModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-sm rounded-xl bg-white shadow-xl">
+      <AnimatePresence>
+        {confirmModal && (
+          <AnimatedModal
+            maxWidth="max-w-sm"
+            zIndexClass="z-[60]"
+            onBackdropClick={loading !== null ? undefined : () => setConfirmModal(null)}
+          >
             <div className="border-b border-gray-200 px-5 py-4">
               <p className="font-semibold text-gray-900">
                 {confirmModal.action === 'approve' ? 'Confirm Approval' : 'Confirm Rejection'}
@@ -570,13 +770,76 @@ function ServiceCrewDetailPanel({
               >
                 {loading !== null ? 'Processing...' : (confirmModal.action === 'approve' ? 'Approve' : 'Reject')}
               </Button>
-              <Button className="flex-1" variant="secondary" onClick={() => setConfirmModal(null)}>
+              <Button
+                className="flex-1"
+                variant="secondary"
+                disabled={loading !== null}
+                onClick={() => setConfirmModal(null)}
+              >
                 Cancel
               </Button>
             </div>
+          </AnimatedModal>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// --- Skeleton components ---
+
+/** Single card placeholder that mirrors the management/service crew card shape. */
+function RequestCardSkeleton() {
+  return (
+    <div className="animate-pulse rounded-xl border border-gray-200 bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 space-y-2">
+          <div className="h-4 w-40 rounded bg-gray-200" />
+          <div className="h-3 w-28 rounded bg-gray-200" />
+          <div className="h-3 w-20 rounded bg-gray-200" />
+          <div className="h-4 w-24 rounded bg-gray-200" />
+        </div>
+        <div className="h-5 w-16 shrink-0 rounded-full bg-gray-200" />
+      </div>
+    </div>
+  );
+}
+
+/** Full-page skeleton that mirrors the two-section layout while data is loading. */
+function AuthorizationRequestsPageSkeleton() {
+  return (
+    <div className="space-y-8">
+      {/* Header skeleton */}
+      <div className="animate-pulse space-y-2">
+        <div className="flex items-center gap-3">
+          <div className="h-6 w-6 rounded-md bg-gray-200" />
+          <div className="h-7 w-56 rounded bg-gray-200" />
+        </div>
+        <div className="h-4 w-80 rounded bg-gray-200" />
+      </div>
+
+      {/* Two section skeletons */}
+      {[0, 1].map((i) => (
+        <div key={i} className="animate-pulse space-y-3">
+          {/* Section heading */}
+          <div className="flex items-center gap-2">
+            <div className="h-4 w-36 rounded bg-gray-200" />
+            <div className="h-5 w-5 rounded-full bg-gray-200" />
+          </div>
+          {/* Tab strip */}
+          <div className="flex gap-1 border-b border-gray-200 pb-px">
+            {[80, 88, 96, 96].map((w, j) => (
+              <div key={j} style={{ width: w }} className="h-8 rounded-t bg-gray-100" />
+            ))}
+          </div>
+          {/* Card grid */}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, j) => (
+              <RequestCardSkeleton key={j} />
+            ))}
           </div>
         </div>
-      )}
+      ))}
     </div>
   );
 }
@@ -585,156 +848,174 @@ function ServiceCrewDetailPanel({
 
 function ManagementRequestCard({ request, onClick }: { request: any; onClick: () => void }) {
   return (
-    <div
-      className="cursor-pointer rounded-xl transition-shadow hover:shadow-md"
+    <button
+      type="button"
+      className="flex h-full w-full flex-col rounded-xl border border-gray-200 bg-white p-4 text-left transition-colors hover:border-primary-200 hover:bg-primary-50/30"
       onClick={onClick}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => e.key === 'Enter' && onClick()}
     >
-      <Card>
-        <CardBody>
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <p className="font-medium text-gray-900">
-                {REQUEST_TYPE_LABELS[request.request_type] ?? request.request_type}
-              </p>
-              {request.created_by_name && (
-                <p className="mt-0.5 text-xs text-gray-500">{request.created_by_name}</p>
-              )}
-              {request.reference && (
-                <p className="mt-0.5 text-xs text-gray-400">Ref: {request.reference}</p>
-              )}
-              {request.requested_amount != null && (
-                <p className="mt-1 text-sm font-semibold text-gray-800">
-                  {fmtAmount(request.requested_amount)}
-                </p>
-              )}
-              <p className="mt-1 text-xs text-gray-400">{fmtDate(request.created_at)}</p>
-              {request.status !== 'pending' && (request.reviewed_by_name || request.reviewed_by) && (
-                <p className="mt-0.5 text-xs text-gray-500">
-                  {request.status === 'approved'
-                    ? 'Approved by '
-                    : request.status === 'rejected'
-                      ? 'Rejected by '
-                      : 'Reviewed by '}
-                  {request.reviewed_by_name || request.reviewed_by}
-                </p>
-              )}
-            </div>
-            <Badge variant={STATUS_VARIANT[request.status] ?? 'warning'}>
-              {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
-            </Badge>
-          </div>
-        </CardBody>
-      </Card>
-    </div>
+      {/* Top block: type + badge, then creator + branch */}
+      <div className="flex items-start justify-between gap-3">
+        <p className="font-medium text-gray-900">
+          {REQUEST_TYPE_LABELS[request.request_type] ?? request.request_type}
+        </p>
+        <Badge variant={STATUS_VARIANT[request.status] ?? 'warning'}>
+          {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
+        </Badge>
+      </div>
+
+      <div className="mt-1.5 min-w-0 space-y-0.5">
+        {request.created_by_name && (
+          <p className="truncate text-xs text-gray-500">{request.created_by_name}</p>
+        )}
+        {request.branch_name && (
+          <p className="truncate text-xs text-primary-600">{request.branch_name}</p>
+        )}
+        {request.company_name && !request.branch_name && (
+          <p className="truncate text-xs text-gray-400">{request.company_name}</p>
+        )}
+      </div>
+
+      {/* Spacer so equal-height cards pin the footer to the bottom */}
+      <div className="flex-1" />
+
+      {/* Footer strip: submitted date + reviewer on left · amount + chevron on right */}
+      <div className="mt-3 flex items-end justify-between gap-2 border-t border-gray-100 pt-2.5">
+        <div className="min-w-0">
+          <p className="text-xs text-gray-400">{fmtDate(request.created_at)}</p>
+          {request.status !== 'pending' && (request.reviewed_by_name || request.reviewed_by) && (
+            <p className="mt-0.5 truncate text-xs text-gray-500">
+              {request.status === 'approved'
+                ? 'Approved by '
+                : request.status === 'rejected'
+                  ? 'Rejected by '
+                  : 'Reviewed by '}
+              {request.reviewed_by_name || request.reviewed_by}
+            </p>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+          {request.requested_amount != null && (
+            <p className="text-sm font-semibold text-gray-800">
+              {fmtAmount(request.requested_amount)}
+            </p>
+          )}
+          <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" />
+        </div>
+      </div>
+    </button>
   );
 }
+
+const ICON_COLOR_CLS: Record<string, string> = {
+  blue:   'bg-blue-100 text-blue-600',
+  orange: 'bg-orange-100 text-orange-600',
+  yellow: 'bg-yellow-100 text-yellow-600',
+  purple: 'bg-purple-100 text-purple-600',
+  red:    'bg-red-100 text-red-600',
+  indigo: 'bg-indigo-100 text-indigo-600',
+  gray:   'bg-gray-100 text-gray-600',
+};
 
 function ServiceCrewRequestCard({ auth, onClick }: { auth: any; onClick: () => void }) {
   if (auth.auth_type === 'shift_exchange') {
     return (
-      <div
-        className="cursor-pointer rounded-xl transition-shadow hover:shadow-md"
+      <button
+        type="button"
+        className="flex h-full w-full flex-col rounded-xl border border-gray-200 bg-white p-4 text-left transition-colors hover:border-primary-200 hover:bg-primary-50/30"
         onClick={onClick}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => e.key === 'Enter' && onClick()}
       >
-        <Card>
-          <CardBody>
-            <div className="flex items-start gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-600">
-                <Repeat2 className="h-4 w-4" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="font-medium text-gray-900">Shift Exchange</p>
-                    <p className="text-xs text-gray-500">
-                      {auth.requester_name} ↔ {auth.accepting_name}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {auth.requester_company_name} · {auth.requester_branch_name || 'Unknown Branch'}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {auth.accepting_company_name} · {auth.accepting_branch_name || 'Unknown Branch'}
-                    </p>
-                    <p className="mt-1 text-xs text-gray-400">{fmtDate(auth.created_at)}</p>
-                  </div>
-                  <Badge variant={STATUS_VARIANT[auth.status] ?? 'warning'}>
-                    {auth.stage_label || auth.status}
-                  </Badge>
-                </div>
-              </div>
+        {/* Top block: icon + label + badge */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${ICON_COLOR_CLS.indigo}`}>
+              <Repeat2 className="h-4 w-4" />
             </div>
-          </CardBody>
-        </Card>
-      </div>
+            <p className="font-medium text-gray-900">Shift Exchange</p>
+          </div>
+          <Badge variant={STATUS_VARIANT[auth.status] ?? 'warning'}>
+            {auth.stage_label || auth.status}
+          </Badge>
+        </div>
+
+        {/* Participant names + branches */}
+        <div className="mt-2 min-w-0 space-y-0.5">
+          {(auth.requester_name || auth.accepting_name) && (
+            <p className="flex items-center gap-1 truncate text-xs text-gray-500">
+              <ArrowLeftRight className="h-3 w-3 shrink-0 text-gray-400" />
+              {[auth.requester_name, auth.accepting_name].filter(Boolean).join(' ↔ ')}
+            </p>
+          )}
+          {auth.requester_branch_name && (
+            <p className="truncate text-xs text-primary-600">{auth.requester_branch_name}</p>
+          )}
+          {auth.accepting_branch_name && auth.accepting_branch_name !== auth.requester_branch_name && (
+            <p className="truncate text-xs text-primary-600">{auth.accepting_branch_name}</p>
+          )}
+        </div>
+
+        <div className="flex-1" />
+
+        {/* Footer */}
+        <div className="mt-3 flex items-end justify-between gap-2 border-t border-gray-100 pt-2.5">
+          <p className="text-xs text-gray-400">{fmtDate(auth.created_at)}</p>
+          <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" />
+        </div>
+      </button>
     );
   }
 
   const config = AUTH_TYPE_CONFIG[auth.auth_type] ?? { label: auth.auth_type, color: 'gray', Icon: Clock, diffLabel: '' };
   const { Icon } = config;
-  const iconColorCls: Record<string, string> = {
-    blue: 'bg-blue-100 text-blue-600',
-    orange: 'bg-orange-100 text-orange-600',
-    yellow: 'bg-yellow-100 text-yellow-600',
-    purple: 'bg-purple-100 text-purple-600',
-    red: 'bg-red-100 text-red-600',
-    gray: 'bg-gray-100 text-gray-600',
-  };
 
   return (
-    <div
-      className="cursor-pointer rounded-xl transition-shadow hover:shadow-md"
+    <button
+      type="button"
+      className="flex h-full w-full flex-col rounded-xl border border-gray-200 bg-white p-4 text-left transition-colors hover:border-primary-200 hover:bg-primary-50/30"
       onClick={onClick}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => e.key === 'Enter' && onClick()}
     >
-      <Card>
-        <CardBody>
-          <div className="flex items-start gap-3">
-            <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${iconColorCls[config.color] ?? iconColorCls.gray}`}>
-              <Icon className="h-4 w-4" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="font-medium text-gray-900">{config.label}</p>
-                  {auth.employee_name && (
-                    <p className="text-xs text-gray-500">{auth.employee_name}</p>
-                  )}
-                  {auth.branch_name && (
-                    <p className="text-xs text-primary-600">{auth.branch_name}</p>
-                  )}
-                  <p className="mt-0.5 text-xs text-gray-400">
-                    {formatDiffMinutes(auth.diff_minutes)} {config.diffLabel}
-                    {auth.duty_type ? ` · ${auth.duty_type}` : ''}
-                  </p>
-                  <p className="mt-1 text-xs text-gray-400">{fmtDate(auth.created_at)}</p>
-                  {auth.status !== 'pending' && (auth.resolved_by_name || auth.resolved_by) && (
-                    <p className="mt-0.5 text-xs text-gray-500">
-                      {auth.status === 'approved'
-                        ? 'Approved by '
-                        : auth.status === 'rejected'
-                          ? 'Rejected by '
-                          : 'Resolved by '}
-                      {auth.resolved_by_name || auth.resolved_by}
-                    </p>
-                  )}
-                </div>
-                <Badge variant={STATUS_VARIANT[auth.status] ?? 'warning'}>
-                  {auth.status.charAt(0).toUpperCase() + auth.status.slice(1)}
-                </Badge>
-              </div>
-            </div>
+      {/* Top block: icon + label + badge */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${ICON_COLOR_CLS[config.color] ?? ICON_COLOR_CLS.gray}`}>
+            <Icon className="h-4 w-4" />
           </div>
-        </CardBody>
-      </Card>
-    </div>
+          <p className="font-medium text-gray-900">{config.label}</p>
+        </div>
+        <Badge variant={STATUS_VARIANT[auth.status] ?? 'warning'}>
+          {auth.status.charAt(0).toUpperCase() + auth.status.slice(1)}
+        </Badge>
+      </div>
+
+      {/* Employee + branch */}
+      <div className="mt-1.5 min-w-0 space-y-0.5">
+        {auth.employee_name && (
+          <p className="truncate text-xs text-gray-500">{auth.employee_name}</p>
+        )}
+        {auth.branch_name && (
+          <p className="truncate text-xs text-primary-600">{auth.branch_name}</p>
+        )}
+      </div>
+
+      <div className="flex-1" />
+
+      {/* Footer: duration · duty on left, date + reviewer + chevron on right */}
+      <div className="mt-3 flex items-end justify-between gap-2 border-t border-gray-100 pt-2.5">
+        <div className="min-w-0">
+          <p className="text-xs text-gray-400">
+            {formatDiffMinutes(auth.diff_minutes)} {config.diffLabel}
+            {auth.duty_type ? ` · ${auth.duty_type}` : ''}
+          </p>
+          <p className="mt-0.5 text-xs text-gray-400">{fmtDate(auth.created_at)}</p>
+          {auth.status !== 'pending' && (auth.resolved_by_name || auth.resolved_by) && (
+            <p className="mt-0.5 truncate text-xs text-gray-500">
+              {auth.status === 'approved' ? 'Approved by ' : auth.status === 'rejected' ? 'Rejected by ' : 'Resolved by '}
+              {auth.resolved_by_name || auth.resolved_by}
+            </p>
+          )}
+        </div>
+        <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" />
+      </div>
+    </button>
   );
 }
 
@@ -756,25 +1037,18 @@ export function AuthorizationRequestsPage() {
   const [mgmtPage, setMgmtPage] = useState(1);
   const [crewPage, setCrewPage] = useState(1);
 
-  type StatusTab = 'all' | 'pending' | 'approved' | 'rejected';
-  const STATUS_TABS: { key: StatusTab; label: string }[] = [
-    { key: 'all', label: 'All' },
-    { key: 'pending', label: 'Pending' },
-    { key: 'approved', label: 'Approved' },
-    { key: 'rejected', label: 'Rejected' },
-  ];
   const [mgmtTab, setMgmtTab] = useState<StatusTab>('pending');
   const [crewTab, setCrewTab] = useState<StatusTab>('pending');
 
   const selectedBranchIds = useBranchStore((s) => s.selectedBranchIds);
   const { hasPermission, hasAnyPermission } = usePermission();
 
-  const canApproveManagement = hasPermission(PERMISSIONS.AUTH_REQUEST_APPROVE_MANAGEMENT);
+  const canApproveManagement = hasPermission(PERMISSIONS.AUTH_REQUEST_MANAGE_PRIVATE);
   const canViewServiceCrew = hasAnyPermission(
-    PERMISSIONS.AUTH_REQUEST_VIEW_ALL,
-    PERMISSIONS.AUTH_REQUEST_APPROVE_SERVICE_CREW,
+    PERMISSIONS.AUTH_REQUEST_VIEW_PAGE,
+    PERMISSIONS.AUTH_REQUEST_MANAGE_PUBLIC,
   );
-  const canApproveServiceCrew = hasPermission(PERMISSIONS.AUTH_REQUEST_APPROVE_SERVICE_CREW);
+  const canApproveServiceCrew = hasPermission(PERMISSIONS.AUTH_REQUEST_MANAGE_PUBLIC);
 
   const filteredManagement = mgmtTab === 'all' ? managementRequests : managementRequests.filter((r) => r.status === mgmtTab);
   const filteredServiceCrew = crewTab === 'all' ? serviceCrewRequests : serviceCrewRequests.filter((r) => r.status === crewTab);
@@ -827,247 +1101,285 @@ export function AuthorizationRequestsPage() {
   }, [totalCrewPages]);
 
   function handleManagementUpdated(updated: any) {
-    setManagementRequests((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+    /**
+     * Merge rather than replace so that joined fields (branch_name, company_name,
+     * created_by_name) from the list query are not lost when the approve/reject
+     * endpoint returns only the raw updated row.
+     */
+    setManagementRequests((prev) =>
+      prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)),
+    );
     setSelectedItem((prev) =>
       prev?.type === 'management' && prev.data.id === updated.id
-        ? { type: 'management', data: updated }
+        ? { type: 'management', data: { ...prev.data, ...updated } }
         : prev,
     );
   }
 
   function handleServiceCrewUpdated(updated: any) {
-    setServiceCrewRequests((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+    /**
+     * Same merge strategy: preserve branch_name, company_name, employee_name,
+     * duty_type etc. that the approve/reject endpoint does not re-join.
+     */
+    setServiceCrewRequests((prev) =>
+      prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)),
+    );
     setSelectedItem((prev) =>
       prev?.type === 'service_crew' && prev.data.id === updated.id
-        ? { type: 'service_crew', data: updated }
+        ? { type: 'service_crew', data: { ...prev.data, ...updated } }
         : prev,
     );
   }
 
+  const mgmtPendingCount = managementRequests.filter((r) => r.status === 'pending').length;
+  const crewPendingCount = serviceCrewRequests.filter((r) => r.status === 'pending').length;
+
   return (
     <>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center gap-3">
-          <FileText className="h-6 w-6 text-primary-600" />
-          <h1 className="text-2xl font-bold text-gray-900">Authorization Requests</h1>
+      <div className="space-y-8">
+          {/* ─── Page header ───────────────────────────────────────── */}
+          <div>
+            <div className="flex items-center gap-3">
+              <FileText className="h-6 w-6 text-primary-600" />
+              <h1 className="text-2xl font-bold text-gray-900">Authorization Requests</h1>
+            </div>
+            <p className="mt-1 hidden text-sm text-gray-500 sm:block">
+              Review and act on management payment requests and service crew attendance authorizations.
+            </p>
+          </div>
+
+          {/* ─── Management Requests section ───────────────────────── */}
+          {canApproveManagement && (
+            <section className="space-y-3">
+              {/* Section heading + pending count badge */}
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+                  Management Requests
+                </h2>
+                {mgmtPendingCount > 0 && (
+                  <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-primary-600 px-1.5 text-[10px] font-bold text-white">
+                    {mgmtPendingCount}
+                  </span>
+                )}
+              </div>
+
+              {/* Border-bottom underline tab strip */}
+              <div className="flex w-full gap-1 border-b border-gray-200">
+                {STATUS_TABS.map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => {
+                      setMgmtTab(tab.key);
+                      setMgmtPage(1);
+                    }}
+                    className={`flex flex-1 items-center justify-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors sm:flex-none ${
+                      mgmtTab === tab.key
+                        ? 'border-primary-600 text-primary-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    <tab.Icon className="h-4 w-4" />
+                    <span className="hidden sm:inline">{tab.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Empty state or card grid */}
+              {loading ? (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {Array.from({ length: 6 }).map((_, j) => (
+                    <RequestCardSkeleton key={j} />
+                  ))}
+                </div>
+              ) : filteredManagement.length === 0 ? (
+                <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3.5">
+                  <FileText className="h-4 w-4 shrink-0 text-gray-300" />
+                  <p className="text-sm text-gray-400">
+                    {mgmtTab === 'all' ? 'No management requests.' : `No ${mgmtTab} management requests.`}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {pagedManagement.map((r) => (
+                      <ManagementRequestCard
+                        key={r.id}
+                        request={r}
+                        onClick={() => setSelectedItem({ type: 'management', data: r })}
+                      />
+                    ))}
+                  </div>
+
+                  {totalMgmtPages > 1 && (
+                    <div className="flex items-center justify-between text-sm text-gray-600">
+                      <span>Page {mgmtPage} of {totalMgmtPages}</span>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setMgmtPage((prev) => Math.max(1, prev - 1))}
+                          disabled={mgmtPage === 1}
+                          className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Previous
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setMgmtPage((prev) => Math.min(totalMgmtPages, prev + 1))}
+                          disabled={mgmtPage === totalMgmtPages}
+                          className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* ─── Service Crew Requests section ─────────────────────── */}
+          {canViewServiceCrew && (
+            <section className="space-y-3">
+              {/* Section heading + pending count badge */}
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+                  Service Crew Requests
+                </h2>
+                {crewPendingCount > 0 && (
+                  <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-primary-600 px-1.5 text-[10px] font-bold text-white">
+                    {crewPendingCount}
+                  </span>
+                )}
+              </div>
+
+              {/* Border-bottom underline tab strip */}
+              <div className="flex w-full gap-1 border-b border-gray-200">
+                {STATUS_TABS.map((tab) => (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => {
+                      setCrewTab(tab.key);
+                      setCrewPage(1);
+                    }}
+                    className={`flex flex-1 items-center justify-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors sm:flex-none ${
+                      crewTab === tab.key
+                        ? 'border-primary-600 text-primary-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    <tab.Icon className="h-4 w-4" />
+                    <span className="hidden sm:inline">{tab.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Empty state or card grid */}
+              {loading ? (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {Array.from({ length: 6 }).map((_, j) => (
+                    <RequestCardSkeleton key={j} />
+                  ))}
+                </div>
+              ) : filteredServiceCrew.length === 0 ? (
+                <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3.5">
+                  <Repeat2 className="h-4 w-4 shrink-0 text-gray-300" />
+                  <p className="text-sm text-gray-400">
+                    {crewTab === 'all' ? 'No service crew requests.' : `No ${crewTab} service crew requests.`}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {pagedServiceCrew.map((r) => (
+                      <ServiceCrewRequestCard
+                        key={r.id}
+                        auth={r}
+                        onClick={() => {
+                          if (r.auth_type === 'shift_exchange') {
+                            setSelectedItem({ type: 'shift_exchange', data: r });
+                            return;
+                          }
+                          setSelectedItem({ type: 'service_crew', data: r });
+                        }}
+                      />
+                    ))}
+                  </div>
+
+                  {totalCrewPages > 1 && (
+                    <div className="flex items-center justify-between text-sm text-gray-600">
+                      <span>Page {crewPage} of {totalCrewPages}</span>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setCrewPage((prev) => Math.max(1, prev - 1))}
+                          disabled={crewPage === 1}
+                          className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Previous
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCrewPage((prev) => Math.min(totalCrewPages, prev + 1))}
+                          disabled={crewPage === totalCrewPages}
+                          className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+          )}
         </div>
 
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <Spinner />
+      {/* ─── Detail panel + backdrop (portalled to document.body) ──── */}
+      {createPortal(
+        <>
+          {selectedItem && (
+            <div
+              className="fixed inset-0 z-40 bg-black/30"
+              onClick={() => setSelectedItem(null)}
+            />
+          )}
+          <div
+            className={`fixed inset-y-0 right-0 z-50 w-full max-w-[560px] transform bg-white shadow-2xl transition-transform duration-300 ${
+              selectedItem ? 'translate-x-0' : 'translate-x-full'
+            }`}
+          >
+            {selectedItem?.type === 'management' && (
+              <ManagementDetailPanel
+                request={selectedItem.data}
+                canApprove={canApproveManagement}
+                onClose={() => setSelectedItem(null)}
+                onUpdated={handleManagementUpdated}
+              />
+            )}
+            {selectedItem?.type === 'service_crew' && (
+              <ServiceCrewDetailPanel
+                auth={selectedItem.data}
+                canApprove={canApproveServiceCrew}
+                onClose={() => setSelectedItem(null)}
+                onUpdated={handleServiceCrewUpdated}
+              />
+            )}
+            {selectedItem?.type === 'shift_exchange' && (
+              <ShiftExchangeDetailModal
+                isOpen
+                mode="panel"
+                requestId={selectedItem.data.id}
+                onClose={() => setSelectedItem(null)}
+                onUpdated={() => { void fetchRequests(); }}
+              />
+            )}
           </div>
-        ) : (
-          <>
-            {/* Management Requests Section */}
-            {canApproveManagement && (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-                    Management Requests
-                  </h2>
-                  {managementRequests.filter((r) => r.status === 'pending').length > 0 && (
-                    <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary-600 px-1.5 text-[10px] font-bold text-white">
-                      {managementRequests.filter((r) => r.status === 'pending').length}
-                    </span>
-                  )}
-                </div>
-                <div className="mx-auto flex w-full items-center gap-1 rounded-lg bg-gray-100 p-1 sm:mx-0 sm:w-fit">
-                  {STATUS_TABS.map((tab) => (
-                    <button
-                      key={tab.key}
-                      onClick={() => {
-                        setMgmtTab(tab.key);
-                        setMgmtPage(1);
-                      }}
-                      className={`flex-1 rounded-md px-4 py-1.5 text-center text-sm font-medium transition-colors sm:flex-none ${
-                        mgmtTab === tab.key
-                          ? 'bg-primary-600 text-white shadow-sm'
-                          : 'text-gray-500 hover:text-gray-700'
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-                {filteredManagement.length === 0 ? (
-                  <Card>
-                    <CardBody className="py-8 text-center">
-                      <p className="text-sm text-gray-500">
-                        {mgmtTab === 'all' ? 'No management requests.' : `No ${mgmtTab} requests.`}
-                      </p>
-                    </CardBody>
-                  </Card>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                      {pagedManagement.map((r) => (
-                        <ManagementRequestCard
-                          key={r.id}
-                          request={r}
-                          onClick={() => setSelectedItem({ type: 'management', data: r })}
-                        />
-                      ))}
-                    </div>
-
-                    {totalMgmtPages > 1 && (
-                      <div className="flex items-center justify-between text-sm text-gray-600">
-                        <span>
-                          Page {mgmtPage} of {totalMgmtPages}
-                        </span>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => setMgmtPage((prev) => Math.max(1, prev - 1))}
-                            disabled={mgmtPage === 1}
-                            className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            Previous
-                          </button>
-                          <button
-                            onClick={() => setMgmtPage((prev) => Math.min(totalMgmtPages, prev + 1))}
-                            disabled={mgmtPage === totalMgmtPages}
-                            className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            Next
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Service Crew Section */}
-            {canViewServiceCrew && (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-                    Service Crew Requests
-                  </h2>
-                  {serviceCrewRequests.filter((r) => r.status === 'pending').length > 0 && (
-                    <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary-600 px-1.5 text-[10px] font-bold text-white">
-                      {serviceCrewRequests.filter((r) => r.status === 'pending').length}
-                    </span>
-                  )}
-                </div>
-                <div className="mx-auto flex w-full items-center gap-1 rounded-lg bg-gray-100 p-1 sm:mx-0 sm:w-fit">
-                  {STATUS_TABS.map((tab) => (
-                    <button
-                      key={tab.key}
-                      onClick={() => {
-                        setCrewTab(tab.key);
-                        setCrewPage(1);
-                      }}
-                      className={`flex-1 rounded-md px-4 py-1.5 text-center text-sm font-medium transition-colors sm:flex-none ${
-                        crewTab === tab.key
-                          ? 'bg-primary-600 text-white shadow-sm'
-                          : 'text-gray-500 hover:text-gray-700'
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-                {filteredServiceCrew.length === 0 ? (
-                  <Card>
-                    <CardBody className="py-8 text-center">
-                      <p className="text-sm text-gray-500">
-                        {crewTab === 'all' ? 'No service crew requests.' : `No ${crewTab} requests.`}
-                      </p>
-                    </CardBody>
-                  </Card>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                      {pagedServiceCrew.map((r) => (
-                        <ServiceCrewRequestCard
-                          key={r.id}
-                          auth={r}
-                          onClick={() => {
-                            if (r.auth_type === 'shift_exchange') {
-                              setSelectedItem({ type: 'shift_exchange', data: r });
-                              return;
-                            }
-                            setSelectedItem({ type: 'service_crew', data: r });
-                          }}
-                        />
-                      ))}
-                    </div>
-
-                    {totalCrewPages > 1 && (
-                      <div className="flex items-center justify-between text-sm text-gray-600">
-                        <span>
-                          Page {crewPage} of {totalCrewPages}
-                        </span>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => setCrewPage((prev) => Math.max(1, prev - 1))}
-                            disabled={crewPage === 1}
-                            className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            Previous
-                          </button>
-                          <button
-                            onClick={() => setCrewPage((prev) => Math.min(totalCrewPages, prev + 1))}
-                            disabled={crewPage === totalCrewPages}
-                            className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            Next
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </>
-        )}
-      </div>
-
-      {/* Backdrop */}
-      {selectedItem && (
-        <div
-          className="fixed inset-0 z-40 bg-black/30"
-          onClick={() => setSelectedItem(null)}
-        />
+        </>,
+        document.body,
       )}
-
-      {/* Detail Panel */}
-      <div
-        className={`fixed inset-y-0 right-0 z-50 w-full max-w-[520px] transform bg-white shadow-2xl transition-transform duration-300 ${
-          selectedItem ? 'translate-x-0' : 'translate-x-full'
-        }`}
-      >
-        {selectedItem?.type === 'management' && (
-          <ManagementDetailPanel
-            request={selectedItem.data}
-            canApprove={canApproveManagement}
-            onClose={() => setSelectedItem(null)}
-            onUpdated={handleManagementUpdated}
-          />
-        )}
-        {selectedItem?.type === 'service_crew' && (
-          <ServiceCrewDetailPanel
-            auth={selectedItem.data}
-            canApprove={canApproveServiceCrew}
-            onClose={() => setSelectedItem(null)}
-            onUpdated={handleServiceCrewUpdated}
-          />
-        )}
-        {selectedItem?.type === 'shift_exchange' && (
-          <ShiftExchangeDetailModal
-            isOpen
-            mode="panel"
-            requestId={selectedItem.data.id}
-            onClose={() => setSelectedItem(null)}
-            onUpdated={() => {
-              fetchRequests();
-            }}
-          />
-        )}
-      </div>
     </>
   );
 }

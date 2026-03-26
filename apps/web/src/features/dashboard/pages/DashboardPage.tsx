@@ -3,10 +3,8 @@ import { useIsFetching, useQuery, useQueryClient } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '@/features/auth/store/authSlice';
-import { usePermission } from '@/shared/hooks/usePermission';
 import { useAppToast } from '@/shared/hooks/useAppToast';
 import { Button } from '@/shared/components/ui/Button';
-import { PERMISSIONS } from '@omnilert/shared';
 import { EpiDashboard } from '../components/epi/EpiDashboard';
 import { DashboardPageSkeleton } from '../components/epi/EpiSkeletons';
 import { fetchEpiDashboard, fetchEpiLeaderboardSummary, getCurrentManilaMonthKey } from '../services/epi.api';
@@ -23,11 +21,10 @@ function isMobileDashboardViewport(): boolean {
 }
 
 export function DashboardPage() {
-  const { hasPermission } = usePermission();
   const user = useAuthStore((s) => s.user);
   const queryClient = useQueryClient();
   const { error: showErrorToast } = useAppToast();
-  const canViewPerformanceIndex = hasPermission(PERMISSIONS.DASHBOARD_VIEW_PERFORMANCE_INDEX);
+  const canViewPerformanceIndex = true;
   const pullRefreshFrameRef = useRef<number | null>(null);
   const touchStartYRef = useRef<number | null>(null);
   const touchStartXRef = useRef<number | null>(null);
