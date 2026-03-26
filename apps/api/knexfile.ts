@@ -4,38 +4,27 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const config: Record<string, Knex.Config> = {
-  master: {
+  development: {
     client: 'pg',
     connection: {
-      host: process.env.MASTER_DB_HOST || 'localhost',
-      port: Number(process.env.MASTER_DB_PORT) || 5431,
-      database: process.env.MASTER_DB_NAME || 'omnilert_master',
-      user: process.env.MASTER_DB_USER || 'postgres',
-      password: process.env.MASTER_DB_PASSWORD || 'postgres',
+      host: process.env.DB_HOST || 'localhost',
+      port: Number(process.env.DB_PORT) || 5432,
+      database: process.env.DB_NAME || 'omnilert',
+      user: process.env.DB_USER || 'postgres',
+      password: process.env.DB_PASSWORD || 'postgres',
     },
     migrations: {
-      directory: './src/migrations/master',
+      directory: './src/migrations',
       extension: 'ts',
     },
     seeds: {
-      directory: './src/seeds/master',
-      extension: 'ts',
-    },
-  },
-  tenant: {
-    client: 'pg',
-    connection: {
-      host: process.env.MASTER_DB_HOST || 'localhost',
-      port: Number(process.env.MASTER_DB_PORT) || 5431,
-      database: process.env.TENANT_DB_NAME || 'omnilert_tenant',
-      user: process.env.MASTER_DB_USER || 'postgres',
-      password: process.env.MASTER_DB_PASSWORD || 'postgres',
-    },
-    migrations: {
-      directory: './src/migrations/tenant',
+      directory: './src/seeds',
       extension: 'ts',
     },
   },
 };
+
+config.production = config.development;
+config.test = config.development;
 
 export default config;

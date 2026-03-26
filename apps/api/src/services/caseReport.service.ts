@@ -1,4 +1,3 @@
-import type { Knex } from 'knex';
 import type {
   CaseAttachment,
   CaseMessage,
@@ -6,6 +5,7 @@ import type {
   CaseReaction,
   CaseReport,
 } from '@omnilert/shared';
+import type { Knex } from 'knex';
 import { PERMISSIONS } from '@omnilert/shared';
 import { db } from '../config/database.js';
 import { getIO } from '../config/socket.js';
@@ -25,6 +25,7 @@ type CaseReportRow = {
   corrective_action: string | null;
   resolution: string | null;
   vn_requested: boolean;
+  branch_id: string | null;
   created_by: string;
   closed_by: string | null;
   closed_at: Date | string | null;
@@ -110,19 +111,20 @@ function emitCaseReportEvent(event: string, companyId: string, payload: unknown)
   }
 }
 
-async function getCaseOrThrow(tenantDb: Knex, caseId: string): Promise<CaseReportRow> {
-  const row = await tenantDb('case_reports').where({ id: caseId }).first();
+async function getCaseOrThrow(caseId: string): Promise<CaseReportRow> {
+  const row = await db.getDb()('case_reports').where({ id: caseId }).first();
   if (!row) throw new AppError(404, 'Case report not found');
   return row as CaseReportRow;
 }
 
 async function upsertParticipant(
-  tenantDb: Knex,
   caseId: string,
   userId: string,
   patch: Partial<Pick<CaseParticipantRow, 'is_joined' | 'is_muted' | 'last_read_at'>>,
+  trx?: Knex.Transaction,
 ): Promise<void> {
-  const existing = await tenantDb('case_participants').where({ case_id: caseId, user_id: userId }).first();
+  const knex = trx ?? db.getDb();
+  const existing = await knex('case_participants').where({ case_id: caseId, user_id: userId }).first();
   const next = {
     is_joined: patch.is_joined ?? existing?.is_joined ?? true,
     is_muted: patch.is_muted ?? existing?.is_muted ?? false,
@@ -131,11 +133,11 @@ async function upsertParticipant(
   };
 
   if (existing) {
-    await tenantDb('case_participants').where({ case_id: caseId, user_id: userId }).update(next);
+    await knex('case_participants').where({ case_id: caseId, user_id: userId }).update(next);
     return;
   }
 
-  await tenantDb('case_participants').insert({
+  await knex('case_participants').insert({
     case_id: caseId,
     user_id: userId,
     ...next,
@@ -144,10 +146,11 @@ async function upsertParticipant(
 }
 
 async function createSystemMessage(
-  tenantDb: Knex,
   input: { caseId: string; userId: string; content: string },
+  trx?: Knex.Transaction,
 ): Promise<CaseMessageRow> {
-  const [message] = await tenantDb('case_messages')
+  const knex = trx ?? db.getDb();
+  const [message] = await knex('case_messages')
     .insert({
       case_id: input.caseId,
       user_id: input.userId,
@@ -156,6 +159,43 @@ async function createSystemMessage(
     })
     .returning('*');
   return message as CaseMessageRow;
+}
+
+async function getNextCompanySequence(
+  trx: Knex.Transaction,
+  companyId: string,
+  sequenceName: 'case_number' | 'vn_number',
+): Promise<number> {
+  await trx('company_sequences')
+    .insert({
+      company_id: companyId,
+      sequence_name: sequenceName,
+      current_value: 0,
+    })
+    .onConflict(['company_id', 'sequence_name'])
+    .ignore();
+
+  const sequenceRow = await trx('company_sequences')
+    .where({
+      company_id: companyId,
+      sequence_name: sequenceName,
+    })
+    .forUpdate()
+    .first('id', 'current_value') as { id: string; current_value: number } | undefined;
+
+  if (!sequenceRow) {
+    throw new AppError(500, `Failed to allocate ${sequenceName}`);
+  }
+
+  const nextValue = Number(sequenceRow.current_value) + 1;
+  await trx('company_sequences')
+    .where({ id: sequenceRow.id })
+    .update({
+      current_value: nextValue,
+      updated_at: new Date(),
+    });
+
+  return nextValue;
 }
 
 async function resolveUserNames(userIds: string[]): Promise<Record<string, string>> {
@@ -168,7 +208,7 @@ async function resolveUserNames(userIds: string[]): Promise<Record<string, strin
 }
 
 async function resolveCompanyUsers(companyId: string): Promise<MentionableUser[]> {
-  const rows = await db.getMasterDb()('user_company_access as uca')
+  const rows = await db.getDb()('user_company_access as uca')
     .join('users', 'uca.user_id', 'users.id')
     .where('uca.company_id', companyId)
     .andWhere('uca.is_active', true)
@@ -185,7 +225,6 @@ async function resolveCompanyUsers(companyId: string): Promise<MentionableUser[]
 }
 
 async function resolveMessageDecorations(
-  tenantDb: Knex,
   messageIds: string[],
 ): Promise<{
   reactionsByMessage: Map<string, CaseReaction[]>;
@@ -194,13 +233,13 @@ async function resolveMessageDecorations(
 }> {
   const [reactionRows, attachmentRows, mentionRows] = await Promise.all([
     messageIds.length > 0
-      ? tenantDb('case_reactions').whereIn('message_id', messageIds).select('*')
+      ? db.getDb()('case_reactions').whereIn('message_id', messageIds).select('*')
       : Promise.resolve([]),
     messageIds.length > 0
-      ? tenantDb('case_attachments').whereIn('message_id', messageIds).select('*')
+      ? db.getDb()('case_attachments').whereIn('message_id', messageIds).select('*')
       : Promise.resolve([]),
     messageIds.length > 0
-      ? tenantDb('case_mentions').whereIn('message_id', messageIds).select('*')
+      ? db.getDb()('case_mentions').whereIn('message_id', messageIds).select('*')
       : Promise.resolve([]),
   ]);
 
@@ -256,8 +295,8 @@ async function resolveMessageDecorations(
   return { reactionsByMessage, attachmentsByMessage, mentionsByMessage };
 }
 
-async function buildCaseMessageTree(tenantDb: Knex, caseId: string): Promise<CaseMessage[]> {
-  const rows = await tenantDb('case_messages').where({ case_id: caseId }).orderBy('created_at', 'asc').select('*');
+async function buildCaseMessageTree(caseId: string): Promise<CaseMessage[]> {
+  const rows = await db.getDb()('case_messages').where({ case_id: caseId }).orderBy('created_at', 'asc').select('*');
   const messageRows = rows as CaseMessageRow[];
   const messageIds = messageRows.map((row) => row.id);
   const userMap = await hydrateUsersByIds(
@@ -265,7 +304,6 @@ async function buildCaseMessageTree(tenantDb: Knex, caseId: string): Promise<Cas
     ['id', 'first_name', 'last_name', 'avatar_url'],
   );
   const { reactionsByMessage, attachmentsByMessage, mentionsByMessage } = await resolveMessageDecorations(
-    tenantDb,
     messageIds,
   );
 
@@ -304,7 +342,6 @@ async function buildCaseMessageTree(tenantDb: Knex, caseId: string): Promise<Cas
 }
 
 async function enrichCaseReports(
-  tenantDb: Knex,
   rows: CaseReportRow[],
   userId: string,
 ): Promise<CaseReport[]> {
@@ -316,16 +353,17 @@ async function enrichCaseReports(
   ];
 
   const [participants, messageCounts, unreadCounts, unreadReplyCounts, userNames, linkedVns] = await Promise.all([
-    tenantDb('case_participants')
+    db.getDb()('case_participants')
       .whereIn('case_id', caseIds)
       .andWhere({ user_id: userId })
       .select('case_id', 'is_joined', 'is_muted', 'last_read_at'),
-    tenantDb('case_messages')
+    db.getDb()('case_messages')
       .whereIn('case_id', caseIds)
+      .where('is_system', false)
       .groupBy('case_id')
       .select('case_id')
       .count<{ count: string }[]>({ count: '*' }),
-    tenantDb('case_participants as cp')
+    db.getDb()('case_participants as cp')
       .leftJoin('case_messages as cm', 'cp.case_id', 'cm.case_id')
       .where('cp.user_id', userId)
       .whereIn('cp.case_id', caseIds)
@@ -337,7 +375,7 @@ async function enrichCaseReports(
       .select('cp.case_id')
       .count<{ count: string }[]>({ count: 'cm.id' }),
     // Count replies to the current user's messages that are unread
-    tenantDb('case_messages as reply')
+    db.getDb()('case_messages as reply')
       .join('case_messages as parent', 'reply.parent_message_id', 'parent.id')
       .join('case_participants as cp', (join) => {
         join.on('cp.case_id', 'reply.case_id').andOnVal('cp.user_id', userId);
@@ -352,7 +390,7 @@ async function enrichCaseReports(
       .select('reply.case_id')
       .count<{ count: string }[]>({ count: 'reply.id' }),
     resolveUserNames(userIds),
-    tenantDb('violation_notices')
+    db.getDb()('violation_notices')
       .whereIn('source_case_report_id', caseIds)
       .whereNotNull('source_case_report_id')
       .select('id', 'source_case_report_id'),
@@ -395,6 +433,9 @@ async function enrichCaseReports(
       unread_reply_count: unreadReplyCountMap.get(row.id) ?? 0,
       is_joined: participant?.is_joined ?? false,
       is_muted: participant?.is_muted ?? false,
+      branch_id: (row as any).branch_id ?? null,
+      branch_name: (row as any).branch_name ?? null,
+      company_name: (row as any).company_name ?? null,
       created_at: new Date(row.created_at).toISOString(),
       updated_at: new Date(row.updated_at).toISOString(),
     };
@@ -402,11 +443,10 @@ async function enrichCaseReports(
 }
 
 async function assertCanMutateCase(
-  tenantDb: Knex,
   caseId: string,
   permissions: string[],
 ): Promise<CaseReportRow> {
-  const record = await getCaseOrThrow(tenantDb, caseId);
+  const record = await getCaseOrThrow(caseId);
   if (record.status === 'closed' && !hasManagePermission(permissions)) {
     throw new AppError(403, 'This case is already closed');
   }
@@ -414,7 +454,6 @@ async function assertCanMutateCase(
 }
 
 async function maybeNotifyMentionedUsers(input: {
-  tenantDb: Knex;
   companyId: string;
   caseId: string;
   messageId: string;
@@ -422,7 +461,7 @@ async function maybeNotifyMentionedUsers(input: {
   mentionedUserIds: string[];
   mentionedRoleIds: string[];
 }): Promise<void> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const roleMentionUsers = input.mentionedRoleIds.length > 0
     ? await masterDb('user_roles as ur')
       .join('user_company_access as uca', 'ur.user_id', 'uca.user_id')
@@ -443,7 +482,7 @@ async function maybeNotifyMentionedUsers(input: {
 
   const senderNames = await resolveUserNames([input.senderId]);
   const senderName = senderNames[input.senderId] ?? 'Someone';
-  const participantRows = await input.tenantDb('case_participants')
+  const participantRows = await db.getDb()('case_participants')
     .whereIn('user_id', targets)
     .andWhere({ case_id: input.caseId })
     .select('user_id', 'is_muted');
@@ -451,10 +490,9 @@ async function maybeNotifyMentionedUsers(input: {
 
   await Promise.all(
     targets.map(async (targetUserId) => {
-      await upsertParticipant(input.tenantDb, input.caseId, targetUserId, { is_joined: true });
+      await upsertParticipant(input.caseId, targetUserId, { is_joined: true });
       if (participantMap.get(targetUserId)?.is_muted) return;
       await createAndDispatchNotification({
-        tenantDb: input.tenantDb,
         userId: targetUserId,
         title: 'Case report mention',
         message: `${senderName} mentioned you in a case report`,
@@ -466,7 +504,6 @@ async function maybeNotifyMentionedUsers(input: {
 }
 
 export async function listCaseReports(input: {
-  tenantDb: Knex;
   userId: string;
   status?: string;
   search?: string;
@@ -475,7 +512,7 @@ export async function listCaseReports(input: {
   sortOrder?: string;
   vnOnly?: boolean;
 }): Promise<{ items: CaseReport[]; total: number }> {
-  const query = input.tenantDb('case_reports');
+  const query = db.getDb()('case_reports');
   if (input.status && ['open', 'closed'].includes(input.status)) {
     query.where({ status: input.status });
   }
@@ -499,29 +536,41 @@ export async function listCaseReports(input: {
 
   const [countRow, rows] = await Promise.all([
     query.clone().count<{ count: string }>({ count: '*' }).first(),
-    query.clone().orderBy('created_at', normalizeSortOrder(input.sortOrder)).select('*'),
+    query
+      .clone()
+      .leftJoin('branches', 'case_reports.branch_id', 'branches.id')
+      .leftJoin('companies', 'case_reports.company_id', 'companies.id')
+      .orderBy('case_reports.created_at', normalizeSortOrder(input.sortOrder))
+      .select('case_reports.*', 'branches.name as branch_name', 'companies.name as company_name'),
   ]);
 
-  const items = await enrichCaseReports(input.tenantDb, rows as CaseReportRow[], input.userId);
+  const items = await enrichCaseReports(rows as CaseReportRow[], input.userId);
   return { items, total: Number(countRow?.count ?? 0) };
 }
 
 export async function getCaseReport(input: {
-  tenantDb: Knex;
   userId: string;
   caseId: string;
   markRead?: boolean;
 }): Promise<CaseReport & { attachments: CaseAttachment[] }> {
-  const record = await getCaseOrThrow(input.tenantDb, input.caseId);
+  const rawRecord = await getCaseOrThrow(input.caseId);
   if (input.markRead) {
-    await upsertParticipant(input.tenantDb, input.caseId, input.userId, {
+    await upsertParticipant(input.caseId, input.userId, {
       is_joined: true,
       last_read_at: new Date(),
     });
   }
 
-  const [report] = await enrichCaseReports(input.tenantDb, [record], input.userId);
-  const attachments = await input.tenantDb('case_attachments')
+  const recordWithCompany = await db.getDb()('case_reports')
+    .where('case_reports.id', input.caseId)
+    .leftJoin('branches', 'case_reports.branch_id', 'branches.id')
+    .leftJoin('companies', 'case_reports.company_id', 'companies.id')
+    .select('case_reports.*', 'branches.name as branch_name', 'companies.name as company_name')
+    .first();
+
+  const record = recordWithCompany ?? rawRecord;
+  const [report] = await enrichCaseReports([record], input.userId);
+  const attachments = await db.getDb()('case_attachments')
     .where({ case_id: input.caseId })
     .whereNull('message_id')
     .orderBy('created_at', 'desc')
@@ -540,29 +589,37 @@ export async function getCaseReport(input: {
 }
 
 export async function createCaseReport(input: {
-  tenantDb: Knex;
   companyId: string;
   userId: string;
   title: string;
   description: string;
+  branchId?: string | null;
 }): Promise<CaseReport> {
   const title = ensureNonEmpty(input.title, 'Title');
   const description = ensureNonEmpty(input.description, 'Description');
   const userNames = await resolveUserNames([input.userId]);
 
-  const report = await input.tenantDb.transaction(async (trx) => {
+  const report = await db.getDb().transaction(async (trx) => {
+    const caseNumber = await getNextCompanySequence(trx, input.companyId, 'case_number');
     const [created] = await trx('case_reports')
-      .insert({ title, description, created_by: input.userId })
+      .insert({
+        company_id: input.companyId,
+        case_number: caseNumber,
+        title,
+        description,
+        created_by: input.userId,
+        branch_id: input.branchId ?? null,
+      })
       .returning('*');
-    await upsertParticipant(trx, created.id, input.userId, {
+    await upsertParticipant(created.id, input.userId, {
       is_joined: true,
       last_read_at: new Date(),
-    });
-    await createSystemMessage(trx, {
+    }, trx);
+    await createSystemMessage({
       caseId: created.id,
       userId: input.userId,
       content: `${userNames[input.userId] ?? 'Someone'} created this case`,
-    });
+    }, trx);
     return created as CaseReportRow;
   });
 
@@ -574,19 +631,25 @@ export async function createCaseReport(input: {
     createdBy: report.created_by,
   });
 
-  const [enriched] = await enrichCaseReports(input.tenantDb, [report], input.userId);
+  const reportWithNames = await db.getDb()('case_reports')
+    .where('case_reports.id', report.id)
+    .leftJoin('branches', 'case_reports.branch_id', 'branches.id')
+    .leftJoin('companies', 'case_reports.company_id', 'companies.id')
+    .select('case_reports.*', 'branches.name as branch_name', 'companies.name as company_name')
+    .first() ?? report;
+
+  const [enriched] = await enrichCaseReports([reportWithNames], input.userId);
   return enriched;
 }
 
 export async function updateCorrectiveAction(input: {
-  tenantDb: Knex;
   companyId: string;
   userId: string;
   permissions: string[];
   caseId: string;
   correctiveAction: string;
 }): Promise<CaseReport & { attachments: CaseAttachment[] }> {
-  const current = await assertCanMutateCase(input.tenantDb, input.caseId, input.permissions);
+  const current = await assertCanMutateCase(input.caseId, input.permissions);
   if (current.created_by !== input.userId && !hasManagePermission(input.permissions)) {
     throw new AppError(403, 'Only the case creator can update the corrective action');
   }
@@ -594,12 +657,12 @@ export async function updateCorrectiveAction(input: {
   const userNames = await resolveUserNames([input.userId]);
   const verb = current.corrective_action ? 'updated the corrective action' : 'added a corrective action';
 
-  await input.tenantDb.transaction(async (trx) => {
+  await db.getDb().transaction(async (trx) => {
     await trx('case_reports').where({ id: input.caseId }).update({
       corrective_action: nextText,
       updated_at: new Date(),
     });
-    await createSystemMessage(trx, {
+    await createSystemMessage({
       caseId: input.caseId,
       userId: input.userId,
       content: `${userNames[input.userId] ?? 'Someone'} ${verb}`,
@@ -611,18 +674,17 @@ export async function updateCorrectiveAction(input: {
     caseNumber: current.case_number,
     field: 'corrective_action',
   });
-  return getCaseReport({ tenantDb: input.tenantDb, userId: input.userId, caseId: input.caseId });
+  return getCaseReport({ userId: input.userId, caseId: input.caseId });
 }
 
 export async function updateResolution(input: {
-  tenantDb: Knex;
   companyId: string;
   userId: string;
   permissions: string[];
   caseId: string;
   resolution: string;
 }): Promise<CaseReport & { attachments: CaseAttachment[] }> {
-  const current = await assertCanMutateCase(input.tenantDb, input.caseId, input.permissions);
+  const current = await assertCanMutateCase(input.caseId, input.permissions);
   if (current.created_by !== input.userId && !hasManagePermission(input.permissions)) {
     throw new AppError(403, 'Only the case creator can update the resolution');
   }
@@ -630,12 +692,12 @@ export async function updateResolution(input: {
   const userNames = await resolveUserNames([input.userId]);
   const verb = current.resolution ? 'updated the resolution' : 'added a resolution';
 
-  await input.tenantDb.transaction(async (trx) => {
+  await db.getDb().transaction(async (trx) => {
     await trx('case_reports').where({ id: input.caseId }).update({
       resolution: nextText,
       updated_at: new Date(),
     });
-    await createSystemMessage(trx, {
+    await createSystemMessage({
       caseId: input.caseId,
       userId: input.userId,
       content: `${userNames[input.userId] ?? 'Someone'} ${verb}`,
@@ -647,17 +709,16 @@ export async function updateResolution(input: {
     caseNumber: current.case_number,
     field: 'resolution',
   });
-  return getCaseReport({ tenantDb: input.tenantDb, userId: input.userId, caseId: input.caseId });
+  return getCaseReport({ userId: input.userId, caseId: input.caseId });
 }
 
 export async function closeCase(input: {
-  tenantDb: Knex;
   companyId: string;
   userId: string;
   permissions: string[];
   caseId: string;
 }): Promise<CaseReport & { attachments: CaseAttachment[] }> {
-  const current = await getCaseOrThrow(input.tenantDb, input.caseId);
+  const current = await getCaseOrThrow(input.caseId);
   if (current.status === 'closed') throw new AppError(409, 'Case is already closed');
   if (current.created_by !== input.userId && !hasManagePermission(input.permissions)) {
     throw new AppError(403, 'Only the case creator can close this case');
@@ -667,14 +728,14 @@ export async function closeCase(input: {
   }
 
   const userNames = await resolveUserNames([input.userId]);
-  await input.tenantDb.transaction(async (trx) => {
+  await db.getDb().transaction(async (trx) => {
     await trx('case_reports').where({ id: input.caseId }).update({
       status: 'closed',
       closed_by: input.userId,
       closed_at: new Date(),
       updated_at: new Date(),
     });
-    await createSystemMessage(trx, {
+    await createSystemMessage({
       caseId: input.caseId,
       userId: input.userId,
       content: `${userNames[input.userId] ?? 'Someone'} closed this case`,
@@ -686,26 +747,25 @@ export async function closeCase(input: {
     caseNumber: current.case_number,
     field: 'status',
   });
-  return getCaseReport({ tenantDb: input.tenantDb, userId: input.userId, caseId: input.caseId });
+  return getCaseReport({ userId: input.userId, caseId: input.caseId });
 }
 
 export async function requestViolationNotice(input: {
-  tenantDb: Knex;
   companyId: string;
   userId: string;
   caseId: string;
   description: string;
   targetUserIds: string[];
 }): Promise<CaseReport & { attachments: CaseAttachment[] }> {
-  const current = await getCaseOrThrow(input.tenantDb, input.caseId);
+  const current = await getCaseOrThrow(input.caseId);
   const userNames = await resolveUserNames([input.userId]);
 
-  await input.tenantDb.transaction(async (trx) => {
+  await db.getDb().transaction(async (trx) => {
     await trx('case_reports').where({ id: input.caseId }).update({
       vn_requested: true,
       updated_at: new Date(),
     });
-    await createSystemMessage(trx, {
+    await createSystemMessage({
       caseId: input.caseId,
       userId: input.userId,
       content: `${userNames[input.userId] ?? 'Someone'} requested a Violation Notice`,
@@ -719,20 +779,19 @@ export async function requestViolationNotice(input: {
   });
 
   await violationNoticeService.createViolationNotice({
-    tenantDb: input.tenantDb,
     companyId: input.companyId,
     userId: input.userId,
     description: input.description,
     targetUserIds: input.targetUserIds,
     category: 'case_reports',
     sourceCaseReportId: input.caseId,
+    branchId: current.branch_id ?? null,
   });
 
-  return getCaseReport({ tenantDb: input.tenantDb, userId: input.userId, caseId: input.caseId });
+  return getCaseReport({ userId: input.userId, caseId: input.caseId });
 }
 
 export async function uploadAttachment(input: {
-  tenantDb: Knex;
   companyId: string;
   companyStorageRoot: string;
   userId: string;
@@ -743,7 +802,7 @@ export async function uploadAttachment(input: {
   if (!input.file) throw new AppError(400, 'Attachment file is required');
   if (input.file.size > 50 * 1024 * 1024) throw new AppError(400, 'File exceeds 50MB limit');
 
-  const report = await getCaseOrThrow(input.tenantDb, input.caseId);
+  const report = await getCaseOrThrow(input.caseId);
   if (report.created_by !== input.userId && !hasManagePermission(input.permissions ?? [])) {
     throw new AppError(403, 'Only the case creator can add attachments');
   }
@@ -761,7 +820,7 @@ export async function uploadAttachment(input: {
   if (!fileUrl) throw new AppError(500, 'Failed to upload attachment');
 
   const userNames = await resolveUserNames([input.userId]);
-  const [attachment] = await input.tenantDb.transaction(async (trx) => {
+  const [attachment] = await db.getDb().transaction(async (trx) => {
     const [created] = await trx('case_attachments')
       .insert({
         case_id: input.caseId,
@@ -772,7 +831,7 @@ export async function uploadAttachment(input: {
         content_type: input.file!.mimetype,
       })
       .returning('*');
-    await createSystemMessage(trx, {
+    await createSystemMessage({
       caseId: input.caseId,
       userId: input.userId,
       content: `${userNames[input.userId] ?? 'Someone'} attached a file: ${input.file!.originalname}`,
@@ -795,29 +854,28 @@ export async function uploadAttachment(input: {
 }
 
 export async function deleteAttachment(input: {
-  tenantDb: Knex;
   companyId: string;
   userId: string;
   permissions: string[];
   caseId: string;
   attachmentId: string;
 }): Promise<void> {
-  const attachment = await input.tenantDb('case_attachments')
+  const attachment = await db.getDb()('case_attachments')
     .where({ id: input.attachmentId, case_id: input.caseId })
     .whereNull('message_id')
     .first() as CaseAttachmentRow | undefined;
   if (!attachment) throw new AppError(404, 'Attachment not found');
 
-  const report = await getCaseOrThrow(input.tenantDb, input.caseId);
+  const report = await getCaseOrThrow(input.caseId);
   const isCreator = report.created_by === input.userId;
   if (!isCreator && !hasManagePermission(input.permissions)) {
     throw new AppError(403, 'Only the case creator can remove attachments');
   }
 
   const userNames = await resolveUserNames([input.userId]);
-  await input.tenantDb.transaction(async (trx) => {
+  await db.getDb().transaction(async (trx) => {
     await trx('case_attachments').where({ id: input.attachmentId }).delete();
-    await createSystemMessage(trx, {
+    await createSystemMessage({
       caseId: input.caseId,
       userId: input.userId,
       content: `${userNames[input.userId] ?? 'Someone'} removed the attachment: ${attachment.file_name}`,
@@ -829,15 +887,13 @@ export async function deleteAttachment(input: {
 }
 
 export async function listMessages(input: {
-  tenantDb: Knex;
   caseId: string;
 }): Promise<CaseMessage[]> {
-  await getCaseOrThrow(input.tenantDb, input.caseId);
-  return buildCaseMessageTree(input.tenantDb, input.caseId);
+  await getCaseOrThrow(input.caseId);
+  return buildCaseMessageTree(input.caseId);
 }
 
 export async function sendMessage(input: {
-  tenantDb: Knex;
   companyId: string;
   companyStorageRoot: string;
   userId: string;
@@ -849,7 +905,7 @@ export async function sendMessage(input: {
   mentionedRoleIds: string[];
   files: Express.Multer.File[];
 }): Promise<CaseMessage> {
-  const report = await assertCanMutateCase(input.tenantDb, input.caseId, input.permissions);
+  const report = await assertCanMutateCase(input.caseId, input.permissions);
   if (!input.content?.trim() && input.files.length === 0) {
     throw new AppError(400, 'Message must have content or at least one attachment');
   }
@@ -859,8 +915,8 @@ export async function sendMessage(input: {
   }
 
   let messageId = '';
-  await input.tenantDb.transaction(async (trx) => {
-    await upsertParticipant(trx, input.caseId, input.userId, {
+  await db.getDb().transaction(async (trx) => {
+    await upsertParticipant(input.caseId, input.userId, {
       is_joined: true,
       last_read_at: new Date(),
     });
@@ -915,7 +971,6 @@ export async function sendMessage(input: {
   });
 
   await maybeNotifyMentionedUsers({
-    tenantDb: input.tenantDb,
     companyId: input.companyId,
     caseId: input.caseId,
     messageId,
@@ -924,7 +979,7 @@ export async function sendMessage(input: {
     mentionedRoleIds: input.mentionedRoleIds,
   });
 
-  const roots = await buildCaseMessageTree(input.tenantDb, input.caseId);
+  const roots = await buildCaseMessageTree(input.caseId);
   const queue = [...roots];
   while (queue.length > 0) {
     const current = queue.shift()!;
@@ -942,7 +997,6 @@ export async function sendMessage(input: {
 }
 
 export async function toggleReaction(input: {
-  tenantDb: Knex;
   companyId: string;
   userId: string;
   caseId: string;
@@ -950,26 +1004,26 @@ export async function toggleReaction(input: {
   emoji: string;
 }): Promise<{ messageId: string; reactions: CaseReaction[] }> {
   ensureNonEmpty(input.emoji, 'Emoji');
-  const message = await input.tenantDb('case_messages')
+  const message = await db.getDb()('case_messages')
     .where({ id: input.messageId, case_id: input.caseId })
     .first();
   if (!message) throw new AppError(404, 'Message not found');
 
-  const existing = await input.tenantDb('case_reactions')
+  const existing = await db.getDb()('case_reactions')
     .where({ message_id: input.messageId, user_id: input.userId, emoji: input.emoji })
     .first();
 
   if (existing) {
-    await input.tenantDb('case_reactions').where({ id: existing.id }).delete();
+    await db.getDb()('case_reactions').where({ id: existing.id }).delete();
   } else {
-    await input.tenantDb('case_reactions').insert({
+    await db.getDb()('case_reactions').insert({
       message_id: input.messageId,
       user_id: input.userId,
       emoji: input.emoji,
     });
   }
 
-  const { reactionsByMessage } = await resolveMessageDecorations(input.tenantDb, [input.messageId]);
+  const { reactionsByMessage } = await resolveMessageDecorations([input.messageId]);
   const reactions = reactionsByMessage.get(input.messageId) ?? [];
   emitCaseReportEvent('case-report:reaction', input.companyId, {
     caseId: input.caseId,
@@ -980,12 +1034,11 @@ export async function toggleReaction(input: {
 }
 
 export async function leaveDiscussion(input: {
-  tenantDb: Knex;
   userId: string;
   caseId: string;
 }): Promise<{ is_joined: boolean }> {
-  await getCaseOrThrow(input.tenantDb, input.caseId);
-  await upsertParticipant(input.tenantDb, input.caseId, input.userId, {
+  await getCaseOrThrow(input.caseId);
+  await upsertParticipant(input.caseId, input.userId, {
     is_joined: false,
     last_read_at: new Date(),
   });
@@ -993,17 +1046,16 @@ export async function leaveDiscussion(input: {
 }
 
 export async function toggleMute(input: {
-  tenantDb: Knex;
   userId: string;
   caseId: string;
 }): Promise<{ is_muted: boolean }> {
-  await getCaseOrThrow(input.tenantDb, input.caseId);
-  const existing = await input.tenantDb('case_participants')
+  await getCaseOrThrow(input.caseId);
+  const existing = await db.getDb()('case_participants')
     .where({ case_id: input.caseId, user_id: input.userId })
     .first();
   const nextMuted = !(existing?.is_muted ?? false);
 
-  await upsertParticipant(input.tenantDb, input.caseId, input.userId, {
+  await upsertParticipant(input.caseId, input.userId, {
     is_joined: existing?.is_joined ?? true,
     is_muted: nextMuted,
   });
@@ -1019,7 +1071,7 @@ export async function getMentionables(input: {
 }> {
   const [users, roles] = await Promise.all([
     resolveCompanyUsers(input.companyId),
-    db.getMasterDb()('roles').select('id', 'name', 'color').orderBy('priority', 'desc').orderBy('name', 'asc'),
+    db.getDb()('roles').select('id', 'name', 'color').orderBy('priority', 'desc').orderBy('name', 'asc'),
   ]);
 
   return {
@@ -1033,13 +1085,12 @@ export async function getMentionables(input: {
 }
 
 export async function markCaseRead(input: {
-  tenantDb: Knex;
   userId: string;
   caseId: string;
 }): Promise<{ last_read_at: string }> {
-  await getCaseOrThrow(input.tenantDb, input.caseId);
+  await getCaseOrThrow(input.caseId);
   const now = new Date();
-  await upsertParticipant(input.tenantDb, input.caseId, input.userId, {
+  await upsertParticipant(input.caseId, input.userId, {
     is_joined: true,
     last_read_at: now,
   });
@@ -1058,7 +1109,6 @@ function findMessageInTree(messages: CaseMessage[], id: string): CaseMessage | u
 }
 
 export async function editMessage(input: {
-  tenantDb: Knex;
   companyId: string;
   userId: string;
   caseId: string;
@@ -1066,18 +1116,18 @@ export async function editMessage(input: {
   content: string;
 }): Promise<CaseMessage> {
   const content = ensureNonEmpty(input.content, 'Message content');
-  const message = await input.tenantDb('case_messages')
+  const message = await db.getDb()('case_messages')
     .where({ id: input.messageId, case_id: input.caseId })
     .first() as CaseMessageRow | undefined;
   if (!message) throw new AppError(404, 'Message not found');
   if (message.is_system) throw new AppError(400, 'Cannot edit system messages');
   if (message.user_id !== input.userId) throw new AppError(403, 'You can only edit your own messages');
 
-  await input.tenantDb('case_messages')
+  await db.getDb()('case_messages')
     .where({ id: input.messageId })
     .update({ content, updated_at: new Date() });
 
-  const messages = await buildCaseMessageTree(input.tenantDb, input.caseId);
+  const messages = await buildCaseMessageTree(input.caseId);
   const updated = findMessageInTree(messages, input.messageId);
   if (!updated) throw new AppError(500, 'Failed to retrieve updated message');
 
@@ -1090,14 +1140,13 @@ export async function editMessage(input: {
 }
 
 export async function deleteMessage(input: {
-  tenantDb: Knex;
   companyId: string;
   userId: string;
   permissions: string[];
   caseId: string;
   messageId: string;
 }): Promise<void> {
-  const message = await input.tenantDb('case_messages')
+  const message = await db.getDb()('case_messages')
     .where({ id: input.messageId, case_id: input.caseId })
     .first() as CaseMessageRow | undefined;
   if (!message) throw new AppError(404, 'Message not found');
@@ -1108,14 +1157,14 @@ export async function deleteMessage(input: {
   if (!isOwn && !canManage) throw new AppError(403, 'Permission denied');
 
   // Fetch attachments before deleting so we can remove them from S3
-  const attachments = await input.tenantDb('case_attachments')
+  const attachments = await db.getDb()('case_attachments')
     .where({ message_id: input.messageId })
     .select('file_url') as { file_url: string }[];
 
   const userNames = await resolveUserNames([input.userId]);
   const deleterName = userNames[input.userId] ?? 'Someone';
 
-  await input.tenantDb.transaction(async (trx) => {
+  await db.getDb().transaction(async (trx) => {
     await trx('case_messages').where({ id: input.messageId }).update({
       content: `${deleterName} deleted this message`,
       is_deleted: true,

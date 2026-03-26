@@ -1,6 +1,7 @@
-import { ArrowRight } from 'lucide-react';
+import { GitBranch, Star } from "lucide-react";
 import { Badge } from '@/shared/components/ui/Badge';
 import { Card } from '@/shared/components/ui/Card';
+import { useBranchStore } from "@/shared/store/branchStore";
 import type { PeerEvaluation, PeerEvalStatus, PeerEvaluationUser } from '../services/peerEvaluation.api';
 
 interface PeerEvaluationCardProps {
@@ -46,77 +47,87 @@ function UserAvatar({ user }: { user: PeerEvaluationUser }) {
   );
 }
 
-function statusBadgeVariant(status: PeerEvalStatus): 'warning' | 'success' | 'default' {
-  if (status === 'pending') return 'warning';
-  if (status === 'completed') return 'success';
-  return 'default';
+function statusBadgeVariant(status: PeerEvalStatus): "warning" | "success" | "danger" | "default" {
+  if (status === "pending") return "warning";
+  if (status === "completed") return "success";
+  if (status === "expired") return "danger";
+  return "default";
 }
 
 function formatDate(value: string): string {
-  return new Date(value).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+
+  return new Intl.DateTimeFormat("en-PH", {
+    timeZone: "Asia/Manila",
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+  }).format(parsed);
+}
+
+function computeAverageScore(q1: number, q2: number, q3: number): number {
+  return (q1 + q2 + q3) / 3;
 }
 
 export function PeerEvaluationCard({ evaluation, selected, onSelect }: PeerEvaluationCardProps) {
-  const evaluator = evaluation.evaluator;
   const evaluated = evaluation.evaluated;
 
-  const evaluatorName = evaluator
-    ? `${evaluator.first_name} ${evaluator.last_name}`.trim()
-    : 'Unknown';
   const evaluatedName = evaluated
     ? `${evaluated.first_name} ${evaluated.last_name}`.trim()
-    : 'Unknown';
+    : "Unknown";
 
-  const scoresDisplay =
-    evaluation.status === 'completed'
-      ? `${evaluation.q1_score} / ${evaluation.q2_score} / ${evaluation.q3_score}`
-      : '— / — / —';
+  const branches = useBranchStore((s) => s.branches);
+  const branchId = evaluation.branch_id ?? null;
+  const branch = branchId ? branches.find((b) => b.id === branchId) : undefined;
+  const branchName = branch?.name ?? branchId ?? "—";
+
+  const evaluationDate = formatDate(evaluation.shift_date ?? evaluation.created_at);
+  const averageScore = computeAverageScore(evaluation.q1_score, evaluation.q2_score, evaluation.q3_score);
+  const averageDisplay = Number.isFinite(averageScore)
+    ? averageScore % 1 === 0
+      ? String(averageScore)
+      : averageScore.toFixed(2)
+    : "—";
 
   return (
     <div
-      className={`min-w-0 cursor-pointer overflow-hidden rounded-xl transition-shadow hover:shadow-md ${selected ? 'ring-2 ring-primary-500' : ''}`}
+      className={`min-w-0 cursor-pointer overflow-hidden rounded-xl transition-shadow hover:shadow-md ${selected ? "ring-2 ring-primary-500" : ""}`}
       onClick={onSelect}
       role="button"
       tabIndex={0}
-      onKeyDown={(e) => e.key === 'Enter' && onSelect()}
+      onKeyDown={(e) => e.key === "Enter" && onSelect()}
     >
       <Card className="flex h-full flex-col gap-3 p-4">
-        {/* Header: evaluator → evaluated */}
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            {evaluator ? (
-              <UserAvatar user={evaluator} />
-            ) : (
-              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gray-200 text-xs text-gray-500">?</div>
-            )}
-            <span className="truncate text-sm font-medium text-gray-900">{evaluatorName}</span>
-            <ArrowRight className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+        {/* Header: evaluated employee + status */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
             {evaluated ? (
               <UserAvatar user={evaluated} />
             ) : (
               <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gray-200 text-xs text-gray-500">?</div>
             )}
-            <span className="truncate text-sm font-medium text-gray-900">{evaluatedName}</span>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-gray-900">{evaluatedName}</p>
+              <div className="mt-1 flex items-center gap-1.5 text-xs text-gray-500">
+                <GitBranch className="h-3.5 w-3.5 text-gray-400" />
+                <span className="truncate">{branchName}</span>
+              </div>
+            </div>
           </div>
+
           <Badge variant={statusBadgeVariant(evaluation.status)} className="shrink-0">
             {evaluation.status.charAt(0).toUpperCase() + evaluation.status.slice(1)}
           </Badge>
         </div>
 
-        {/* Footer */}
-        <div className="mt-auto flex items-center justify-between gap-2 text-xs text-gray-500">
+        {/* Footer: evaluation date + average score */}
+        <div className="mt-auto flex items-center justify-between gap-2 border-t border-gray-100 pt-2.5">
+          <p className="truncate text-xs text-gray-400">{evaluationDate}</p>
           <div className="flex items-center gap-1.5">
-            <span>{formatDate(evaluation.created_at)}</span>
-            <span className="text-gray-300">·</span>
-            <span>{evaluation.overlap_minutes} min overlap</span>
+            <Star className="h-3.5 w-3.5 text-amber-500" />
+            <span className="font-mono text-sm font-semibold text-gray-800">{averageDisplay}/5</span>
           </div>
-          <span className={`font-mono font-medium ${evaluation.status === 'completed' ? 'text-gray-700' : 'text-gray-400'}`}>
-            {scoresDisplay}
-          </span>
         </div>
       </Card>
     </div>

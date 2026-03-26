@@ -32,24 +32,31 @@ router.use(authenticate, resolveCompany);
 // Approver: list all cash requests
 router.get(
   '/',
-  requirePermission(PERMISSIONS.CASH_REQUEST_VIEW_ALL),
+  requirePermission(PERMISSIONS.CASH_REQUESTS_VIEW),
   cashRequestController.list,
+);
+
+// Approver: get single cash request
+router.get(
+  '/:id',
+  requirePermission(PERMISSIONS.CASH_REQUESTS_VIEW),
+  cashRequestController.getById,
 );
 
 // Approver: approve / reject
 router.post(
   '/:id/approve',
-  requirePermission(PERMISSIONS.CASH_REQUEST_APPROVE),
+  requirePermission(PERMISSIONS.CASH_REQUESTS_MANAGE),
   cashRequestController.approve,
 );
 router.post(
   '/:id/reject',
-  requirePermission(PERMISSIONS.CASH_REQUEST_APPROVE),
+  requirePermission(PERMISSIONS.CASH_REQUESTS_MANAGE),
   cashRequestController.reject,
 );
 router.post(
   '/:id/disburse',
-  requirePermission(PERMISSIONS.CASH_REQUEST_APPROVE),
+  requirePermission(PERMISSIONS.CASH_REQUESTS_MANAGE),
   cashRequestController.disburse,
 );
 

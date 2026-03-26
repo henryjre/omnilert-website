@@ -6,7 +6,6 @@ export interface AccessTokenPayload {
   sub: string;
   companyId: string;
   companySlug: string;
-  companyDbName: string;
   roles: string[];
   permissions: string[];
   branchIds: string[];
@@ -21,7 +20,7 @@ export interface SuperAdminTokenPayload {
 
 export interface RefreshTokenPayload {
   sub: string;
-  companyDbName: string;
+  companyId: string;
   jti?: string;
 }
 
@@ -30,12 +29,12 @@ export function signAccessToken(payload: AccessTokenPayload): string {
   return jwt.sign(payload as object, env.JWT_SECRET, options);
 }
 
-export function signRefreshToken(userId: string, companyDbName: string): string {
+export function signRefreshToken(userId: string, companyId: string): string {
   const options: SignOptions = { expiresIn: env.JWT_REFRESH_EXPIRES_IN as any };
   return jwt.sign(
     {
       sub: userId,
-      companyDbName,
+      companyId,
       jti: crypto.randomUUID(),
     },
     env.JWT_REFRESH_SECRET,

@@ -7,7 +7,6 @@ import { callOdooKw } from './odoo.service.js';
 import { createAndDispatchNotification } from './notification.service.js';
 
 export interface PeerEvaluationJobPayload {
-  companyDbName: string;
   companyId: string;
   shiftId: string;
   branchId: string;
@@ -21,17 +20,54 @@ let boss: PgBoss | null = null;
 let workerId: string | null = null;
 
 function getSingletonKey(payload: PeerEvaluationJobPayload): string {
-  return `${payload.companyDbName}:${payload.shiftId}:peer_evaluation`;
+  return `${payload.companyId}:${payload.shiftId}:peer_evaluation`;
+}
+
+function toOdooDateTime(value: string | Date): string {
+  const parsed = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error(`Invalid datetime value for Odoo domain: ${String(value)}`);
+  }
+  // Odoo domains are safest with "YYYY-MM-DD HH:mm:ss" format.
+  return parsed.toISOString().slice(0, 19).replace('T', ' ');
+}
+
+function parseOdooUtcDateTime(value: string): Date {
+  const trimmed = value.trim();
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(trimmed)) {
+    return new Date(trimmed.replace(' ', 'T') + 'Z');
+  }
+  return new Date(trimmed);
 }
 
 async function processPeerEvaluationJob(job: Job<PeerEvaluationJobPayload>): Promise<void> {
   const payload = job.data;
+  const shiftStartDate = new Date(payload.shiftStart);
+  const shiftEndDate = new Date(payload.shiftEnd);
+  if (Number.isNaN(shiftStartDate.getTime()) || Number.isNaN(shiftEndDate.getTime())) {
+    logger.error(
+      {
+        queue: env.PEER_EVAL_QUEUE_NAME,
+        jobId: job.id,
+        shiftId: payload.shiftId,
+        shiftStart: payload.shiftStart,
+        shiftEnd: payload.shiftEnd,
+      },
+      'Peer evaluation job skipped: invalid shift datetime payload',
+    );
+    return;
+  }
+  const shiftStartDomain = toOdooDateTime(shiftStartDate);
+  const shiftEndDomain = toOdooDateTime(shiftEndDate);
+  const lookbackStartDomain = toOdooDateTime(
+    new Date(shiftStartDate.getTime() - 24 * 60 * 60 * 1000),
+  );
 
   // Step 1: Get tenant DB
-  const tenantDb = await db.getTenantDb(payload.companyDbName);
+  // single DB
 
   // Step 2: Validate shift still ended
-  const shift = await tenantDb('employee_shifts')
+  const shift = await db.getDb()('employee_shifts')
     .where({ id: payload.shiftId, status: 'ended' })
     .first();
   if (!shift) {
@@ -49,12 +85,12 @@ async function processPeerEvaluationJob(job: Job<PeerEvaluationJobPayload>): Pro
   // Step 3: Query Odoo hr.attendance for overlapping records at same branch
   const rawAttendances = (await callOdooKw('hr.attendance', 'search_read', [], {
     domain: [
-      ['company_id', '=', Number(payload.branchOdooId)],
-      ['check_in', '<', payload.shiftEnd],
-      ['check_in', '>=', new Date(new Date(payload.shiftStart).getTime() - 24 * 60 * 60 * 1000).toISOString()],
+      ['x_company_id', '=', Number(payload.branchOdooId)],
+      ['check_in', '<', shiftEndDomain],
+      ['check_in', '>=', lookbackStartDomain],
       '|',
       ['check_out', '=', false],
-      ['check_out', '>', payload.shiftStart],
+      ['check_out', '>', shiftStartDomain],
     ],
     fields: ['id', 'employee_id', 'check_in', 'check_out'],
     limit: 500,
@@ -68,18 +104,23 @@ async function processPeerEvaluationJob(job: Job<PeerEvaluationJobPayload>): Pro
   // Step 4: Calculate overlap per attendance record and group by employee_id
   const overlapByEmployee = new Map<number, number>();
 
-  const shiftStartMs = new Date(payload.shiftStart).getTime();
-  const shiftEndMs = new Date(payload.shiftEnd).getTime();
+  const shiftStartMs = shiftStartDate.getTime();
+  const shiftEndMs = shiftEndDate.getTime();
 
   for (const attendance of rawAttendances) {
     // Skip invalid records where employee_id is not an array
     if (!Array.isArray(attendance.employee_id)) continue;
 
     const employeeOdooId = attendance.employee_id[0];
-    const checkInMs = new Date(attendance.check_in).getTime();
-    const checkOutMs = attendance.check_out
-      ? new Date(attendance.check_out).getTime()
-      : Date.now();
+    const checkInDate = parseOdooUtcDateTime(attendance.check_in);
+    if (Number.isNaN(checkInDate.getTime())) continue;
+    const checkOutDate = attendance.check_out
+      ? parseOdooUtcDateTime(attendance.check_out)
+      : new Date();
+    if (Number.isNaN(checkOutDate.getTime())) continue;
+
+    const checkInMs = checkInDate.getTime();
+    const checkOutMs = checkOutDate.getTime();
 
     const overlapStart = Math.max(checkInMs, shiftStartMs);
     const overlapEnd = Math.min(checkOutMs, shiftEndMs);
@@ -128,8 +169,14 @@ async function processPeerEvaluationJob(job: Job<PeerEvaluationJobPayload>): Pro
     .filter((k): k is string => Boolean(k));
 
   // ONE batch query instead of N serial queries
-  const masterUsers = await db.getMasterDb()('users').whereIn('id', websiteKeys).select('id');
-  const masterUserSet = new Set(masterUsers.map((u) => String(u.id)));
+  const masterUsers = await db.getDb()('users')
+    .whereIn('user_key', websiteKeys)
+    .select('id', 'user_key');
+  const userIdByWebsiteKey = new Map<string, string>();
+  for (const user of masterUsers as Array<{ id: string; user_key: string | null }>) {
+    if (!user.user_key) continue;
+    userIdByWebsiteKey.set(String(user.user_key), String(user.id));
+  }
 
   const qualifyingCoworkers: Array<{ userId: string; overlapMinutes: number }> = [];
 
@@ -148,7 +195,8 @@ async function processPeerEvaluationJob(job: Job<PeerEvaluationJobPayload>): Pro
     }
 
     // Verify user exists in master DB (using pre-fetched set)
-    if (!masterUserSet.has(websiteKey)) {
+    const resolvedUserId = userIdByWebsiteKey.get(websiteKey);
+    if (!resolvedUserId) {
       logger.warn(
         {
           queue: env.PEER_EVAL_QUEUE_NAME,
@@ -162,10 +210,10 @@ async function processPeerEvaluationJob(job: Job<PeerEvaluationJobPayload>): Pro
     }
 
     // Filter out the shift owner (no self-evaluation)
-    if (websiteKey === payload.shiftUserId) continue;
+    if (resolvedUserId === payload.shiftUserId) continue;
 
     const totalOverlap = overlapByEmployee.get(hrEmployee.id) ?? 0;
-    qualifyingCoworkers.push({ userId: websiteKey, overlapMinutes: totalOverlap });
+    qualifyingCoworkers.push({ userId: resolvedUserId, overlapMinutes: totalOverlap });
   }
 
   if (qualifyingCoworkers.length === 0) {
@@ -186,8 +234,9 @@ async function processPeerEvaluationJob(job: Job<PeerEvaluationJobPayload>): Pro
   let firstInsertedId: string | null = null;
 
   for (const coworker of qualifyingCoworkers) {
-    const rows = await tenantDb('peer_evaluations')
+    const rows = await db.getDb()('peer_evaluations')
       .insert({
+        company_id: payload.companyId,
         evaluator_user_id: payload.shiftUserId,
         evaluated_user_id: coworker.userId,
         shift_id: payload.shiftId,
@@ -222,9 +271,28 @@ async function processPeerEvaluationJob(job: Job<PeerEvaluationJobPayload>): Pro
     return;
   }
 
-  // Step 9: Send ONE notification to evaluator
+  // Step 9: Add shift activity log entry for the shift owner
+  const [availabilityLog] = await db.getDb()('shift_logs')
+    .insert({
+      company_id: payload.companyId,
+      shift_id: payload.shiftId,
+      branch_id: payload.branchId,
+      log_type: 'peer_evaluation_available',
+      changes: JSON.stringify({
+        peer_evaluation_id: firstInsertedId,
+        peer_evaluation_count: insertedCount,
+        evaluator_user_id: payload.shiftUserId,
+        note: insertedCount === 1
+          ? 'Peer evaluation is now available for this shift.'
+          : `${insertedCount} peer evaluations are now available for this shift.`,
+      }),
+      event_time: new Date(),
+      odoo_payload: JSON.stringify({}),
+    })
+    .returning('*');
+
+  // Step 10: Send ONE notification to evaluator
   await createAndDispatchNotification({
-    tenantDb,
     userId: payload.shiftUserId,
     title: 'Peer Evaluation Available',
     message: `You have ${insertedCount} peer evaluation(s) to complete from your last shift. They expire in 24 hours.`,
@@ -232,14 +300,18 @@ async function processPeerEvaluationJob(job: Job<PeerEvaluationJobPayload>): Pro
     linkUrl: `/account/notifications?peerEvaluationId=${firstInsertedId}`,
   });
 
-  // Step 10: Emit socket event for HR page
+  // Step 11: Emit socket events for HR page and shift activity feed
   try {
-    getIO().of('/peer-evaluations').to(`company:${payload.companyId}`).emit('peer-evaluation:new', { shiftId: payload.shiftId });
+    const io = getIO();
+    io.of('/peer-evaluations').to(`company:${payload.companyId}`).emit('peer-evaluation:new', { shiftId: payload.shiftId });
+    if (availabilityLog) {
+      io.of('/employee-shifts').to(`branch:${payload.branchId}`).emit('shift:log-new', availabilityLog);
+    }
   } catch {
-    logger.warn('Socket.IO not available for peer evaluation event');
+    logger.warn('Socket.IO not available for peer evaluation events');
   }
 
-  // Step 11: Log success
+  // Step 12: Log success
   logger.info(
     {
       queue: env.PEER_EVAL_QUEUE_NAME,
@@ -256,11 +328,11 @@ export async function initPeerEvaluationQueue(): Promise<void> {
   if (boss) return;
 
   boss = new PgBoss({
-    host: env.MASTER_DB_HOST,
-    port: env.MASTER_DB_PORT,
-    database: env.MASTER_DB_NAME,
-    user: env.MASTER_DB_USER,
-    password: env.MASTER_DB_PASSWORD,
+    host: env.DB_HOST,
+    port: env.DB_PORT,
+    database: env.DB_NAME,
+    user: env.DB_USER,
+    password: env.DB_PASSWORD,
     schema: env.QUEUE_SCHEMA,
   });
 
@@ -284,7 +356,20 @@ export async function initPeerEvaluationQueue(): Promise<void> {
     },
     async (jobs) => {
       for (const job of jobs) {
-        await processPeerEvaluationJob(job);
+        try {
+          await processPeerEvaluationJob(job);
+        } catch (error) {
+          logger.error(
+            {
+              err: error,
+              queue: queueName,
+              jobId: job.id,
+              shiftId: job.data?.shiftId,
+            },
+            'Peer evaluation job failed',
+          );
+          throw error;
+        }
       }
     },
   );

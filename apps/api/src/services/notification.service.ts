@@ -1,4 +1,3 @@
-import type { Knex } from 'knex';
 import webpush from 'web-push';
 import { env } from '../config/env.js';
 import { getIO, hasActiveNotificationSocket } from '../config/socket.js';
@@ -35,8 +34,8 @@ type PushSubscriptionRecord = {
 };
 
 export type CreateAndDispatchNotificationInput = {
-  tenantDb: Knex;
   userId: string;
+  companyId?: string | null;
   title: string;
   message: string;
   type: NotificationType;
@@ -44,7 +43,6 @@ export type CreateAndDispatchNotificationInput = {
 };
 
 export type RegisterPushSubscriptionInput = {
-  tenantDb: Knex;
   userId: string;
   endpoint: string;
   p256dh: string;
@@ -76,9 +74,10 @@ export function getWebPushConfig() {
 export async function createAndDispatchNotification(
   input: CreateAndDispatchNotificationInput,
 ): Promise<NotificationRecord> {
-  const [notif] = await input.tenantDb('employee_notifications')
+  const [notif] = await db.getDb()('employee_notifications')
     .insert({
       user_id: input.userId,
+      company_id: input.companyId ?? null,
       title: input.title,
       message: input.message,
       type: input.type,
@@ -97,14 +96,14 @@ export async function createAndDispatchNotification(
     // Ignore socket failures and continue with push/offline handling.
   }
 
-  await maybeDispatchWebPush(input.tenantDb, input.userId, notification);
+  await maybeDispatchWebPush(input.userId, notification);
   return notification;
 }
 
 export async function registerPushSubscription(
   input: RegisterPushSubscriptionInput,
 ): Promise<void> {
-  const existing = await input.tenantDb('push_subscriptions')
+  const existing = await db.getDb()('push_subscriptions')
     .where({ endpoint: input.endpoint })
     .first();
 
@@ -122,43 +121,41 @@ export async function registerPushSubscription(
   };
 
   if (existing) {
-    await input.tenantDb('push_subscriptions')
+    await db.getDb()('push_subscriptions')
       .where({ endpoint: input.endpoint })
       .update(payload);
     return;
   }
 
-  await input.tenantDb('push_subscriptions').insert({
+  await db.getDb()('push_subscriptions').insert({
     endpoint: input.endpoint,
     ...payload,
   });
 }
 
 export async function unregisterPushSubscription(
-  tenantDb: Knex,
   userId: string,
   endpoint: string,
 ): Promise<void> {
-  await tenantDb('push_subscriptions')
+  await db.getDb()('push_subscriptions')
     .where({ user_id: userId, endpoint })
     .delete();
 }
 
 async function maybeDispatchWebPush(
-  tenantDb: Knex,
   userId: string,
   notification: NotificationRecord,
 ): Promise<void> {
   if (!isWebPushConfigured) return;
   if (hasActiveNotificationSocket(userId)) return;
 
-  const user = await db.getMasterDb()('users')
+  const user = await db.getDb()('users')
     .where({ id: userId })
     .select('push_notifications_enabled')
     .first();
   if (!user || user.push_notifications_enabled === false) return;
 
-  const subscriptions = await tenantDb('push_subscriptions')
+  const subscriptions = await db.getDb()('push_subscriptions')
     .where({ user_id: userId, is_active: true })
     .select('*');
   if (subscriptions.length === 0) return;
@@ -186,7 +183,7 @@ async function maybeDispatchWebPush(
           payload,
         );
 
-        await tenantDb('push_subscriptions')
+        await db.getDb()('push_subscriptions')
           .where({ id: subscription.id })
           .update({
             failure_count: 0,
@@ -200,7 +197,7 @@ async function maybeDispatchWebPush(
         const failureReason = error?.body || error?.message || 'Push send failed';
         const isGone = statusCode === 404 || statusCode === 410;
 
-        await tenantDb('push_subscriptions')
+        await db.getDb()('push_subscriptions')
           .where({ id: subscription.id })
           .update({
             is_active: isGone ? false : subscription.is_active,

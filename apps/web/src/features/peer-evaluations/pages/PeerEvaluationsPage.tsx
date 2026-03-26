@@ -1,15 +1,17 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { createPortal } from 'react-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 import type { GroupedUsersResponse } from '@omnilert/shared';
 import { PERMISSIONS } from '@omnilert/shared';
-import { ArrowDown, ArrowUp, BarChart2, BriefcaseBusiness, ChevronDown, ChevronUp, Filter, Users } from 'lucide-react';
+import { ArrowDown, ArrowUp, BarChart2, BriefcaseBusiness, CheckCircle, ChevronDown, ChevronUp, Clock, Filter, LayoutGrid, Users, XCircle } from 'lucide-react';
 import { Button } from '@/shared/components/ui/Button';
 import { Card, CardBody } from '@/shared/components/ui/Card';
 import { DateRangePicker } from '@/shared/components/ui/DateRangePicker';
-import { Spinner } from '@/shared/components/ui/Spinner';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useSocket } from '@/shared/hooks/useSocket';
 import { useAppToast } from '@/shared/hooks/useAppToast';
+import { useBranchStore } from '@/shared/store/branchStore';
 import { getGroupedUsers } from '@/features/violation-notices/services/violationNotice.api';
 import { GroupedUserSelect } from '@/features/violation-notices/components/GroupedUserSelect';
 import {
@@ -23,19 +25,48 @@ import { PeerEvaluationDetailPanel } from '../components/PeerEvaluationDetailPan
 
 type StatusTab = 'all' | 'pending' | 'completed' | 'expired';
 
-const STATUS_TABS: { key: StatusTab; label: string }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'pending', label: 'Pending' },
-  { key: 'completed', label: 'Completed' },
-  { key: 'expired', label: 'Expired' },
-] as const;
+const STATUS_TABS: { key: StatusTab; label: string; Icon: React.ElementType }[] = [
+  { key: 'all',       label: 'All',       Icon: LayoutGrid  },
+  { key: 'pending',   label: 'Pending',   Icon: Clock       },
+  { key: 'completed', label: 'Completed', Icon: CheckCircle },
+  { key: 'expired',   label: 'Expired',   Icon: XCircle     },
+];
 
 const DEFAULT_FILTERS: PeerEvalFilters = { sort_order: 'desc' };
 
+function PeerEvaluationCardSkeleton() {
+  return (
+    <div className="animate-pulse flex h-full flex-col gap-3 rounded-xl border border-gray-200 bg-white p-4">
+      {/* Header: evaluator -> evaluated */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <div className="h-7 w-7 rounded-full bg-gray-200" />
+          <div className="h-4 w-24 rounded bg-gray-200" />
+          <div className="h-3.5 w-3.5 shrink-0 rounded bg-gray-200" />
+          <div className="h-7 w-7 rounded-full bg-gray-200" />
+          <div className="h-4 w-24 rounded bg-gray-200" />
+        </div>
+        <div className="h-5 w-16 rounded bg-gray-200" />
+      </div>
+
+      {/* Footer */}
+      <div className="mt-auto flex items-center justify-between gap-2 border-t border-gray-100 pt-2.5">
+        <div className="flex items-center gap-1.5">
+          <div className="h-3 w-24 rounded bg-gray-200" />
+          <div className="h-1 w-1 rounded bg-gray-200" />
+          <div className="h-3 w-24 rounded bg-gray-200" />
+        </div>
+        <div className="h-3.5 w-28 rounded bg-gray-200" />
+      </div>
+    </div>
+  );
+}
+
 export function PeerEvaluationsPage() {
   const socket = useSocket('/peer-evaluations');
-  const { hasAnyPermission } = usePermission();
+  const { hasPermission } = usePermission();
   const { error: showErrorToast } = useAppToast();
+  const selectedBranchIds = useBranchStore((s) => s.selectedBranchIds);
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [evaluations, setEvaluations] = useState<PeerEvaluation[]>([]);
@@ -50,7 +81,7 @@ export function PeerEvaluationsPage() {
   const [groupedUsers, setGroupedUsers] = useState<GroupedUsersResponse | null>(null);
   const [loadingGroupedUsers, setLoadingGroupedUsers] = useState(false);
 
-  const canView = hasAnyPermission(PERMISSIONS.PEER_EVALUATION_VIEW, PERMISSIONS.PEER_EVALUATION_MANAGE);
+  const canView = hasPermission(PERMISSIONS.WORKPLACE_RELATIONS_VIEW);
 
   const hasActiveFilters =
     !!filters.date_from ||
@@ -81,6 +112,11 @@ export function PeerEvaluationsPage() {
   useEffect(() => {
     void fetchEvaluations();
   }, [fetchEvaluations]);
+
+  // Refresh when branches change
+  useEffect(() => {
+    void fetchEvaluations(true);
+  }, [selectedBranchIds, fetchEvaluations]);
 
   // Sync selectedId with URL
   useEffect(() => {
@@ -158,6 +194,15 @@ export function PeerEvaluationsPage() {
     setSearchParams({});
   };
 
+  const selectedBranchIdSet = useMemo(() => new Set(selectedBranchIds), [selectedBranchIds]);
+  const filteredEvaluations = useMemo<PeerEvaluation[]>(
+    () =>
+      selectedBranchIdSet.size === 0
+        ? evaluations
+        : evaluations.filter((e) => e.branch_id && selectedBranchIdSet.has(e.branch_id)),
+    [evaluations, selectedBranchIdSet],
+  );
+
   if (!canView) {
     return (
       <div className="space-y-5">
@@ -171,14 +216,17 @@ export function PeerEvaluationsPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {/* Page header */}
       <div>
         <div className="flex items-center gap-3">
           <Users className="h-6 w-6 text-primary-600" />
           <h1 className="text-2xl font-bold text-gray-900">Workplace Relations</h1>
         </div>
-        <p className="mt-1 text-sm font-medium text-gray-600 sm:hidden">Employee Peer Evaluations</p>
+        <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">Employee Peer Evaluations</p>
+        <p className="mt-1 hidden text-sm text-gray-500 sm:block">
+          Review employee peer evaluation submissions.
+        </p>
       </div>
 
       {/* Category tabs */}
@@ -202,19 +250,20 @@ export function PeerEvaluationsPage() {
 
       {/* Status tabs + filter toggle */}
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="mx-auto flex w-full items-center justify-center gap-1 rounded-lg bg-gray-100 p-1 sm:mx-0 sm:w-fit sm:justify-start">
+        <div className="flex w-full gap-1 border-b border-gray-200 sm:w-auto">
           {STATUS_TABS.map((tab) => (
             <button
               key={tab.key}
               type="button"
               onClick={() => setActiveStatus(tab.key)}
-              className={`flex-1 rounded-md px-4 py-1.5 text-center text-sm font-medium transition-colors sm:flex-none ${
+              className={`flex flex-1 items-center justify-center gap-1.5 border-b-2 px-3 py-1.5 text-xs font-medium transition-colors sm:flex-none ${
                 activeStatus === tab.key
-                  ? 'bg-primary-600 text-white shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
-              {tab.label}
+              <tab.Icon className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{tab.label}</span>
             </button>
           ))}
         </div>
@@ -245,8 +294,16 @@ export function PeerEvaluationsPage() {
 
       {hasActiveFilters && <div className="text-xs text-gray-500">Filters applied</div>}
 
-      {/* Filter panel */}
-      {filtersOpen && (
+      {/* Animated filter panel */}
+      <AnimatePresence initial={false}>
+        {filtersOpen && (
+          <motion.div
+            key="filter-panel"
+            initial={{ opacity: 0, height: 0, overflow: 'hidden' }}
+            animate={{ opacity: 1, height: 'auto', overflow: 'visible' }}
+            exit={{ opacity: 0, height: 0, overflow: 'hidden' }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+          >
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {/* Date range */}
@@ -331,22 +388,25 @@ export function PeerEvaluationsPage() {
             </Button>
           </div>
         </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Card grid */}
       {loading ? (
-        <div className="flex justify-center py-12">
-          <Spinner />
+        <div className="grid min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <PeerEvaluationCardSkeleton key={i} />
+          ))}
         </div>
-      ) : evaluations.length === 0 ? (
-        <Card>
-          <CardBody>
-            <p className="py-8 text-center text-gray-500">No evaluations found.</p>
-          </CardBody>
-        </Card>
+      ) : filteredEvaluations.length === 0 ? (
+        <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3.5">
+          <Users className="h-4 w-4 shrink-0 text-gray-300" />
+          <p className="text-sm text-gray-400">No evaluations found.</p>
+        </div>
       ) : (
         <div className="grid min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {evaluations.map((evaluation) => (
+          {filteredEvaluations.map((evaluation) => (
             <PeerEvaluationCard
               key={evaluation.id}
               evaluation={evaluation}
@@ -358,11 +418,28 @@ export function PeerEvaluationsPage() {
       )}
 
       {/* Detail panel */}
-      {selectedEvaluation && (
-        <PeerEvaluationDetailPanel
-          evaluation={selectedEvaluation}
-          onClose={handleClosePanel}
-        />
+      {createPortal(
+        <>
+          {selectedEvaluation && (
+            <div
+              className="fixed inset-0 z-40 bg-black/30"
+              onClick={handleClosePanel}
+            />
+          )}
+          <div
+            className={`fixed inset-y-0 right-0 z-50 w-full max-w-[560px] transform bg-white shadow-2xl transition-transform duration-300 ${
+              selectedEvaluation ? "translate-x-0" : "translate-x-full"
+            }`}
+          >
+            {selectedEvaluation && (
+              <PeerEvaluationDetailPanel
+                evaluation={selectedEvaluation}
+                onClose={handleClosePanel}
+              />
+            )}
+          </div>
+        </>,
+        document.body,
       )}
     </div>
   );

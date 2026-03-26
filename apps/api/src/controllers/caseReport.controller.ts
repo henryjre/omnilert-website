@@ -22,7 +22,6 @@ function parseJsonArray(value: unknown): string[] | undefined {
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
     const data = await caseReportService.listCaseReports({
-      tenantDb: req.tenantDb!,
       userId: req.user!.sub,
       status: typeof req.query.status === 'string' ? req.query.status : undefined,
       search: typeof req.query.search === 'string' ? req.query.search : undefined,
@@ -40,7 +39,6 @@ export async function list(req: Request, res: Response, next: NextFunction) {
 export async function getById(req: Request, res: Response, next: NextFunction) {
   try {
     const data = await caseReportService.getCaseReport({
-      tenantDb: req.tenantDb!,
       userId: req.user!.sub,
       caseId: String(req.params.id),
       markRead: true,
@@ -53,12 +51,13 @@ export async function getById(req: Request, res: Response, next: NextFunction) {
 
 export async function create(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     const data = await caseReportService.createCaseReport({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
+      companyId,
       userId: req.user!.sub,
       title: String(req.body.title ?? ''),
       description: String(req.body.description ?? ''),
+      branchId: typeof req.body.branchId === 'string' ? req.body.branchId : null,
     });
     res.status(201).json({ success: true, data });
   } catch (error) {
@@ -68,9 +67,9 @@ export async function create(req: Request, res: Response, next: NextFunction) {
 
 export async function updateCorrectiveAction(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     const data = await caseReportService.updateCorrectiveAction({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
+      companyId,
       userId: req.user!.sub,
       permissions: req.user!.permissions,
       caseId: String(req.params.id),
@@ -84,9 +83,9 @@ export async function updateCorrectiveAction(req: Request, res: Response, next: 
 
 export async function updateResolution(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     const data = await caseReportService.updateResolution({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
+      companyId,
       userId: req.user!.sub,
       permissions: req.user!.permissions,
       caseId: String(req.params.id),
@@ -100,9 +99,9 @@ export async function updateResolution(req: Request, res: Response, next: NextFu
 
 export async function close(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     const data = await caseReportService.closeCase({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
+      companyId,
       userId: req.user!.sub,
       permissions: req.user!.permissions,
       caseId: String(req.params.id),
@@ -115,10 +114,10 @@ export async function close(req: Request, res: Response, next: NextFunction) {
 
 export async function requestViolationNotice(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     const { description, targetUserIds } = req.body as { description: string; targetUserIds: string[] };
     const result = await caseReportService.requestViolationNotice({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
+      companyId,
       userId: req.user!.sub,
       caseId: String(req.params.id),
       description,
@@ -133,10 +132,10 @@ export async function requestViolationNotice(req: Request, res: Response, next: 
 export async function uploadAttachment(req: Request, res: Response, next: NextFunction) {
   try {
     const file = getUploadedFiles(req)[0];
+    const { companyId, companyStorageRoot } = req.companyContext!;
     const data = await caseReportService.uploadAttachment({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
-      companyStorageRoot: req.companyContext?.companyStorageRoot ?? '',
+      companyId,
+      companyStorageRoot,
       userId: req.user!.sub,
       permissions: req.user!.permissions,
       caseId: String(req.params.id),
@@ -150,9 +149,9 @@ export async function uploadAttachment(req: Request, res: Response, next: NextFu
 
 export async function deleteAttachment(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     await caseReportService.deleteAttachment({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
+      companyId,
       userId: req.user!.sub,
       permissions: req.user!.permissions,
       caseId: String(req.params.id),
@@ -167,7 +166,6 @@ export async function deleteAttachment(req: Request, res: Response, next: NextFu
 export async function listMessages(req: Request, res: Response, next: NextFunction) {
   try {
     const data = await caseReportService.listMessages({
-      tenantDb: req.tenantDb!,
       caseId: String(req.params.id),
     });
     res.json({ success: true, data });
@@ -178,10 +176,10 @@ export async function listMessages(req: Request, res: Response, next: NextFuncti
 
 export async function sendMessage(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId, companyStorageRoot } = req.companyContext!;
     const data = await caseReportService.sendMessage({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
-      companyStorageRoot: req.companyContext?.companyStorageRoot ?? '',
+      companyId,
+      companyStorageRoot,
       userId: req.user!.sub,
       permissions: req.user!.permissions,
       caseId: String(req.params.id),
@@ -201,9 +199,9 @@ export async function sendMessage(req: Request, res: Response, next: NextFunctio
 
 export async function toggleReaction(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     const data = await caseReportService.toggleReaction({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
+      companyId,
       userId: req.user!.sub,
       caseId: String(req.params.id),
       messageId: String(req.params.messageId),
@@ -218,7 +216,6 @@ export async function toggleReaction(req: Request, res: Response, next: NextFunc
 export async function leave(req: Request, res: Response, next: NextFunction) {
   try {
     const data = await caseReportService.leaveDiscussion({
-      tenantDb: req.tenantDb!,
       userId: req.user!.sub,
       caseId: String(req.params.id),
     });
@@ -231,7 +228,6 @@ export async function leave(req: Request, res: Response, next: NextFunction) {
 export async function mute(req: Request, res: Response, next: NextFunction) {
   try {
     const data = await caseReportService.toggleMute({
-      tenantDb: req.tenantDb!,
       userId: req.user!.sub,
       caseId: String(req.params.id),
     });
@@ -255,7 +251,6 @@ export async function mentionables(req: Request, res: Response, next: NextFuncti
 export async function markRead(req: Request, res: Response, next: NextFunction) {
   try {
     const data = await caseReportService.markCaseRead({
-      tenantDb: req.tenantDb!,
       userId: req.user!.sub,
       caseId: String(req.params.id),
     });
@@ -267,9 +262,9 @@ export async function markRead(req: Request, res: Response, next: NextFunction) 
 
 export async function editMessage(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     const data = await caseReportService.editMessage({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
+      companyId,
       userId: req.user!.sub,
       caseId: String(req.params.id),
       messageId: String(req.params.messageId),
@@ -283,9 +278,9 @@ export async function editMessage(req: Request, res: Response, next: NextFunctio
 
 export async function deleteMessage(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     await caseReportService.deleteMessage({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
+      companyId,
       userId: req.user!.sub,
       permissions: req.user!.permissions,
       caseId: String(req.params.id),

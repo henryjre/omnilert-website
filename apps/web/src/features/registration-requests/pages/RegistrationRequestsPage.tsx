@@ -61,7 +61,7 @@ export function RegistrationRequestsPage() {
   const [mode, setMode] = useState<'approve' | 'reject' | null>(null);
 
   const { hasPermission } = usePermission();
-  const canApprove = hasPermission(PERMISSIONS.REGISTRATION_APPROVE);
+  const canApprove = hasPermission(PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_REGISTRATION);
 
   const filteredRequests = useMemo(() => {
     if (statusFilter === 'all') return requests;

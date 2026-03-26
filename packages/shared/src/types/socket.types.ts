@@ -31,6 +31,7 @@ export interface ServerToClientEvents {
   }) => void;
   'notification:count': (data: { unreadCount: number }) => void;
   'user:branch-assignments-updated': (data: { branchIds: string[] }) => void;
+  'user:auth-scope-updated': (data: { userId: string }) => void;
   'auth:force-logout': (data: {
     companyId: string;
     reason: string;

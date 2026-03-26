@@ -139,28 +139,29 @@ export async function assignBranches(req: Request, res: Response, next: NextFunc
 
 export async function getMe(req: Request, res: Response, next: NextFunction) {
   try {
-    const masterDb = db.getMasterDb();
+    const masterDb = db.getDb();
     const userId = req.user!.sub;
 
-    const user = await masterDb('users')
-      .where({ id: userId })
+    const user = await masterDb('users as users')
+      .leftJoin('user_sensitive_info as usi', 'usi.user_id', 'users.id')
+      .where('users.id', userId)
       .select(
-        'id',
-        'email',
-        'first_name',
-        'last_name',
-        'user_key',
-        'mobile_number',
-        'legal_name',
-        'birthday',
-        'gender',
-        'avatar_url',
-        'pin',
-        'valid_id_url',
-        'emergency_contact',
-        'emergency_phone',
-        'bank_id',
-        'bank_account_number',
+        'users.id',
+        'users.email',
+        'users.first_name',
+        'users.last_name',
+        'users.user_key',
+        'users.mobile_number',
+        'usi.legal_name',
+        'usi.birthday',
+        'usi.gender',
+        'users.avatar_url',
+        'usi.pin',
+        'usi.valid_id_url',
+        'usi.emergency_contact',
+        'usi.emergency_phone',
+        'usi.bank_id',
+        'usi.bank_account_number',
       )
       .first();
 
@@ -185,12 +186,13 @@ export async function updateMe(req: Request, res: Response, next: NextFunction) 
 
 export async function getPin(req: Request, res: Response, next: NextFunction) {
   try {
-    const masterDb = db.getMasterDb();
+    const masterDb = db.getDb();
     const userId = req.user!.sub;
 
-    const user = await masterDb('users')
-      .where({ id: userId })
-      .select('id', 'pin')
+    const user = await masterDb('users as users')
+      .leftJoin('user_sensitive_info as usi', 'usi.user_id', 'users.id')
+      .where('users.id', userId)
+      .select('users.id', 'usi.pin')
       .first();
 
     if (!user) throw new AppError(404, 'User not found');
@@ -203,7 +205,7 @@ export async function getPin(req: Request, res: Response, next: NextFunction) {
 
 export async function changeMyPassword(req: Request, res: Response, next: NextFunction) {
   try {
-    const masterDb = db.getMasterDb();
+    const masterDb = db.getDb();
     const userId = req.user!.sub;
     const { currentPassword, newPassword, currentRefreshToken } = req.body;
 
@@ -224,13 +226,30 @@ export async function changeMyPassword(req: Request, res: Response, next: NextFu
     }
 
     const passwordHash = await hashPassword(newPassword);
-    // Ensure provided refresh token belongs to this user/session context
+    if (typeof currentRefreshToken !== 'string' || currentRefreshToken.trim().length === 0) {
+      throw new AppError(400, 'Current session token is required');
+    }
+
+    // Ensure provided refresh token belongs to the authenticated user and is still active.
+    // Note: Company context can be overridden by X-Company-Id for cross-company views, so we
+    // validate the token against persisted sessions instead of comparing token companyId.
     const refreshPayload = verifyRefreshToken(currentRefreshToken);
-    if (refreshPayload.sub !== userId || refreshPayload.companyDbName !== req.user!.companyDbName) {
+    if (refreshPayload.sub !== userId) {
       throw new AppError(401, 'Invalid current session token');
     }
 
     const currentTokenHash = crypto.createHash('sha256').update(currentRefreshToken).digest('hex');
+    const activeSession = await masterDb('refresh_tokens')
+      .where({
+        user_id: userId,
+        token_hash: currentTokenHash,
+        is_revoked: false,
+      })
+      .first('id');
+
+    if (!activeSession) {
+      throw new AppError(401, 'Invalid current session token');
+    }
 
     await masterDb.transaction(async (trx) => {
       await trx('users')
@@ -252,14 +271,15 @@ export async function changeMyPassword(req: Request, res: Response, next: NextFu
 
 export async function setPin(req: Request, res: Response, next: NextFunction) {
   try {
-    const masterDb = db.getMasterDb();
+    const masterDb = db.getDb();
     const userId = req.user!.sub;
     const { companyId } = req.body;
 
     // Get user to check if already has pin
-    const existingUser = await masterDb('users')
-      .where({ id: userId })
-      .select('id', 'pin', 'user_key')
+    const existingUser = await masterDb('users as users')
+      .leftJoin('user_sensitive_info as usi', 'usi.user_id', 'users.id')
+      .where('users.id', userId)
+      .select('users.id', 'usi.pin', 'users.user_key')
       .first();
 
     if (!existingUser) throw new AppError(404, 'User not found');
@@ -284,9 +304,18 @@ export async function setPin(req: Request, res: Response, next: NextFunction) {
     }
 
     // Save pin to user
-    await masterDb('users')
-      .where({ id: userId })
-      .update({ pin, updated_at: new Date() });
+    const now = new Date();
+    await masterDb('user_sensitive_info')
+      .insert({
+        user_id: userId,
+        pin,
+        updated_at: now,
+      })
+      .onConflict('user_id')
+      .merge({
+        pin,
+        updated_at: now,
+      });
 
     res.json({ success: true, data: { pin } });
   } catch (err) {
@@ -300,7 +329,7 @@ function generateFourDigitPin(): string {
 
 export async function resetPin(req: Request, res: Response, next: NextFunction) {
   try {
-    const masterDb = db.getMasterDb();
+    const masterDb = db.getDb();
     const userId = req.user!.sub;
 
     const user = await masterDb('users')
@@ -325,9 +354,18 @@ export async function resetPin(req: Request, res: Response, next: NextFunction) 
       throw new AppError(404, 'No employee records found in Odoo for this user');
     }
 
-    await masterDb('users')
-      .where({ id: userId })
-      .update({ pin, updated_at: new Date() });
+    const now = new Date();
+    await masterDb('user_sensitive_info')
+      .insert({
+        user_id: userId,
+        pin,
+        updated_at: now,
+      })
+      .onConflict('user_id')
+      .merge({
+        pin,
+        updated_at: now,
+      });
 
     res.json({ success: true, data: { pin } });
   } catch (err) {
@@ -341,7 +379,7 @@ export async function resetPin(req: Request, res: Response, next: NextFunction) 
  */
 export async function uploadAvatar(req: Request, res: Response, next: NextFunction) {
   try {
-    const masterDb = db.getMasterDb();
+    const masterDb = db.getDb();
     const userId = req.user!.sub;
     const companyStorageRoot = req.companyContext?.companyStorageRoot ?? '';
     const file = req.file as Express.Multer.File | undefined;

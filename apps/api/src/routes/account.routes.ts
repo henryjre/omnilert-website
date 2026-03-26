@@ -49,8 +49,13 @@ router.get(
 
 router.get(
   '/authorization-requests',
-  requirePermission(PERMISSIONS.ACCOUNT_VIEW_AUTH_REQUESTS),
+  requirePermission(PERMISSIONS.ACCOUNT_MANAGE_AUTH_REQUEST),
   accountController.getAuthorizationRequests,
+);
+router.get(
+  '/authorization-requests/:id',
+  requirePermission(PERMISSIONS.ACCOUNT_MANAGE_AUTH_REQUEST),
+  accountController.getAuthorizationRequestById,
 );
 router.post(
   '/authorization-requests',
@@ -60,8 +65,13 @@ router.post(
 
 router.get(
   '/cash-requests',
-  requirePermission(PERMISSIONS.ACCOUNT_VIEW_CASH_REQUESTS),
+  requirePermission(PERMISSIONS.ACCOUNT_MANAGE_CASH_REQUEST),
   accountController.getCashRequests,
+);
+router.get(
+  '/cash-requests/:id',
+  requirePermission(PERMISSIONS.ACCOUNT_MANAGE_CASH_REQUEST),
+  accountController.getCashRequestById,
 );
 router.get(
   '/audit-results',
@@ -75,75 +85,66 @@ router.get(
 );
 router.post(
   '/cash-requests',
-  requirePermission(PERMISSIONS.ACCOUNT_SUBMIT_CASH_REQUEST),
+  requirePermission(PERMISSIONS.ACCOUNT_MANAGE_CASH_REQUEST),
   upload.single('attachment'),
   accountController.createCashRequest,
 );
 
 router.post(
   '/personal-information/verifications',
-  requirePermission(PERMISSIONS.EMPLOYEE_EDIT_OWN_PROFILE),
   validateBody(submitPersonalInformationVerificationSchema),
   accountController.submitPersonalInformationVerification,
 );
 
 router.get(
   '/profile',
-  requirePermission(PERMISSIONS.EMPLOYEE_VIEW_OWN_PROFILE),
   accountController.getProfile,
 );
 
 router.patch(
   '/email',
-  requirePermission(PERMISSIONS.EMPLOYEE_EDIT_OWN_PROFILE),
   validateBody(updateAccountEmailSchema),
   accountController.updateAccountEmail,
 );
 
 router.post(
   '/valid-id',
-  requirePermission(PERMISSIONS.EMPLOYEE_EDIT_OWN_PROFILE),
   upload.single('document'),
   accountController.uploadValidId,
 );
 
 router.post(
   '/bank-information/verifications',
-  requirePermission(PERMISSIONS.EMPLOYEE_EDIT_OWN_PROFILE),
   validateBody(submitBankInformationVerificationSchema),
   accountController.submitBankInformationVerification,
 );
 
 router.get(
   '/employment/requirements',
-  requirePermission(PERMISSIONS.ACCOUNT_SUBMIT_EMPLOYEE_REQUIREMENTS),
+  requirePermission(PERMISSIONS.ACCOUNT_MANAGE_EMPLOYEE_REQUIREMENTS),
   accountController.getEmploymentRequirements,
 );
 router.post(
   '/employment/requirements/:requirementCode/submit',
-  requirePermission(PERMISSIONS.ACCOUNT_SUBMIT_EMPLOYEE_REQUIREMENTS),
+  requirePermission(PERMISSIONS.ACCOUNT_MANAGE_EMPLOYEE_REQUIREMENTS),
   upload.single('document'),
   accountController.submitEmploymentRequirement,
 );
 
 router.get(
   '/notifications',
-  requirePermission(PERMISSIONS.ACCOUNT_VIEW_NOTIFICATIONS),
   accountController.getNotifications,
 );
 router.get(
   '/notifications/count',
-  requirePermission(PERMISSIONS.ACCOUNT_VIEW_NOTIFICATIONS),
   accountController.getNotificationCount,
 );
 router.put(
   '/notifications/read-all',
-  requirePermission(PERMISSIONS.ACCOUNT_VIEW_NOTIFICATIONS),
   accountController.markAllNotificationsRead,
 );
 router.put(
   '/notifications/:id/read',
-  requirePermission(PERMISSIONS.ACCOUNT_VIEW_NOTIFICATIONS),
   accountController.markNotificationRead,
 );
 router.get('/push/config', accountController.getPushConfig);

@@ -7,8 +7,24 @@ import type {
   StoreAuditAttachment,
   StoreAuditMessage,
 } from '@omnilert/shared';
-import { ExternalLink, Paperclip, Pencil, Send, Trash2, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  Banknote,
+  CheckCircle2,
+  ClipboardCheck,
+  ClipboardList,
+  ExternalLink,
+  Paperclip,
+  Pencil,
+  Receipt,
+  Send,
+  Sparkles,
+  Star,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { ImagePreviewModal } from '@/features/case-reports/components/ImagePreviewModal';
+import { normalizeFileForUpload } from '@/shared/utils/fileUpload';
 import { Button } from '@/shared/components/ui/Button';
 import { useAppToast } from '@/shared/hooks/useAppToast';
 import { api } from '@/shared/services/api.client';
@@ -93,7 +109,7 @@ function toPreviewItems(attachments: StoreAuditAttachment[]): Array<{ url: strin
 }
 
 function formatDateTime(value: string | null): string {
-  if (!value) return '-';
+  if (!value) return '—';
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return new Intl.DateTimeFormat('en-PH', {
@@ -161,14 +177,14 @@ function MarkdownReport({ text }: { text: string }) {
 
     if (isBullet) {
       elements.push(
-        <div key={key++} className="flex gap-2 text-sm text-gray-800">
-          <span className="mt-0.5 shrink-0 text-gray-400">-</span>
+        <div key={key++} className="flex gap-2 text-sm text-gray-700">
+          <span className="mt-0.5 shrink-0 text-gray-400">•</span>
           <span>{renderInline(content)}</span>
         </div>,
       );
     } else {
       elements.push(
-        <p key={key++} className="text-sm text-gray-800">
+        <p key={key++} className="text-sm text-gray-700">
           {renderInline(content)}
         </p>,
       );
@@ -176,6 +192,20 @@ function MarkdownReport({ text }: { text: string }) {
   }
 
   return <div className="space-y-0.5">{elements}</div>;
+}
+
+function StarDisplay({ value }: { value: number | null }) {
+  return (
+    <span className="inline-flex items-center gap-0.5">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <Star
+          key={i}
+          className={`h-3.5 w-3.5 ${i < (value ?? 0) ? 'fill-amber-400 text-amber-400' : 'text-gray-300'}`}
+        />
+      ))}
+      <span className="ml-1 text-xs font-medium text-gray-700">{value ?? '—'}/5</span>
+    </span>
+  );
 }
 
 export function CssAuditDetailPanel({
@@ -230,6 +260,7 @@ export function CssAuditDetailPanel({
   const [editingContent, setEditingContent] = useState('');
   const [savingMessageId, setSavingMessageId] = useState<string | null>(null);
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
+  const [showAllMessages, setShowAllMessages] = useState(false);
   const [previewMedia, setPreviewMedia] = useState<{
     items: { url: string; fileName: string }[];
     index: number;
@@ -260,6 +291,7 @@ export function CssAuditDetailPanel({
     }
     setCriteriaScores(fallback);
   }, [audit.id, audit.css_criteria_scores, audit.status, draftKey]);
+
   const fetchMessages = useCallback(
     async (options?: { silent?: boolean }) => {
       if (!options?.silent) setMessagesLoading(true);
@@ -286,6 +318,7 @@ export function CssAuditDetailPanel({
     setEditingMessageId(null);
     setEditingContent('');
     setPreviewMedia(null);
+    setShowAllMessages(false);
     void fetchMessages();
   }, [fetchMessages]);
 
@@ -319,9 +352,10 @@ export function CssAuditDetailPanel({
   }, []);
 
   const handleFileChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const incoming = Array.from(event.target.files ?? []);
-      if (incoming.length === 0) return;
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const raw = Array.from(event.target.files ?? []);
+      if (raw.length === 0) return;
+      const incoming = await Promise.all(raw.map(normalizeFileForUpload));
 
       let invalidTypeFound = false;
       let oversizeFound = false;
@@ -339,18 +373,12 @@ export function CssAuditDetailPanel({
         accepted.push(file);
       }
 
-      if (invalidTypeFound) {
-        showErrorToast('Only image and video attachments are allowed');
-      }
-      if (oversizeFound) {
-        showErrorToast('Each attachment must be 50MB or smaller');
-      }
+      if (invalidTypeFound) showErrorToast('Only image and video attachments are allowed');
+      if (oversizeFound) showErrorToast('Each attachment must be 50MB or smaller');
 
       setSelectedFiles((current) => {
         const combined = [...current, ...accepted];
-        if (combined.length > 10) {
-          showErrorToast('Maximum of 10 attachments is allowed per message');
-        }
+        if (combined.length > 10) showErrorToast('Maximum of 10 attachments is allowed per message');
         return combined.slice(0, 10);
       });
 
@@ -503,22 +531,41 @@ export function CssAuditDetailPanel({
     },
     [openPreview],
   );
+
   const renderMessageTrail = (readOnly: boolean) => {
     if (messagesLoading) {
-      return <p className="text-sm text-gray-500">Loading audit messages...</p>;
+      return (
+        <div className="space-y-2">
+          {Array.from({ length: 2 }).map((_, i) => (
+            <div key={i} className="animate-pulse rounded-lg border border-gray-200 bg-white p-3">
+              <div className="flex items-start gap-3">
+                <div className="h-9 w-9 rounded-full bg-gray-200" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-3 w-24 rounded bg-gray-200" />
+                  <div className="h-3 w-full rounded bg-gray-200" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      );
     }
 
     if (messages.length === 0) {
       return (
         <p className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-4 text-sm text-gray-500">
-          No audit messages yet.
+          No audit notes yet.
         </p>
       );
     }
 
+    const displayMessages = readOnly && !showAllMessages && messages.length > 5
+      ? messages.slice(0, 5)
+      : messages;
+
     return (
-      <div className="space-y-3">
-        {messages.map((message) => {
+      <div className="space-y-2">
+        {displayMessages.map((message) => {
           const messageOwner = message.user_name?.trim() || 'Unknown User';
           const isOwn = message.user_id === currentUserId;
           const canEditDelete = !readOnly && canMutateMessages && isOwn && !message.is_deleted;
@@ -532,11 +579,11 @@ export function CssAuditDetailPanel({
                     <img
                       src={message.user_avatar}
                       alt={messageOwner}
-                      className="h-9 w-9 rounded-full object-cover"
+                      className="h-8 w-8 rounded-full object-cover"
                     />
                   ) : (
                     <div
-                      className="flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold text-white"
+                      className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold text-white"
                       style={{ backgroundColor: getAvatarColor(messageOwner) }}
                     >
                       {getInitials(messageOwner)}
@@ -622,67 +669,128 @@ export function CssAuditDetailPanel({
             </div>
           );
         })}
+
+        {readOnly && messages.length > 5 && (
+          <button
+            type="button"
+            onClick={() => setShowAllMessages((prev) => !prev)}
+            className="w-full rounded-lg border border-dashed border-gray-300 py-2 text-xs text-gray-500 hover:bg-gray-50"
+          >
+            {showAllMessages ? 'Show fewer messages' : `Show all ${messages.length} messages`}
+          </button>
+        )}
       </div>
     );
   };
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex-1 space-y-4 overflow-y-auto px-6 py-5">
-        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-          <span className="text-gray-500">Company</span>
-          <span className="font-medium text-gray-900">{audit.company?.name || '-'}</span>
-          <span className="text-gray-500">Session</span>
-          <span className="font-medium text-gray-900">{audit.css_session_name || '-'}</span>
-          <span className="text-gray-500">Reference</span>
-          <span className="font-medium text-gray-900">{audit.css_pos_reference || '-'}</span>
-          <span className="text-gray-500">Branch</span>
-          <span className="font-medium text-gray-900">{audit.branch_name || '-'}</span>
-          <span className="text-gray-500">Order Date</span>
-          <span className="font-medium text-gray-900">{formatDateTime(audit.css_date_order)}</span>
-          <span className="text-gray-500">Cashier</span>
-          <span className="font-medium text-gray-900">{audit.css_cashier_name || '-'}</span>
-          <span className="text-gray-500">Amount Total</span>
-          <span className="font-medium text-gray-900">
-            {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(audit.css_amount_total ?? 0))}
-          </span>
-        </div>
+      <div className="flex-1 overflow-y-auto">
 
-        {orderLines.length > 0 && (
-          <div className="overflow-x-auto rounded-lg border border-gray-200">
-            <table className="w-full text-xs">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-3 py-2 text-left font-medium text-gray-500">Product</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-500">Qty</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-500">Unit Price</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {orderLines.map((line, index) => (
-                  <tr key={`${line.product_name}-${index}`}>
-                    <td className="px-3 py-2 text-gray-900">{line.product_name}</td>
-                    <td className="px-3 py-2 text-right text-gray-700">{line.qty}</td>
-                    <td className="px-3 py-2 text-right font-medium text-gray-900">
-                      {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(line.price_unit))}
-                    </td>
-                  </tr>
+        {/* ── PENDING STATE ──────────────────────────────────────────── */}
+        {audit.status === 'pending' && (
+          <div className="space-y-0">
+            {/* Audit details section */}
+            <div className="px-6 py-5">
+              <div className="mb-3 flex items-center gap-2">
+                <ClipboardList className="h-4 w-4 text-gray-400" />
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Audit Details</p>
+              </div>
+              <dl className="divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white">
+                {[
+                  { label: 'Company', value: audit.company?.name || '—' },
+                  { label: 'Branch', value: audit.branch_name || '—' },
+                  { label: 'Session', value: audit.css_session_name || '—' },
+                  { label: 'Reference', value: audit.css_pos_reference || '—' },
+                  { label: 'Order Date', value: formatDateTime(audit.css_date_order) },
+                  { label: 'Cashier', value: audit.css_cashier_name || '—' },
+                  {
+                    label: 'Amount Total',
+                    value: new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(audit.css_amount_total ?? 0)),
+                  },
+                ].map(({ label, value }) => (
+                  <div key={label} className="flex items-baseline gap-4 px-4 py-2.5">
+                    <dt className="w-28 shrink-0 text-xs text-gray-500">{label}</dt>
+                    <dd className="min-w-0 flex-1 text-sm font-medium text-gray-900">{value}</dd>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </dl>
+            </div>
+
+            {/* Order lines */}
+            {orderLines.length > 0 && (
+              <div className="px-6 pb-5">
+                <div className="mb-3 flex items-center gap-2">
+                  <Receipt className="h-4 w-4 text-gray-400" />
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Order Lines</p>
+                </div>
+                <div className="overflow-x-auto rounded-xl border border-gray-200">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2.5 text-left font-medium text-gray-500">Product</th>
+                        <th className="px-3 py-2.5 text-right font-medium text-gray-500">Qty</th>
+                        <th className="px-3 py-2.5 text-right font-medium text-gray-500">Unit Price</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {orderLines.map((line, index) => (
+                        <tr key={`${line.product_name}-${index}`} className="hover:bg-gray-50">
+                          <td className="px-3 py-2 text-gray-900">{line.product_name}</td>
+                          <td className="px-3 py-2 text-right text-gray-700">{line.qty}</td>
+                          <td className="px-3 py-2 text-right font-medium text-gray-900">
+                            {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(line.price_unit))}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
+        {/* ── PROCESSING STATE ───────────────────────────────────────── */}
         {audit.status === 'processing' && (
-          <div className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
+          <div className="space-y-0">
+            {/* Subject banner */}
+            <div className="border-b border-amber-100 bg-amber-50 px-6 py-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-inset ring-amber-200">
+                      <Star className="h-3 w-3" />
+                      CSS Audit
+                    </span>
+                    <span className="text-xs text-amber-700">In Progress</span>
+                  </div>
+                  <p className="mt-1 truncate font-semibold text-amber-900">
+                    {audit.css_cashier_name || '—'}
+                  </p>
+                  <p className="text-xs text-amber-700">{audit.branch_name || ''}</p>
+                </div>
+                {audit.auditor_name && (
+                  <div className="shrink-0 text-right">
+                    <p className="text-xs text-amber-600">Auditor</p>
+                    <p className="text-sm font-medium text-amber-900">{audit.auditor_name}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Scoring section */}
             {canComplete && (
-              <>
-                <p className="text-sm font-semibold text-gray-800">CSS Criteria Scores</p>
-                <div className="space-y-3">
+              <div className="border-b border-gray-200 px-6 py-5">
+                <div className="mb-3 flex items-center gap-2">
+                  <Star className="h-4 w-4 text-amber-500" />
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Scoring Criteria</p>
+                </div>
+                <div className="space-y-2">
                   {CSS_CRITERIA.map((criterion) => (
-                    <div key={criterion.key} className="rounded-lg border border-gray-200 bg-white p-3">
-                      <p className="text-sm font-medium text-gray-800">{criterion.label}</p>
-                      <p className="mb-2 text-xs text-gray-500">{criterion.description}</p>
+                    <div key={criterion.key} className="rounded-xl border border-gray-200 bg-white p-4">
+                      <p className="text-sm font-semibold text-gray-800">{criterion.label}</p>
+                      <p className="mb-3 mt-0.5 text-xs text-gray-500">{criterion.description}</p>
                       <StarRatingInput
                         value={criteriaScores[criterion.key]}
                         onChange={(value) => setCriteriaScores((prev) => ({ ...prev, [criterion.key]: value }))}
@@ -692,180 +800,274 @@ export function CssAuditDetailPanel({
                   ))}
                 </div>
                 {computedAverage !== null && (
-                  <div className="flex items-center gap-2 rounded-lg bg-primary-50 px-3 py-2">
-                    <span className="text-sm text-gray-600">Final Score:</span>
-                    <span className="text-sm font-semibold text-primary-700">{computedAverage.toFixed(2)} / 5</span>
+                  <div className="mt-3 flex items-center justify-between rounded-xl bg-primary-50 px-4 py-3">
+                    <span className="text-sm font-medium text-primary-700">Running Average</span>
+                    <span className="text-lg font-bold text-primary-700">{computedAverage.toFixed(2)} / 5</span>
                   </div>
                 )}
-              </>
-            )}
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-gray-800">Audit Log</label>
-              {renderMessageTrail(false)}
-            </div>
-
-            {canMutateMessages && (
-              <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-3">
-                {selectedFiles.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {selectedFiles.map((file) => (
-                      <span
-                        key={`${file.name}-${file.size}`}
-                        className="inline-flex items-center gap-2 rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700"
-                      >
-                        <span className="max-w-[180px] truncate">{file.name}</span>
-                        <span className="text-[11px] text-gray-500">{formatFileSize(file.size)}</span>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedFiles((current) => current.filter((item) => item !== file))}
-                          className="rounded-full p-0.5 hover:bg-gray-300"
-                          title="Remove attachment"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                <textarea
-                  rows={4}
-                  value={messageDraft}
-                  onChange={(event) => setMessageDraft(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' && !event.shiftKey) {
-                      event.preventDefault();
-                      void handleSendMessage();
-                    }
-                  }}
-                  placeholder="Write detailed audit findings..."
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                />
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                  >
-                    <Paperclip className="h-4 w-4" />
-                    Attach Media
-                  </button>
-
-                  <Button
-                    onClick={() => void handleSendMessage()}
-                    disabled={
-                      actionLoading
-                      || sendingMessage
-                      || (!messageDraft.trim() && selectedFiles.length === 0)
-                    }
-                  >
-                    <span className="inline-flex items-center gap-2">
-                      <Send className="h-4 w-4" />
-                      {sendingMessage ? 'Sending...' : 'Send Message'}
-                    </span>
-                  </Button>
-                </div>
-
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*,video/*"
-                  multiple
-                  className="hidden"
-                  onChange={handleFileChange}
-                />
               </div>
             )}
 
-            {canComplete && !hasVisibleMessages && !messagesLoading && (
-              <p className="text-xs text-amber-700">
-                Send at least one non-deleted message before completing this audit.
-              </p>
-            )}
+            {/* Audit notes / log */}
+            <div className="px-6 py-5">
+              <div className="mb-3 flex items-center gap-2">
+                <ClipboardCheck className="h-4 w-4 text-gray-400" />
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Audit Notes</p>
+              </div>
+
+              {renderMessageTrail(false)}
+
+              {canMutateMessages && (
+                <div className="mt-3 rounded-xl border border-gray-200 bg-white p-3">
+                  {selectedFiles.length > 0 && (
+                    <div className="mb-2 flex flex-wrap gap-2">
+                      {selectedFiles.map((file) => (
+                        <span
+                          key={`${file.name}-${file.size}`}
+                          className="inline-flex items-center gap-2 rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700"
+                        >
+                          <span className="max-w-[180px] truncate">{file.name}</span>
+                          <span className="text-[11px] text-gray-500">{formatFileSize(file.size)}</span>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedFiles((current) => current.filter((item) => item !== file))}
+                            className="rounded-full p-0.5 hover:bg-gray-300"
+                            title="Remove attachment"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  <textarea
+                    rows={3}
+                    value={messageDraft}
+                    onChange={(event) => setMessageDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && !event.shiftKey) {
+                        event.preventDefault();
+                        void handleSendMessage();
+                      }
+                    }}
+                    placeholder="Add observation, finding, or note…"
+                    className="w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                  />
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
+                    >
+                      <Paperclip className="h-3.5 w-3.5" />
+                      Attach Media
+                    </button>
+
+                    <Button
+                      size="sm"
+                      onClick={() => void handleSendMessage()}
+                      disabled={actionLoading || sendingMessage || (!messageDraft.trim() && selectedFiles.length === 0)}
+                    >
+                      <span className="inline-flex items-center gap-1.5">
+                        <Send className="h-3.5 w-3.5" />
+                        {sendingMessage ? 'Sending…' : 'Add Note'}
+                      </span>
+                    </Button>
+                  </div>
+
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*,video/*"
+                    multiple
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+                </div>
+              )}
+
+              {canComplete && !hasVisibleMessages && !messagesLoading && (
+                <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                  <p className="text-xs text-amber-700">
+                    Add at least one audit note before completing this audit.
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
+        {/* ── COMPLETED STATE ────────────────────────────────────────── */}
         {audit.status === 'completed' && (
-          <div className="space-y-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Auditor</p>
-              <p className="text-sm text-gray-900">{audit.auditor_name || '-'}</p>
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Rate</p>
-              <p className="text-sm text-gray-900">
-                {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(audit.monetary_reward ?? 0))}
-              </p>
-            </div>
-            {audit.css_criteria_scores ? (
-              <div>
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Criteria Scores</p>
-                <div className="space-y-1">
-                  {CSS_CRITERIA.map((criterion) => (
-                    <div key={criterion.key} className="flex items-center justify-between text-sm">
-                      <span className="text-gray-700">{criterion.label}</span>
-                      <span className="font-medium text-gray-900">
-                        {audit.css_criteria_scores?.[criterion.key] ?? '-'} / 5
-                      </span>
+          <div className="space-y-0">
+            {/* Receipt header */}
+            <div className="border-b border-green-100 bg-green-50 px-6 py-5">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-100">
+                  <CheckCircle2 className="h-5 w-5 text-green-600" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-green-900">Audit Completed</p>
+                  <p className="mt-0.5 text-xs text-green-700">{formatDateTime(audit.completed_at ?? null)}</p>
+                  {audit.auditor_name && (
+                    <p className="mt-0.5 text-xs text-green-700">by {audit.auditor_name}</p>
+                  )}
+                </div>
+                {Number(audit.monetary_reward ?? 0) > 0 && (
+                  <div className="shrink-0 rounded-lg bg-green-100 px-3 py-1.5 text-right">
+                    <div className="flex items-center gap-1 text-xs text-green-700">
+                      <Banknote className="h-3.5 w-3.5" />
+                      <span>Rate</span>
                     </div>
-                  ))}
-                </div>
-                <div className="mt-2 flex items-center justify-between border-t border-gray-200 pt-2 text-sm">
-                  <span className="font-medium text-gray-700">Overall Average</span>
-                  <span className="font-semibold text-primary-700">
-                    {typeof audit.css_star_rating === 'number' ? audit.css_star_rating.toFixed(2) : audit.css_star_rating} / 5
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Star Rating</p>
-                <p className="text-sm text-gray-900">{audit.css_star_rating ?? '-'} / 5</p>
-              </div>
-            )}
-
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Audit Log</p>
-              {messages.length > 0 ? (
-                <div className="mt-2">{renderMessageTrail(true)}</div>
-              ) : (
-                <p className="whitespace-pre-wrap text-sm text-gray-800">{audit.css_audit_log || '-'}</p>
-              )}
-            </div>
-
-            {messages.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Audit Media Attachments</p>
-                {mediaOnlyAttachments.length === 0 ? (
-                  <p className="text-sm text-gray-800">-</p>
-                ) : (
-                  <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                    {mediaOnlyAttachments.map((attachment) => (
-                      <div key={attachment.id} className="space-y-1">
-                        {renderAttachment(attachment, mediaOnlyAttachments, 'gallery')}
-                        <p className="truncate text-xs text-gray-500" title={attachment.file_name}>
-                          {attachment.file_name}
-                        </p>
-                      </div>
-                    ))}
+                    <p className="text-sm font-bold text-green-800">
+                      {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(audit.monetary_reward ?? 0))}
+                    </p>
                   </div>
                 )}
               </div>
-            )}
-
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">AI Report</p>
-              {audit.css_ai_report ? <MarkdownReport text={audit.css_ai_report} /> : <p className="text-sm text-gray-800">-</p>}
             </div>
 
+            {/* Order details (CSS) */}
+            {orderLines.length > 0 && (
+              <div className="border-b border-gray-200 px-6 py-5">
+                <div className="mb-3 flex items-center gap-2">
+                  <Receipt className="h-4 w-4 text-gray-400" />
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Order Details</p>
+                </div>
+                <dl className="mb-3 divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white">
+                  {[
+                    { label: 'Company', value: audit.company?.name || '—' },
+                    { label: 'Branch', value: audit.branch_name || '—' },
+                    { label: 'Reference', value: audit.css_pos_reference || '—' },
+                    { label: 'Order Date', value: formatDateTime(audit.css_date_order) },
+                    { label: 'Cashier', value: audit.css_cashier_name || '—' },
+                    {
+                      label: 'Amount Total',
+                      value: new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(audit.css_amount_total ?? 0)),
+                    },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="flex items-baseline gap-4 px-4 py-2.5">
+                      <dt className="w-28 shrink-0 text-xs text-gray-500">{label}</dt>
+                      <dd className="min-w-0 flex-1 text-sm font-medium text-gray-900">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+                <div className="overflow-x-auto rounded-xl border border-gray-200">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2.5 text-left font-medium text-gray-500">Product</th>
+                        <th className="px-3 py-2.5 text-right font-medium text-gray-500">Qty</th>
+                        <th className="px-3 py-2.5 text-right font-medium text-gray-500">Unit Price</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {orderLines.map((line, index) => (
+                        <tr key={`${line.product_name}-${index}`} className="hover:bg-gray-50">
+                          <td className="px-3 py-2 text-gray-900">{line.product_name}</td>
+                          <td className="px-3 py-2 text-right text-gray-700">{line.qty}</td>
+                          <td className="px-3 py-2 text-right font-medium text-gray-900">
+                            {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(line.price_unit))}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Scorecard */}
+            <div className="border-b border-gray-200 px-6 py-5">
+              <div className="mb-3 flex items-center gap-2">
+                <Star className="h-4 w-4 text-amber-500" />
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Scorecard</p>
+              </div>
+              {audit.css_criteria_scores ? (
+                <div className="overflow-hidden rounded-xl border border-gray-200">
+                  {CSS_CRITERIA.map((criterion, index) => (
+                    <div
+                      key={criterion.key}
+                      className={`flex items-center justify-between gap-4 px-4 py-3 ${
+                        index < CSS_CRITERIA.length - 1 ? 'border-b border-gray-100' : ''
+                      }`}
+                    >
+                      <span className="text-sm text-gray-700">{criterion.label}</span>
+                      <StarDisplay value={audit.css_criteria_scores?.[criterion.key] ?? null} />
+                    </div>
+                  ))}
+                  <div className="flex items-center justify-between border-t-2 border-gray-200 bg-gray-50 px-4 py-3">
+                    <span className="text-sm font-semibold text-gray-800">Overall Average</span>
+                    <span className="text-base font-bold text-primary-700">
+                      {typeof audit.css_star_rating === 'number' ? audit.css_star_rating.toFixed(2) : audit.css_star_rating ?? '—'} / 5
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-gray-200 px-4 py-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-700">Star Rating</span>
+                    <span className="font-semibold text-primary-700">{audit.css_star_rating ?? '—'} / 5</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Audit Log */}
+            <div className="border-b border-gray-200 px-6 py-5">
+              <div className="mb-3 flex items-center gap-2">
+                <ClipboardCheck className="h-4 w-4 text-gray-400" />
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Audit Notes</p>
+              </div>
+              {messages.length > 0 ? (
+                renderMessageTrail(true)
+              ) : (
+                <p className="whitespace-pre-wrap text-sm text-gray-700">{audit.css_audit_log || '—'}</p>
+              )}
+            </div>
+
+            {/* Media gallery */}
+            {mediaOnlyAttachments.length > 0 && (
+              <div className="border-b border-gray-200 px-6 py-5">
+                <div className="mb-3 flex items-center gap-2">
+                  <Paperclip className="h-4 w-4 text-gray-400" />
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Media Attachments</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {mediaOnlyAttachments.map((attachment) => (
+                    <div key={attachment.id} className="space-y-1">
+                      {renderAttachment(attachment, mediaOnlyAttachments, 'gallery')}
+                      <p className="truncate text-xs text-gray-400" title={attachment.file_name}>
+                        {attachment.file_name}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* AI Report */}
+            {audit.css_ai_report && (
+              <div className="border-b border-gray-200 px-6 py-5">
+                <div className="mb-3 flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-primary-500" />
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">AI Report</p>
+                </div>
+                <div className="rounded-xl bg-gray-50 p-4">
+                  <MarkdownReport text={audit.css_ai_report} />
+                </div>
+              </div>
+            )}
+
+            {/* Linked VN */}
             {audit.linked_vn_id && (
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Violation Notice</p>
+              <div className="px-6 py-5">
                 <button
                   type="button"
                   onClick={() => navigate(`/violation-notices?vnId=${audit.linked_vn_id}`)}
-                  className="mt-1 inline-flex items-center gap-1 text-sm text-primary-700 hover:underline"
+                  className="inline-flex items-center gap-1.5 text-sm text-primary-700 hover:underline"
                 >
                   <ExternalLink className="h-3.5 w-3.5" />
                   View Violation Notice
@@ -876,12 +1078,16 @@ export function CssAuditDetailPanel({
         )}
       </div>
 
+      {/* Footer actions */}
       <div className="border-t border-gray-200 px-6 py-4">
-        {panelError && <p className="mb-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600">{panelError}</p>}
+        {panelError && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{panelError}</p>}
 
         {audit.status === 'pending' && canProcess && (
           <Button className="w-full" onClick={onProcess} disabled={actionLoading}>
-            {actionLoading ? 'Processing...' : 'Process'}
+            <span className="inline-flex items-center gap-2">
+              <ClipboardCheck className="h-4 w-4" />
+              {actionLoading ? 'Processing…' : 'Process Audit'}
+            </span>
           </Button>
         )}
 
@@ -896,19 +1102,20 @@ export function CssAuditDetailPanel({
               } catch {
                 // ignore
               }
-              onComplete({
-                criteria_scores: criteriaScores as CssCriteriaScores,
-              });
+              onComplete({ criteria_scores: criteriaScores as CssCriteriaScores });
             }}
             disabled={actionLoading || messagesLoading || !allScored || !hasVisibleMessages}
           >
-            {actionLoading ? 'Completing...' : 'Audit Complete'}
+            <span className="inline-flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4" />
+              {actionLoading ? 'Completing…' : 'Complete Audit'}
+            </span>
           </Button>
         )}
 
-        {audit.status === 'completed' && !audit.vn_requested && canRequestVN && (
+        {audit.status === 'completed' && canRequestVN && (
           <Button className="w-full" variant="danger" onClick={onRequestVN}>
-            Request VN
+            Request Violation Notice
           </Button>
         )}
       </div>

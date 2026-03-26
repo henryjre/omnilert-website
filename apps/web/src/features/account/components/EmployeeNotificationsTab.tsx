@@ -1,15 +1,39 @@
 import { useEffect, useState, useRef } from 'react';
+import { Pagination } from '@/shared/components/ui/Pagination';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Card, CardBody } from '@/shared/components/ui/Card';
 import { Badge } from '@/shared/components/ui/Badge';
-import { Spinner } from '@/shared/components/ui/Spinner';
 import { Button } from '@/shared/components/ui/Button';
+import { Spinner } from "@/shared/components/ui/Spinner";
+import { AnimatedModal } from "@/shared/components/ui/AnimatedModal";
+import { AnimatePresence } from "framer-motion";
 import { api } from '@/shared/services/api.client';
 import { useAppToast } from '@/shared/hooks/useAppToast';
 import { useNotificationStore } from '@/shared/store/notificationStore';
 import { ShiftExchangeDetailModal } from '@/features/shift-exchange/components/ShiftExchangeDetailModal';
 import { PeerEvaluationModal } from '../../peer-evaluations/components/PeerEvaluationModal';
 import { Bell, Check, X } from 'lucide-react';
+
+function NotificationSkeleton() {
+  return (
+    <div className="animate-pulse rounded-xl border border-l-4 border-gray-200 border-l-gray-200 bg-white p-3 sm:p-4">
+      <div className="flex flex-col gap-2.5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 space-y-2">
+            <div className="h-4 w-40 rounded bg-gray-200" />
+            <div className="h-3 w-full rounded bg-gray-200" />
+            <div className="h-3 w-3/4 rounded bg-gray-200" />
+            <div className="h-3 w-24 rounded bg-gray-200" />
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <div className="h-7 w-24 rounded-lg bg-gray-200" />
+          <div className="h-7 w-16 rounded bg-gray-200" />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function fmtDateTime(dateStr: string): string {
   const d = new Date(dateStr);
@@ -66,6 +90,18 @@ function getShiftExchangeId(linkUrl: string | null | undefined): string | null {
 function getPeerEvaluationId(linkUrl: string | null | undefined): string | null {
   if (!linkUrl) return null;
   const match = linkUrl.match(/[?&]peerEvaluationId=([0-9a-f-]{36})/i);
+  return match?.[1] ?? null;
+}
+
+function getShiftId(linkUrl: string | null | undefined): string | null {
+  if (!linkUrl) return null;
+  const match = linkUrl.match(/[?&]shiftId=([0-9a-f-]{36})/i);
+  return match?.[1] ?? null;
+}
+
+function getRequestId(linkUrl: string | null | undefined): string | null {
+  if (!linkUrl) return null;
+  const match = linkUrl.match(/[?&]requestId=([0-9a-f-]{36})/i);
   return match?.[1] ?? null;
 }
 
@@ -181,6 +217,11 @@ export function EmployeeNotificationsTab() {
     }
     if (linkUrl.startsWith('/case-reports')) {
       navigate(linkUrl);
+      return;
+    }
+    const shiftId = getShiftId(linkUrl);
+    if (shiftId) {
+      navigate(`/account/schedule?shiftId=${shiftId}`);
     }
   };
 
@@ -245,35 +286,35 @@ export function EmployeeNotificationsTab() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex justify-center py-12">
-        <Spinner size="lg" />
-      </div>
-    );
-  }
+  if (loading) return null;
 
-  const typeVariant = (type: string) => {
+  /** Maps notification type → a Tailwind left-border color class. */
+  const typeBorderClass = (type: string): string => {
     switch (type) {
       case 'success':
-        return 'success' as const;
+        return 'border-l-green-500';
       case 'warning':
-        return 'warning' as const;
+        return 'border-l-yellow-500';
+      case 'danger':
       case 'urgent':
-        return 'danger' as const;
+        return 'border-l-red-500';
       default:
-        return 'info' as const;
+        return 'border-l-blue-500';
     }
   };
 
   if (notifications.length === 0) {
     return (
-      <Card>
-        <CardBody className="py-12 text-center">
-          <Bell className="mx-auto h-12 w-12 text-gray-300" />
-          <p className="mt-3 text-sm text-gray-500">No notifications</p>
-        </CardBody>
-      </Card>
+      <div className="space-y-5">
+        <div className="flex items-center gap-3">
+          <Bell className="h-6 w-6 text-primary-600" />
+          <h1 className="text-2xl font-bold text-gray-900">My Notifications</h1>
+        </div>
+        <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3.5">
+          <Bell className="h-4 w-4 shrink-0 text-gray-300" />
+          <p className="text-sm text-gray-400">No notifications yet.</p>
+        </div>
+      </div>
     );
   }
 
@@ -284,7 +325,7 @@ export function EmployeeNotificationsTab() {
     <div className="space-y-6">
       <div className="flex items-center gap-3">
         <Bell className="h-6 w-6 text-primary-600" />
-        <h1 className="text-2xl font-bold text-gray-900">Notifications</h1>
+        <h1 className="text-2xl font-bold text-gray-900">My Notifications</h1>
       </div>
 
       <div className="space-y-3">
@@ -292,15 +333,20 @@ export function EmployeeNotificationsTab() {
           const tokenPayId = getTokenPayVerificationId(n.link_url);
           const shiftExchangeId = getShiftExchangeId(n.link_url);
           const peerEvaluationId = getPeerEvaluationId(n.link_url);
+          const shiftId = getShiftId(n.link_url);
+          const requestId = getRequestId(n.link_url);
+          const isAuthRequestLink = typeof n.link_url === "string" && n.link_url.startsWith("/account/authorization-requests");
+          const isCashRequestLink = typeof n.link_url === "string" && n.link_url.startsWith("/account/cash-requests");
           return (
             <div key={n.id} ref={(el) => { cardRefs.current[n.id] = el; }}>
-            <Card className={`transition-all duration-300 ${n.is_read ? 'opacity-60' : ''} ${highlightId === n.id ? 'ring-2 ring-primary-400 animate-pulse' : ''}`}>
-              <CardBody>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium text-gray-900">{n.title}</p>
-                      {tokenPayId && n.verification_status ? (
+            <Card className={`border-l-4 ${typeBorderClass(n.type)} transition-all duration-300 ${n.is_read ? 'opacity-60' : ''} ${highlightId === n.id ? 'ring-2 ring-primary-400 animate-pulse' : ''}`}>
+              <CardBody className="p-3 sm:p-4">
+                <div className="flex flex-col gap-2.5 sm:flex-row sm:items-start sm:gap-3">
+                  {/* Notification content */}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <p className="text-sm font-medium text-gray-900">{n.title}</p>
+                      {tokenPayId && n.verification_status && (
                         <Badge variant={
                           n.verification_status === 'confirmed' ? 'success'
                           : n.verification_status === 'rejected' ? 'danger'
@@ -308,22 +354,47 @@ export function EmployeeNotificationsTab() {
                         }>
                           {n.verification_status === 'awaiting_customer' ? 'pending' : n.verification_status}
                         </Badge>
-                      ) : (
-                        <Badge variant={typeVariant(n.type)}>{n.type}</Badge>
                       )}
                       {!n.is_read && (
-                        <span className="h-2 w-2 rounded-full bg-primary-500" />
+                        <span className="h-2 w-2 shrink-0 rounded-full bg-primary-500" />
                       )}
                     </div>
-                    <p className="mt-1 text-sm text-gray-600">{n.message}</p>
-                    <p className="mt-1 text-xs text-gray-400">
-                      {fmtDateTime(n.created_at)}
-                    </p>
+                    <p className="mt-1 text-xs text-gray-600">{n.message}</p>
+                    <p className="mt-1 text-xs text-gray-400">{fmtDateTime(n.created_at)}</p>
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
+
+                  {/* Action buttons — below text on mobile, right column on desktop */}
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    {shiftId && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          if (!n.is_read) { void markAsRead(n.id); }
+                          navigate(n.link_url ?? `/account/schedule?shiftId=${shiftId}`);
+                        }}
+                        className="text-xs"
+                      >
+                        View Shift
+                      </Button>
+                    )}
+                    {requestId && (isAuthRequestLink || isCashRequestLink) && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          if (!n.is_read) { void markAsRead(n.id); }
+                          navigate(n.link_url ?? (isAuthRequestLink ? `/account/authorization-requests?requestId=${requestId}` : `/account/cash-requests?requestId=${requestId}`));
+                        }}
+                        className="text-xs"
+                      >
+                        View Request
+                      </Button>
+                    )}
                     {peerEvaluationId && (
                       <Button
                         variant="secondary"
+                        size="sm"
                         onClick={() => setPeerEvalId(peerEvaluationId)}
                         className="text-xs"
                       >
@@ -333,6 +404,7 @@ export function EmployeeNotificationsTab() {
                     {shiftExchangeId && (
                       <Button
                         variant="secondary"
+                        size="sm"
                         onClick={() => setShiftExchangeRequestId(shiftExchangeId)}
                         className="text-xs"
                       >
@@ -341,7 +413,8 @@ export function EmployeeNotificationsTab() {
                     )}
                     {tokenPayId && (
                       <Button
-                        variant={actedNotifIds.has(n.id) ? 'secondary' : 'primary'}
+                        variant="secondary"
+                        size="sm"
                         onClick={() => openTokenPayModal(n.id, tokenPayId)}
                         className="text-xs"
                       >
@@ -351,6 +424,7 @@ export function EmployeeNotificationsTab() {
                     {n.link_url === '/account/settings' && (
                       <Button
                         variant="secondary"
+                        size="sm"
                         onClick={() => { void handleOpenNotificationLink(n); }}
                         className="text-xs"
                       >
@@ -360,6 +434,7 @@ export function EmployeeNotificationsTab() {
                     {n.link_url === '/account/profile' && (
                       <Button
                         variant="secondary"
+                        size="sm"
                         onClick={() => { void handleOpenNotificationLink(n); }}
                         className="text-xs"
                       >
@@ -368,7 +443,8 @@ export function EmployeeNotificationsTab() {
                     )}
                     {!n.is_read && (
                       <button
-                        onClick={() => markAsRead(n.id)}
+                        type="button"
+                        onClick={() => { void markAsRead(n.id); }}
                         className="text-xs text-primary-600 hover:underline"
                       >
                         Mark read
@@ -384,51 +460,34 @@ export function EmployeeNotificationsTab() {
       </div>
 
       {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
-          <span>
-            Page {page} of {totalPages}
-          </span>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page === 1}
-              className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Previous
-            </button>
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
-              className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Next
-            </button>
-          </div>
-        </div>
-      )}
+      <Pagination
+        currentPage={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+      />
 
       {/* Token Pay Verification Modal */}
-      {tokenPayModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-lg rounded-xl bg-white shadow-xl overflow-hidden">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b px-5 py-4">
-              <h3 className="font-semibold text-gray-900">Token Pay Order Verification</h3>
-              <button
-                onClick={closeTokenPayModal}
-                className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {tokenPayLoading ? (
-              <div className="flex justify-center py-12">
-                <Spinner size="lg" />
+      <AnimatePresence>
+        {tokenPayModal && (
+          <AnimatedModal onBackdropClick={closeTokenPayModal} maxWidth="max-w-lg">
+            <div className="w-full rounded-xl bg-white shadow-xl overflow-hidden">
+              {/* Header */}
+              <div className="flex items-center justify-between border-b px-5 py-4">
+                <h3 className="font-semibold text-gray-900">Token Pay Order Verification</h3>
+                <button
+                  onClick={closeTokenPayModal}
+                  className="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                >
+                  <X className="h-5 w-5" />
+                </button>
               </div>
-            ) : tokenPayData ? (
-              <div className="max-h-[70vh] overflow-y-auto p-5 space-y-4">
+
+              {tokenPayLoading ? (
+                <div className="flex justify-center py-12">
+                  <Spinner size="lg" />
+                </div>
+              ) : tokenPayData ? (
+                <div className="max-h-[70vh] overflow-y-auto p-5 space-y-4">
                 {/* Status banner */}
                 {tokenPayData.status === 'confirmed' && (
                   <div className="rounded-lg bg-green-50 border border-green-200 p-3 text-sm text-green-800 flex items-center gap-2">
@@ -622,9 +681,10 @@ export function EmployeeNotificationsTab() {
                 Could not load verification details.
               </div>
             )}
-          </div>
-        </div>
-      )}
+            </div>
+          </AnimatedModal>
+        )}
+      </AnimatePresence>
 
       <ShiftExchangeDetailModal
         isOpen={Boolean(shiftExchangeRequestId)}

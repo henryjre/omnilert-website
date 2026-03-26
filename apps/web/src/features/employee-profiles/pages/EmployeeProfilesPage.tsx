@@ -1,13 +1,41 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Card, CardBody } from '@/shared/components/ui/Card';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Button } from '@/shared/components/ui/Button';
 import { Input } from '@/shared/components/ui/Input';
 import { Spinner } from '@/shared/components/ui/Spinner';
 import { api } from '@/shared/services/api.client';
 import { usePermission } from '@/shared/hooks/usePermission';
+import { useSocket } from '@/shared/hooks/useSocket';
 import { useAppToast } from '@/shared/hooks/useAppToast';
+import { useAuthStore } from '@/features/auth/store/authSlice';
+import { useBranchStore } from '@/shared/store/branchStore';
 import { PERMISSIONS } from '@omnilert/shared';
-import { BadgeCheck, ChevronDown, ChevronUp, Filter, Phone, Users, X } from 'lucide-react';
+import { AlertTriangle, BadgeCheck, Building2, Check, ChevronDown, ChevronUp, Clock3, ExternalLink, Filter, GitBranch, Hash, LogOut, MapPin, Phone, ShieldOff, UserCheck, UserMinus, Users, X } from 'lucide-react';
+
+type RequirementStatus = 'complete' | 'rejected' | 'verification' | 'pending';
+
+interface EmployeeRequirementSummary {
+  total: number;
+  complete: number;
+  rejected: number;
+  verification: number;
+  pending: number;
+}
+
+interface EmployeeRequirementItem {
+  code: string;
+  label: string;
+  sort_order: number;
+  display_status: RequirementStatus;
+  document_url: string | null;
+  latest_submission: {
+    id: string;
+    status: 'pending' | 'approved' | 'rejected';
+    created_at: string;
+    rejection_reason: string | null;
+    reviewed_at: string | null;
+  } | null;
+}
 
 type StatusFilter = 'all' | 'active' | 'resigned' | 'inactive' | 'suspended';
 type EmploymentStatus = 'active' | 'resigned' | 'inactive' | 'suspended';
@@ -45,6 +73,12 @@ type EmployeeCard = {
   is_active: boolean;
   date_started_effective: string | null;
   days_of_employment: number | null;
+  requirement_summary?: EmployeeRequirementSummary;
+};
+
+type EmployeeRequirementSummaryRow = {
+  id: string;
+  summary: EmployeeRequirementSummary;
 };
 
 type EmployeeDetail = {
@@ -116,6 +150,7 @@ type EmployeeDetail = {
   valid_id_url: string | null;
   roles: Array<{ id: string; name: string; color: string | null }>;
   department_options: Array<{ id: string; name: string }>;
+  requirements: EmployeeRequirementItem[];
 };
 
 type WorkFormState = {
@@ -158,8 +193,65 @@ const BANK_LABEL: Record<number, string> = {
   6: 'Maya',
 };
 
+const REQUIREMENT_STATUS_CONFIG: Record<
+  RequirementStatus,
+  { label: string; containerClass: string; iconClass: string; Icon: React.ElementType }
+> = {
+  complete: {
+    label: 'Complete',
+    containerClass: 'bg-green-50 text-green-700',
+    iconClass: 'bg-green-100 text-green-600',
+    Icon: Check,
+  },
+  rejected: {
+    label: 'Rejected',
+    containerClass: 'bg-red-50 text-red-700',
+    iconClass: 'bg-red-100 text-red-600',
+    Icon: X,
+  },
+  verification: {
+    label: 'Verification',
+    containerClass: 'bg-blue-50 text-blue-700',
+    iconClass: 'bg-blue-100 text-blue-600',
+    Icon: Clock3,
+  },
+  pending: {
+    label: 'Incomplete',
+    containerClass: 'bg-amber-50 text-amber-700',
+    iconClass: 'bg-amber-100 text-amber-600',
+    Icon: AlertTriangle,
+  },
+};
+
+function getUrlPath(url: string): string {
+  try {
+    return new URL(url).pathname.toLowerCase();
+  } catch {
+    return url.toLowerCase().split('?')[0] ?? '';
+  }
+}
+
+function getPreviewKind(url: string): 'image' | 'pdf' | 'other' {
+  const path = getUrlPath(url);
+  if (/\.(jpg|jpeg|png|webp|gif|bmp|svg)$/.test(path)) return 'image';
+  if (/\.pdf$/.test(path)) return 'pdf';
+  return 'other';
+}
+
 function getInitials(firstName: string, lastName: string): string {
   return `${firstName?.[0] ?? ''}${lastName?.[0] ?? ''}`.toUpperCase() || '?';
+}
+
+function formatDate(value: string | null | undefined): string {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    timeZone: 'Asia/Manila',
+  });
 }
 
 function toDateInput(value: string | null | undefined): string {
@@ -199,6 +291,28 @@ function getStatusBadge(status: EmploymentStatus): { label: string; className: s
   return { label: 'Inactive', className: 'bg-gray-200 text-gray-700' };
 }
 
+function isNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isEmployeeRequirementSummary(value: unknown): value is EmployeeRequirementSummary {
+  if (!value || typeof value !== 'object') return false;
+  const v = value as Record<string, unknown>;
+  return (
+    isNumber(v.total)
+    && isNumber(v.complete)
+    && isNumber(v.rejected)
+    && isNumber(v.verification)
+    && isNumber(v.pending)
+  );
+}
+
+function isEmployeeRequirementSummaryRow(value: unknown): value is EmployeeRequirementSummaryRow {
+  if (!value || typeof value !== 'object') return false;
+  const v = value as Record<string, unknown>;
+  return typeof v.id === 'string' && isEmployeeRequirementSummary(v.summary);
+}
+
 function isMobileViewport(): boolean {
   if (typeof window === 'undefined') return false;
   return window.matchMedia('(max-width: 767px)').matches;
@@ -230,7 +344,10 @@ function OverflowMorePill({
     <div ref={wrapperRef} className="relative inline-flex">
       <button
         type="button"
-        onClick={() => setOpen((prev) => !prev)}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((prev) => !prev);
+        }}
         className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-600 hover:bg-slate-100"
       >
         +{remaining} more
@@ -347,8 +464,12 @@ export function EmployeeProfilesPage() {
   };
   const PANEL_ANIMATION_MS = 300;
   const { hasPermission } = usePermission();
+  const authUser = useAuthStore((s) => s.user);
+  const selectedBranchIds = useBranchStore((s) => s.selectedBranchIds);
+  const canApproveRequirements = hasPermission(PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_REQUIREMENTS);
   const { success: showSuccessToast, error: showErrorToast } = useAppToast();
-  const canEditWorkProfile = hasPermission(PERMISSIONS.EMPLOYEE_EDIT_WORK_PROFILE);
+  const canEditWorkProfile = hasPermission(PERMISSIONS.EMPLOYEE_PROFILES_MANAGE_WORK);
+  const requirementSummaryMergeRetryDoneRef = useRef(false);
 
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -364,6 +485,7 @@ export function EmployeeProfilesPage() {
   const [isMobile, setIsMobile] = useState(isMobileViewport);
   const pageSize = isMobile ? MOBILE_PAGE_SIZE : DESKTOP_PAGE_SIZE;
   const [items, setItems] = useState<EmployeeCard[]>([]);
+  const [previewDoc, setPreviewDoc] = useState<{ url: string; title: string } | null>(null);
   const [pagination, setPagination] = useState({ total: 0, page: 1, pageSize: pageSize, totalPages: 1 });
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -387,6 +509,11 @@ export function EmployeeProfilesPage() {
     residentBranchId: '',
     dateStarted: '',
   });
+
+  const appliedRoleIdsKey = useMemo(
+    () => [...appliedFilters.roleIds].sort().join(","),
+    [appliedFilters.roleIds],
+  );
 
   const buildDetailFromCard = useCallback((card: EmployeeCard): EmployeeDetail => ({
     id: card.id,
@@ -433,6 +560,7 @@ export function EmployeeProfilesPage() {
     valid_id_url: null,
     roles: [],
     department_options: [],
+    requirements: [],
   }), []);
 
   const applyDetailToState = useCallback((payload: EmployeeDetail) => {
@@ -458,23 +586,31 @@ export function EmployeeProfilesPage() {
       setLoading(true);
     }
     try {
-      const res = await api.get('/employee-profiles', {
-        params: {
-          status,
-          page,
-          pageSize,
-          search: search.trim() || undefined,
-          departmentId: appliedFilters.departmentId || undefined,
-          roleIdsCsv: appliedFilters.roleIds.length > 0 ? appliedFilters.roleIds.join(',') : undefined,
-          sortBy: appliedFilters.sortBy || undefined,
-          sortDirection: appliedFilters.sortBy ? appliedFilters.sortDirection : undefined,
-        },
-      });
+      const [res, reqRes] = await Promise.all([
+        api.get('/employee-profiles', {
+          params: {
+            status,
+            page,
+            pageSize,
+            search: search.trim() || undefined,
+            departmentId: appliedFilters.departmentId || undefined,
+            roleIdsCsv: appliedFilters.roleIds.length > 0 ? appliedFilters.roleIds.join(',') : undefined,
+            sortBy: appliedFilters.sortBy || undefined,
+            sortDirection: appliedFilters.sortBy ? appliedFilters.sortDirection : undefined,
+          },
+        }),
+        api.get('/employee-requirements').catch(() => ({ data: { data: [] } })),
+      ]);
+      const reqSummaries = reqRes.data?.data || [];
+      const summaryMap = new Map<string, EmployeeRequirementSummary>(
+        reqSummaries.map((s: any) => [s.id, s.summary])
+      );
       const payload = res.data.data || {};
       setItems(
         (payload.items || []).map((item: EmployeeCard) => ({
           ...item,
           employment_status: normalizeEmploymentStatus(item.employment_status, item.is_active),
+          requirement_summary: summaryMap.get(item.id),
         })),
       );
       setPagination(payload.pagination || { total: 0, page: 1, pageSize: pageSize, totalPages: 1 });
@@ -502,6 +638,30 @@ export function EmployeeProfilesPage() {
     }
   }, [appliedFilters, page, pageSize, search, showErrorToast, status]);
 
+  const fetchRequirementSummariesAndMerge = useCallback(async () => {
+    try {
+      const reqRes = await api.get("/employee-requirements");
+      const rowsRaw = (reqRes.data as Record<string, unknown> | undefined)?.data;
+      const rowsArray: Array<unknown> = Array.isArray(rowsRaw) ? rowsRaw : [];
+      const summaryRows = rowsArray.filter(isEmployeeRequirementSummaryRow);
+
+      const summaryMap = new Map<string, EmployeeRequirementSummary>();
+      for (const row of summaryRows) {
+        summaryMap.set(row.id, row.summary);
+      }
+
+      setItems((prev) =>
+        prev.map((item) => {
+          const summary = summaryMap.get(item.id);
+          if (!summary) return item;
+          return { ...item, requirement_summary: summary };
+        }),
+      );
+    } catch {
+      // Requirement summaries are optional for the main list; don't block page usage.
+    }
+  }, []);
+
   const fetchDetail = useCallback(async (userId: string, options?: { silentError?: boolean }) => {
     const requestId = ++activeDetailRequestRef.current;
     const cached = detailCacheRef.current[userId];
@@ -513,8 +673,12 @@ export function EmployeeProfilesPage() {
     }
     setDetailLoading(true);
     try {
-      const res = await api.get(`/employee-profiles/${userId}`);
+      const [res, reqRes] = await Promise.all([
+        api.get(`/employee-profiles/${userId}`),
+        api.get(`/employee-requirements/${userId}`).catch(() => ({ data: { data: null } }))
+      ]);
       const payload = res.data.data as EmployeeDetail;
+      payload.requirements = reqRes.data?.data?.requirements || [];
       detailCacheRef.current[userId] = payload;
       if (selectedUserIdRef.current === userId) {
         applyDetailToState(payload);
@@ -533,6 +697,26 @@ export function EmployeeProfilesPage() {
   useEffect(() => {
     fetchList();
   }, [fetchList]);
+
+  // On a full reload, auth state may rehydrate after the first fetchList() completes.
+  // When that happens, /employee-requirements may return an empty result, leaving
+  // `item.requirement_summary` undefined (progress bar won't render).
+  useEffect(() => {
+    if (!canApproveRequirements) return;
+    if (!authUser) return;
+    if (items.length === 0) return;
+
+    const anyMissing = items.some((i) => i.requirement_summary === undefined);
+    if (!anyMissing) return;
+    if (requirementSummaryMergeRetryDoneRef.current) return;
+
+    requirementSummaryMergeRetryDoneRef.current = true;
+    void fetchRequirementSummariesAndMerge();
+  }, [authUser, canApproveRequirements, fetchRequirementSummariesAndMerge, items]);
+
+  useEffect(() => {
+    requirementSummaryMergeRetryDoneRef.current = false;
+  }, [status, page, pageSize, search, appliedFilters.departmentId, appliedRoleIdsKey, appliedFilters.sortBy, appliedFilters.sortDirection]);
 
   useEffect(() => {
     api
@@ -566,6 +750,25 @@ export function EmployeeProfilesPage() {
     setPage(1);
   }, [status]);
 
+  const reqSocket = useSocket('/employee-requirements');
+
+  useEffect(() => {
+    if (!reqSocket) return;
+
+    const onRequirementUpdated = () => {
+      void fetchList({ silent: true });
+      if (selectedUserIdRef.current) {
+        void fetchDetail(selectedUserIdRef.current, { silentError: true });
+      }
+    };
+
+    reqSocket.on('employee-requirement:updated', onRequirementUpdated);
+
+    return () => {
+      reqSocket.off('employee-requirement:updated', onRequirementUpdated);
+    };
+  }, [reqSocket, fetchList, fetchDetail]);
+
   useEffect(() => {
     setPage(1);
   }, [pageSize]);
@@ -573,6 +776,13 @@ export function EmployeeProfilesPage() {
   useEffect(() => {
     setPage(1);
   }, [appliedFilters.departmentId, appliedFilters.roleIds, appliedFilters.sortBy, appliedFilters.sortDirection]);
+
+  useEffect(() => {
+    setPage(1);
+    setPanelOpen(false);
+    setSelectedUserId(null);
+    setDetail(null);
+  }, [selectedBranchIds]);
 
   const selectedCard = useMemo(
     () => items.find((item) => item.id === selectedUserId) ?? null,
@@ -602,6 +812,21 @@ export function EmployeeProfilesPage() {
       || appliedFilters.roleIds.length > 0
       || Boolean(appliedFilters.sortBy),
     [appliedFilters.departmentId, appliedFilters.roleIds.length, appliedFilters.sortBy, search],
+  );
+
+  const selectedBranchIdSet = useMemo(
+    () => new Set(selectedBranchIds),
+    [selectedBranchIds],
+  );
+
+  const filteredItems = useMemo(
+    () => selectedBranchIdSet.size === 0
+      ? items
+      : items.filter((item) => {
+          if (item.resident_branch && selectedBranchIdSet.has(item.resident_branch.branch_id)) return true;
+          return item.borrow_branches.some((b) => selectedBranchIdSet.has(b.branch_id));
+        }),
+    [items, selectedBranchIdSet],
   );
 
   const openFilters = () => {
@@ -946,36 +1171,47 @@ export function EmployeeProfilesPage() {
     void saveWorkInformation();
   };
 
-  if (loading) {
-    return (
-      <div className="flex justify-center py-12">
-        <Spinner size="lg" />
-      </div>
-    );
-  }
+  const STATUS_TABS: Array<{ key: StatusFilter; label: string; Icon: ComponentType<{ className?: string }> }> = [
+    { key: 'all', label: 'All', Icon: Users },
+    { key: 'active', label: 'Active', Icon: UserCheck },
+    { key: 'resigned', label: 'Resigned', Icon: LogOut },
+    { key: 'inactive', label: 'Inactive', Icon: UserMinus },
+    { key: 'suspended', label: 'Suspended', Icon: ShieldOff },
+  ];
 
   return (
     <>
-      <div className="space-y-6">
-        <div className="flex items-center gap-2">
-          <Users className="h-6 w-6 text-primary-600" />
-          <h1 className="text-2xl font-bold text-gray-900">Employee Profiles</h1>
+      <div className="space-y-5">
+        <div className="flex items-start justify-between">
+          <div>
+            <div className="flex items-center gap-3">
+              <Users className="h-6 w-6 text-primary-600" />
+              <h1 className="text-2xl font-bold text-gray-900">Employee Profiles</h1>
+            </div>
+            <p className="mt-0.5 text-sm font-medium text-primary-600 capitalize sm:hidden">
+              {STATUS_TABS.find((t) => t.key === status)?.label}
+            </p>
+            <p className="mt-1 hidden text-sm text-gray-500 sm:block">
+              Manage employee profiles, work information, and requirements.
+            </p>
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="mx-auto flex w-full items-center justify-center gap-1 rounded-lg bg-gray-100 p-1 sm:mx-0 sm:w-fit sm:justify-start">
-            {(['all', 'active', 'resigned', 'inactive', 'suspended'] as StatusFilter[]).map((item) => (
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+          <div className="flex w-full gap-1 border-b border-gray-200 sm:flex-1">
+            {STATUS_TABS.map((tab) => (
               <button
-                key={item}
+                key={tab.key}
                 type="button"
-                onClick={() => setStatus(item)}
-                className={`flex-1 rounded-md px-4 py-1.5 text-center text-sm font-medium capitalize transition-colors sm:flex-none ${
-                  status === item
-                    ? 'bg-primary-600 text-white shadow-sm'
-                    : 'text-gray-500 hover:text-gray-700'
+                onClick={() => setStatus(tab.key)}
+                className={`flex flex-1 items-center justify-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors sm:flex-none ${
+                  status === tab.key
+                    ? 'border-primary-600 text-primary-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
                 }`}
               >
-                {item}
+                <tab.Icon className="h-4 w-4" />
+                <span className="hidden sm:inline">{tab.label}</span>
               </button>
             ))}
           </div>
@@ -983,7 +1219,7 @@ export function EmployeeProfilesPage() {
             type="button"
             onClick={openFilters}
             className={`flex w-full items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors sm:w-auto ${
-              hasActiveFilters || search.trim().length > 0
+              hasActiveFilters
                 ? 'border-primary-300 bg-primary-50 text-primary-700'
                 : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'
             }`}
@@ -991,7 +1227,7 @@ export function EmployeeProfilesPage() {
             <div className="flex items-center gap-2">
               <Filter className="h-4 w-4" />
               <span>Filters</span>
-              {(hasActiveFilters || search.trim().length > 0) && (
+              {hasActiveFilters && (
                 <span className="flex h-4 w-4 items-center justify-center rounded-full bg-primary-600 text-[10px] text-white">
                   !
                 </span>
@@ -1003,102 +1239,112 @@ export function EmployeeProfilesPage() {
           </button>
         </div>
 
-        {filtersOpen && (
-          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Search Employee</label>
-                <Input
-                  value={draftSearch}
-                  onChange={(e) => setDraftSearch(e.target.value)}
-                  placeholder="Search employee"
-                  className="w-full"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Department</label>
-                <select
-                  value={draftFilters.departmentId}
-                  onChange={(e) => setDraftFilters((prev) => ({ ...prev, departmentId: e.target.value }))}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                >
-                  <option value="">All departments</option>
-                  {filterOptions.departments.map((department) => (
-                    <option key={department.id} value={department.id}>
-                      {department.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Sort By</label>
-                <select
-                  value={draftFilters.sortBy}
-                  onChange={(e) =>
-                    setDraftFilters((prev) => ({ ...prev, sortBy: e.target.value as SortBy }))
-                  }
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                >
-                  <option value="">Default</option>
-                  <option value="date_started">Date Started</option>
-                  <option value="days_of_employment">Days of Employment</option>
-                </select>
-              </div>
-              <div className="sm:col-span-2 lg:col-span-3">
-                <label className="mb-1 block text-sm font-medium text-gray-700">Roles</label>
-                <div className="max-h-40 overflow-y-auto rounded-lg border border-gray-200 p-2">
-                  <div className="flex flex-wrap gap-2">
-                    {filterOptions.roles.map((role) => {
-                      const selected = draftFilters.roleIds.includes(role.id);
-                      return (
-                        <button
-                          key={role.id}
-                          type="button"
-                          onClick={() => toggleRoleFilter(role.id)}
-                          className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                            selected
-                              ? 'bg-primary-600 text-white'
-                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                          }`}
-                        >
-                          {role.name}
-                        </button>
-                      );
-                    })}
-                    {filterOptions.roles.length === 0 && (
-                      <span className="text-xs text-gray-500">No roles available</span>
-                    )}
+        <AnimatePresence initial={false}>
+          {filtersOpen && (
+            <motion.div
+              key="filter-panel"
+              initial={{ opacity: 0, height: 0, overflow: 'hidden' }}
+              animate={{ opacity: 1, height: 'auto', overflow: 'visible' }}
+              exit={{ opacity: 0, height: 0, overflow: 'hidden' }}
+              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Search Employee</label>
+                    <Input
+                      value={draftSearch}
+                      onChange={(e) => setDraftSearch(e.target.value)}
+                      placeholder="Search employee"
+                      className="w-full"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Department</label>
+                    <select
+                      value={draftFilters.departmentId}
+                      onChange={(e) => setDraftFilters((prev) => ({ ...prev, departmentId: e.target.value }))}
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    >
+                      <option value="">All departments</option>
+                      {filterOptions.departments.map((department) => (
+                        <option key={department.id} value={department.id}>
+                          {department.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Sort By</label>
+                    <select
+                      value={draftFilters.sortBy}
+                      onChange={(e) =>
+                        setDraftFilters((prev) => ({ ...prev, sortBy: e.target.value as SortBy }))
+                      }
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    >
+                      <option value="">Default</option>
+                      <option value="date_started">Date Started</option>
+                      <option value="days_of_employment">Days of Employment</option>
+                    </select>
+                  </div>
+                  <div className="sm:col-span-2 lg:col-span-3">
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Roles</label>
+                    <div className="max-h-40 overflow-y-auto rounded-md border border-gray-200 bg-white p-2">
+                      <div className="flex flex-wrap gap-2">
+                        {filterOptions.roles.map((role) => {
+                          const selected = draftFilters.roleIds.includes(role.id);
+                          return (
+                            <button
+                              key={role.id}
+                              type="button"
+                              onClick={() => toggleRoleFilter(role.id)}
+                              className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                                selected
+                                  ? 'bg-primary-600 text-white'
+                                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                              }`}
+                            >
+                              {role.name}
+                            </button>
+                          );
+                        })}
+                        {filterOptions.roles.length === 0 && (
+                          <span className="text-xs text-gray-500">No roles available</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Sort Direction</label>
+                    <select
+                      value={draftFilters.sortDirection}
+                      onChange={(e) =>
+                        setDraftFilters((prev) => ({ ...prev, sortDirection: e.target.value as SortDirection }))
+                      }
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                      disabled={!draftFilters.sortBy}
+                    >
+                      <option value="desc">Descending</option>
+                      <option value="asc">Ascending</option>
+                    </select>
                   </div>
                 </div>
+                <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                  <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={clearFilters}>
+                    Clear
+                  </Button>
+                  <Button type="button" className="w-full sm:w-auto" onClick={applyFilters}>
+                    Apply
+                  </Button>
+                  <Button type="button" variant="ghost" className="w-full sm:w-auto" onClick={() => setFiltersOpen(false)}>
+                    Cancel
+                  </Button>
+                </div>
               </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Sort Direction</label>
-                <select
-                  value={draftFilters.sortDirection}
-                  onChange={(e) =>
-                    setDraftFilters((prev) => ({ ...prev, sortDirection: e.target.value as SortDirection }))
-                  }
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                  disabled={!draftFilters.sortBy}
-                >
-                  <option value="desc">Descending</option>
-                  <option value="asc">Ascending</option>
-                </select>
-              </div>
-            </div>
-            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-              <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={clearFilters}>
-                Clear
-              </Button>
-              <Button type="button" className="w-full sm:w-auto" onClick={applyFilters}>
-                Apply
-              </Button>
-              <Button type="button" variant="ghost" className="w-full sm:w-auto" onClick={() => setFiltersOpen(false)}>
-                Cancel
-              </Button>
-            </div>
-          </div>
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {hasActiveFilters && (
           <div className="text-xs text-gray-500">
@@ -1106,102 +1352,184 @@ export function EmployeeProfilesPage() {
           </div>
         )}
 
-        {items.length === 0 ? (
-          <Card>
-            <CardBody className="py-10 text-center text-sm text-gray-500">
-              No employee profiles found.
-            </CardBody>
-          </Card>
+        {loading ? (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="animate-pulse rounded-xl border border-gray-200 bg-white p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="h-12 w-12 rounded-full bg-gray-200" />
+                    <div className="space-y-1.5">
+                      <div className="h-4 w-28 rounded bg-gray-200" />
+                      <div className="h-3 w-20 rounded bg-gray-100" />
+                    </div>
+                  </div>
+                  <div className="h-5 w-16 rounded-full bg-gray-100" />
+                </div>
+                <div className="mt-3 space-y-2 border-t border-gray-100 pt-3">
+                  <div className="h-3 w-24 rounded bg-gray-100" />
+                  <div className="flex gap-1.5">
+                    <div className="h-5 w-16 rounded-full bg-gray-100" />
+                    <div className="h-5 w-16 rounded-full bg-gray-100" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : filteredItems.length === 0 ? (
+          <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3.5">
+            <Users className="h-4 w-4 shrink-0 text-gray-300" />
+            <p className="text-sm text-gray-400">No employee profiles found for the selected filters.</p>
+          </div>
         ) : (
           <>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {items.map((item) => {
+              {filteredItems.map((item) => {
                 const badge = getStatusBadge(item.employment_status);
+                const deptPosition = [item.department_name, item.position_title].filter(Boolean).join(' · ');
                 return (
-                <button
+                <div
                   key={item.id}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      openPanel(item.id);
+                    }
+                  }}
                   onClick={() => openPanel(item.id)}
-                  className={`rounded-xl border bg-white p-4 text-left transition hover:shadow-sm ${
-                    selectedUserId === item.id ? 'border-primary-300' : 'border-gray-200'
+                  className={`flex flex-col rounded-xl border bg-white p-4 text-left transition hover:shadow-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${
+                    selectedUserId === item.id ? 'border-primary-300 ring-1 ring-primary-300 bg-primary-50/50' : 'border-gray-200 hover:border-gray-300'
                   }`}
                 >
+                  {/* Identity row */}
                   <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
+                    <div className="flex min-w-0 items-start gap-3">
                       {item.avatar_url ? (
                         <img
                           src={item.avatar_url}
                           alt={`${item.first_name} ${item.last_name}`}
-                          className="h-11 w-11 rounded-full object-cover"
+                          className="h-12 w-12 shrink-0 rounded-full object-cover"
                         />
                       ) : (
-                        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gray-200 text-sm font-semibold text-gray-600">
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary-100 text-sm font-semibold text-primary-700">
                           {getInitials(item.first_name, item.last_name)}
                         </div>
                       )}
-                      <div>
-                        <p className="font-semibold text-gray-900">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-gray-900">
                           {item.first_name} {item.last_name}
                         </p>
-                        <p className="text-xs text-gray-500">{item.email}</p>
+                        {deptPosition ? (
+                          <p className="mt-0.5 truncate text-xs text-gray-500">{deptPosition}</p>
+                        ) : (
+                          <p className="mt-0.5 text-xs text-gray-400 italic">No department · No position</p>
+                        )}
                       </div>
                     </div>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.className}`}
-                    >
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${badge.className}`}>
                       {badge.label}
                     </span>
                   </div>
 
-                  <div className="mt-3 grid grid-cols-2 gap-y-1 text-xs text-gray-600">
-                    <span>Department</span>
-                    <span className="font-medium text-gray-800">{item.department_name || 'Not set'}</span>
-                    <span>Position</span>
-                    <span className="font-medium text-gray-800">{item.position_title || 'Not set'}</span>
-                    <span>Mobile</span>
-                    <span className="font-medium text-gray-800">{toLocalPhMobile(item.mobile_number) || 'Not set'}</span>
-                    <span>PIN</span>
-                    <span className="font-medium text-gray-800">{item.pin || 'Not set'}</span>
-                  </div>
-                  <div className="mt-3 space-y-2 text-xs text-gray-600">
-                    <div>
-                      <span className="mb-1 block">Companies</span>
-                      {item.companies.length > 0
-                        ? companyPillsWithOverflow(
-                          item.companies.map((company) => ({
-                            key: company.company_id,
-                            label: company.company_name,
-                            themeColor: company.company_theme_color,
-                          })),
-                          3,
-                        )
-                        : <span className="text-gray-500">Not set</span>}
+                  {/* Metadata block */}
+                  <div className="mt-3 border-t border-gray-100 pt-3 space-y-2 pb-3">
+                    {/* PIN */}
+                    <div className="flex items-center gap-2">
+                      <span title="PIN"><Hash className="h-4 w-4 shrink-0 text-gray-400" /></span>
+                      <span className="font-mono text-sm text-gray-800">{item.pin || <span className="text-gray-400 font-sans text-xs">Not set</span>}</span>
                     </div>
-                    <div>
-                      <span className="mb-1 block">Resident Branch</span>
-                      {item.resident_branch ? (
-                        <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
-                          {item.resident_branch.branch_name}
+
+                    {/* Companies */}
+                    <div className="flex items-start gap-2">
+                      <span title="Companies"><Building2 className="mt-0.5 h-4 w-4 shrink-0 text-indigo-400" /></span>
+                      <div className="min-w-0">
+                        {item.companies.length > 0
+                          ? companyPillsWithOverflow(
+                            item.companies.map((company) => ({
+                              key: company.company_id,
+                              label: company.company_name,
+                              themeColor: company.company_theme_color,
+                            })),
+                            2,
+                          )
+                          : <span className="text-xs text-gray-400">Not assigned</span>}
+                      </div>
+                    </div>
+
+                    {/* Resident branch */}
+                    <div className="flex items-center gap-2">
+                      <span title="Resident Branch"><MapPin className="h-4 w-4 shrink-0 text-emerald-500" /></span>
+                      <div className="min-w-0">
+                        {item.resident_branch ? (
+                          <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                            {item.resident_branch.branch_name}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-400">No resident branch</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Borrow branches */}
+                    <div className="flex items-start gap-2">
+                      <span title="Borrow Branches"><GitBranch className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" /></span>
+                      <div className="min-w-0">
+                        {item.borrow_branches.length > 0
+                          ? pillsWithOverflow(
+                            item.borrow_branches.map((branch) => ({
+                              key: `${branch.company_id}:${branch.branch_id}`,
+                              label: branch.branch_name,
+                            })),
+                            2,
+                            'slate',
+                          )
+                          : <span className="text-xs text-gray-400">None</span>}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Requirements — pinned to bottom */}
+                  {hasPermission(PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_REQUIREMENTS) && item.requirement_summary && (
+                    <div className="mt-auto border-t border-gray-100 pt-3">
+                      <div className="mb-1.5 flex items-center justify-between text-xs font-medium text-gray-500">
+                        <span>Requirements</span>
+                        <span>
+                          {item.requirement_summary.complete}/{item.requirement_summary.total}
+                          {' '}
+                          ({item.requirement_summary.total > 0
+                            ? Math.round((item.requirement_summary.complete / item.requirement_summary.total) * 100)
+                            : 0}%)
                         </span>
-                      ) : (
-                        <span className="text-gray-500">N/A</span>
-                      )}
+                      </div>
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+                        <div
+                          className="h-full rounded-full bg-green-500 transition-all duration-500"
+                          style={{
+                            width: `${item.requirement_summary.total > 0
+                              ? Math.round((item.requirement_summary.complete / item.requirement_summary.total) * 100)
+                              : 0}%`,
+                          }}
+                        />
+                      </div>
+                      <div className="mt-2 flex items-center gap-1.5">
+                        <div title="Complete" className="flex items-center justify-center min-w-8 gap-1 rounded bg-green-50 px-1.5 py-0.5 text-[10px] font-medium text-green-700 ring-1 ring-inset ring-green-600/20">
+                          C <span className="text-green-600">{item.requirement_summary.complete}</span>
+                        </div>
+                        <div title="Verification" className="flex items-center justify-center min-w-8 gap-1 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 ring-1 ring-inset ring-blue-600/20">
+                          V <span className="text-blue-600">{item.requirement_summary.verification}</span>
+                        </div>
+                        <div title="Rejected" className="flex items-center justify-center min-w-8 gap-1 rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700 ring-1 ring-inset ring-red-600/20">
+                          R <span className="text-red-600">{item.requirement_summary.rejected}</span>
+                        </div>
+                        <div title="Incomplete" className="flex items-center justify-center min-w-8 gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20">
+                          I <span className="text-amber-600">{item.requirement_summary.pending}</span>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <span className="mb-1 block">Borrow Branches</span>
-                      {item.borrow_branches.length > 0
-                        ? pillsWithOverflow(
-                          item.borrow_branches.map((branch) => ({
-                            key: `${branch.company_id}:${branch.branch_id}`,
-                            label: branch.branch_name,
-                          })),
-                          3,
-                          'slate',
-                        )
-                        : <span className="text-gray-500">None</span>}
-                    </div>
-                  </div>
-                </button>
+                  )}
+                </div>
                 );
               })}
             </div>
@@ -1305,381 +1633,650 @@ export function EmployeeProfilesPage() {
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto px-6 py-5">
+              <div className="flex-1 overflow-y-auto">
                 {!detail ? (
                   <div className="flex justify-center py-12">
                     <Spinner />
                   </div>
                 ) : (
-                  <div className="space-y-5 text-sm">
-                    {detailLoading && (
-                      <div className="rounded bg-blue-50 px-3 py-2 text-xs text-blue-700">
-                        Updating profile details...
-                      </div>
-                    )}
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                      <span className="text-gray-500">Name</span>
-                      <span className="font-medium text-gray-900">
-                        {detail.personal_information.first_name} {detail.personal_information.last_name}
-                      </span>
-                      <span className="text-gray-500">Email</span>
-                      <span className="font-medium text-gray-900">{detail.personal_information.email}</span>
-                      <span className="text-gray-500">Mobile</span>
-                      <span className="font-medium text-gray-900">{selectedMobileDisplay}</span>
-                      <span className="text-gray-500">PIN</span>
-                      <span className="font-medium text-gray-900">{detail.pin || 'Not set'}</span>
-                    </div>
-
-                    {(employeeCallHref || emergencyCallHref) && (
-                      <div className="flex flex-wrap justify-center gap-2">
-                        {employeeCallHref && (
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => {
-                              window.location.href = employeeCallHref;
-                            }}
-                          >
-                            <Phone className="mr-1 h-4 w-4" />
-                            Call Employee
-                          </Button>
-                        )}
-                        {emergencyCallHref && (
-                          <Button
-                            type="button"
-                            variant="danger"
-                            size="sm"
-                            onClick={() => {
-                              window.location.href = emergencyCallHref;
-                            }}
-                          >
-                            <Phone className="mr-1 h-4 w-4" />
-                            Call Emergency
-                          </Button>
-                        )}
-                      </div>
-                    )}
-
-                    <div className="rounded-lg bg-gray-50 p-3">
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Personal Information</p>
-                      <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                        <span className="text-gray-500">Legal Name</span>
-                        <span>{detail.personal_information.legal_name || 'Not set'}</span>
-                        <span className="text-gray-500">Birthday</span>
-                        <span>{detail.personal_information.birthday || 'Not set'}</span>
-                        <span className="text-gray-500">Gender</span>
-                        <span>{detail.personal_information.gender || 'Not set'}</span>
-                        <span className="text-gray-500">Address</span>
-                        <span>{detail.personal_information.address || 'Not set'}</span>
-                        <span className="text-gray-500">Marital Status</span>
-                        <span>{detail.personal_information.marital_status || 'Not set'}</span>
-                        <span className="text-gray-500">SSS Number</span>
-                        <span>{detail.personal_information.sss_number || 'Not set'}</span>
-                        <span className="text-gray-500">TIN Number</span>
-                        <span>{detail.personal_information.tin_number || 'Not set'}</span>
-                        <span className="text-gray-500">Pag-IBIG Number</span>
-                        <span>{detail.personal_information.pagibig_number || 'Not set'}</span>
-                        <span className="text-gray-500">PhilHealth Number</span>
-                        <span>{detail.personal_information.philhealth_number || 'Not set'}</span>
-                      </div>
-                    </div>
-
-                    <div className="rounded-lg bg-gray-50 p-3">
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Emergency Contact Information</p>
-                      <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                        <span className="text-gray-500">Contact Name</span>
-                        <span>{detail.emergency_contact_information.emergency_contact || 'Not set'}</span>
-                        <span className="text-gray-500">Contact Number</span>
-                        <span>{selectedEmergencyDisplay}</span>
-                        <span className="text-gray-500">Relationship</span>
-                        <span>{detail.emergency_contact_information.emergency_relationship || 'Not set'}</span>
-                      </div>
-                    </div>
-
-                    <div className="rounded-lg bg-gray-50 p-3">
-                      <div className="mb-2 flex items-center justify-between">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Work Information</p>
-                        {canEditWorkProfile && !workEditMode && (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            disabled={detailLoading}
-                            onClick={() => {
-                              void enterWorkEditMode();
-                            }}
-                          >
-                            Edit Work Information
-                          </Button>
-                        )}
-                      </div>
-                      {!workEditMode ? (
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                          <div className="col-span-2">
-                            <span className="mb-1 block text-gray-500">Company</span>
-                            {detail.work_information.companies.length > 0
-                              ? companyPillsWithOverflow(
-                                detail.work_information.companies.map((company) => ({
-                                  key: company.company_id,
-                                  label: company.company_name,
-                                  themeColor: company.company_theme_color,
-                                })),
-                                3,
-                              )
-                              : 'Not set'}
-                          </div>
-                          <div className="col-span-2">
-                            <span className="mb-1 block text-gray-500">Resident Branch</span>
-                            {detail.work_information.resident_branch ? (
-                              <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
-                                {detail.work_information.resident_branch.branch_name}
-                              </span>
-                            ) : (
-                              <span>N/A</span>
-                            )}
-                          </div>
-                          {!detail.work_information.resident_branch && detail.work_information.home_resident_branch && (
-                            <>
-                              <span className="text-gray-500">Home Resident Branch</span>
-                              <span>
-                                {detail.work_information.home_resident_branch.branch_name}
-                                {' '}
-                                ({detail.work_information.home_resident_branch.company_name})
-                              </span>
-                            </>
-                          )}
-                          <div className="col-span-2">
-                            <span className="mb-1 block text-gray-500">Borrow Branches</span>
-                            {detail.work_information.borrow_branches.length > 0
-                              ? pillsWithOverflow(
-                                detail.work_information.borrow_branches.map((branch) => ({
-                                  key: `${branch.company_id}:${branch.branch_id}`,
-                                  label: branch.branch_name,
-                                })),
-                                3,
-                                'slate',
-                              )
-                              : 'None'}
-                          </div>
-                          <span className="text-gray-500">Department</span>
-                          <span>{detail.work_information.department_name || 'Not set'}</span>
-                          <span className="text-gray-500">Position</span>
-                          <span>{detail.work_information.position_title || 'Not set'}</span>
-                          <span className="text-gray-500">Status</span>
-                          <span className="capitalize">{detail.work_information.status}</span>
-                          <span className="text-gray-500">Date Started</span>
-                          <span>{detail.work_information.date_started || 'Not set'}</span>
-                          <span className="text-gray-500">Days of Employment</span>
-                          <span>{detail.work_information.days_of_employment ?? 'Not set'}</span>
-                        </div>
+                  <>
+                    {/* Dossier header block */}
+                    <div className="flex items-start gap-4 border-b border-gray-200 px-6 py-5">
+                      {detail.avatar_url ? (
+                        <img
+                          src={detail.avatar_url}
+                          alt={`${detail.personal_information.first_name} ${detail.personal_information.last_name}`}
+                          className="h-[72px] w-[72px] shrink-0 rounded-full object-cover ring-2 ring-gray-100"
+                        />
                       ) : (
+                        <div className="flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-full bg-primary-100 text-xl font-bold text-primary-700 ring-2 ring-gray-100">
+                          {getInitials(detail.personal_information.first_name, detail.personal_information.last_name)}
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xl font-bold text-gray-900 leading-tight">
+                          {detail.personal_information.first_name} {detail.personal_information.last_name}
+                        </p>
+                        {detail.personal_information.legal_name &&
+                          detail.personal_information.legal_name !== `${detail.personal_information.first_name} ${detail.personal_information.last_name}` && (
+                          <p className="mt-0.5 text-xs italic text-gray-400">
+                            Legal: {detail.personal_information.legal_name}
+                          </p>
+                        )}
+                        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                          {(() => {
+                            const badge = getStatusBadge(detail.work_information.status);
+                            return (
+                              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.className}`}>
+                                {badge.label}
+                              </span>
+                            );
+                          })()}
+                          {employeeCallHref && (
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => { window.location.href = employeeCallHref; }}
+                            >
+                              <Phone className="mr-1 h-3.5 w-3.5" />
+                              Call
+                            </Button>
+                          )}
+                          {emergencyCallHref && (
+                            <Button
+                              type="button"
+                              variant="danger"
+                              size="sm"
+                              onClick={() => { window.location.href = emergencyCallHref; }}
+                            >
+                              <Phone className="mr-1 h-3.5 w-3.5" />
+                              Emergency
+                            </Button>
+                          )}
+                        </div>
+                        {(detail.work_information.department_name || detail.work_information.position_title) && (
+                          <p className="mt-1.5 text-sm text-gray-500">
+                            {[detail.work_information.department_name, detail.work_information.position_title].filter(Boolean).join(' · ')}
+                          </p>
+                        )}
+                        <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-xs text-gray-400">
+                          <span>PIN: <span className="font-mono text-gray-700">{detail.pin || '—'}</span></span>
+                          <span>Email: <span className="text-gray-700">{detail.personal_information.email}</span></span>
+                          {detail.personal_information.mobile_number && (
+                            <span>Mobile: <span className="text-gray-700">{selectedMobileDisplay}</span></span>
+                          )}
+                        </div>
+                        {detailLoading && (
+                          <p className="mt-2 text-[11px] text-blue-500">Updating profile details...</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Dossier sections */}
+                    <div className="space-y-3 p-6 text-sm">
+
+                      {/* Personal Information */}
+                      <div className="overflow-hidden rounded-lg border border-gray-200">
+                        <div className="flex items-center border-b border-gray-200 bg-gray-50 px-4 py-2.5">
+                          <span className="text-xs font-semibold uppercase tracking-widest text-gray-400">Personal Information</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-6 gap-y-3 px-4 py-3">
+                          <div>
+                            <p className="text-[11px] uppercase tracking-wide text-gray-400">Birthday</p>
+                            <p className="mt-0.5 font-medium text-gray-800">{formatDate(detail.personal_information.birthday)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[11px] uppercase tracking-wide text-gray-400">Gender</p>
+                            <p className="mt-0.5 font-medium text-gray-800 capitalize">{detail.personal_information.gender || '—'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[11px] uppercase tracking-wide text-gray-400">Marital Status</p>
+                            <p className="mt-0.5 font-medium text-gray-800 capitalize">{detail.personal_information.marital_status || '—'}</p>
+                          </div>
+                          <div className="col-span-2">
+                            <p className="text-[11px] uppercase tracking-wide text-gray-400">Address</p>
+                            <p className="mt-0.5 font-medium text-gray-800">{detail.personal_information.address || '—'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[11px] uppercase tracking-wide text-gray-400">SSS Number</p>
+                            <p className="mt-0.5 font-mono text-sm text-gray-800">{detail.personal_information.sss_number || '—'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[11px] uppercase tracking-wide text-gray-400">TIN Number</p>
+                            <p className="mt-0.5 font-mono text-sm text-gray-800">{detail.personal_information.tin_number || '—'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[11px] uppercase tracking-wide text-gray-400">Pag-IBIG</p>
+                            <p className="mt-0.5 font-mono text-sm text-gray-800">{detail.personal_information.pagibig_number || '—'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[11px] uppercase tracking-wide text-gray-400">PhilHealth</p>
+                            <p className="mt-0.5 font-mono text-sm text-gray-800">{detail.personal_information.philhealth_number || '—'}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Work Information */}
+                      <div className="overflow-hidden rounded-lg border border-gray-200">
+                        <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-2.5">
+                          <span className="text-xs font-semibold uppercase tracking-widest text-gray-400">Work Information</span>
+                          {canEditWorkProfile && !workEditMode && (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={detailLoading}
+                              onClick={() => { void enterWorkEditMode(); }}
+                            >
+                              Edit
+                            </Button>
+                          )}
+                        </div>
+                        <div className="px-4 py-3">
+                      {!workEditMode ? (
                         <div className="space-y-3">
                           <div>
-                            <label className="mb-1 block text-sm font-medium text-gray-700">Department</label>
-                            <select
-                              value={workForm.departmentId}
-                              onChange={(e) => setWorkForm((prev) => ({ ...prev, departmentId: e.target.value }))}
-                              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                            >
-                              <option value="">No department</option>
-                              {detail.department_options.map((department) => (
-                                <option key={department.id} value={department.id}>
-                                  {department.name}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <Input
-                            label="Position"
-                            value={workForm.positionTitle}
-                            onChange={(e) => setWorkForm((prev) => ({ ...prev, positionTitle: e.target.value }))}
-                            placeholder="e.g., Service Crew"
-                          />
-                          <div>
-                            <label className="mb-1 block text-sm font-medium text-gray-700">Date Started</label>
-                            <Input
-                              type="date"
-                              value={workForm.dateStarted}
-                              onChange={(e) => setWorkForm((prev) => ({ ...prev, dateStarted: e.target.value }))}
-                            />
+                            <p className="text-[11px] uppercase tracking-wide text-gray-400">Companies</p>
+                            <div className="mt-1">
+                              {detail.work_information.companies.length > 0
+                                ? companyPillsWithOverflow(
+                                  detail.work_information.companies.map((company) => ({
+                                    key: company.company_id,
+                                    label: company.company_name,
+                                    themeColor: company.company_theme_color,
+                                  })),
+                                  4,
+                                )
+                                : <span className="text-gray-400">—</span>}
+                            </div>
                           </div>
                           <div>
-                            <label className="mb-1 block text-sm font-medium text-gray-700">Status</label>
-                            <select
-                              value={workForm.employmentStatus}
-                              onChange={(e) =>
-                                setWorkForm((prev) => ({
-                                  ...prev,
-                                  employmentStatus: e.target.value as EmploymentStatus,
-                                }))
-                              }
-                              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                            >
-                              <option value="active">Active</option>
-                              <option value="resigned">Resigned</option>
-                              <option value="inactive">Inactive</option>
-                              <option value="suspended">Suspended</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="mb-1 block text-sm font-medium text-gray-700">Resident Company</label>
-                            <select
-                              value={workForm.residentCompanyId}
-                              onChange={(e) => {
-                                const companyId = e.target.value;
-                                const selectedCompany = editCompanyAssignments.find((item) => item.companyId === companyId);
-                                setWorkForm((prev) => ({
-                                  ...prev,
-                                  residentCompanyId: companyId,
-                                  residentBranchId: selectedCompany?.branchIds[0] ?? '',
-                                }));
-                              }}
-                              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                            >
-                              {residentCompanyOptions.map((company) => (
-                                <option key={company.id} value={company.id}>
-                                  {company.name}
-                                </option>
-                              ))}
-                              {residentCompanyOptions.length === 0 && (
-                                <option value="">No assigned companies</option>
+                            <p className="text-[11px] uppercase tracking-wide text-gray-400">Resident Branch</p>
+                            <div className="mt-1">
+                              {detail.work_information.resident_branch ? (
+                                <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                                  {detail.work_information.resident_branch.branch_name}
+                                </span>
+                              ) : (
+                                <span className="text-gray-400">—</span>
                               )}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="mb-1 block text-sm font-medium text-gray-700">Resident Branch</label>
-                            <select
-                              value={workForm.residentBranchId}
-                              onChange={(e) => setWorkForm((prev) => ({ ...prev, residentBranchId: e.target.value }))}
-                              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                            >
-                              {residentBranchOptions.map((branch) => (
-                                <option key={branch.id} value={branch.id}>
-                                  {branch.name}
-                                </option>
-                              ))}
-                              {residentBranchOptions.length === 0 && (
-                                <option value="">No assigned branches</option>
-                              )}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="mb-1 block text-sm font-medium text-gray-700">
-                              Company Access and Odoo Employee Branch Targets
-                            </label>
-                            <div className="space-y-2">
-                              {assignmentOptions.map((company) => {
-                                const selected = editCompanyAssignments.find((item) => item.companyId === company.id);
-                                return (
-                                  <div key={company.id} className="rounded-lg border border-gray-200 p-3">
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleCompany(company.id)}
-                                      className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                                        selected ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                      }`}
-                                    >
-                                      {company.name}
-                                    </button>
-                                    {selected && (
-                                      <div className="mt-2 flex flex-wrap gap-2">
-                                        {company.branches.map((branch) => (
-                                          <button
-                                            key={branch.id}
-                                            type="button"
-                                            onClick={() => toggleBranch(company.id, branch.id)}
-                                            className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                                              selected.branchIds.includes(branch.id)
-                                                ? 'bg-emerald-600 text-white'
-                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                            }`}
-                                          >
-                                            {branch.name}
-                                          </button>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                              {assignmentOptionsLoading && (
-                                <div className="rounded bg-blue-50 px-3 py-2 text-xs text-blue-700">
-                                  Loading assignment options...
-                                </div>
+                              {!detail.work_information.resident_branch && detail.work_information.home_resident_branch && (
+                                <span className="ml-2 text-xs text-gray-500">
+                                  (Home: {detail.work_information.home_resident_branch.branch_name})
+                                </span>
                               )}
                             </div>
                           </div>
-                          <div className="flex gap-2">
-                            <Button variant="success" onClick={handleSaveWorkInformation} disabled={savingWork}>
-                              {savingWork ? 'Saving...' : 'Save'}
-                            </Button>
-                            <Button
-                              variant="secondary"
-                              onClick={cancelWorkEdit}
-                              disabled={savingWork}
-                            >
-                              Cancel
-                            </Button>
+                          <div>
+                            <p className="text-[11px] uppercase tracking-wide text-gray-400">Borrow Branches</p>
+                            <div className="mt-1">
+                              {detail.work_information.borrow_branches.length > 0
+                                ? pillsWithOverflow(
+                                  detail.work_information.borrow_branches.map((branch) => ({
+                                    key: `${branch.company_id}:${branch.branch_id}`,
+                                    label: branch.branch_name,
+                                  })),
+                                  4,
+                                  'slate',
+                                )
+                                : <span className="text-gray-400">None</span>}
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-x-6 gap-y-3 border-t border-gray-100 pt-3">
+                            <div>
+                              <p className="text-[11px] uppercase tracking-wide text-gray-400">Department</p>
+                              <p className="mt-0.5 font-medium text-gray-800">{detail.work_information.department_name || '—'}</p>
+                            </div>
+                            <div>
+                              <p className="text-[11px] uppercase tracking-wide text-gray-400">Position</p>
+                              <p className="mt-0.5 font-medium text-gray-800">{detail.work_information.position_title || '—'}</p>
+                            </div>
+                            <div>
+                              <p className="text-[11px] uppercase tracking-wide text-gray-400">Date Started</p>
+                              <p className="mt-0.5 font-medium text-gray-800">{formatDate(detail.work_information.date_started)}</p>
+                            </div>
+                            <div>
+                              <p className="text-[11px] uppercase tracking-wide text-gray-400">Days Employed</p>
+                              <p className="mt-0.5 font-medium text-gray-800">{detail.work_information.days_of_employment ?? '—'}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <AnimatePresence initial={false}>
+                          <motion.div
+                            key="work-edit-form"
+                            initial={{ opacity: 0, y: 6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 6 }}
+                            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                            className="space-y-4"
+                          >
+                            {/* Row 1: Department + Position */}
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-400">Department</label>
+                                <select
+                                  value={workForm.departmentId}
+                                  onChange={(e) => setWorkForm((prev) => ({ ...prev, departmentId: e.target.value }))}
+                                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                                >
+                                  <option value="">No department</option>
+                                  {detail.department_options.map((department) => (
+                                    <option key={department.id} value={department.id}>
+                                      {department.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-400">Position</label>
+                                <input
+                                  type="text"
+                                  value={workForm.positionTitle}
+                                  onChange={(e) => setWorkForm((prev) => ({ ...prev, positionTitle: e.target.value }))}
+                                  placeholder="e.g., Service Crew"
+                                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Row 2: Date Started + Status */}
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-400">Date Started</label>
+                                <input
+                                  type="date"
+                                  value={workForm.dateStarted}
+                                  onChange={(e) => setWorkForm((prev) => ({ ...prev, dateStarted: e.target.value }))}
+                                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                                />
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-400">Employment Status</label>
+                                <select
+                                  value={workForm.employmentStatus}
+                                  onChange={(e) =>
+                                    setWorkForm((prev) => ({
+                                      ...prev,
+                                      employmentStatus: e.target.value as EmploymentStatus,
+                                    }))
+                                  }
+                                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                                >
+                                  <option value="active">Active</option>
+                                  <option value="resigned">Resigned</option>
+                                  <option value="inactive">Inactive</option>
+                                  <option value="suspended">Suspended</option>
+                                </select>
+                              </div>
+                            </div>
+
+                            {/* Row 3: Resident Company + Resident Branch */}
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-400">Resident Company</label>
+                                <select
+                                  value={workForm.residentCompanyId}
+                                  onChange={(e) => {
+                                    const companyId = e.target.value;
+                                    const selectedCompany = editCompanyAssignments.find((item) => item.companyId === companyId);
+                                    setWorkForm((prev) => ({
+                                      ...prev,
+                                      residentCompanyId: companyId,
+                                      residentBranchId: selectedCompany?.branchIds[0] ?? '',
+                                    }));
+                                  }}
+                                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                                >
+                                  {residentCompanyOptions.map((company) => (
+                                    <option key={company.id} value={company.id}>
+                                      {company.name}
+                                    </option>
+                                  ))}
+                                  {residentCompanyOptions.length === 0 && (
+                                    <option value="">No assigned companies</option>
+                                  )}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-400">Resident Branch</label>
+                                <select
+                                  value={workForm.residentBranchId}
+                                  onChange={(e) => setWorkForm((prev) => ({ ...prev, residentBranchId: e.target.value }))}
+                                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                                >
+                                  {residentBranchOptions.map((branch) => (
+                                    <option key={branch.id} value={branch.id}>
+                                      {branch.name}
+                                    </option>
+                                  ))}
+                                  {residentBranchOptions.length === 0 && (
+                                    <option value="">No assigned branches</option>
+                                  )}
+                                </select>
+                              </div>
+                            </div>
+
+                            {/* Company / Branch assignments */}
+                            <div>
+                              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-400">
+                                Company Access & Branch Targets
+                              </p>
+                              {assignmentOptionsLoading ? (
+                                <div className="flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2.5 text-xs text-blue-600">
+                                  <Spinner size="sm" />
+                                  Loading assignment options...
+                                </div>
+                              ) : (
+                                <div className="space-y-2">
+                                  {assignmentOptions.map((company) => {
+                                    const selected = editCompanyAssignments.find((item) => item.companyId === company.id);
+                                    const isSelected = Boolean(selected);
+                                    return (
+                                      <div
+                                        key={company.id}
+                                        className={`overflow-hidden rounded-lg border transition-colors ${
+                                          isSelected ? 'border-primary-200 bg-primary-50/40' : 'border-gray-200 bg-white'
+                                        }`}
+                                      >
+                                        {/* Company toggle row */}
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleCompany(company.id)}
+                                          className="flex w-full items-center justify-between px-3 py-2.5 text-left"
+                                        >
+                                          <span className={`text-sm font-medium transition-colors ${isSelected ? 'text-primary-700' : 'text-gray-700'}`}>
+                                            {company.name}
+                                          </span>
+                                          <span className={`flex h-5 w-5 items-center justify-center rounded border text-xs transition-colors ${
+                                            isSelected
+                                              ? 'border-primary-500 bg-primary-600 text-white'
+                                              : 'border-gray-300 bg-white text-transparent'
+                                          }`}>
+                                            <Check className="h-3 w-3" />
+                                          </span>
+                                        </button>
+
+                                        {/* Branch list — animated slide-down */}
+                                        <AnimatePresence initial={false}>
+                                          {isSelected && (
+                                            <motion.div
+                                              key={`branches-${company.id}`}
+                                              initial={{ height: 0, opacity: 0 }}
+                                              animate={{ height: 'auto', opacity: 1 }}
+                                              exit={{ height: 0, opacity: 0 }}
+                                              transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                                              className="overflow-hidden"
+                                            >
+                                              <div className="border-t border-primary-100 px-3 py-2.5">
+                                                <p className="mb-2 text-[11px] uppercase tracking-wide text-gray-400">Branches</p>
+                                                <div className="flex flex-wrap gap-1.5">
+                                                  {company.branches.map((branch) => {
+                                                    const branchSelected = selected?.branchIds.includes(branch.id) ?? false;
+                                                    return (
+                                                      <button
+                                                        key={branch.id}
+                                                        type="button"
+                                                        onClick={() => toggleBranch(company.id, branch.id)}
+                                                        className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-all ${
+                                                          branchSelected
+                                                            ? 'border-emerald-300 bg-emerald-600 text-white shadow-sm'
+                                                            : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50'
+                                                        }`}
+                                                      >
+                                                        {branch.name}
+                                                      </button>
+                                                    );
+                                                  })}
+                                                </div>
+                                              </div>
+                                            </motion.div>
+                                          )}
+                                        </AnimatePresence>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Save / Cancel */}
+                            <div className="flex gap-2 border-t border-gray-100 pt-3">
+                              <Button variant="success" onClick={handleSaveWorkInformation} disabled={savingWork} className="flex-1">
+                                {savingWork ? 'Saving...' : 'Save Changes'}
+                              </Button>
+                              <Button
+                                variant="secondary"
+                                onClick={cancelWorkEdit}
+                                disabled={savingWork}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </motion.div>
+                        </AnimatePresence>
+                      )}
+                        </div>
+                      </div>
+
+                      {/* Emergency Contact */}
+                      <div className="overflow-hidden rounded-lg border border-gray-200">
+                        <div className="flex items-center border-b border-gray-200 bg-gray-50 px-4 py-2.5">
+                          <span className="text-xs font-semibold uppercase tracking-widest text-gray-400">Emergency Contact</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-6 gap-y-3 px-4 py-3">
+                          <div>
+                            <p className="text-[11px] uppercase tracking-wide text-gray-400">Contact Name</p>
+                            <p className="mt-0.5 font-medium text-gray-800">{detail.emergency_contact_information.emergency_contact || '—'}</p>
+                          </div>
+                          <div>
+                            <p className="text-[11px] uppercase tracking-wide text-gray-400">Relationship</p>
+                            <p className="mt-0.5 font-medium text-gray-800">{detail.emergency_contact_information.emergency_relationship || '—'}</p>
+                          </div>
+                          <div className="col-span-2 flex items-center justify-between">
+                            <div>
+                              <p className="text-[11px] uppercase tracking-wide text-gray-400">Phone</p>
+                              <p className="mt-0.5 font-medium text-gray-800">{selectedEmergencyDisplay}</p>
+                            </div>
+                            {emergencyCallHref && (
+                              <Button
+                                type="button"
+                                variant="danger"
+                                size="sm"
+                                onClick={() => { window.location.href = emergencyCallHref; }}
+                              >
+                                <Phone className="mr-1 h-3.5 w-3.5" />
+                                Call
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Bank & Documents */}
+                      <div className="overflow-hidden rounded-lg border border-gray-200">
+                        <div className="flex items-center border-b border-gray-200 bg-gray-50 px-4 py-2.5">
+                          <span className="text-xs font-semibold uppercase tracking-widest text-gray-400">Bank & Documents</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-6 gap-y-3 px-4 py-3">
+                          <div>
+                            <p className="text-[11px] uppercase tracking-wide text-gray-400">Bank</p>
+                            <p className="mt-0.5 font-medium text-gray-800">
+                              {detail.bank_information.bank_id
+                                ? (BANK_LABEL[detail.bank_information.bank_id] ?? `Bank ID ${detail.bank_information.bank_id}`)
+                                : '—'}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-[11px] uppercase tracking-wide text-gray-400">Account Number</p>
+                            <p className="mt-0.5 font-mono text-sm text-gray-800">{detail.bank_information.account_number || '—'}</p>
+                          </div>
+                          <div className="col-span-2">
+                            <p className="text-[11px] uppercase tracking-wide text-gray-400">Valid ID</p>
+                            <div className="mt-1">
+                              {detail.valid_id_url ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewDoc({ url: detail.valid_id_url!, title: 'Valid ID' })}
+                                  className="inline-flex items-center gap-1.5 text-sm text-primary-600 hover:underline"
+                                >
+                                  <ExternalLink className="h-3.5 w-3.5" />
+                                  View valid ID document
+                                </button>
+                              ) : (
+                                <span className="text-gray-400">No valid ID uploaded</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Roles */}
+                      <div className="overflow-hidden rounded-lg border border-gray-200">
+                        <div className="flex items-center border-b border-gray-200 bg-gray-50 px-4 py-2.5">
+                          <span className="text-xs font-semibold uppercase tracking-widest text-gray-400">Roles</span>
+                        </div>
+                        <div className="px-4 py-3">
+                          {detail.roles.length > 0 ? (
+                            <div className="flex flex-wrap gap-2">
+                              {detail.roles.map((role) => (
+                                <span
+                                  key={role.id}
+                                  className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+                                  style={{
+                                    backgroundColor: `${role.color ?? '#64748B'}22`,
+                                    color: role.color ?? '#334155',
+                                  }}
+                                >
+                                  <BadgeCheck className="h-3 w-3" />
+                                  {role.name}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-sm text-gray-400">No roles assigned</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Requirements */}
+                      {hasPermission(PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_REQUIREMENTS) && (
+                        <div className="overflow-hidden rounded-lg border border-gray-200">
+                          <div className="flex items-center border-b border-gray-200 bg-gray-50 px-4 py-2.5">
+                            <span className="text-xs font-semibold uppercase tracking-widest text-gray-400">Requirements</span>
+                          </div>
+                          <div className="px-4 py-3">
+                            {!detail.requirements?.length ? (
+                              <span className="text-sm text-gray-400">No requirements found</span>
+                            ) : (
+                              <div className="space-y-2">
+                                {detail.requirements.map((req) => {
+                                  const statusConf = REQUIREMENT_STATUS_CONFIG[req.display_status];
+                                  const ReqIcon = statusConf.Icon;
+                                  return (
+                                    <div key={req.code} className="flex items-center justify-between rounded-lg border border-gray-200 bg-white p-3 shadow-sm transition-all">
+                                      <div className="flex items-center gap-3">
+                                        <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${statusConf.iconClass}`}>
+                                          <ReqIcon className="h-4 w-4" />
+                                        </div>
+                                        <div>
+                                          <p className="font-medium text-gray-900 leading-tight">{req.label}</p>
+                                          {req.latest_submission?.reviewed_at ? (
+                                            <p className="mt-0.5 text-[11px] text-gray-500">
+                                              Reviewed {formatDate(req.latest_submission.reviewed_at)}
+                                            </p>
+                                          ) : req.latest_submission?.created_at ? (
+                                            <p className="mt-0.5 text-[11px] text-gray-500">
+                                              Submitted {formatDate(req.latest_submission.created_at)}
+                                            </p>
+                                          ) : null}
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${statusConf.containerClass}`}>
+                                          {statusConf.label}
+                                        </span>
+                                        {req.document_url && (
+                                          <button
+                                            type="button"
+                                            onClick={() => setPreviewDoc({ url: req.document_url!, title: req.label })}
+                                            className="rounded-lg border border-gray-200 bg-white p-1.5 text-gray-500 shadow-sm transition hover:bg-gray-50 hover:text-gray-900"
+                                            title="View Document"
+                                          >
+                                            <ExternalLink className="h-4 w-4" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
                           </div>
                         </div>
                       )}
-                    </div>
 
-                    <div className="rounded-lg bg-gray-50 p-3">
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Bank Information</p>
-                      <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                        <span className="text-gray-500">Bank</span>
-                        <span>
-                          {detail.bank_information.bank_id
-                            ? (BANK_LABEL[detail.bank_information.bank_id] ?? `Bank ID ${detail.bank_information.bank_id}`)
-                            : 'Not set'}
-                        </span>
-                        <span className="text-gray-500">Account Number</span>
-                        <span>{detail.bank_information.account_number || 'Not set'}</span>
-                      </div>
                     </div>
-
-                    <div className="rounded-lg bg-gray-50 p-3">
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Roles</p>
-                      <div className="flex flex-wrap gap-2">
-                        {detail.roles.map((role) => (
-                          <span
-                            key={role.id}
-                            className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
-                            style={{
-                              backgroundColor: `${role.color ?? '#64748B'}22`,
-                              color: role.color ?? '#334155',
-                            }}
-                          >
-                            <BadgeCheck className="h-3 w-3" />
-                            {role.name}
-                          </span>
-                        ))}
-                        {detail.roles.length === 0 && <span className="text-xs text-gray-500">No roles assigned</span>}
-                      </div>
-                    </div>
-
-                    <div className="rounded-lg bg-gray-50 p-3">
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Valid ID</p>
-                      {detail.valid_id_url ? (
-                        <a
-                          href={detail.valid_id_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-sm text-primary-600 hover:underline"
-                        >
-                          View valid ID document
-                        </a>
-                      ) : (
-                        <span className="text-sm text-gray-500">No valid ID uploaded</span>
-                      )}
-                    </div>
-                  </div>
+                  </>
                 )}
               </div>
           </div>
         )}
       </div>
+
+      <AnimatePresence>
+        {previewDoc && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+            <div className="absolute inset-0" onClick={() => setPreviewDoc(null)} />
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="relative flex h-full max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+            >
+              <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+                <h3 className="text-lg font-semibold text-gray-900">{previewDoc.title}</h3>
+                <button
+                  type="button"
+                  onClick={() => setPreviewDoc(null)}
+                  className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-900"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="flex flex-1 items-center justify-center overflow-auto bg-gray-100 p-6">
+                {getPreviewKind(previewDoc.url) === 'image' ? (
+                  <img
+                    src={previewDoc.url}
+                    alt={previewDoc.title}
+                    className="max-h-full max-w-full rounded bg-white object-contain shadow-sm"
+                  />
+                ) : getPreviewKind(previewDoc.url) === 'pdf' ? (
+                  <iframe
+                    src={`${previewDoc.url}#toolbar=0`}
+                    title={previewDoc.title}
+                    className="h-full w-full rounded bg-white shadow-sm"
+                  />
+                ) : (
+                  <div className="text-center">
+                    <ExternalLink className="mx-auto mb-3 h-10 w-10 text-gray-400" />
+                    <p className="mb-4 text-gray-600">Document preview unavailable</p>
+                    <a
+                      href={previewDoc.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
+                    >
+                      Download File
+                      <ExternalLink className="h-4 w-4" />
+                    </a>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </>
   );
 }

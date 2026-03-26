@@ -152,7 +152,7 @@ async function defaultFindUserByUserKey(
   userKey: string,
   audit: StoreAuditWebhookAudit,
 ): Promise<AuditResultsRecipient | null> {
-  const row = await db.getMasterDb()('users')
+  const row = await db.getDb()('users')
     .where({ user_key: userKey })
     .first('id', 'user_key', 'email', 'first_name', 'last_name');
 
@@ -178,7 +178,7 @@ async function defaultFindCompanyById(
   companyId: string,
   audit: StoreAuditWebhookAudit,
 ): Promise<AuditResultsCompany> {
-  const row = await db.getMasterDb()('companies').where({ id: companyId }).first('id', 'name');
+  const row = await db.getDb()('companies').where({ id: companyId }).first('id', 'name');
 
   return {
     id: String(row?.id ?? companyId),

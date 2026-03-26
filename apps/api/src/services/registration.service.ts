@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import type { Knex } from 'knex';
 import { db } from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
@@ -39,7 +38,6 @@ type ResolvedCompanyAssignment = {
   companyName: string;
   companySlug: string;
   companyCode: string;
-  companyDbName: string;
   branches: Array<{ id: string; name: string; odooBranchId: number }>;
 };
 
@@ -52,7 +50,7 @@ async function emitRegistrationVerificationUpdateGlobal(payload: {
   action: 'created' | 'approved' | 'rejected';
   userId?: string;
 }) {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const companies = await masterDb('companies').where({ is_active: true }).select('id');
   try {
     const namespace = getIO().of('/employee-verifications');
@@ -139,71 +137,45 @@ async function getMaxEmployeeNumberFromOdoo(
 }
 
 async function resolveOrCreateEmployeeIdentity(
-  masterDb: Knex,
   email: string,
-): Promise<{ employeeNumber: number; websiteKey: string; identityId: string; wasExisting: boolean }> {
-  return masterDb.transaction(async (trx) => {
-    const existingIdentity = await trx('employee_identities')
-      .where({ email })
-      .forUpdate()
-      .first();
-    if (existingIdentity) {
-      return {
-        employeeNumber: existingIdentity.employee_number as number,
-        websiteKey: existingIdentity.website_key as string,
-        identityId: existingIdentity.id as string,
-        wasExisting: true,
-      };
-    }
-
+): Promise<{ employeeNumber: number; websiteKey: string; identityId: string | null; wasExisting: boolean }> {
+  return db.getDb().transaction(async (trx) => {
+    // Check if a user with this email already has an employee number + website key allocated
     const existingUser = await trx('users')
       .whereRaw('LOWER(email) = ?', [email])
       .whereNotNull('employee_number')
       .whereNotNull('user_key')
+      .forUpdate()
       .first('id', 'employee_number', 'user_key');
-    if (existingUser) {
-      const [createdIdentity] = await trx('employee_identities').insert({
-        email,
-        employee_number: existingUser.employee_number,
-        website_key: existingUser.user_key,
-        updated_at: new Date(),
-      }).returning('*');
 
+    if (existingUser) {
       return {
         employeeNumber: existingUser.employee_number as number,
         websiteKey: existingUser.user_key as string,
-        identityId: createdIdentity.id as string,
+        identityId: existingUser.id as string,
         wasExisting: true,
       };
     }
 
-    const identityMax = await trx('employee_identities')
-      .max<{ max: string | number | null }>('employee_number as max')
-      .first();
+    // New identity — compute next employee number from users table
     const usersMax = await trx('users')
       .max<{ max: string | number | null }>('employee_number as max')
       .first();
-    const nextEmployeeNumber = Math.max(Number(identityMax?.max ?? 0), Number(usersMax?.max ?? 0)) + 1;
+    const nextEmployeeNumber = Number(usersMax?.max ?? 0) + 1;
     const websiteKey = randomUUID();
 
-    const [createdIdentity] = await trx('employee_identities').insert({
-      email,
-      employee_number: nextEmployeeNumber,
-      website_key: websiteKey,
-      updated_at: new Date(),
-    }).returning('*');
-
+    // identityId is null for new users — the user row doesn't exist yet at this point.
+    // The correct employee_number will be set when the user record is created later.
     return {
       employeeNumber: nextEmployeeNumber,
       websiteKey,
-      identityId: createdIdentity.id as string,
+      identityId: null,
       wasExisting: false,
     };
   });
 }
 
 async function resolveAssignmentsOrThrow(input: {
-  masterDb: Knex;
   companyAssignments: CompanyAssignmentInput[];
   residentBranch: ResidentBranchInput;
 }): Promise<{
@@ -234,9 +206,9 @@ async function resolveAssignmentsOrThrow(input: {
   const assignments: ResolvedCompanyAssignment[] = [];
 
   for (const assignment of dedupedAssignments) {
-    const company = await input.masterDb('companies')
+    const company = await db.getDb()('companies')
       .where({ id: assignment.companyId, is_active: true })
-      .first('id', 'name', 'slug', 'db_name', 'company_code');
+      .first('id', 'name', 'slug', 'company_code');
 
     if (!company) {
       throw new AppError(400, `Selected company is invalid or inactive: ${assignment.companyId}`);
@@ -247,8 +219,7 @@ async function resolveAssignmentsOrThrow(input: {
       throw new AppError(400, `Company "${company.name}" is missing a company code`);
     }
 
-    const tenantDb = await db.getTenantDb(String(company.db_name));
-    const branchRows = await tenantDb('branches')
+    const branchRows = await db.getDb()('branches')
       .whereIn('id', assignment.branchIds)
       .where({ is_active: true })
       .select('id', 'name', 'odoo_branch_id');
@@ -274,7 +245,6 @@ async function resolveAssignmentsOrThrow(input: {
       companyName: company.name as string,
       companySlug: company.slug as string,
       companyCode,
-      companyDbName: company.db_name as string,
       branches,
     });
   }
@@ -305,7 +275,7 @@ export async function createRegistrationRequest(input: {
   email: string;
   password: string;
 }): Promise<void> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const email = normalizeEmail(input.email);
 
   const existingUser = await masterDb('users')
@@ -341,7 +311,7 @@ export async function createRegistrationRequest(input: {
 }
 
 export async function listRegistrationRequests(): Promise<any[]> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   return masterDb('registration_requests')
     .leftJoin('users as reviewers', 'registration_requests.reviewed_by', 'reviewers.id')
     .select(
@@ -360,7 +330,7 @@ export async function listRegistrationAssignmentOptions(): Promise<{
     branches: Array<{ id: string; name: string; odoo_branch_id: string }>;
   }>;
 }> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const roles = await masterDb('roles')
     .select('id', 'name', 'color', 'priority')
     .orderBy('priority', 'desc')
@@ -368,7 +338,7 @@ export async function listRegistrationAssignmentOptions(): Promise<{
 
   const companies = await masterDb('companies')
     .where({ is_active: true })
-    .select('id', 'name', 'slug', 'db_name')
+    .select('id', 'name', 'slug')
     .orderBy('name', 'asc');
 
   const companyOptions: Array<{
@@ -379,9 +349,8 @@ export async function listRegistrationAssignmentOptions(): Promise<{
   }> = [];
 
   for (const company of companies) {
-    const tenantDb = await db.getTenantDb(String(company.db_name));
-    const branches = await tenantDb('branches')
-      .where({ is_active: true })
+    const branches = await db.getDb()('branches')
+      .where({ company_id: company.id, is_active: true })
       .select('id', 'name', 'odoo_branch_id')
       .orderBy('name', 'asc');
 
@@ -409,7 +378,7 @@ export async function approveRegistrationRequest(input: {
   residentBranch: ResidentBranchInput;
   employeeNumber?: number;
 }): Promise<{ requestId: string; userId: string }> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
 
   emitRegistrationApprovalProgress({
     companyId: input.reviewerCompanyId,
@@ -443,14 +412,13 @@ export async function approveRegistrationRequest(input: {
   }
 
   const { assignments, resident } = await resolveAssignmentsOrThrow({
-    masterDb,
     companyAssignments: input.companyAssignments,
     residentBranch: input.residentBranch,
   });
   const residentAssignment = assignments.find((item) => item.companyId === resident.companyId)!;
 
   const normalizedEmail = normalizeEmail(String(request.email));
-  const identity = await resolveOrCreateEmployeeIdentity(masterDb, normalizedEmail);
+  const identity = await resolveOrCreateEmployeeIdentity(normalizedEmail);
   let employeeNumber = identity.employeeNumber;
   const websiteKey = identity.websiteKey;
 
@@ -556,8 +524,10 @@ export async function approveRegistrationRequest(input: {
     employeeNumber = input.employeeNumber;
   }
 
-  if (employeeNumber !== identity.employeeNumber) {
-    await masterDb('employee_identities')
+  // If the user already exists and the employee number shifted (Odoo collision),
+  // update it on the users row now so the final user upsert uses the correct value.
+  if (identity.identityId && employeeNumber !== identity.employeeNumber) {
+    await masterDb('users')
       .where({ id: identity.identityId })
       .update({ employee_number: employeeNumber, updated_at: new Date() });
   }
@@ -748,8 +718,6 @@ export async function approveRegistrationRequest(input: {
       user_id: string;
       company_id: string;
       branch_id: string;
-      branch_odoo_id: string;
-      branch_name: string;
       assignment_type: 'resident' | 'borrow';
     }> = [];
     for (const assignment of assignments) {
@@ -759,8 +727,6 @@ export async function approveRegistrationRequest(input: {
           user_id: userId,
           company_id: assignment.companyId,
           branch_id: branch.id,
-          branch_odoo_id: String(branch.odooBranchId),
-          branch_name: branch.name,
           assignment_type: isResident ? 'resident' : 'borrow',
         });
       }
@@ -859,7 +825,7 @@ export async function rejectRegistrationRequest(input: {
   requestId: string;
   reason: string;
 }): Promise<void> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const [updated] = await masterDb('registration_requests')
     .where({ id: input.requestId, status: REGISTRATION_STATUSES.PENDING })
     .update({

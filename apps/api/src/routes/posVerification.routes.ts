@@ -29,40 +29,40 @@ const router = Router();
 
 router.use(authenticate, resolveCompany);
 
-router.get('/', requirePermission(PERMISSIONS.POS_VERIFICATION_VIEW), posVerificationController.list);
-router.get('/:id', requirePermission(PERMISSIONS.POS_VERIFICATION_VIEW), posVerificationController.get);
+router.get('/', requirePermission(PERMISSIONS.POS_VIEW), posVerificationController.list);
+router.get('/:id', requirePermission(PERMISSIONS.POS_VIEW), posVerificationController.get);
 
 router.post(
   '/:id/images',
-  requirePermission(PERMISSIONS.POS_VERIFICATION_UPLOAD_IMAGE),
+  requirePermission(PERMISSIONS.POS_MANAGE_VERIFICATIONS),
   upload.single('image'),
   posVerificationController.uploadImage,
 );
 
 router.post(
   '/:id/confirm',
-  requirePermission(PERMISSIONS.POS_VERIFICATION_CONFIRM_REJECT),
+  requirePermission(PERMISSIONS.POS_MANAGE_VERIFICATIONS),
   validateBody(confirmRejectSchema),
   posVerificationController.confirm,
 );
 
 router.post(
   '/:id/reject',
-  requirePermission(PERMISSIONS.POS_VERIFICATION_CONFIRM_REJECT),
+  requirePermission(PERMISSIONS.POS_MANAGE_VERIFICATIONS),
   validateBody(confirmRejectSchema),
   posVerificationController.reject,
 );
 
 router.put(
   '/:id/breakdown',
-  requirePermission(PERMISSIONS.POS_VERIFICATION_UPLOAD_IMAGE),
+  requirePermission(PERMISSIONS.POS_MANAGE_VERIFICATIONS),
   validateBody(submitBreakdownSchema),
   posVerificationController.submitBreakdown,
 );
 
 router.post(
   '/:id/audit',
-  requirePermission(PERMISSIONS.POS_SESSION_AUDIT_COMPLETE),
+  requirePermission(PERMISSIONS.POS_MANAGE_AUDITS),
   posVerificationController.auditVerification,
 );
 

@@ -1,5 +1,5 @@
-import type { Knex } from 'knex';
 import { db } from '../config/database.js';
+import { getIO } from '../config/socket.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import { createAndDispatchNotification } from './notification.service.js';
@@ -13,7 +13,6 @@ type CompanyRow = {
   id: string;
   name: string;
   slug: string;
-  db_name: string;
   is_active: boolean;
 };
 
@@ -50,12 +49,10 @@ type ShiftExchangeRequestRow = {
   accepting_user_id: string;
   requested_by: string;
   requester_company_id: string;
-  requester_company_db_name: string;
   requester_branch_id: string;
   requester_shift_id: string;
   requester_shift_odoo_id: number;
   accepting_company_id: string;
-  accepting_company_db_name: string;
   accepting_branch_id: string;
   accepting_shift_id: string;
   accepting_shift_odoo_id: number;
@@ -72,14 +69,12 @@ type ShiftExchangeRequestRow = {
 
 type TenantContext = {
   company: CompanyRow;
-  tenantDb: Knex;
 };
 
 type ShiftOption = {
   company_id: string;
   company_name: string;
   company_slug: string;
-  company_db_name: string;
   shift_id: string;
   odoo_shift_id: number;
   branch_id: string;
@@ -149,10 +144,12 @@ type ShiftExchangeDetail = {
 };
 
 type ApproverMode = 'hr' | 'management_fallback';
+type ShiftExchangeLogResolution = 'requested' | 'awaiting_hr' | 'approved' | 'rejected';
 
 const SHIFT_EXCHANGE_TABLE = 'shift_exchange_requests';
 const HR_ROLE_NAME = 'human resources';
 const MANAGEMENT_ROLE_NAME = 'management';
+const SHIFT_EXCHANGE_AUTH_TYPE = 'shift_exchange';
 
 function roleNameEquals(value: string, expectedLowercase: string): boolean {
   return value.trim().toLowerCase() === expectedLowercase;
@@ -172,10 +169,10 @@ function isSuspended(user: Pick<UserRow, 'employment_status'>): boolean {
   return String(user.employment_status ?? '').toLowerCase() === 'suspended';
 }
 
-async function getActiveCompanyById(masterDb: Knex, companyId: string): Promise<CompanyRow> {
-  const company = await masterDb('companies')
+async function getActiveCompanyById(companyId: string): Promise<CompanyRow> {
+  const company = await db.getDb()('companies')
     .where({ id: companyId, is_active: true })
-    .first('id', 'name', 'slug', 'db_name', 'is_active');
+    .first('id', 'name', 'slug', 'is_active');
   if (!company) {
     throw new AppError(404, `Company not found or inactive: ${companyId}`);
   }
@@ -183,21 +180,19 @@ async function getActiveCompanyById(masterDb: Knex, companyId: string): Promise<
 }
 
 async function getTenantContextByCompanyId(
-  masterDb: Knex,
   companyId: string,
   cache: Map<string, TenantContext>,
 ): Promise<TenantContext> {
   const cached = cache.get(companyId);
   if (cached) return cached;
-  const company = await getActiveCompanyById(masterDb, companyId);
-  const tenantDb = await db.getTenantDb(String(company.db_name));
-  const context = { company, tenantDb };
+  const company = await getActiveCompanyById(companyId);
+  const context = { company };
   cache.set(companyId, context);
   return context;
 }
 
-async function getShiftById(tenantDb: Knex, shiftId: string): Promise<ShiftRow | null> {
-  const row = await tenantDb('employee_shifts as es')
+async function getShiftById(shiftId: string): Promise<ShiftRow | null> {
+  const row = await db.getDb()('employee_shifts as es')
     .leftJoin('branches as branches', 'es.branch_id', 'branches.id')
     .where('es.id', shiftId)
     .select(
@@ -220,8 +215,8 @@ async function getShiftById(tenantDb: Knex, shiftId: string): Promise<ShiftRow |
   return (row as ShiftRow | undefined) ?? null;
 }
 
-async function listOpenShiftsWithUsers(tenantDb: Knex): Promise<ShiftRow[]> {
-  const rows = await tenantDb('employee_shifts as es')
+async function listOpenShiftsWithUsers(): Promise<ShiftRow[]> {
+  const rows = await db.getDb()('employee_shifts as es')
     .leftJoin('branches as branches', 'es.branch_id', 'branches.id')
     .where('es.status', 'open')
     .whereNotNull('es.user_id')
@@ -245,10 +240,10 @@ async function listOpenShiftsWithUsers(tenantDb: Knex): Promise<ShiftRow[]> {
   return rows as ShiftRow[];
 }
 
-async function loadUsersByIds(masterDb: Knex, userIds: string[]): Promise<Record<string, UserRow>> {
+async function loadUsersByIds(userIds: string[]): Promise<Record<string, UserRow>> {
   const unique = Array.from(new Set(userIds.filter(Boolean)));
   if (unique.length === 0) return {};
-  const rows = await masterDb('users')
+  const rows = await db.getDb()('users')
     .whereIn('id', unique)
     .select('id', 'first_name', 'last_name', 'email', 'user_key', 'is_active', 'employment_status');
   const map: Record<string, UserRow> = {};
@@ -259,11 +254,10 @@ async function loadUsersByIds(masterDb: Knex, userIds: string[]): Promise<Record
 }
 
 async function hasPendingRequestForShift(
-  masterDb: Knex,
   companyId: string,
   shiftId: string,
 ): Promise<boolean> {
-  const row = await masterDb(SHIFT_EXCHANGE_TABLE)
+  const row = await db.getDb()(SHIFT_EXCHANGE_TABLE)
     .where('status', 'pending')
     .andWhere((builder) => {
       builder
@@ -274,7 +268,7 @@ async function hasPendingRequestForShift(
   return Boolean(row);
 }
 
-async function loadDesignationSets(masterDb: Knex, userIds: string[]): Promise<{
+async function loadDesignationSets(userIds: string[]): Promise<{
   accessSet: Set<string>;
   branchSet: Set<string>;
 }> {
@@ -284,11 +278,11 @@ async function loadDesignationSets(masterDb: Knex, userIds: string[]): Promise<{
   }
 
   const [accessRows, branchRows] = await Promise.all([
-    masterDb('user_company_access')
+    db.getDb()('user_company_access')
       .whereIn('user_id', unique)
       .andWhere('is_active', true)
       .select('user_id', 'company_id'),
-    masterDb('user_company_branches')
+    db.getDb()('user_company_branches')
       .whereIn('user_id', unique)
       .select('user_id', 'company_id', 'branch_id'),
   ]);
@@ -303,7 +297,6 @@ async function loadDesignationSets(masterDb: Knex, userIds: string[]): Promise<{
 }
 
 async function enrichDesignationSetsFromTenantUserBranches(input: {
-  masterDb: Knex;
   designation: { accessSet: Set<string>; branchSet: Set<string> };
   userIds: string[];
   companyIds: string[];
@@ -315,8 +308,8 @@ async function enrichDesignationSetsFromTenantUserBranches(input: {
 
   for (const companyId of uniqueCompanyIds) {
     try {
-      const context = await getTenantContextByCompanyId(input.masterDb, companyId, input.tenantCache);
-      const rows = await context.tenantDb('user_branches')
+      const context = await getTenantContextByCompanyId(companyId, input.tenantCache);
+      const rows = await db.getDb()('user_branches')
         .whereIn('user_id', uniqueUserIds)
         .select('user_id', 'branch_id');
       for (const row of rows as Array<{ user_id: string; branch_id: string }>) {
@@ -347,13 +340,13 @@ function isDesignatedToCompanyBranch(
   );
 }
 
-async function getApproverMode(masterDb: Knex, companyIds: string[]): Promise<ApproverMode> {
+async function getApproverMode(companyIds: string[]): Promise<ApproverMode> {
   const uniqueCompanyIds = Array.from(new Set(companyIds.filter(Boolean)));
   if (uniqueCompanyIds.length === 0) {
     throw new AppError(400, 'No company scope found for shift exchange approval');
   }
 
-  const hrRow = await masterDb('users')
+  const hrRow = await db.getDb()('users')
     .join('user_roles', 'users.id', 'user_roles.user_id')
     .join('roles', 'user_roles.role_id', 'roles.id')
     .join('user_company_access as uca', 'users.id', 'uca.user_id')
@@ -367,13 +360,12 @@ async function getApproverMode(masterDb: Knex, companyIds: string[]): Promise<Ap
 }
 
 async function ensureApproverAccess(input: {
-  masterDb: Knex;
   actingUserId: string;
   actingRoleNames: string[];
   companyIds: string[];
 }): Promise<ApproverMode> {
-  const mode = await getApproverMode(input.masterDb, input.companyIds);
-  const hasCompanyAccess = await input.masterDb('user_company_access')
+  const mode = await getApproverMode(input.companyIds);
+  const hasCompanyAccess = await db.getDb()('user_company_access')
     .where({ user_id: input.actingUserId, is_active: true })
     .whereIn('company_id', input.companyIds)
     .first('id');
@@ -395,13 +387,12 @@ async function ensureApproverAccess(input: {
 }
 
 async function listApprovers(input: {
-  masterDb: Knex;
   companyIds: string[];
   excludeUserIds: string[];
-}): Promise<{ mode: ApproverMode; approvers: Array<{ user_id: string; company_id: string; company_db_name: string }> }> {
-  const mode = await getApproverMode(input.masterDb, input.companyIds);
+}): Promise<{ mode: ApproverMode; approvers: Array<{ user_id: string; company_id: string }> }> {
+  const mode = await getApproverMode(input.companyIds);
   const roleName = mode === 'hr' ? HR_ROLE_NAME : MANAGEMENT_ROLE_NAME;
-  const rows = await input.masterDb('users')
+  const rows = await db.getDb()('users')
     .join('user_roles', 'users.id', 'user_roles.user_id')
     .join('roles', 'user_roles.role_id', 'roles.id')
     .join('user_company_access as uca', 'users.id', 'uca.user_id')
@@ -414,12 +405,11 @@ async function listApprovers(input: {
     .select(
       'users.id as user_id',
       'uca.company_id as company_id',
-      'companies.db_name as company_db_name',
     )
     .orderBy('users.id', 'asc');
 
-  const dedup = new Map<string, { user_id: string; company_id: string; company_db_name: string }>();
-  for (const row of rows as Array<{ user_id: string; company_id: string; company_db_name: string }>) {
+  const dedup = new Map<string, { user_id: string; company_id: string }>();
+  for (const row of rows as Array<{ user_id: string; company_id: string }>) {
     if (!dedup.has(row.user_id)) {
       dedup.set(row.user_id, row);
     }
@@ -427,8 +417,8 @@ async function listApprovers(input: {
   return { mode, approvers: Array.from(dedup.values()) };
 }
 
-async function getRequestById(masterDb: Knex, requestId: string): Promise<ShiftExchangeRequestRow> {
-  const row = await masterDb(SHIFT_EXCHANGE_TABLE).where({ id: requestId }).first();
+async function getRequestById(requestId: string): Promise<ShiftExchangeRequestRow> {
+  const row = await db.getDb()(SHIFT_EXCHANGE_TABLE).where({ id: requestId }).first();
   if (!row) throw new AppError(404, 'Shift exchange request not found');
   return row as ShiftExchangeRequestRow;
 }
@@ -441,7 +431,6 @@ function canViewRequest(row: ShiftExchangeRequestRow, actingUserId: string): boo
 }
 
 async function toShiftExchangeDetail(input: {
-  masterDb: Knex;
   row: ShiftExchangeRequestRow;
   actingUserId?: string;
   actingRoleNames?: string[];
@@ -449,15 +438,15 @@ async function toShiftExchangeDetail(input: {
   const { row } = input;
   const tenantCache = new Map<string, TenantContext>();
   const [requesterCtx, acceptingCtx] = await Promise.all([
-    getTenantContextByCompanyId(input.masterDb, row.requester_company_id, tenantCache),
-    getTenantContextByCompanyId(input.masterDb, row.accepting_company_id, tenantCache),
+    getTenantContextByCompanyId(row.requester_company_id, tenantCache),
+    getTenantContextByCompanyId(row.accepting_company_id, tenantCache),
   ]);
 
   const [requesterShift, acceptingShift, users] = await Promise.all([
-    getShiftById(requesterCtx.tenantDb, row.requester_shift_id),
-    getShiftById(acceptingCtx.tenantDb, row.accepting_shift_id),
+    getShiftById(row.requester_shift_id),
+    getShiftById(row.accepting_shift_id),
     loadUsersByIds(
-      input.masterDb,
+      
       [row.requester_user_id, row.accepting_user_id, row.requested_by, row.hr_decision_by ?? ''].filter(Boolean),
     ),
   ]);
@@ -475,7 +464,6 @@ async function toShiftExchangeDetail(input: {
   if (input.actingUserId && input.actingRoleNames && row.status === 'pending' && row.approval_stage === 'awaiting_hr') {
     try {
       approvalMode = await ensureApproverAccess({
-        masterDb: input.masterDb,
         actingUserId: input.actingUserId,
         actingRoleNames: input.actingRoleNames,
         companyIds: [row.requester_company_id, row.accepting_company_id],
@@ -556,10 +544,10 @@ export async function listShiftExchangeOptions(input: {
   currentCompanyId: string;
   fromShiftId: string;
 }) {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const tenantCache = new Map<string, TenantContext>();
-  const requesterCtx = await getTenantContextByCompanyId(masterDb, input.currentCompanyId, tenantCache);
-  const fromShift = await getShiftById(requesterCtx.tenantDb, input.fromShiftId);
+  const requesterCtx = await getTenantContextByCompanyId(input.currentCompanyId, tenantCache);
+  const fromShift = await getShiftById(input.fromShiftId);
 
   if (!fromShift) throw new AppError(404, 'Source shift not found');
   if (fromShift.status !== 'open') throw new AppError(400, 'Source shift must be open');
@@ -567,26 +555,26 @@ export async function listShiftExchangeOptions(input: {
     throw new AppError(403, 'Only the owner of this shift can request an exchange');
   }
 
-  const requesterUser = (await loadUsersByIds(masterDb, [input.requesterUserId]))[input.requesterUserId];
+  const requesterUser = (await loadUsersByIds([input.requesterUserId]))[input.requesterUserId];
   if (!requesterUser || !requesterUser.is_active) throw new AppError(403, 'Requester is inactive');
   if (isSuspended(requesterUser)) throw new AppError(403, 'Suspended users cannot exchange shifts');
 
-  if (await hasPendingRequestForShift(masterDb, requesterCtx.company.id, fromShift.id)) {
+  if (await hasPendingRequestForShift(requesterCtx.company.id, fromShift.id)) {
     throw new AppError(409, 'This shift already has a pending exchange request');
   }
 
-  const accessibleCompanies = await masterDb('user_company_access as uca')
+  const accessibleCompanies = await db.getDb()('user_company_access as uca')
     .join('companies as companies', 'uca.company_id', 'companies.id')
     .where('uca.user_id', input.requesterUserId)
     .andWhere('uca.is_active', true)
     .andWhere('companies.is_active', true)
-    .select('companies.id', 'companies.name', 'companies.slug', 'companies.db_name')
+    .select('companies.id', 'companies.name', 'companies.slug')
     .orderBy('companies.name', 'asc');
 
   const candidateRows: ShiftOption[] = [];
   for (const company of accessibleCompanies as CompanyRow[]) {
-    const context = await getTenantContextByCompanyId(masterDb, company.id, tenantCache);
-    const rows = await listOpenShiftsWithUsers(context.tenantDb);
+    const context = await getTenantContextByCompanyId(company.id, tenantCache);
+    const rows = await listOpenShiftsWithUsers();
     for (const row of rows) {
       if (!row.user_id) continue;
       if (company.id === requesterCtx.company.id && row.id === fromShift.id) continue;
@@ -594,7 +582,6 @@ export async function listShiftExchangeOptions(input: {
         company_id: company.id,
         company_name: company.name,
         company_slug: company.slug,
-        company_db_name: company.db_name,
         shift_id: row.id,
         odoo_shift_id: row.odoo_shift_id,
         branch_id: row.branch_id,
@@ -612,10 +599,9 @@ export async function listShiftExchangeOptions(input: {
   }
 
   const targetUserIds = Array.from(new Set(candidateRows.map((row) => row.user_id)));
-  const usersById = await loadUsersByIds(masterDb, [input.requesterUserId, ...targetUserIds]);
-  const designation = await loadDesignationSets(masterDb, [input.requesterUserId, ...targetUserIds]);
+  const usersById = await loadUsersByIds([input.requesterUserId, ...targetUserIds]);
+  const designation = await loadDesignationSets([input.requesterUserId, ...targetUserIds]);
   await enrichDesignationSetsFromTenantUserBranches({
-    masterDb,
     designation,
     userIds: [input.requesterUserId, ...targetUserIds],
     companyIds: [requesterCtx.company.id, ...candidateRows.map((row) => row.company_id)],
@@ -647,7 +633,7 @@ export async function listShiftExchangeOptions(input: {
       if (!requesterCanWorkTarget || !targetCanWorkRequester) continue;
     }
 
-    if (await hasPendingRequestForShift(masterDb, option.company_id, option.shift_id)) continue;
+    if (await hasPendingRequestForShift(option.company_id, option.shift_id)) continue;
     options.push(option);
   }
 
@@ -680,7 +666,7 @@ export async function createShiftExchangeRequest(input: {
   toShiftId: string;
   toCompanyId: string;
 }) {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const optionPayload = await listShiftExchangeOptions({
     requesterUserId: input.requesterUserId,
     currentCompanyId: input.currentCompanyId,
@@ -694,20 +680,18 @@ export async function createShiftExchangeRequest(input: {
     throw new AppError(400, 'Selected target shift is not eligible for exchange');
   }
 
-  const requesterCompany = await getActiveCompanyById(masterDb, input.currentCompanyId);
+  const requesterCompany = await getActiveCompanyById(input.currentCompanyId);
   const now = new Date();
-  const [created] = await masterDb(SHIFT_EXCHANGE_TABLE)
+  const [created] = await db.getDb()(SHIFT_EXCHANGE_TABLE)
     .insert({
       requester_user_id: input.requesterUserId,
       accepting_user_id: chosen.user_id,
       requested_by: input.requesterUserId,
       requester_company_id: requesterCompany.id,
-      requester_company_db_name: requesterCompany.db_name,
       requester_branch_id: optionPayload.fromShift.branch_id,
       requester_shift_id: optionPayload.fromShift.shift_id,
       requester_shift_odoo_id: optionPayload.fromShift.odoo_shift_id,
       accepting_company_id: chosen.company_id,
-      accepting_company_db_name: chosen.company_db_name,
       accepting_branch_id: chosen.branch_id,
       accepting_shift_id: chosen.shift_id,
       accepting_shift_odoo_id: chosen.odoo_shift_id,
@@ -718,11 +702,21 @@ export async function createShiftExchangeRequest(input: {
     })
     .returning('*');
 
-  const users = await loadUsersByIds(masterDb, [input.requesterUserId, chosen.user_id]);
+  const users = await loadUsersByIds([input.requesterUserId, chosen.user_id]);
   const requesterName = formatUserName(users[input.requesterUserId] ?? null);
-  const acceptingTenantDb = await db.getTenantDb(chosen.company_db_name);
+  const acceptingName = formatUserName(users[chosen.user_id] ?? null);
+  await appendShiftExchangeLogsForBothShifts({
+    row: created as ShiftExchangeRequestRow,
+    resolution: 'requested',
+    actorName: requesterName,
+    requesterName,
+    acceptingName,
+    requesterNote: `Requested a shift exchange with ${acceptingName}.`,
+    acceptingNote: `${requesterName} requested a shift exchange with you.`,
+    eventTime: now,
+  });
+
   await createAndDispatchNotification({
-    tenantDb: acceptingTenantDb,
     userId: chosen.user_id,
     title: 'Shift Exchange Request',
     message: `${requesterName} requested to exchange shifts with you.`,
@@ -731,7 +725,6 @@ export async function createShiftExchangeRequest(input: {
   });
 
   return toShiftExchangeDetail({
-    masterDb,
     row: created as ShiftExchangeRequestRow,
     actingUserId: input.requesterUserId,
     actingRoleNames: [],
@@ -743,11 +736,10 @@ export async function getShiftExchangeDetail(input: {
   actingUserId: string;
   actingRoleNames: string[];
 }) {
-  const masterDb = db.getMasterDb();
-  const row = await getRequestById(masterDb, input.requestId);
+  const masterDb = db.getDb();
+  const row = await getRequestById(input.requestId);
   if (!canViewRequest(row, input.actingUserId)) {
     await ensureApproverAccess({
-      masterDb,
       actingUserId: input.actingUserId,
       actingRoleNames: input.actingRoleNames,
       companyIds: [row.requester_company_id, row.accepting_company_id],
@@ -755,7 +747,6 @@ export async function getShiftExchangeDetail(input: {
   }
 
   return toShiftExchangeDetail({
-    masterDb,
     row,
     actingUserId: input.actingUserId,
     actingRoleNames: input.actingRoleNames,
@@ -768,8 +759,8 @@ export async function respondToShiftExchange(input: {
   action: 'accept' | 'reject';
   reason?: string;
 }) {
-  const masterDb = db.getMasterDb();
-  const row = await getRequestById(masterDb, input.requestId);
+  const masterDb = db.getDb();
+  const row = await getRequestById(input.requestId);
   if (row.accepting_user_id !== input.actingUserId) {
     throw new AppError(403, 'Only the accepting employee can respond');
   }
@@ -777,7 +768,7 @@ export async function respondToShiftExchange(input: {
     throw new AppError(400, 'This shift exchange request can no longer be responded to');
   }
 
-  const users = await loadUsersByIds(masterDb, [row.requester_user_id, row.accepting_user_id]);
+  const users = await loadUsersByIds([row.requester_user_id, row.accepting_user_id]);
   const requester = users[row.requester_user_id];
   const accepting = users[row.accepting_user_id];
   if (!requester || !accepting) {
@@ -789,11 +780,13 @@ export async function respondToShiftExchange(input: {
   if (isSuspended(requester) || isSuspended(accepting)) {
     throw new AppError(409, 'Suspended employees cannot continue shift exchanges');
   }
+  const requesterName = formatUserName(requester);
+  const acceptingName = formatUserName(accepting);
 
   const now = new Date();
   let updated: ShiftExchangeRequestRow;
   if (input.action === 'reject') {
-    const [result] = await masterDb(SHIFT_EXCHANGE_TABLE)
+    const [result] = await db.getDb()(SHIFT_EXCHANGE_TABLE)
       .where({ id: row.id })
       .update({
         status: 'rejected',
@@ -804,12 +797,21 @@ export async function respondToShiftExchange(input: {
       })
       .returning('*');
     updated = result as ShiftExchangeRequestRow;
+    const rejectionReason = input.reason?.trim() || null;
+    await appendShiftExchangeLogsForBothShifts({
+      row: updated,
+      resolution: 'rejected',
+      actorName: acceptingName,
+      requesterName,
+      acceptingName,
+      requesterNote: `${acceptingName} rejected the shift exchange request.`,
+      acceptingNote: `You rejected the shift exchange request from ${requesterName}.`,
+      rejectionReason,
+      eventTime: now,
+    });
 
-    const requesterTenantDb = await db.getTenantDb(row.requester_company_db_name);
-    const acceptingName = formatUserName(accepting);
-    const reasonSuffix = input.reason?.trim() ? ` Reason: ${input.reason.trim()}` : '';
+    const reasonSuffix = rejectionReason ? ` Reason: ${rejectionReason}` : '';
     await createAndDispatchNotification({
-      tenantDb: requesterTenantDb,
       userId: row.requester_user_id,
       title: 'Shift Exchange Rejected',
       message: `${acceptingName} rejected your shift exchange request.${reasonSuffix}`,
@@ -817,7 +819,7 @@ export async function respondToShiftExchange(input: {
       linkUrl: `/account/notifications?shiftExchangeId=${row.id}`,
     });
   } else {
-    const [result] = await masterDb(SHIFT_EXCHANGE_TABLE)
+    const [result] = await db.getDb()(SHIFT_EXCHANGE_TABLE)
       .where({ id: row.id })
       .update({
         approval_stage: 'awaiting_hr',
@@ -827,19 +829,24 @@ export async function respondToShiftExchange(input: {
       })
       .returning('*');
     updated = result as ShiftExchangeRequestRow;
+    await appendShiftExchangeLogsForBothShifts({
+      row: updated,
+      resolution: 'awaiting_hr',
+      actorName: acceptingName,
+      requesterName,
+      acceptingName,
+      requesterNote: `${acceptingName} accepted the request. Waiting for approval.`,
+      acceptingNote: 'You accepted the request. Waiting for approval.',
+      eventTime: now,
+    });
 
     const approverResult = await listApprovers({
-      masterDb,
       companyIds: [row.requester_company_id, row.accepting_company_id],
       excludeUserIds: [row.requester_user_id, row.accepting_user_id],
     });
-    const requesterName = formatUserName(requester);
-    const acceptingName = formatUserName(accepting);
     await Promise.all(
       approverResult.approvers.map(async (approver) => {
-        const tenantDb = await db.getTenantDb(approver.company_db_name);
         await createAndDispatchNotification({
-          tenantDb,
           userId: approver.user_id,
           title: 'Shift Exchange Pending Approval',
           message: `${requesterName} and ${acceptingName} shift exchange is pending ${approverResult.mode === 'hr' ? 'HR' : 'Management'} approval.`,
@@ -851,7 +858,6 @@ export async function respondToShiftExchange(input: {
   }
 
   return toShiftExchangeDetail({
-    masterDb,
     row: updated,
     actingUserId: input.actingUserId,
     actingRoleNames: [],
@@ -867,6 +873,90 @@ function toStageLabel(row: Pick<ShiftExchangeRequestRow, 'status' | 'approval_st
   return 'Pending';
 }
 
+async function appendShiftExchangeLog(input: {
+  companyId: string;
+  branchId: string;
+  shiftId: string;
+  requestId: string;
+  actorName: string;
+  counterpartName: string;
+  exchangeSide: 'requester' | 'accepting';
+  resolution: ShiftExchangeLogResolution;
+  eventTime: Date;
+  note: string;
+  rejectionReason?: string | null;
+}) {
+  const [log] = await db.getDb()('shift_logs')
+    .insert({
+      company_id: input.companyId,
+      shift_id: input.shiftId,
+      branch_id: input.branchId,
+      log_type: 'authorization_resolved',
+      changes: JSON.stringify({
+        shift_exchange_request_id: input.requestId,
+        auth_type: SHIFT_EXCHANGE_AUTH_TYPE,
+        shift_exchange_side: input.exchangeSide,
+        resolution: input.resolution,
+        resolved_by_name: input.actorName,
+        counterpart_name: input.counterpartName,
+        note: input.note,
+        ...(input.rejectionReason ? { rejection_reason: input.rejectionReason } : {}),
+      }),
+      event_time: input.eventTime,
+      odoo_payload: JSON.stringify({}),
+    })
+    .returning('*');
+
+  try {
+    getIO().of('/employee-shifts').to(`branch:${input.branchId}`).emit('shift:log-new', log);
+  } catch {
+    logger.warn('Socket.IO unavailable for shift exchange log emit');
+  }
+
+  return log;
+}
+
+async function appendShiftExchangeLogsForBothShifts(input: {
+  row: ShiftExchangeRequestRow;
+  resolution: ShiftExchangeLogResolution;
+  actorName: string;
+  requesterName: string;
+  acceptingName: string;
+  requesterNote: string;
+  acceptingNote: string;
+  rejectionReason?: string | null;
+  eventTime: Date;
+}) {
+  await Promise.all([
+    appendShiftExchangeLog({
+      companyId: input.row.requester_company_id,
+      branchId: input.row.requester_branch_id,
+      shiftId: input.row.requester_shift_id,
+      requestId: input.row.id,
+      actorName: input.actorName,
+      counterpartName: input.acceptingName,
+      exchangeSide: 'requester',
+      resolution: input.resolution,
+      eventTime: input.eventTime,
+      note: input.requesterNote,
+      rejectionReason: input.rejectionReason,
+    }),
+    appendShiftExchangeLog({
+      companyId: input.row.accepting_company_id,
+      branchId: input.row.accepting_branch_id,
+      shiftId: input.row.accepting_shift_id,
+      requestId: input.row.id,
+      actorName: input.actorName,
+      counterpartName: input.requesterName,
+      exchangeSide: 'accepting',
+      resolution: input.resolution,
+      eventTime: input.eventTime,
+      note: input.acceptingNote,
+      rejectionReason: input.rejectionReason,
+    }),
+  ]);
+}
+
 function parsePositiveInt(value: string | number | null | undefined, fieldLabel: string): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -880,20 +970,19 @@ export async function approveShiftExchange(input: {
   actingUserId: string;
   actingRoleNames: string[];
 }) {
-  const masterDb = db.getMasterDb();
-  const row = await getRequestById(masterDb, input.requestId);
+  const masterDb = db.getDb();
+  const row = await getRequestById(input.requestId);
   if (row.status !== 'pending' || row.approval_stage !== 'awaiting_hr') {
     throw new AppError(400, 'This shift exchange request is not awaiting HR approval');
   }
 
   await ensureApproverAccess({
-    masterDb,
     actingUserId: input.actingUserId,
     actingRoleNames: input.actingRoleNames,
     companyIds: [row.requester_company_id, row.accepting_company_id],
   });
 
-  const users = await loadUsersByIds(masterDb, [
+  const users = await loadUsersByIds([
     row.requester_user_id,
     row.accepting_user_id,
     input.actingUserId,
@@ -916,12 +1005,12 @@ export async function approveShiftExchange(input: {
 
   const tenantCache = new Map<string, TenantContext>();
   const [requesterCtx, acceptingCtx] = await Promise.all([
-    getTenantContextByCompanyId(masterDb, row.requester_company_id, tenantCache),
-    getTenantContextByCompanyId(masterDb, row.accepting_company_id, tenantCache),
+    getTenantContextByCompanyId(row.requester_company_id, tenantCache),
+    getTenantContextByCompanyId(row.accepting_company_id, tenantCache),
   ]);
   const [requesterShift, acceptingShift] = await Promise.all([
-    getShiftById(requesterCtx.tenantDb, row.requester_shift_id),
-    getShiftById(acceptingCtx.tenantDb, row.accepting_shift_id),
+    getShiftById(row.requester_shift_id),
+    getShiftById(row.accepting_shift_id),
   ]);
   if (!requesterShift || !acceptingShift) {
     throw new AppError(409, 'One of the shifts no longer exists');
@@ -971,7 +1060,7 @@ export async function approveShiftExchange(input: {
   }
 
   const now = new Date();
-  const [updated] = await masterDb(SHIFT_EXCHANGE_TABLE)
+  const [updated] = await db.getDb()(SHIFT_EXCHANGE_TABLE)
     .where({ id: row.id })
     .update({
       status: 'approved',
@@ -982,12 +1071,22 @@ export async function approveShiftExchange(input: {
       updated_at: now,
     })
     .returning('*');
+  const requesterName = formatUserName(requesterUser);
+  const acceptingName = formatUserName(acceptingUser);
+  const approverName = formatUserName(approverUser);
+  await appendShiftExchangeLogsForBothShifts({
+    row: updated as ShiftExchangeRequestRow,
+    resolution: 'approved',
+    actorName: approverName,
+    requesterName,
+    acceptingName,
+    requesterNote: `Shift exchange approved by ${approverName}.`,
+    acceptingNote: `Shift exchange approved by ${approverName}.`,
+    eventTime: now,
+  });
 
-  const requesterTenantDb = await db.getTenantDb(row.requester_company_db_name);
-  const acceptingTenantDb = await db.getTenantDb(row.accepting_company_db_name);
   await Promise.all([
     createAndDispatchNotification({
-      tenantDb: requesterTenantDb,
       userId: row.requester_user_id,
       title: 'Shift Exchange Approved',
       message: 'Your shift exchange request has been approved.',
@@ -995,7 +1094,6 @@ export async function approveShiftExchange(input: {
       linkUrl: `/account/notifications?shiftExchangeId=${row.id}`,
     }),
     createAndDispatchNotification({
-      tenantDb: acceptingTenantDb,
       userId: row.accepting_user_id,
       title: 'Shift Exchange Approved',
       message: 'Your shift exchange request has been approved.',
@@ -1005,7 +1103,6 @@ export async function approveShiftExchange(input: {
   ]);
 
   return toShiftExchangeDetail({
-    masterDb,
     row: updated as ShiftExchangeRequestRow,
     actingUserId: input.actingUserId,
     actingRoleNames: input.actingRoleNames,
@@ -1018,8 +1115,8 @@ export async function rejectShiftExchange(input: {
   actingRoleNames: string[];
   reason: string;
 }) {
-  const masterDb = db.getMasterDb();
-  const row = await getRequestById(masterDb, input.requestId);
+  const masterDb = db.getDb();
+  const row = await getRequestById(input.requestId);
   if (row.status !== 'pending' || row.approval_stage !== 'awaiting_hr') {
     throw new AppError(400, 'This shift exchange request is not awaiting HR approval');
   }
@@ -1030,14 +1127,22 @@ export async function rejectShiftExchange(input: {
   }
 
   await ensureApproverAccess({
-    masterDb,
     actingUserId: input.actingUserId,
     actingRoleNames: input.actingRoleNames,
     companyIds: [row.requester_company_id, row.accepting_company_id],
   });
 
+  const users = await loadUsersByIds([
+    row.requester_user_id,
+    row.accepting_user_id,
+    input.actingUserId,
+  ]);
+  const requesterName = formatUserName(users[row.requester_user_id] ?? null);
+  const acceptingName = formatUserName(users[row.accepting_user_id] ?? null);
+  const approverName = formatUserName(users[input.actingUserId] ?? null);
+
   const now = new Date();
-  const [updated] = await masterDb(SHIFT_EXCHANGE_TABLE)
+  const [updated] = await db.getDb()(SHIFT_EXCHANGE_TABLE)
     .where({ id: row.id })
     .update({
       status: 'rejected',
@@ -1048,12 +1153,20 @@ export async function rejectShiftExchange(input: {
       updated_at: now,
     })
     .returning('*');
+  await appendShiftExchangeLogsForBothShifts({
+    row: updated as ShiftExchangeRequestRow,
+    resolution: 'rejected',
+    actorName: approverName,
+    requesterName,
+    acceptingName,
+    requesterNote: `Shift exchange rejected by ${approverName}.`,
+    acceptingNote: `Shift exchange rejected by ${approverName}.`,
+    rejectionReason: reason,
+    eventTime: now,
+  });
 
-  const requesterTenantDb = await db.getTenantDb(row.requester_company_db_name);
-  const acceptingTenantDb = await db.getTenantDb(row.accepting_company_db_name);
   await Promise.all([
     createAndDispatchNotification({
-      tenantDb: requesterTenantDb,
       userId: row.requester_user_id,
       title: 'Shift Exchange Rejected',
       message: `Your shift exchange request was rejected by HR. Reason: ${reason}`,
@@ -1061,7 +1174,6 @@ export async function rejectShiftExchange(input: {
       linkUrl: `/account/notifications?shiftExchangeId=${row.id}`,
     }),
     createAndDispatchNotification({
-      tenantDb: acceptingTenantDb,
       userId: row.accepting_user_id,
       title: 'Shift Exchange Rejected',
       message: `Your shift exchange request was rejected by HR. Reason: ${reason}`,
@@ -1071,7 +1183,6 @@ export async function rejectShiftExchange(input: {
   ]);
 
   return toShiftExchangeDetail({
-    masterDb,
     row: updated as ShiftExchangeRequestRow,
     actingUserId: input.actingUserId,
     actingRoleNames: input.actingRoleNames,
@@ -1083,8 +1194,8 @@ export async function listShiftExchangeRequestsForAuthorization(input: {
   branchIds: string[];
   status?: string;
 }) {
-  const masterDb = db.getMasterDb();
-  let query = masterDb(SHIFT_EXCHANGE_TABLE)
+  const masterDb = db.getDb();
+  let query = db.getDb()(SHIFT_EXCHANGE_TABLE)
     .where((builder) => {
       builder
         .where('requester_company_id', input.currentCompanyId)
@@ -1110,18 +1221,18 @@ export async function listShiftExchangeRequestsForAuthorization(input: {
       rows.flatMap((row: any) => [row.requester_user_id, row.accepting_user_id, row.requested_by].filter(Boolean)),
     ),
   );
-  const usersById = await loadUsersByIds(masterDb, userIds);
+  const usersById = await loadUsersByIds(userIds);
   const tenantCache = new Map<string, TenantContext>();
 
   const result = await Promise.all(
     (rows as ShiftExchangeRequestRow[]).map(async (row) => {
       const [requesterCtx, acceptingCtx] = await Promise.all([
-        getTenantContextByCompanyId(masterDb, row.requester_company_id, tenantCache),
-        getTenantContextByCompanyId(masterDb, row.accepting_company_id, tenantCache),
+        getTenantContextByCompanyId(row.requester_company_id, tenantCache),
+        getTenantContextByCompanyId(row.accepting_company_id, tenantCache),
       ]);
       const [requesterShift, acceptingShift] = await Promise.all([
-        getShiftById(requesterCtx.tenantDb, row.requester_shift_id),
-        getShiftById(acceptingCtx.tenantDb, row.accepting_shift_id),
+        getShiftById(row.requester_shift_id),
+        getShiftById(row.accepting_shift_id),
       ]);
 
       const requesterUser = usersById[row.requester_user_id] ?? null;

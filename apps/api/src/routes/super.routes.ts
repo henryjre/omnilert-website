@@ -3,19 +3,25 @@ import {
   createCompanyBySuperAdminSchema,
   updateCompanySchema,
   deleteCurrentCompanySchema,
+  deleteCompanyByIdSchema,
   superAdminBootstrapSchema,
   superAdminLoginSchema,
+  PERMISSIONS,
 } from '@omnilert/shared';
 import { validateBody } from '../middleware/validateRequest.js';
 import { authenticate } from '../middleware/auth.js';
 import { authenticateSuperAdmin } from '../middleware/superAdminAuth.js';
+import { requirePermission } from '../middleware/rbac.js';
 import * as companyController from '../controllers/company.controller.js';
 import * as superAdminController from '../controllers/superAdmin.controller.js';
+import * as branchController from '../controllers/branch.controller.js';
 
 const router = Router();
 
 // Public - list companies (for login dropdown)
 router.get('/companies', companyController.listPublic);
+// Authenticated admin - list all companies
+router.get('/companies/all', authenticate, companyController.list);
 router.post(
   '/bootstrap',
   validateBody(superAdminBootstrapSchema),
@@ -55,5 +61,25 @@ router.put(
   validateBody(updateCompanySchema),
   companyController.update,
 );
+// Admin-accessible update (no super admin token needed)
+router.put(
+  '/companies/:id/update',
+  authenticate,
+  validateBody(updateCompanySchema),
+  companyController.updateByAdmin,
+);
+// Super admin delete by ID
+router.post(
+  '/companies/:id/delete',
+  authenticateSuperAdmin,
+  validateBody(deleteCompanyByIdSchema),
+  companyController.deleteById,
+);
+
+// Admin-accessible branch management per company
+router.get('/companies/:companyId/branches', authenticate, branchController.superList);
+router.post('/companies/:companyId/branches', authenticate, requirePermission(PERMISSIONS.ADMIN_MANAGE_COMPANIES), branchController.superCreate);
+router.put('/companies/:companyId/branches/:branchId', authenticate, requirePermission(PERMISSIONS.ADMIN_MANAGE_COMPANIES), branchController.superUpdate);
+router.delete('/companies/:companyId/branches/:branchId', authenticate, requirePermission(PERMISSIONS.ADMIN_MANAGE_COMPANIES), branchController.superRemove);
 
 export default router;

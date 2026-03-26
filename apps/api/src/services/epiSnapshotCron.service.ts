@@ -1,6 +1,6 @@
 import { db } from '../config/database.js';
 import { logger } from '../utils/logger.js';
-import { calculateKpiScores, type KpiBreakdown } from './epiCalculation.service.js';
+import { calculateKpiScores, type KpiBreakdown, type UserKpiData } from './epiCalculation.service.js';
 import { generateEpiReportPdf, generateManagerSummaryPdf, type EpiReportData } from './epiReport.service.js';
 import { sendWeeklyEpiEmail, sendManagerEpiSummaryEmail } from './mail.service.js';
 
@@ -29,10 +29,69 @@ interface MasterUserRow {
   id: string;
   user_key: string;
   epi_score: number;
-  css_audits: unknown;
-  peer_evaluations: unknown;
-  compliance_audit: unknown;
-  violation_notices: unknown;
+}
+
+function getWeeklyEligibilityCutoffDate(referenceDate: Date = new Date()): Date {
+  return new Date(referenceDate.getTime() - THIRTY_DAY_WINDOW_MS);
+}
+
+function isEligibleForWeeklyEpiByAccountAge(createdAt: Date, referenceDate: Date = new Date()): boolean {
+  return createdAt.getTime() <= getWeeklyEligibilityCutoffDate(referenceDate).getTime();
+}
+
+async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKpiData> {
+  const dbConn = db.getDb();
+  const [cssAudits, peerEvaluations, complianceAuditRows, violationNotices] = await Promise.all([
+    // CSS audits: the user was the cashier being audited (identified by user_key UUID)
+    dbConn('store_audits')
+      .where({ css_cashier_user_key: userId, type: 'customer_service', status: 'completed' })
+      .select(dbConn.raw(`css_star_rating as star_rating`), dbConn.raw(`completed_at::text as audited_at`)),
+    dbConn('peer_evaluations')
+      .where({ evaluated_user_id: userId })
+      .whereNotNull('submitted_at')
+      .select(
+        dbConn.raw(`(q1_score + q2_score + q3_score) / 3.0 as average_score`),
+        dbConn.raw(`submitted_at::text`),
+        dbConn.raw(`wrs_effective_at::text`),
+      ),
+    // Compliance audits: the user was the auditor
+    dbConn('store_audits')
+      .where({ auditor_user_id: userId, type: 'compliance', status: 'completed' })
+      .select(
+        'comp_productivity_rate',
+        'comp_uniform',
+        'comp_hygiene',
+        'comp_sop',
+        dbConn.raw(`completed_at::text as audited_at`),
+      ),
+    dbConn('violation_notices')
+      .whereExists(
+        dbConn('violation_notice_targets').whereRaw('violation_notice_id = violation_notices.id').where({ user_id: userId }),
+      )
+      .where({ status: 'completed' })
+      .select('epi_decrease', dbConn.raw(`updated_at::text as completed_at`)),
+  ]);
+
+  const complianceAudit = complianceAuditRows.length
+    ? complianceAuditRows.map((r: any) => ({
+        answers: {
+          productivity_rate: r.comp_productivity_rate ?? false,
+          uniform: r.comp_uniform ?? false,
+          hygiene: r.comp_hygiene ?? false,
+          sop: r.comp_sop ?? false,
+        },
+        audited_at: r.audited_at,
+      }))
+    : null;
+
+  return {
+    userId,
+    userKey,
+    cssAudits: cssAudits.length ? cssAudits : null,
+    peerEvaluations: peerEvaluations.length ? peerEvaluations : null,
+    complianceAudit,
+    violationNotices: violationNotices.length ? violationNotices : null,
+  };
 }
 
 interface ScheduledJobRunRow {
@@ -224,7 +283,7 @@ function scheduleTimeoutUntil(job: ScheduledSnapshotJob, target: Date, callback:
 }
 
 async function claimScheduledJobRun(jobName: string, scheduledFor: Date): Promise<boolean> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const scheduledForKey = formatScheduledForKey(scheduledFor);
   const scheduledForManila = formatManilaDateTime(scheduledFor);
   const now = new Date();
@@ -300,7 +359,7 @@ function getExpectedSnapshotType(job: ScheduledSnapshotJob): EpiHistoryEntry['ty
 }
 
 async function hasExistingSnapshotHistory(job: ScheduledSnapshotJob, scheduledFor: Date): Promise<boolean> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const snapshotType = getExpectedSnapshotType(job);
   const snapshotDate = getExpectedSnapshotDate(job, scheduledFor);
   const jsonPath = `$[*] ? (@.type == "${snapshotType}" && @.date == "${snapshotDate}")`;
@@ -318,7 +377,7 @@ async function hasExistingSnapshotHistory(job: ScheduledSnapshotJob, scheduledFo
 }
 
 async function recordSuccessfulScheduledJobRun(jobName: string, scheduledFor: Date): Promise<void> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const now = new Date();
 
   await masterDb('scheduled_job_runs')
@@ -345,7 +404,7 @@ async function recordSuccessfulScheduledJobRun(jobName: string, scheduledFor: Da
 }
 
 async function markScheduledJobRunSuccess(jobName: string, scheduledFor: Date): Promise<void> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const scheduledForKey = formatScheduledForKey(scheduledFor);
   const now = new Date();
 
@@ -359,7 +418,7 @@ async function markScheduledJobRunSuccess(jobName: string, scheduledFor: Date): 
 }
 
 async function markScheduledJobRunFailure(jobName: string, scheduledFor: Date, error: unknown): Promise<void> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const scheduledForKey = formatScheduledForKey(scheduledFor);
   const now = new Date();
   const errorMessage = error instanceof Error ? error.message : String(error);
@@ -457,7 +516,7 @@ export async function reconcileJobsSequentially<T>(
 }
 
 async function getActiveServiceCrewUsers(): Promise<MasterUserRow[]> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
 
   return masterDb('users as u')
     .join('user_roles as ur', 'u.id', 'ur.user_id')
@@ -465,15 +524,23 @@ async function getActiveServiceCrewUsers(): Promise<MasterUserRow[]> {
     .where('u.is_active', true)
     .where('u.employment_status', 'active')
     .where('r.name', 'Service Crew')
-    .select(
-      'u.id',
-      'u.user_key',
-      'u.epi_score',
-      'u.css_audits',
-      'u.peer_evaluations',
-      'u.compliance_audit',
-      'u.violation_notices',
-    )
+    .select('u.id', 'u.user_key', 'u.epi_score')
+    .distinct('u.id')
+    .orderBy('u.id') as Promise<MasterUserRow[]>;
+}
+
+async function getWeeklyEligibleServiceCrewUsers(referenceDate: Date = new Date()): Promise<MasterUserRow[]> {
+  const masterDb = db.getDb();
+  const cutoffDate = getWeeklyEligibilityCutoffDate(referenceDate);
+
+  return masterDb('users as u')
+    .join('user_roles as ur', 'u.id', 'ur.user_id')
+    .join('roles as r', 'ur.role_id', 'r.id')
+    .where('u.is_active', true)
+    .where('u.employment_status', 'active')
+    .where('r.name', 'Service Crew')
+    .where('u.created_at', '<=', cutoffDate)
+    .select('u.id', 'u.user_key', 'u.epi_score')
     .distinct('u.id')
     .orderBy('u.id') as Promise<MasterUserRow[]>;
 }
@@ -484,8 +551,8 @@ export async function runWeeklyEpiSnapshot(input?: { scheduledFor?: Date }): Pro
 
   logger.info({ snapshotDate }, 'EPI weekly snapshot started');
 
-  const masterDb = db.getMasterDb();
-  const users = await getActiveServiceCrewUsers();
+  const masterDb = db.getDb();
+  const users = await getWeeklyEligibleServiceCrewUsers(scheduledFor);
   const reportDataList: EpiReportData[] = [];
 
   logger.info({ snapshotDate, count: users.length }, 'EPI weekly snapshot: processing users');
@@ -500,14 +567,8 @@ export async function runWeeklyEpiSnapshot(input?: { scheduledFor?: Date }): Pro
 
   for (const user of users) {
     try {
-      const { breakdown, delta, raw_delta, capped } = await calculateKpiScores({
-        userId: user.id,
-        userKey: user.user_key,
-        cssAudits: (user.css_audits as any) ?? null,
-        peerEvaluations: (user.peer_evaluations as any) ?? null,
-        complianceAudit: (user.compliance_audit as any) ?? null,
-        violationNotices: (user.violation_notices as any) ?? null,
-      });
+      const kpiData = await fetchUserKpiData(user.id, user.user_key);
+      const { breakdown, delta, raw_delta, capped } = await calculateKpiScores(kpiData);
 
       const epiBefore = Number(user.epi_score ?? 100);
       const epiAfter = Math.round((epiBefore + delta) * 10) / 10;
@@ -630,19 +691,13 @@ export async function runMonthlyEpiSnapshot(input?: { scheduledFor?: Date }): Pr
 
   logger.info({ snapshotDate }, 'EPI monthly snapshot started');
 
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const users = await getActiveServiceCrewUsers();
 
   for (const user of users) {
     try {
-      const { breakdown, raw_delta, capped } = await calculateKpiScores({
-        userId: user.id,
-        userKey: user.user_key,
-        cssAudits: (user.css_audits as any) ?? null,
-        peerEvaluations: (user.peer_evaluations as any) ?? null,
-        complianceAudit: (user.compliance_audit as any) ?? null,
-        violationNotices: (user.violation_notices as any) ?? null,
-      });
+      const kpiData = await fetchUserKpiData(user.id, user.user_key);
+      const { breakdown, raw_delta, capped } = await calculateKpiScores(kpiData);
 
       const currentEpi = Number(user.epi_score ?? 100);
       const entry: EpiHistoryEntry = {
@@ -703,3 +758,6 @@ export function stopEpiSnapshotCrons(): void {
     clearScheduledHandle(job);
   }
 }
+
+export { getWeeklyEligibilityCutoffDate };
+export { isEligibleForWeeklyEpiByAccountAge };

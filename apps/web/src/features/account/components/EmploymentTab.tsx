@@ -1,24 +1,48 @@
 import { type ElementType, useEffect, useRef, useState } from 'react';
+import { AnimatePresence } from 'framer-motion';
 import { Card, CardBody, CardHeader } from '@/shared/components/ui/Card';
+import { AnimatedModal } from '@/shared/components/ui/AnimatedModal';
 import { Button } from '@/shared/components/ui/Button';
 import { Input } from '@/shared/components/ui/Input';
-import { Spinner } from '@/shared/components/ui/Spinner';
 import { api } from '@/shared/services/api.client';
+import { normalizeFileForUpload } from '@/shared/utils/fileUpload';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useAppToast } from '@/shared/hooks/useAppToast';
 import { useAuthStore } from '@/features/auth/store/authSlice';
 import {
   AlertTriangle,
+  Building2,
   Check,
   Clock3,
+  CreditCard,
   ExternalLink,
+  GitBranch,
   IdCard,
   Key,
   Upload,
+  User,
   X,
 } from 'lucide-react';
 import { PERMISSIONS } from '@omnilert/shared';
 import { ProfilePictureModal } from './ProfilePictureModal';
+
+/** Read-only label + value row used inside the Work Details grid. */
+function WorkInfoRow({
+  label,
+  value,
+  className = '',
+}: {
+  label: string;
+  value: string | null | undefined;
+  className?: string;
+}) {
+  return (
+    <div className={`space-y-0.5 ${className}`}>
+      <dt className="text-xs text-gray-400">{label}</dt>
+      <dd className="text-sm font-medium text-gray-800">{value ?? 'Not set'}</dd>
+    </div>
+  );
+}
 
 type RequirementStatus = 'complete' | 'rejected' | 'verification' | 'pending';
 
@@ -254,11 +278,92 @@ function shouldApplyRequestedValue(key: string, requestedValue: unknown, current
   return requested !== current;
 }
 
+/** localStorage keys for persisting unsaved form drafts. */
+const PERSONAL_DRAFT_KEY = 'omnilert:profile:personal-draft';
+const BANK_DRAFT_KEY = 'omnilert:profile:bank-draft';
+
+type PersonalDraft = {
+  firstName: string;
+  lastName: string;
+  mobileNumber: string;
+  legalName: string;
+  birthday: string;
+  gender: string;
+  address: string;
+  sssNumber: string;
+  tinNumber: string;
+  pagibigNumber: string;
+  philhealthNumber: string;
+  maritalStatus: string;
+  emergencyContact: string;
+  emergencyPhone: string;
+  emergencyRelationship: string;
+};
+
+type BankDraft = {
+  bankId: string;
+  bankAccountNumber: string;
+};
+
+function normalizeDraftString(value: unknown): string {
+  return typeof value === 'string' ? value : String(value ?? '');
+}
+
+function buildPersonalDraft(input: Partial<Record<keyof PersonalDraft, unknown>>): PersonalDraft {
+  return {
+    firstName: normalizeDraftString(input.firstName).trim(),
+    lastName: normalizeDraftString(input.lastName).trim(),
+    mobileNumber: normalizeDraftString(input.mobileNumber).trim(),
+    legalName: normalizeDraftString(input.legalName).trim(),
+    birthday: normalizeDraftString(input.birthday).trim(),
+    gender: normalizeDraftString(input.gender).trim(),
+    address: normalizeDraftString(input.address).trim(),
+    sssNumber: normalizeDraftString(input.sssNumber).trim(),
+    tinNumber: normalizeDraftString(input.tinNumber).trim(),
+    pagibigNumber: normalizeDraftString(input.pagibigNumber).trim(),
+    philhealthNumber: normalizeDraftString(input.philhealthNumber).trim(),
+    maritalStatus: normalizeDraftString(input.maritalStatus).trim(),
+    emergencyContact: normalizeDraftString(input.emergencyContact).trim(),
+    emergencyPhone: normalizeDraftString(input.emergencyPhone).trim(),
+    emergencyRelationship: normalizeDraftString(input.emergencyRelationship).trim(),
+  };
+}
+
+function buildBankDraft(input: Partial<Record<keyof BankDraft, unknown>>): BankDraft {
+  return {
+    bankId: normalizeDraftString(input.bankId).trim(),
+    bankAccountNumber: normalizeDraftString(input.bankAccountNumber).trim(),
+  };
+}
+
+function arePersonalDraftsEqual(a: PersonalDraft, b: PersonalDraft): boolean {
+  return (
+    a.firstName === b.firstName
+    && a.lastName === b.lastName
+    && a.mobileNumber === b.mobileNumber
+    && a.legalName === b.legalName
+    && a.birthday === b.birthday
+    && a.gender === b.gender
+    && a.address === b.address
+    && a.sssNumber === b.sssNumber
+    && a.tinNumber === b.tinNumber
+    && a.pagibigNumber === b.pagibigNumber
+    && a.philhealthNumber === b.philhealthNumber
+    && a.maritalStatus === b.maritalStatus
+    && a.emergencyContact === b.emergencyContact
+    && a.emergencyPhone === b.emergencyPhone
+    && a.emergencyRelationship === b.emergencyRelationship
+  );
+}
+
+function areBankDraftsEqual(a: BankDraft, b: BankDraft): boolean {
+  return a.bankId === b.bankId && a.bankAccountNumber === b.bankAccountNumber;
+}
+
 export function EmploymentTab() {
   const updateUser = useAuthStore((s) => s.updateUser);
   const { hasPermission } = usePermission();
-  const canSubmitEmployeeRequirements = hasPermission(PERMISSIONS.ACCOUNT_SUBMIT_EMPLOYEE_REQUIREMENTS);
-  const canEditOwnProfile = hasPermission(PERMISSIONS.EMPLOYEE_EDIT_OWN_PROFILE);
+  const canSubmitEmployeeRequirements = hasPermission(PERMISSIONS.ACCOUNT_MANAGE_EMPLOYEE_REQUIREMENTS);
 
   const [loading, setLoading] = useState(true);
   const [submittingPersonal, setSubmittingPersonal] = useState(false);
@@ -296,6 +401,12 @@ export function EmploymentTab() {
   const [bankAccountNumber, setBankAccountNumber] = useState('');
 
   const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [personalDraftRestored, setPersonalDraftRestored] = useState(false);
+  const [bankDraftRestored, setBankDraftRestored] = useState(false);
+  /** Prevents the "draft restored" banner from re-appearing on subsequent fetchProfile calls. */
+  const isFirstProfileLoad = useRef(true);
+  const personalBaselineRef = useRef<PersonalDraft | null>(null);
+  const bankBaselineRef = useRef<BankDraft | null>(null);
   const validIdInputRef = useRef<HTMLInputElement>(null);
 
   const [selectedRequirement, setSelectedRequirement] = useState<RequirementItem | null>(null);
@@ -414,6 +525,175 @@ export function EmploymentTab() {
         ? String(payload.bankVerification.latest?.account_number ?? '')
         : (payload.user.bank_account_number || ''),
     );
+
+    // Capture baseline values after applying server + pending-change overlay.
+    const nextPersonalBaseline = buildPersonalDraft({
+      firstName: (
+        isPersonalPending && shouldApplyRequestedValue('firstName', requestedChanges.firstName, payload.user.first_name)
+          ? String(requestedChanges.firstName ?? '')
+          : (payload.user.first_name || '')
+      ),
+      lastName: (
+        isPersonalPending && shouldApplyRequestedValue('lastName', requestedChanges.lastName, payload.user.last_name)
+          ? String(requestedChanges.lastName ?? '')
+          : (payload.user.last_name || '')
+      ),
+      mobileNumber: (
+        isPersonalPending
+        && shouldApplyRequestedValue('mobileNumber', requestedChanges.mobileNumber, payload.user.mobile_number)
+          ? String(requestedChanges.mobileNumber ?? '')
+          : (payload.user.mobile_number || '')
+      ),
+      legalName: (
+        isPersonalPending && shouldApplyRequestedValue('legalName', requestedChanges.legalName, payload.user.legal_name)
+          ? String(requestedChanges.legalName ?? '')
+          : (payload.user.legal_name || '')
+      ),
+      birthday: (
+        isPersonalPending && shouldApplyRequestedValue('birthday', requestedChanges.birthday, payload.user.birthday)
+          ? toDateInput((requestedChanges.birthday as string | null) ?? null)
+          : toDateInput(payload.user.birthday)
+      ),
+      gender: (
+        isPersonalPending && shouldApplyRequestedValue('gender', requestedChanges.gender, payload.user.gender)
+          ? String(requestedChanges.gender ?? '')
+          : (payload.user.gender || '')
+      ),
+      address: (
+        isPersonalPending && shouldApplyRequestedValue('address', requestedChanges.address, payload.user.address)
+          ? String(requestedChanges.address ?? '')
+          : (payload.user.address || '')
+      ),
+      sssNumber: (
+        isPersonalPending && shouldApplyRequestedValue('sssNumber', requestedChanges.sssNumber, payload.user.sss_number)
+          ? String(requestedChanges.sssNumber ?? '')
+          : (payload.user.sss_number || '')
+      ),
+      tinNumber: (
+        isPersonalPending && shouldApplyRequestedValue('tinNumber', requestedChanges.tinNumber, payload.user.tin_number)
+          ? String(requestedChanges.tinNumber ?? '')
+          : (payload.user.tin_number || '')
+      ),
+      pagibigNumber: (
+        isPersonalPending
+        && shouldApplyRequestedValue('pagibigNumber', requestedChanges.pagibigNumber, payload.user.pagibig_number)
+          ? String(requestedChanges.pagibigNumber ?? '')
+          : (payload.user.pagibig_number || '')
+      ),
+      philhealthNumber: (
+        isPersonalPending
+        && shouldApplyRequestedValue('philhealthNumber', requestedChanges.philhealthNumber, payload.user.philhealth_number)
+          ? String(requestedChanges.philhealthNumber ?? '')
+          : (payload.user.philhealth_number || '')
+      ),
+      maritalStatus: (
+        isPersonalPending
+        && shouldApplyRequestedValue('maritalStatus', requestedChanges.maritalStatus, payload.user.marital_status)
+          ? normalizeMaritalStatusValue(requestedChanges.maritalStatus)
+          : normalizeMaritalStatusValue(payload.user.marital_status)
+      ),
+      emergencyContact: (
+        isPersonalPending
+        && shouldApplyRequestedValue('emergencyContact', requestedChanges.emergencyContact, payload.user.emergency_contact)
+          ? String(requestedChanges.emergencyContact ?? '')
+          : (payload.user.emergency_contact || '')
+      ),
+      emergencyPhone: (
+        isPersonalPending
+        && shouldApplyRequestedValue('emergencyPhone', requestedChanges.emergencyPhone, payload.user.emergency_phone)
+          ? String(requestedChanges.emergencyPhone ?? '')
+          : (payload.user.emergency_phone || '')
+      ),
+      emergencyRelationship: (
+        isPersonalPending
+        && shouldApplyRequestedValue(
+          'emergencyRelationship',
+          requestedChanges.emergencyRelationship,
+          payload.user.emergency_relationship,
+        )
+          ? String(requestedChanges.emergencyRelationship ?? '')
+          : (payload.user.emergency_relationship || '')
+      ),
+    });
+
+    const nextBankBaseline = buildBankDraft({
+      bankId: (
+        isBankPending
+          ? (payload.bankVerification.latest?.bank_id ? String(payload.bankVerification.latest.bank_id) : '')
+          : (payload.user.bank_id ? String(payload.user.bank_id) : '')
+      ),
+      bankAccountNumber: (
+        isBankPending
+          ? String(payload.bankVerification.latest?.account_number ?? '')
+          : (payload.user.bank_account_number || '')
+      ),
+    });
+
+    personalBaselineRef.current = nextPersonalBaseline;
+    bankBaselineRef.current = nextBankBaseline;
+
+    // ── Restore localStorage drafts (only on first load, only when not locked) ──
+    if (isFirstProfileLoad.current) {
+      isFirstProfileLoad.current = false;
+
+      if (!isPersonalPending) {
+        try {
+          const raw = localStorage.getItem(PERSONAL_DRAFT_KEY);
+          if (raw) {
+            const parsed: unknown = JSON.parse(raw);
+            const draft = buildPersonalDraft((parsed && typeof parsed === 'object') ? (parsed as Partial<Record<keyof PersonalDraft, unknown>>) : {});
+            const baseline = personalBaselineRef.current;
+
+            // If draft equals current baseline, it isn't an "unsaved change" — clear it silently.
+            if (baseline && arePersonalDraftsEqual(draft, baseline)) {
+              localStorage.removeItem(PERSONAL_DRAFT_KEY);
+              setPersonalDraftRestored(false);
+            } else {
+              setFirstName(draft.firstName);
+              setLastName(draft.lastName);
+              setMobileNumber(draft.mobileNumber);
+              setLegalName(draft.legalName);
+              setBirthday(draft.birthday);
+              setGender(draft.gender);
+              setAddress(draft.address);
+              setSssNumber(draft.sssNumber);
+              setTinNumber(draft.tinNumber);
+              setPagibigNumber(draft.pagibigNumber);
+              setPhilhealthNumber(draft.philhealthNumber);
+              setMaritalStatus(draft.maritalStatus);
+              setEmergencyContact(draft.emergencyContact);
+              setEmergencyPhone(draft.emergencyPhone);
+              setEmergencyRelationship(draft.emergencyRelationship);
+              setPersonalDraftRestored(true);
+            }
+          }
+        } catch { /* ignore malformed draft */ }
+      } else {
+        localStorage.removeItem(PERSONAL_DRAFT_KEY);
+      }
+
+      if (!isBankPending) {
+        try {
+          const raw = localStorage.getItem(BANK_DRAFT_KEY);
+          if (raw) {
+            const parsed: unknown = JSON.parse(raw);
+            const draft = buildBankDraft((parsed && typeof parsed === 'object') ? (parsed as Partial<Record<keyof BankDraft, unknown>>) : {});
+            const baseline = bankBaselineRef.current;
+
+            if (baseline && areBankDraftsEqual(draft, baseline)) {
+              localStorage.removeItem(BANK_DRAFT_KEY);
+              setBankDraftRestored(false);
+            } else {
+              setBankId(draft.bankId);
+              setBankAccountNumber(draft.bankAccountNumber);
+              setBankDraftRestored(true);
+            }
+          }
+        } catch { /* ignore malformed draft */ }
+      } else {
+        localStorage.removeItem(BANK_DRAFT_KEY);
+      }
+    }
   };
 
   const fetchRequirements = async () => {
@@ -440,6 +720,46 @@ export function EmploymentTab() {
       })
       .finally(() => setLoading(false));
   }, [canSubmitEmployeeRequirements, showErrorToast]);
+
+  /** Auto-save personal info draft to localStorage on every change (skipped while loading or pending). */
+  useEffect(() => {
+    if (loading || personalPending) return;
+    try {
+      const baseline = personalBaselineRef.current;
+      const draft = buildPersonalDraft({
+        firstName, lastName, mobileNumber, legalName, birthday, gender,
+        address, sssNumber, tinNumber, pagibigNumber, philhealthNumber,
+        maritalStatus, emergencyContact, emergencyPhone, emergencyRelationship,
+      });
+
+      // If form matches baseline, there is no "unsaved change" to persist.
+      if (baseline && arePersonalDraftsEqual(draft, baseline)) {
+        localStorage.removeItem(PERSONAL_DRAFT_KEY);
+        return;
+      }
+
+      localStorage.setItem(PERSONAL_DRAFT_KEY, JSON.stringify(draft));
+    } catch { /* ignore storage quota errors */ }
+  }, [
+    firstName, lastName, mobileNumber, legalName, birthday, gender,
+    address, sssNumber, tinNumber, pagibigNumber, philhealthNumber,
+    maritalStatus, emergencyContact, emergencyPhone, emergencyRelationship,
+    loading, personalPending,
+  ]);
+
+  /** Auto-save bank info draft to localStorage on every change. */
+  useEffect(() => {
+    if (loading || bankPending) return;
+    try {
+      const baseline = bankBaselineRef.current;
+      const draft = buildBankDraft({ bankId, bankAccountNumber });
+      if (baseline && areBankDraftsEqual(draft, baseline)) {
+        localStorage.removeItem(BANK_DRAFT_KEY);
+        return;
+      }
+      localStorage.setItem(BANK_DRAFT_KEY, JSON.stringify(draft));
+    } catch { /* ignore */ }
+  }, [bankId, bankAccountNumber, loading, bankPending]);
 
   const handleMobileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let value = e.target.value.replace(/\D/g, '');
@@ -477,7 +797,7 @@ export function EmploymentTab() {
   };
 
   const handleUploadValidId = async (file: File) => {
-    if (!canEditOwnProfile) {
+    if (!true) {
       showErrorToast('You do not have permission to edit your profile.');
       return;
     }
@@ -509,7 +829,7 @@ export function EmploymentTab() {
   };
 
   const handleSubmitPersonalVerification = async () => {
-    if (!canEditOwnProfile) {
+    if (!true) {
       showErrorToast('You do not have permission to edit your profile.');
       return;
     }
@@ -532,6 +852,8 @@ export function EmploymentTab() {
         emergencyPhone: emergencyPhone.trim(),
         emergencyRelationship: emergencyRelationship.trim(),
       });
+      localStorage.removeItem(PERSONAL_DRAFT_KEY);
+      setPersonalDraftRestored(false);
       await fetchProfile();
       showSuccessToast('Personal information submitted for verification.');
     } catch (err: any) {
@@ -542,7 +864,7 @@ export function EmploymentTab() {
   };
 
   const handleSubmitBankVerification = async () => {
-    if (!canEditOwnProfile) {
+    if (!true) {
       showErrorToast('You do not have permission to edit your profile.');
       return;
     }
@@ -557,6 +879,8 @@ export function EmploymentTab() {
         bankId: Number(bankId),
         accountNumber: bankAccountNumber.trim(),
       });
+      localStorage.removeItem(BANK_DRAFT_KEY);
+      setBankDraftRestored(false);
       await fetchProfile();
       showSuccessToast('Bank information submitted for verification.');
     } catch (err: any) {
@@ -572,7 +896,7 @@ export function EmploymentTab() {
   };
 
   const submitRequirement = async () => {
-    if (!canEditOwnProfile) {
+    if (!true) {
       showErrorToast('You do not have permission to edit your profile.');
       return;
     }
@@ -609,230 +933,416 @@ export function EmploymentTab() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex justify-center py-12">
-        <Spinner size="lg" />
-      </div>
-    );
-  }
-
-  const pendingMessage = 'You have submitted a pending verification for this information.';
+  if (loading) return null;
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <IdCard className="h-6 w-6 text-primary-600" />
-        <h1 className="text-2xl font-bold text-gray-900">Profile</h1>
+
+      {/* ─── Page header ─────────────────────────────────────────────── */}
+      <div>
+        <div className="flex items-center gap-3">
+          <IdCard className="h-6 w-6 text-primary-600" />
+          <h1 className="text-2xl font-bold text-gray-900">My Profile</h1>
+        </div>
+        <p className="mt-1 hidden text-sm text-gray-500 sm:block">
+          Your employment record, personal details, and bank information.
+        </p>
       </div>
 
-      <div className="space-y-4">
+      {/* ─── Employee summary (read-only snapshot) ───────────────────── */}
       <Card>
-        <CardHeader>
-          <h2 className="text-lg font-semibold text-gray-900">Employee Information</h2>
-          <p className="mt-1 text-sm text-gray-500">
-            Keep your personal, emergency contact, bank, and valid ID details updated.
-          </p>
-        </CardHeader>
-        <CardBody className="space-y-6">
-          <div className="space-y-4">
-            <div className="flex items-center gap-4">
-              <div className="relative h-20 w-20 shrink-0">
+        <CardBody className="p-4 sm:p-5">
+          {/* Mobile: centered column; Desktop: side-by-side row */}
+          <div className="flex flex-col items-center gap-3 sm:flex-row sm:items-start sm:gap-4">
+            {/* Avatar + change picture link (grouped together) */}
+            <div className="flex shrink-0 flex-col items-center gap-1.5 sm:items-center">
+              <div className="relative h-24 w-24 sm:h-20 sm:w-20">
                 {avatarUrl ? (
-                  <img src={avatarUrl} alt="Profile" className="h-full w-full rounded-full object-cover" />
+                  <img
+                    src={avatarUrl}
+                    alt="Profile"
+                    className="h-full w-full rounded-full object-cover"
+                  />
                 ) : (
-                  <div className="flex h-full w-full items-center justify-center rounded-full bg-gray-200">
-                    <span className="text-2xl font-medium text-gray-500">
+                  <div className="flex h-full w-full items-center justify-center rounded-full bg-primary-100">
+                    <span className="text-3xl font-bold text-primary-600 sm:text-2xl">
                       {firstName?.[0] || lastName?.[0] || '?'}
                     </span>
                   </div>
                 )}
               </div>
-              <div>
-                <p className="font-medium text-gray-900">{`${firstName} ${lastName}`.trim() || 'Unnamed User'}</p>
-                <button
-                  type="button"
-                  onClick={() => setProfileModalOpen(true)}
-                  disabled={!canEditOwnProfile}
-                  className="mt-1 text-sm text-primary-600 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline"
-                >
-                  Add/Change Profile Picture
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setProfileModalOpen(true)}
+                disabled={!true}
+                className="text-xs text-primary-600 hover:underline disabled:cursor-not-allowed disabled:text-gray-400 disabled:no-underline"
+              >
+                Change Picture
+              </button>
             </div>
 
-            <p className="text-xs text-gray-500">
-              Changes are sent for verification first. Your profile and Odoo records are updated only after approval.
-            </p>
-            {!canEditOwnProfile && (
-              <p className="text-xs text-amber-700">
-                You can view your profile, but you do not have permission to submit profile updates.
-              </p>
-            )}
-
-            <div className="space-y-6">
-              <div className="space-y-4 border-t border-gray-100 pt-4">
-                <h4 className="text-sm font-semibold text-gray-900">Personal Information</h4>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium text-gray-700">First Name</label>
-                    <Input
-                      type="text"
-                      value={firstName}
-                      onChange={(e) => setFirstName(e.target.value)}
-                      placeholder="Enter first name"
-                      disabled={personalPending}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium text-gray-700">Last Name</label>
-                    <Input
-                      type="text"
-                      value={lastName}
-                      onChange={(e) => setLastName(e.target.value)}
-                      placeholder="Enter last name"
-                      disabled={personalPending}
-                    />
-                  </div>
-
-                  <div className="space-y-1 sm:col-span-2">
-                    <label className="text-sm font-medium text-gray-700">Legal Name</label>
-                    <Input
-                      type="text"
-                      value={legalName}
-                      onChange={(e) => setLegalName(e.target.value)}
-                      placeholder="Enter your full legal name"
-                      disabled={personalPending}
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium text-gray-700">Marital Status</label>
-                    <select
-                      value={maritalStatus}
-                      onChange={(e) => setMaritalStatus(e.target.value)}
-                      disabled={personalPending}
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:bg-gray-50"
-                    >
-                      {MARITAL_STATUS_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium text-gray-700">Birthday</label>
-                    <Input
-                      type="date"
-                      value={birthday}
-                      onChange={(e) => setBirthday(e.target.value)}
-                      disabled={personalPending}
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium text-gray-700">Gender</label>
-                    <select
-                      value={gender}
-                      onChange={(e) => setGender(e.target.value)}
-                      disabled={personalPending}
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:bg-gray-50"
-                    >
-                      {GENDER_OPTIONS.map((opt) => (
-                        <option key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+            {/* Name + quick info */}
+            <div className="min-w-0 flex-1 text-center sm:text-left">
+              <div className="flex flex-col items-center gap-1.5 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-2">
+                <div>
+                  <h2 className="text-base font-bold text-gray-900 sm:text-lg">
+                    {`${firstName} ${lastName}`.trim() || 'Unnamed User'}
+                  </h2>
+                  <p className="mt-0.5 text-sm text-gray-500">
+                    {profile?.workInfo.position_title || 'No position set'}
+                  </p>
                 </div>
+                <span
+                  className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                    profile?.workInfo.status === 'active'
+                      ? 'bg-green-100 text-green-700'
+                      : profile?.workInfo.status === 'resigned'
+                        ? 'bg-red-100 text-red-700'
+                        : 'bg-gray-100 text-gray-600'
+                  }`}
+                >
+                  {profile?.workInfo.status === 'resigned'
+                    ? 'Resigned'
+                    : profile?.workInfo.status === 'inactive'
+                      ? 'Inactive'
+                      : 'Active'}
+                </span>
               </div>
 
-              <div className="space-y-4 border-t border-gray-100 pt-4">
-                <h4 className="text-sm font-semibold text-gray-900">Private Contact</h4>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-1 sm:col-span-2">
-                    <label className="text-sm font-medium text-gray-700">Address</label>
-                    <Input
-                      type="text"
-                      value={address}
-                      onChange={(e) => setAddress(e.target.value)}
-                      placeholder="Enter your address"
-                      disabled={personalPending}
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium text-gray-700">Mobile Number</label>
-                    <div className="flex rounded-md shadow-sm">
-                      <span className="inline-flex items-center rounded-l-md border border-r-0 border-gray-300 bg-gray-50 px-3 text-sm text-gray-500">
-                        +63
-                      </span>
-                      <Input
-                        type="text"
-                        value={mobileNumber.replace(/^63/, '')}
-                        onChange={handleMobileChange}
-                        placeholder="9123456789"
-                        className="rounded-l-none"
-                        disabled={personalPending}
-                      />
-                    </div>
-                  </div>
-                </div>
+              <div className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1 text-xs text-gray-400 sm:justify-start">
+                {profile?.workInfo.company && (
+                  <span className="flex items-center gap-1">
+                    <Building2 className="h-3 w-3" />
+                    {profile.workInfo.company.name}
+                  </span>
+                )}
+                {profile?.workInfo.resident_branch && (
+                  <span className="flex items-center gap-1">
+                    <GitBranch className="h-3 w-3" />
+                    {profile.workInfo.resident_branch.branch_name}
+                  </span>
+                )}
+                {profile?.workInfo.days_of_employment !== null &&
+                  profile?.workInfo.days_of_employment !== undefined && (
+                  <span className="flex items-center gap-1">
+                    <Clock3 className="h-3 w-3" />
+                    {profile.workInfo.days_of_employment} days employed
+                  </span>
+                )}
               </div>
-
-              <div className="space-y-4 border-t border-gray-100 pt-4">
-                <h4 className="text-sm font-semibold text-gray-900">Government Identification &amp; Contributions</h4>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium text-gray-700">SSS Number</label>
-                    <Input
-                      type="text"
-                      value={sssNumber}
-                      onChange={(e) => setSssNumber(e.target.value)}
-                      placeholder="Enter SSS number"
-                      disabled={personalPending}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium text-gray-700">TIN Number</label>
-                    <Input
-                      type="text"
-                      value={tinNumber}
-                      onChange={(e) => setTinNumber(e.target.value)}
-                      placeholder="Enter TIN number"
-                      disabled={personalPending}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium text-gray-700">Pag-IBIG Number</label>
-                    <Input
-                      type="text"
-                      value={pagibigNumber}
-                      onChange={(e) => setPagibigNumber(e.target.value)}
-                      placeholder="Enter Pag-IBIG number"
-                      disabled={personalPending}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium text-gray-700">PhilHealth Number</label>
-                    <Input
-                      type="text"
-                      value={philhealthNumber}
-                      onChange={(e) => setPhilhealthNumber(e.target.value)}
-                      placeholder="Enter PhilHealth number"
-                      disabled={personalPending}
-                    />
-                  </div>
-                </div>
-              </div>
-
             </div>
           </div>
 
-          <div className="space-y-4 border-t border-gray-100 pt-4">
-            <h3 className="text-sm font-semibold text-gray-900">Emergency Contact Information</h3>
+          {/* Work details grid */}
+          {profile && (
+            <div className="mt-4 border-t border-gray-100 pt-4">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                Work Details
+              </p>
+              <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+                <WorkInfoRow label="Department" value={profile.workInfo.department_name} />
+                <WorkInfoRow label="Date Started" value={profile.workInfo.date_started} />
+                {!profile.workInfo.resident_branch && profile.workInfo.home_resident_branch && (
+                  <WorkInfoRow
+                    label="Home Branch"
+                    value={`${profile.workInfo.home_resident_branch.branch_name} (${profile.workInfo.home_resident_branch.company_name})`}
+                    className="sm:col-span-2"
+                  />
+                )}
+                {profile.workInfo.borrow_branches.length > 0 && (
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <dt className="text-xs text-gray-400">Borrow Branches</dt>
+                    <dd className="flex flex-wrap gap-1.5">
+                      {profile.workInfo.borrow_branches.map((b) => (
+                        <span
+                          key={b.branch_id}
+                          className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium text-gray-700"
+                        >
+                          {b.branch_name}
+                        </span>
+                      ))}
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            </div>
+          )}
+
+          {/* POS PIN */}
+          <div className="mt-4 border-t border-gray-100 pt-4">
+            <div className="mb-3 flex items-center gap-1.5">
+              <Key className="h-3.5 w-3.5 text-gray-400" />
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                POS PIN Code
+              </p>
+            </div>
+            <div className="flex gap-2 sm:max-w-xs">
+              <Input
+                type="text"
+                value={pin}
+                readOnly
+                placeholder="No PIN yet"
+                className="flex-1 bg-gray-50 font-mono tracking-widest"
+              />
+              {pin ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleResetPin}
+                  disabled={fetchingPin || resettingPin}
+                >
+                  {resettingPin ? 'Resetting...' : 'Reset PIN'}
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleGetPin}
+                  disabled={fetchingPin}
+                >
+                  {fetchingPin ? 'Getting...' : 'Get PIN'}
+                </Button>
+              )}
+            </div>
+          </div>
+        </CardBody>
+      </Card>
+
+      {/* ─── Personal information (editable) ─────────────────────────── */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <User className="h-5 w-5 text-primary-500" />
+            <h2 className="text-lg font-semibold text-gray-900">Personal Information</h2>
+          </div>
+          <p className="mt-1 text-sm text-gray-500">
+            Fill in your personal, contact, and emergency details. All changes go through verification before taking effect.
+          </p>
+        </CardHeader>
+        <CardBody className="space-y-6">
+
+          {/* Draft restored banner */}
+          {personalDraftRestored && (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5">
+              <p className="text-xs text-blue-700">
+                Your unsaved changes from a previous session were restored.
+              </p>
+              <div className="flex shrink-0 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    localStorage.removeItem(PERSONAL_DRAFT_KEY);
+                    setPersonalDraftRestored(false);
+                    void fetchProfile();
+                  }}
+                  className="text-xs font-medium text-blue-600 hover:underline"
+                >
+                  Discard
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPersonalDraftRestored(false)}
+                  className="text-xs text-blue-500 hover:underline"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Verification status banners */}
+          {personalPending && (
+            <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <div>
+                <p className="text-sm font-medium text-amber-800">Verification in Progress</p>
+                <p className="mt-0.5 text-xs text-amber-700">
+                  Your submitted details are under review. Fields are locked until a decision is made.
+                </p>
+              </div>
+            </div>
+          )}
+          {profile?.personalVerification.status === 'rejected' &&
+            profile.personalVerification.latest?.rejection_reason && (
+            <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-3">
+              <X className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+              <div>
+                <p className="text-sm font-medium text-red-800">Verification Rejected</p>
+                <p className="mt-0.5 text-xs text-red-700">
+                  {profile.personalVerification.latest.rejection_reason}
+                </p>
+              </div>
+            </div>
+          )}
+          {!true && (
+            <div className="flex items-start gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+              <p className="text-xs text-gray-500">
+                You can view your profile, but do not have permission to submit updates.
+              </p>
+            </div>
+          )}
+          <p className="text-xs text-gray-400">
+            Changes are sent for verification first. Your profile and Odoo records update only after approval.
+          </p>
+
+          {/* Basic details */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-semibold text-gray-700">Basic Details</h4>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700">First Name</label>
+                <Input
+                  type="text"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  placeholder="Enter first name"
+                  disabled={personalPending}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700">Last Name</label>
+                <Input
+                  type="text"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  placeholder="Enter last name"
+                  disabled={personalPending}
+                />
+              </div>
+              <div className="space-y-1 sm:col-span-2">
+                <label className="text-sm font-medium text-gray-700">Legal Name</label>
+                <Input
+                  type="text"
+                  value={legalName}
+                  onChange={(e) => setLegalName(e.target.value)}
+                  placeholder="Enter your full legal name as it appears on your ID"
+                  disabled={personalPending}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700">Birthday</label>
+                <Input
+                  type="date"
+                  value={birthday}
+                  onChange={(e) => setBirthday(e.target.value)}
+                  disabled={personalPending}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700">Gender</label>
+                <select
+                  value={gender}
+                  onChange={(e) => setGender(e.target.value)}
+                  disabled={personalPending}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:bg-gray-50"
+                >
+                  {GENDER_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1 sm:col-span-2">
+                <label className="text-sm font-medium text-gray-700">Marital Status</label>
+                <select
+                  value={maritalStatus}
+                  onChange={(e) => setMaritalStatus(e.target.value)}
+                  disabled={personalPending}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:bg-gray-50"
+                >
+                  {MARITAL_STATUS_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Contact */}
+          <div className="space-y-3 border-t border-gray-100 pt-4">
+            <h4 className="text-sm font-semibold text-gray-700">Contact</h4>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1 sm:col-span-2">
+                <label className="text-sm font-medium text-gray-700">Home Address</label>
+                <Input
+                  type="text"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  placeholder="Enter your home address"
+                  disabled={personalPending}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700">Mobile Number</label>
+                <div className="flex rounded-md shadow-sm">
+                  <span className="inline-flex items-center rounded-l-md border border-r-0 border-gray-300 bg-gray-50 px-3 text-sm text-gray-500">
+                    +63
+                  </span>
+                  <Input
+                    type="text"
+                    value={mobileNumber.replace(/^63/, '')}
+                    onChange={handleMobileChange}
+                    placeholder="9123456789"
+                    className="rounded-l-none"
+                    disabled={personalPending}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Government IDs */}
+          <div className="space-y-3 border-t border-gray-100 pt-4">
+            <h4 className="text-sm font-semibold text-gray-700">Government IDs &amp; Contributions</h4>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700">SSS Number</label>
+                <Input
+                  type="text"
+                  value={sssNumber}
+                  onChange={(e) => setSssNumber(e.target.value)}
+                  placeholder="Enter SSS number"
+                  disabled={personalPending}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700">TIN Number</label>
+                <Input
+                  type="text"
+                  value={tinNumber}
+                  onChange={(e) => setTinNumber(e.target.value)}
+                  placeholder="Enter TIN number"
+                  disabled={personalPending}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700">Pag-IBIG Number</label>
+                <Input
+                  type="text"
+                  value={pagibigNumber}
+                  onChange={(e) => setPagibigNumber(e.target.value)}
+                  placeholder="Enter Pag-IBIG number"
+                  disabled={personalPending}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium text-gray-700">PhilHealth Number</label>
+                <Input
+                  type="text"
+                  value={philhealthNumber}
+                  onChange={(e) => setPhilhealthNumber(e.target.value)}
+                  placeholder="Enter PhilHealth number"
+                  disabled={personalPending}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Emergency contact */}
+          <div className="space-y-3 border-t border-gray-100 pt-4">
+            <h4 className="text-sm font-semibold text-gray-700">Emergency Contact</h4>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1">
                 <label className="text-sm font-medium text-gray-700">Contact Name</label>
@@ -857,18 +1367,21 @@ export function EmploymentTab() {
                 <Input
                   value={emergencyRelationship}
                   onChange={(e) => setEmergencyRelationship(e.target.value)}
-                  placeholder="Enter relationship"
+                  placeholder="E.g. Mother, Spouse, Sibling"
                   disabled={personalPending}
                 />
               </div>
             </div>
           </div>
 
-          <div className="space-y-4 border-t border-gray-100 pt-4">
-            <h3 className="text-sm font-semibold text-gray-900">Valid ID</h3>
-            <p className="text-xs text-gray-500">
-              Valid ID is required for personal information verification.
-            </p>
+          {/* Valid ID */}
+          <div className="space-y-3 border-t border-gray-100 pt-4">
+            <div>
+              <h4 className="text-sm font-semibold text-gray-700">Valid ID</h4>
+              <p className="mt-0.5 text-xs text-gray-400">
+                Required for personal information verification. Upload a photo or scanned copy.
+              </p>
+            </div>
             <div className="flex flex-wrap items-center gap-3">
               {validIdUrl ? (
                 <a
@@ -880,223 +1393,174 @@ export function EmploymentTab() {
                   View current valid ID <ExternalLink className="h-3.5 w-3.5" />
                 </a>
               ) : (
-                <span className="text-sm text-gray-500">No valid ID uploaded yet.</span>
+                <span className="text-sm text-gray-400">No valid ID uploaded yet.</span>
               )}
-
               <input
                 ref={validIdInputRef}
                 type="file"
                 accept="image/*,application/pdf"
                 className="hidden"
-                onChange={(e) => {
+                onChange={async (e) => {
                   const file = e.target.files?.[0];
-                  if (file) {
-                    handleUploadValidId(file);
-                    e.currentTarget.value = '';
-                  }
+                  e.currentTarget.value = '';
+                  if (file) handleUploadValidId(await normalizeFileForUpload(file));
                 }}
               />
               <Button
                 type="button"
                 variant="secondary"
+                size="sm"
                 onClick={() => validIdInputRef.current?.click()}
-                disabled={uploadingValidId || !canEditOwnProfile}
+                disabled={uploadingValidId || !true}
               >
                 <Upload className="mr-1 h-4 w-4" />
-                {uploadingValidId ? 'Uploading...' : validIdUrl ? 'Replace Valid ID' : 'Upload Valid ID'}
+                {uploadingValidId ? 'Uploading...' : validIdUrl ? 'Replace' : 'Upload Valid ID'}
               </Button>
             </div>
-            <div className="flex justify-center sm:justify-end">
-              <div className="flex flex-col items-start gap-1 sm:items-end">
-                <Button
-                  type="button"
-                  variant="success"
-                  disabled={!canEditOwnProfile || Boolean(personalPending) || submittingPersonal}
-                  onClick={handleSubmitPersonalVerification}
-                >
-                  {submittingPersonal ? 'Submitting...' : 'Submit Personal Information for Verification'}
-                </Button>
-                {personalPending && (
-                  <p className="text-xs text-amber-700">{pendingMessage}</p>
-                )}
-              </div>
-            </div>
           </div>
 
-          <div className="space-y-4 border-t border-gray-100 pt-4">
-            <h3 className="text-sm font-semibold text-gray-900">Work Information</h3>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-gray-700">Department</label>
-                <Input
-                  value={profile?.workInfo.department_name || 'Not set'}
-                  readOnly
-                  className="bg-gray-50"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-gray-700">Position</label>
-                <Input
-                  value={profile?.workInfo.position_title || 'Not set'}
-                  readOnly
-                  className="bg-gray-50"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-gray-700">Status</label>
-                <Input
-                  value={
-                    profile?.workInfo.status === 'resigned'
-                      ? 'Resigned'
-                      : profile?.workInfo.status === 'inactive'
-                        ? 'Inactive'
-                        : 'Active'
-                  }
-                  readOnly
-                  className="bg-gray-50"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-gray-700">Date Started</label>
-                <Input
-                  value={profile?.workInfo.date_started || 'Not set'}
-                  readOnly
-                  className="bg-gray-50"
-                />
-              </div>
-              <div className="space-y-1 sm:col-span-2">
-                <label className="text-sm font-medium text-gray-700">Days of Employment</label>
-                <Input
-                  value={profile?.workInfo.days_of_employment !== null && profile?.workInfo.days_of_employment !== undefined
-                    ? String(profile.workInfo.days_of_employment)
-                    : 'Not set'}
-                  readOnly
-                  className="bg-gray-50"
-                />
-              </div>
-              <div className="space-y-1 sm:col-span-2">
-                <label className="text-sm font-medium text-gray-700">Company</label>
-                <Input
-                  value={profile?.workInfo.company?.name || 'Not set'}
-                  readOnly
-                  className="bg-gray-50"
-                />
-              </div>
-              <div className="space-y-1 sm:col-span-2">
-                <label className="text-sm font-medium text-gray-700">Resident Branch</label>
-                <Input
-                  value={profile?.workInfo.resident_branch?.branch_name || 'N/A'}
-                  readOnly
-                  className="bg-gray-50"
-                />
-              </div>
-              {!profile?.workInfo.resident_branch && profile?.workInfo.home_resident_branch && (
-                <div className="space-y-1 sm:col-span-2">
-                  <label className="text-sm font-medium text-gray-700">Home Resident Branch</label>
-                  <Input
-                    value={`${profile.workInfo.home_resident_branch.branch_name} (${profile.workInfo.home_resident_branch.company_name})`}
-                    readOnly
-                    className="bg-gray-50"
-                  />
-                </div>
-              )}
-              <div className="space-y-1 sm:col-span-2">
-                <label className="text-sm font-medium text-gray-700">Borrow Branches</label>
-                <Input
-                  value={profile?.workInfo.borrow_branches?.length
-                    ? profile.workInfo.borrow_branches.map((branch) => branch.branch_name).join(', ')
-                    : 'None'}
-                  readOnly
-                  className="bg-gray-50"
-                />
-              </div>
-              <div className="space-y-1 sm:col-span-2">
-                <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
-                  <Key className="h-4 w-4 text-gray-400" />
-                  POS PIN Code
-                </label>
-                <div className="flex gap-2 sm:max-w-md">
-                  <Input type="text" value={pin} readOnly placeholder="No PIN code" className="flex-1 bg-gray-50" />
-                  {!pin && (
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      onClick={handleGetPin}
-                      disabled={fetchingPin}
-                    >
-                      {fetchingPin ? 'Getting...' : 'Get PIN'}
-                    </Button>
-                  )}
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={handleResetPin}
-                    disabled={fetchingPin || resettingPin}
-                  >
-                    {resettingPin ? 'Resetting...' : 'Reset PIN'}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-4 border-t border-gray-100 pt-4">
-            <h3 className="text-sm font-semibold text-gray-900">Bank Information</h3>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-gray-700">Bank</label>
-                <select
-                  value={bankId}
-                  onChange={(e) => setBankId(e.target.value)}
-                  disabled={bankPending}
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:bg-gray-50"
-                >
-                  <option value="">Select bank</option>
-                  {BANK_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-gray-700">Account Number</label>
-                <Input
-                  value={bankAccountNumber}
-                  onChange={(e) => setBankAccountNumber(e.target.value)}
-                  placeholder="Enter account number"
-                  disabled={bankPending}
-                />
-              </div>
-            </div>
-
-            {profile?.bankCooldown.cooldownActive && profile.bankCooldown.nextAllowedAt && (
-              <p className="text-xs text-amber-700">
-                Bank information can be submitted again after {new Date(profile.bankCooldown.nextAllowedAt).toLocaleString()}.
-              </p>
+          {/* Submit personal */}
+          <div className="flex flex-col items-end gap-1 border-t border-gray-100 pt-4">
+            <Button
+              type="button"
+              variant="success"
+              disabled={!true || Boolean(personalPending) || submittingPersonal}
+              onClick={handleSubmitPersonalVerification}
+            >
+              {submittingPersonal ? 'Submitting...' : 'Submit for Verification'}
+            </Button>
+            {personalPending && (
+              <p className="text-xs text-amber-700">Pending verification — fields are locked.</p>
             )}
-
-            <div className="flex justify-center sm:justify-end">
-              <div className="flex flex-col items-start gap-1 sm:items-end">
-                <Button
-                  type="button"
-                  variant="success"
-                  disabled={!canEditOwnProfile || Boolean(bankPending) || Boolean(profile?.bankCooldown.cooldownActive) || submittingBank}
-                  onClick={handleSubmitBankVerification}
-                >
-                  {submittingBank ? 'Submitting...' : 'Submit Bank Information for Verification'}
-                </Button>
-                {bankPending && (
-                  <p className="text-xs text-amber-700">{pendingMessage}</p>
-                )}
-              </div>
-            </div>
           </div>
         </CardBody>
       </Card>
 
+      {/* ─── Bank information (editable) ─────────────────────────────── */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <CreditCard className="h-5 w-5 text-primary-500" />
+            <h2 className="text-lg font-semibold text-gray-900">Bank Information</h2>
+          </div>
+          <p className="mt-1 text-sm text-gray-500">
+            Your salary disbursement account. All changes go through verification.
+          </p>
+        </CardHeader>
+        <CardBody className="space-y-6">
+
+          {/* Draft restored banner */}
+          {bankDraftRestored && (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5">
+              <p className="text-xs text-blue-700">
+                Your unsaved bank details from a previous session were restored.
+              </p>
+              <div className="flex shrink-0 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    localStorage.removeItem(BANK_DRAFT_KEY);
+                    setBankDraftRestored(false);
+                    void fetchProfile();
+                  }}
+                  className="text-xs font-medium text-blue-600 hover:underline"
+                >
+                  Discard
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBankDraftRestored(false)}
+                  className="text-xs text-blue-500 hover:underline"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Verification status banners */}
+          {bankPending && (
+            <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <div>
+                <p className="text-sm font-medium text-amber-800">Verification in Progress</p>
+                <p className="mt-0.5 text-xs text-amber-700">
+                  Your bank details are under review. Fields are locked until a decision is made.
+                </p>
+              </div>
+            </div>
+          )}
+          {profile?.bankVerification.status === 'rejected' &&
+            profile.bankVerification.latest?.rejection_reason && (
+            <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-3">
+              <X className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+              <div>
+                <p className="text-sm font-medium text-red-800">Verification Rejected</p>
+                <p className="mt-0.5 text-xs text-red-700">
+                  {profile.bankVerification.latest.rejection_reason}
+                </p>
+              </div>
+            </div>
+          )}
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-gray-700">Bank</label>
+              <select
+                value={bankId}
+                onChange={(e) => setBankId(e.target.value)}
+                disabled={bankPending}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:bg-gray-50"
+              >
+                <option value="">Select bank</option>
+                {BANK_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium text-gray-700">Account Number</label>
+              <Input
+                value={bankAccountNumber}
+                onChange={(e) => setBankAccountNumber(e.target.value)}
+                placeholder="Enter account number"
+                disabled={bankPending}
+              />
+            </div>
+          </div>
+
+          {profile?.bankCooldown.cooldownActive && profile.bankCooldown.nextAllowedAt && (
+            <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <p className="text-xs text-amber-700">
+                Bank information can be resubmitted after{' '}
+                {new Date(profile.bankCooldown.nextAllowedAt).toLocaleString()}.
+              </p>
+            </div>
+          )}
+
+          <div className="flex flex-col items-end gap-1 border-t border-gray-100 pt-4">
+            <Button
+              type="button"
+              variant="success"
+              disabled={
+                !true
+                || Boolean(bankPending)
+                || Boolean(profile?.bankCooldown.cooldownActive)
+                || submittingBank
+              }
+              onClick={handleSubmitBankVerification}
+            >
+              {submittingBank ? 'Submitting...' : 'Submit for Verification'}
+            </Button>
+            {bankPending && (
+              <p className="text-xs text-amber-700">Pending verification — fields are locked.</p>
+            )}
+          </div>
+        </CardBody>
+      </Card>
+
+      {/* ─── Employment requirements ──────────────────────────────────── */}
       {canSubmitEmployeeRequirements && (
         <Card>
           <CardHeader>
@@ -1117,16 +1581,17 @@ export function EmploymentTab() {
                       setSelectedRequirement(requirement);
                       setSelectedFile(null);
                     }}
-                    className="min-h-[180px] rounded-xl border border-gray-200 p-3 text-left transition hover:border-primary-300 hover:shadow-sm"
+                    className="min-h-[160px] rounded-xl border border-gray-200 p-3 text-left transition hover:border-primary-300 hover:shadow-sm"
                   >
                     <div className="flex h-full flex-col justify-between">
                       <div className="space-y-2">
                         <div className={`inline-flex rounded-full p-1.5 ${status.iconClass}`}>
                           <status.Icon className="h-3.5 w-3.5" />
                         </div>
-                        <p className="text-[13px] font-medium leading-snug text-gray-900">{requirement.label}</p>
+                        <p className="text-[13px] font-medium leading-snug text-gray-900">
+                          {requirement.label}
+                        </p>
                       </div>
-
                       <div className="space-y-1.5">
                         <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${status.containerClass}`}>
                           {status.label}
@@ -1146,17 +1611,40 @@ export function EmploymentTab() {
         </Card>
       )}
 
-      {canSubmitEmployeeRequirements && selectedRequirement && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <Card className="w-full max-w-lg">
-            <CardHeader>
-              <h3 className="font-semibold text-gray-900">{selectedRequirement.label}</h3>
-            </CardHeader>
-            <CardBody className="space-y-4">
-              <div className="text-sm text-gray-600">
-                Status: <span className="font-medium capitalize">{STATUS_CONFIG[selectedRequirement.display_status].label}</span>
+      {/* ─── Requirement upload modal ─────────────────────────────────── */}
+      <AnimatePresence>
+        {canSubmitEmployeeRequirements && selectedRequirement && (
+          <AnimatedModal onBackdropClick={closeRequirementModal} maxWidth="max-w-lg">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+              <div>
+                <h3 className="font-semibold text-gray-900">{selectedRequirement.label}</h3>
+                <p className="mt-0.5 text-xs text-gray-500">
+                  Status:{' '}
+                  <span className={`font-medium ${
+                    selectedRequirement.display_status === 'complete'
+                      ? 'text-green-600'
+                      : selectedRequirement.display_status === 'rejected'
+                        ? 'text-red-600'
+                        : selectedRequirement.display_status === 'verification'
+                          ? 'text-blue-600'
+                          : 'text-amber-600'
+                  }`}>
+                    {STATUS_CONFIG[selectedRequirement.display_status].label}
+                  </span>
+                </p>
               </div>
+              <button
+                type="button"
+                onClick={closeRequirementModal}
+                className="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
 
+            {/* Body */}
+            <div className="space-y-4 px-5 py-4">
               {selectedRequirement.document_url && (
                 getPreviewKind(selectedRequirement.document_url) === 'other' ? (
                   <a
@@ -1184,56 +1672,67 @@ export function EmploymentTab() {
               )}
 
               {selectedRequirement.display_status === 'verification' ? (
-                <div className="rounded-lg bg-blue-50 p-3 text-sm text-blue-700">
+                <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700">
                   This requirement is already pending verification.
                 </div>
               ) : (
-                <>
-                  <label className="block text-sm font-medium text-gray-700">Upload image or PDF</label>
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Upload image or PDF
+                  </label>
                   <input
                     type="file"
                     accept="image/*,application/pdf"
-                    onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)}
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      setSelectedFile(file ? await normalizeFileForUpload(file) : null);
+                    }}
                     className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm file:mr-3 file:rounded file:border-0 file:bg-gray-100 file:px-3 file:py-1.5 file:text-sm file:font-medium"
                   />
-                  <p className="text-xs text-gray-500">
-                    Accepted formats: all image types and PDF (max 10MB).
+                  <p className="text-xs text-gray-400">
+                    Accepted formats: all image types and PDF (max 10 MB).
                   </p>
-                </>
+                </div>
               )}
+            </div>
 
-              <div className="flex justify-end gap-2">
-                <Button variant="secondary" onClick={closeRequirementModal} disabled={submittingRequirement}>
-                  Close
+            {/* Footer */}
+            <div className="flex justify-end gap-2 border-t border-gray-100 px-5 py-4">
+              <Button
+                variant="secondary"
+                onClick={closeRequirementModal}
+                disabled={submittingRequirement}
+              >
+                Close
+              </Button>
+              {selectedRequirement.display_status !== 'verification' && (
+                <Button
+                  variant="success"
+                  onClick={submitRequirement}
+                  disabled={!true || submittingRequirement}
+                >
+                  <Upload className="mr-1 h-4 w-4" />
+                  {submittingRequirement ? 'Submitting...' : 'Submit for Verification'}
                 </Button>
-                {selectedRequirement.display_status !== 'verification' && (
-                  <Button
-                    variant="success"
-                    onClick={submitRequirement}
-                    disabled={!canEditOwnProfile || submittingRequirement}
-                  >
-                    <Upload className="mr-1 h-4 w-4" />
-                    {submittingRequirement ? 'Submitting...' : 'Submit for Verification'}
-                  </Button>
-                )}
-              </div>
-            </CardBody>
-          </Card>
-        </div>
-      )}
+              )}
+            </div>
+          </AnimatedModal>
+        )}
+      </AnimatePresence>
 
-      {previewDoc && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4">
-          <div className="relative w-full max-w-4xl rounded-lg bg-white shadow-xl">
-            <button
-              type="button"
-              onClick={() => setPreviewDoc(null)}
-              className="absolute right-3 top-3 rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-            >
-              <X className="h-5 w-5" />
-            </button>
-            <div className="border-b border-gray-200 px-4 py-3 pr-12">
+      {/* ─── Document preview modal ───────────────────────────────────── */}
+      <AnimatePresence>
+        {previewDoc && (
+          <AnimatedModal onBackdropClick={() => setPreviewDoc(null)} maxWidth="max-w-4xl">
+            <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
               <p className="text-sm font-semibold text-gray-900">{previewDoc.title}</p>
+              <button
+                type="button"
+                onClick={() => setPreviewDoc(null)}
+                className="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
             </div>
             <div className="max-h-[80vh] overflow-auto p-4">
               {getPreviewKind(previewDoc.url) === 'image' && (
@@ -1251,9 +1750,9 @@ export function EmploymentTab() {
                 />
               )}
             </div>
-          </div>
-        </div>
-      )}
+          </AnimatedModal>
+        )}
+      </AnimatePresence>
 
       <ProfilePictureModal
         isOpen={profileModalOpen}
@@ -1265,7 +1764,6 @@ export function EmploymentTab() {
           void fetchProfile();
         }}
       />
-      </div>
     </div>
   );
 }

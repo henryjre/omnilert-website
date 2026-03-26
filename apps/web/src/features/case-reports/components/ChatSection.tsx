@@ -6,6 +6,7 @@ import type { MentionableRole, MentionableUser } from '../services/caseReport.ap
 import { MentionPicker } from './MentionPicker';
 import { ChatMessage } from './ChatMessage';
 import { ImagePreviewModal } from './ImagePreviewModal';
+import { normalizeFileForUpload } from '@/shared/utils/fileUpload';
 
 interface ChatSectionProps {
   className?: string;
@@ -52,8 +53,10 @@ export function ChatSection({
 }: ChatSectionProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
+  const justSentRef = useRef(false);
 
   const [content, setContent] = useState('');
   const [files, setFiles] = useState<File[]>([]);
@@ -69,6 +72,24 @@ export function ChatSection({
   const [flashMessageId, setFlashMessageId] = useState<string | null>(null);
   const initialFlashFiredRef = useRef(false);
 
+  // Auto-scroll to bottom when messages change:
+  // - always on initial load
+  // - always after the user sends a message
+  // - when already near the bottom (within 120px)
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    const end = messagesEndRef.current;
+    if (!end) return;
+    if (justSentRef.current) {
+      justSentRef.current = false;
+      end.scrollIntoView({ behavior: 'smooth' });
+      return;
+    }
+    if (!container) return;
+    const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 120;
+    if (nearBottom) end.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
   // Focus the textarea whenever a reply is set
   useEffect(() => {
     if (replyTo) textareaRef.current?.focus();
@@ -76,6 +97,7 @@ export function ChatSection({
 
   const handleSend = useCallback(async () => {
     if (chatLocked || (!content.trim() && files.length === 0)) return;
+    justSentRef.current = true;
     await onSend({ content, parentMessageId: replyTo?.id ?? null, mentionedUserIds, mentionedRoleIds, files });
     setContent('');
     setFiles([]);
@@ -151,7 +173,7 @@ export function ChatSection({
 
   return (
     <div className={`flex h-full flex-col${className ? ` ${className}` : ''}`}>
-      <div className="flex-1 space-y-1 overflow-y-auto pr-1">
+      <div ref={scrollContainerRef} className="flex-1 space-y-1 overflow-y-auto pr-1">
         {messages.map((message, index) => {
           const prev = index > 0 ? messages[index - 1] : null;
           const isGrouped =
@@ -320,7 +342,11 @@ export function ChatSection({
           type="file"
           multiple
           className="hidden"
-          onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
+          onChange={async (event) => {
+            const raw = Array.from(event.target.files ?? []);
+            const normalized = await Promise.all(raw.map(normalizeFileForUpload));
+            setFiles(normalized);
+          }}
         />
       </div>
 

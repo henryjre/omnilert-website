@@ -27,6 +27,7 @@ export interface PeerEvaluation {
   evaluator: PeerEvaluationUser | null;
   evaluated: PeerEvaluationUser | null;
   shift_date?: string | null;
+  branch_id?: string | null;
 }
 
 export interface PeerEvalFilters {

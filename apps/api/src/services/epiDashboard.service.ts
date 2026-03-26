@@ -23,9 +23,67 @@ interface EpiHistoryEntry {
   raw_delta: number;
 }
 
-interface DashboardUserRow extends UserKpiData {
+interface DashboardUserRow {
+  userId: string;
+  userKey: string;
   epi_score: number | string | null;
   epi_history: unknown;
+}
+
+async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKpiData> {
+  const dbConn = db.getDb();
+  const [cssAudits, peerEvaluations, complianceAuditRows, violationNotices] = await Promise.all([
+    // CSS audits: the user was the cashier being audited (identified by user_key UUID)
+    dbConn('store_audits')
+      .where({ css_cashier_user_key: userId, type: 'customer_service', status: 'completed' })
+      .select(dbConn.raw(`css_star_rating as star_rating`), dbConn.raw(`completed_at::text as audited_at`)),
+    dbConn('peer_evaluations')
+      .where({ evaluated_user_id: userId })
+      .whereNotNull('submitted_at')
+      .select(
+        dbConn.raw(`(q1_score + q2_score + q3_score) / 3.0 as average_score`),
+        dbConn.raw(`submitted_at::text`),
+        dbConn.raw(`wrs_effective_at::text`),
+      ),
+    // Compliance audits: the user was the auditor
+    dbConn('store_audits')
+      .where({ auditor_user_id: userId, type: 'compliance', status: 'completed' })
+      .select(
+        'comp_productivity_rate',
+        'comp_uniform',
+        'comp_hygiene',
+        'comp_sop',
+        dbConn.raw(`completed_at::text as audited_at`),
+      ),
+    dbConn('violation_notices')
+      .whereExists(
+        dbConn('violation_notice_targets').whereRaw('violation_notice_id = violation_notices.id').where({ user_id: userId }),
+      )
+      .where({ status: 'completed' })
+      .select('epi_decrease', dbConn.raw(`updated_at::text as completed_at`)),
+  ]);
+
+  // Shape compliance rows into { answers, audited_at } format expected by epiCalculation
+  const complianceAudit = complianceAuditRows.length
+    ? complianceAuditRows.map((r: any) => ({
+        answers: {
+          productivity_rate: r.comp_productivity_rate ?? false,
+          uniform: r.comp_uniform ?? false,
+          hygiene: r.comp_hygiene ?? false,
+          sop: r.comp_sop ?? false,
+        },
+        audited_at: r.audited_at,
+      }))
+    : null;
+
+  return {
+    userId,
+    userKey,
+    cssAudits: cssAudits.length ? cssAudits : null,
+    peerEvaluations: peerEvaluations.length ? peerEvaluations : null,
+    complianceAudit,
+    violationNotices: violationNotices.length ? violationNotices : null,
+  };
 }
 
 interface LeaderboardIdentityRow extends DashboardUserRow {
@@ -39,6 +97,11 @@ interface LeaderboardSummaryDbRow {
   first_name: string | null;
   last_name: string | null;
   avatar_url: string | null;
+  epi_score: number | string | null;
+  epi_history: unknown;
+}
+
+interface GlobalAverageDbRow {
   epi_score: number | string | null;
   epi_history: unknown;
 }
@@ -95,6 +158,7 @@ export interface EpiDashboardResponse {
   currentMonthKey: string;
   currentLive: CurrentLiveSnapshot | null;
   monthlyHistory: HistoricalMonthEntry[];
+  globalAverageByMonth: Record<string, number>;
 }
 
 export interface LeaderboardSummaryUserRow {
@@ -106,6 +170,11 @@ export interface LeaderboardSummaryUserRow {
 }
 
 export interface LeaderboardDetailUserRow extends LeaderboardSummaryUserRow {}
+
+export interface GlobalAverageUserRow {
+  officialEpiScore: number;
+  monthlyHistory: HistoricalMonthEntry[];
+}
 
 export interface EpiLeaderboardSummaryEntry {
   userId: string;
@@ -263,12 +332,11 @@ function historyEntriesToMonthlyHistory(entries: EpiHistoryEntry[]): HistoricalM
   return Array.from(deduped.values()).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
 }
 
-async function buildCurrentLiveSnapshot(user: DashboardUserRow): Promise<CurrentLiveSnapshot | null> {
+async function buildCurrentLiveSnapshot(user: UserKpiData, officialEpiScore: number): Promise<CurrentLiveSnapshot | null> {
   if (!user.userKey) return null;
 
   const now = new Date();
   const from = new Date(now.getTime() - THIRTY_DAY_WINDOW_MS);
-  const officialEpiScore = toNumber(user.epi_score, 100);
   const parts = getManilaDateParts(now);
 
   const { breakdown, delta, raw_delta, capped } = await calculateKpiScores({
@@ -315,6 +383,54 @@ function toLeaderboardSummaryRow(row: LeaderboardSummaryDbRow): LeaderboardSumma
     officialEpiScore: toNumber(row.epi_score, 100),
     monthlyHistory: historyEntriesToMonthlyHistory(normalizeHistoryEntries(row.epi_history)),
   };
+}
+
+function toGlobalAverageUserRow(row: GlobalAverageDbRow): GlobalAverageUserRow {
+  return {
+    officialEpiScore: toNumber(row.epi_score, 100),
+    monthlyHistory: historyEntriesToMonthlyHistory(normalizeHistoryEntries(row.epi_history)),
+  };
+}
+
+function accumulateMonthScore(
+  sumsByMonth: Map<string, { sum: number; count: number }>,
+  monthKey: string,
+  score: number,
+): void {
+  const existing = sumsByMonth.get(monthKey);
+  if (!existing) {
+    sumsByMonth.set(monthKey, { sum: score, count: 1 });
+    return;
+  }
+
+  existing.sum += score;
+  existing.count += 1;
+}
+
+export function createGlobalAverageByMonth(
+  rows: GlobalAverageUserRow[],
+  currentMonthKey: string,
+): Record<string, number> {
+  const sumsByMonth = new Map<string, { sum: number; count: number }>();
+
+  for (const row of rows) {
+    accumulateMonthScore(sumsByMonth, currentMonthKey, row.officialEpiScore);
+
+    for (const month of row.monthlyHistory) {
+      if (month.monthKey === currentMonthKey) continue;
+      accumulateMonthScore(sumsByMonth, month.monthKey, month.epiScore);
+    }
+  }
+
+  const sortedEntries = Array.from(sumsByMonth.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  const averages: Record<string, number> = {};
+
+  for (const [monthKey, aggregate] of sortedEntries) {
+    if (aggregate.count === 0) continue;
+    averages[monthKey] = roundToTenth(aggregate.sum / aggregate.count);
+  }
+
+  return averages;
 }
 
 function compareLeaderboardSummaryEntries(a: EpiLeaderboardSummaryEntry, b: EpiLeaderboardSummaryEntry): number {
@@ -439,26 +555,24 @@ export function applyGlobalLeaderboardFilters(query: any, masterDb: any) {
 }
 
 export async function getEpiDashboard(userId: string): Promise<EpiDashboardResponse> {
-  const masterDb = db.getMasterDb();
-  const row = await masterDb('users')
-    .where({ id: userId })
-    .first(
-      'id as userId',
-      'user_key as userKey',
-      'epi_score',
-      'epi_history',
-      'css_audits as cssAudits',
-      'peer_evaluations as peerEvaluations',
-      'compliance_audit as complianceAudit',
-      'violation_notices as violationNotices',
-    ) as DashboardUserRow | undefined;
+  const masterDb = db.getDb();
+  const currentMonthKey = getCurrentMonthKey();
+  const [row, globalAverageRows] = await Promise.all([
+    masterDb('users')
+      .where({ id: userId })
+      .first('id as userId', 'user_key as userKey', 'epi_score', 'epi_history') as Promise<DashboardUserRow | undefined>,
+    applyGlobalLeaderboardFilters(masterDb('users as u'), masterDb)
+      .select('u.epi_score', 'u.epi_history') as Promise<GlobalAverageDbRow[]>,
+  ]);
+  const globalAverageByMonth = createGlobalAverageByMonth(globalAverageRows.map(toGlobalAverageUserRow), currentMonthKey);
 
   if (!row) {
     return {
       officialEpiScore: 100,
-      currentMonthKey: getCurrentMonthKey(),
+      currentMonthKey,
       currentLive: null,
       monthlyHistory: [],
+      globalAverageByMonth,
     };
   }
 
@@ -467,21 +581,23 @@ export async function getEpiDashboard(userId: string): Promise<EpiDashboardRespo
 
   let currentLive: CurrentLiveSnapshot | null = null;
   try {
-    currentLive = await buildCurrentLiveSnapshot(row);
+    const kpiData = await fetchUserKpiData(row.userId, row.userKey);
+    currentLive = await buildCurrentLiveSnapshot(kpiData, officialEpiScore);
   } catch (error) {
     logger.error({ err: error, userId }, 'Failed to build live EPI dashboard snapshot');
   }
 
   return {
     officialEpiScore,
-    currentMonthKey: getCurrentMonthKey(),
+    currentMonthKey,
     currentLive,
     monthlyHistory,
+    globalAverageByMonth,
   };
 }
 
 export async function getEpiLeaderboard(currentUserId: string, monthKey: string): Promise<EpiLeaderboardSummaryEntry[]> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const currentMonthKey = getCurrentMonthKey();
 
   const rows = await applyGlobalLeaderboardFilters(masterDb('users as u'), masterDb)
@@ -509,7 +625,7 @@ export async function getEpiLeaderboardDetail(
   userId: string,
   monthKey: string,
 ): Promise<EpiLeaderboardDetailResponse | null> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const currentMonthKey = getCurrentMonthKey();
   const isCurrentMonth = isCurrentMonthSelection(monthKey, currentMonthKey);
 
@@ -523,10 +639,6 @@ export async function getEpiLeaderboardDetail(
       'u.user_key as userKey',
       'u.epi_score',
       'u.epi_history',
-      'u.css_audits as cssAudits',
-      'u.peer_evaluations as peerEvaluations',
-      'u.compliance_audit as complianceAudit',
-      'u.violation_notices as violationNotices',
     ) as LeaderboardIdentityRow | undefined;
 
   if (!row) {
@@ -544,7 +656,8 @@ export async function getEpiLeaderboardDetail(
   let currentLive: CurrentLiveSnapshot | null = null;
   if (isCurrentMonth) {
     try {
-      currentLive = await buildCurrentLiveSnapshot(row);
+      const kpiData = await fetchUserKpiData(row.userId, row.userKey);
+      currentLive = await buildCurrentLiveSnapshot(kpiData, detailRow.officialEpiScore);
     } catch (error) {
       logger.error({ err: error, userId: row.userId }, 'Failed to build live leaderboard detail snapshot');
     }

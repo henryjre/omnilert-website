@@ -27,23 +27,22 @@ interface CompanyRow {
   id: string;
   name: string;
   slug: string;
-  db_name: string;
   theme_color: string | null;
 }
 
 let systemRoleDefaultsEnsured = false;
 
-async function ensureAdministratorRoleAssignment(masterDb: any, userId: string): Promise<void> {
-  const adminRole = await masterDb('roles')
+async function ensureAdministratorRoleAssignment(userId: string): Promise<void> {
+  const adminRole = await db.getDb()('roles')
     .where({ name: SYSTEM_ROLES.ADMINISTRATOR })
     .first('id');
   if (!adminRole) return;
 
-  const existingRole = await masterDb('user_roles')
+  const existingRole = await db.getDb()('user_roles')
     .where({ user_id: userId, role_id: adminRole.id })
     .first('id');
   if (!existingRole) {
-    await masterDb('user_roles').insert({
+    await db.getDb()('user_roles').insert({
       user_id: userId,
       role_id: adminRole.id,
       assigned_by: null,
@@ -51,15 +50,15 @@ async function ensureAdministratorRoleAssignment(masterDb: any, userId: string):
   }
 }
 
-async function loadAllPermissionKeys(masterDb: any): Promise<string[]> {
-  const rows = await masterDb('permissions').select('key');
+async function loadAllPermissionKeys(): Promise<string[]> {
+  const rows = await db.getDb()('permissions').select('key');
   return rows.map((row: any) => String(row.key));
 }
 
-async function ensureSystemRolePermissionDefaults(masterDb: any): Promise<void> {
+async function ensureSystemRolePermissionDefaults(): Promise<void> {
   if (systemRoleDefaultsEnsured) return;
 
-  const roleRows = await masterDb('roles')
+  const roleRows = await db.getDb()('roles')
     .whereIn('name', Object.keys(DEFAULT_ROLE_PERMISSIONS))
     .select('id', 'name');
   if (roleRows.length === 0) {
@@ -67,7 +66,7 @@ async function ensureSystemRolePermissionDefaults(masterDb: any): Promise<void> 
     return;
   }
 
-  const permissionRows = await masterDb('permissions')
+  const permissionRows = await db.getDb()('permissions')
     .whereIn('key', Array.from(new Set(Object.values(DEFAULT_ROLE_PERMISSIONS).flat())))
     .select('id', 'key');
 
@@ -86,7 +85,7 @@ async function ensureSystemRolePermissionDefaults(masterDb: any): Promise<void> 
   }
 
   if (inserts.length > 0) {
-    await masterDb('role_permissions')
+    await db.getDb()('role_permissions')
       .insert(inserts)
       .onConflict(['role_id', 'permission_id'])
       .ignore();
@@ -95,29 +94,39 @@ async function ensureSystemRolePermissionDefaults(masterDb: any): Promise<void> 
   systemRoleDefaultsEnsured = true;
 }
 
-async function loadAllActiveBranchIdsForCompany(companyDbName: string): Promise<string[]> {
-  const tenantDb = await db.getTenantDb(companyDbName);
-  const rows = await tenantDb('branches')
-    .where({ is_active: true })
-    .select('id');
-  return rows.map((row: any) => row.id as string);
+async function loadUserAssignedBranchIds(userId: string, isSuperAdmin: boolean): Promise<string[]> {
+  if (isSuperAdmin) {
+    const rows = await db.getDb()('branches as b')
+      .join('companies as c', 'b.company_id', 'c.id')
+      .where('b.is_active', true)
+      .where('c.is_active', true)
+      .where('c.is_root', false)
+      .select('b.id');
+    return rows.map((row: any) => String(row.id));
+  }
+
+  const rows = await db.getDb()('user_company_branches as ucb')
+    .join('branches as b', 'ucb.branch_id', 'b.id')
+    .where('ucb.user_id', userId)
+    .where('b.is_active', true)
+    .select('b.id');
+  return rows.map((row: any) => String(row.id));
 }
 
 async function listAccessibleCompanies(input: {
-  masterDb: any;
   userId: string;
   isSuperAdmin: boolean;
 }): Promise<CompanyRow[]> {
   if (input.isSuperAdmin) {
-    const rows = await input.masterDb('companies')
+    const rows = await db.getDb()('companies')
       .where({ is_active: true })
-      .select('id', 'name', 'slug', 'db_name', 'theme_color')
+      .select('id', 'name', 'slug', 'theme_color')
       .orderBy('name', 'asc')
       .orderBy('created_at', 'asc');
     return rows as CompanyRow[];
   }
 
-  const rows = await input.masterDb('user_company_access as uca')
+  const rows = await db.getDb()('user_company_access as uca')
     .join('companies as companies', 'uca.company_id', 'companies.id')
     .where('uca.user_id', input.userId)
     .andWhere('uca.is_active', true)
@@ -126,7 +135,6 @@ async function listAccessibleCompanies(input: {
       'companies.id',
       'companies.name',
       'companies.slug',
-      'companies.db_name',
       'companies.theme_color',
     )
     .orderBy('companies.name', 'asc')
@@ -135,58 +143,29 @@ async function listAccessibleCompanies(input: {
   return rows as CompanyRow[];
 }
 
-async function resolveCompanyForLogin(input: {
-  masterDb: any;
-  user: any;
-  isSuperAdmin: boolean;
-  companySlug?: string;
-}): Promise<CompanyRow> {
-  if (input.companySlug) {
-    const requested = await input.masterDb('companies')
-      .where({ slug: input.companySlug, is_active: true })
-      .first('id', 'name', 'slug', 'db_name', 'theme_color');
-    if (!requested) {
-      throw new AppError(404, 'Company not found');
-    }
-    if (!input.isSuperAdmin) {
-      const hasCompanyAccess = await input.masterDb('user_company_access')
-        .where({ user_id: input.user.id, company_id: requested.id, is_active: true })
-        .first('id');
-      if (!hasCompanyAccess) {
-        throw new AppError(403, 'You are not assigned to this company');
-      }
-    }
-    return requested as CompanyRow;
+async function resolveCompanyForLogin(): Promise<CompanyRow> {
+  const root = await db.getDb()('companies')
+    .where({ is_root: true, is_active: true })
+    .first('id', 'name', 'slug', 'theme_color');
+
+  if (!root) {
+    throw new AppError(500, 'Omnilert root company is not configured');
   }
 
-  const accessible = await listAccessibleCompanies({
-    masterDb: input.masterDb,
-    userId: input.user.id as string,
-    isSuperAdmin: input.isSuperAdmin,
-  });
-
-  if (accessible.length === 0) {
-    throw new AppError(403, 'No accessible company assigned');
-  }
-
-  const lastCompanyId = (input.user.last_company_id as string | null) ?? null;
-  if (lastCompanyId) {
-    const preferred = accessible.find((company) => company.id === lastCompanyId);
-    if (preferred) return preferred;
-  }
-
-  return accessible[0];
+  return root as CompanyRow;
 }
 
+// TODO: nudge queries using company_id currently reference the Omnilert root company and will
+// return no results. These should be refactored to use the user's primary assigned company.
 async function runLoginNudges(input: {
-  tenantDb: any;
+  companyId: string;
+  companySlug: string;
   resolvedUser: any;
   sessionPermissions: string[];
   isSuperAdminFallback: boolean;
-  companySlug: string;
 }): Promise<void> {
   const clearProfileCompletionReminder = async () => {
-    await input.tenantDb('employee_notifications')
+    await db.getDb()('employee_notifications')
       .where({
         user_id: input.resolvedUser.id,
         title: 'Complete Your Profile',
@@ -198,14 +177,11 @@ async function runLoginNudges(input: {
 
   let latestPersonalVerificationStatus: string | null = null;
   try {
-    const hasPersonalVerificationsTable = await input.tenantDb.schema.hasTable('personal_information_verifications');
-    if (hasPersonalVerificationsTable) {
-      const latestPersonalVerification = await input.tenantDb('personal_information_verifications')
-        .where({ user_id: input.resolvedUser.id })
-        .orderBy('created_at', 'desc')
-        .first('status');
-      latestPersonalVerificationStatus = latestPersonalVerification?.status ?? null;
-    }
+    const latestPersonalVerification = await db.getDb()('personal_information_verifications')
+      .where({ user_id: input.resolvedUser.id, company_id: input.companyId })
+      .orderBy('created_at', 'desc')
+      .first('status');
+    latestPersonalVerificationStatus = latestPersonalVerification?.status ?? null;
   } catch (error) {
     logger.warn(
       { err: error, userId: input.resolvedUser.id, companySlug: input.companySlug },
@@ -221,8 +197,8 @@ async function runLoginNudges(input: {
 
   if (shouldShowProfileCompletionReminder) {
     await createAndDispatchNotification({
-      tenantDb: input.tenantDb,
       userId: input.resolvedUser.id,
+      companyId: input.companyId,
       title: 'Complete Your Profile',
       message: 'Please update your account profile settings with your personal information.',
       type: 'warning',
@@ -236,8 +212,8 @@ async function runLoginNudges(input: {
 
   if (input.resolvedUser.push_notifications_enabled === false) {
     await createAndDispatchNotification({
-      tenantDb: input.tenantDb,
       userId: input.resolvedUser.id,
+      companyId: input.companyId,
       title: 'Enable Push Notification',
       message: 'Please enable device push notifications in My Account > Settings.',
       type: 'warning',
@@ -246,45 +222,40 @@ async function runLoginNudges(input: {
   }
 
   const permissionSet = new Set(input.sessionPermissions);
-  if (!permissionSet.has(PERMISSIONS.ACCOUNT_SUBMIT_EMPLOYEE_REQUIREMENTS)) return;
+  if (!permissionSet.has(PERMISSIONS.ACCOUNT_MANAGE_EMPLOYEE_REQUIREMENTS)) return;
 
   try {
-    const hasRequirementTypesTable = await input.tenantDb.schema.hasTable('employment_requirement_types');
-    const hasRequirementSubmissionsTable = await input.tenantDb.schema.hasTable('employment_requirement_submissions');
+    const totalResult = await db.getDb()('employment_requirement_types')
+      .where({ is_active: true })
+      .count('code as count')
+      .first();
+    const totalRequirements = Number(totalResult?.count ?? 0);
 
-    if (hasRequirementTypesTable && hasRequirementSubmissionsTable) {
-      const totalResult = await input.tenantDb('employment_requirement_types')
-        .where({ is_active: true })
-        .count('code as count')
-        .first();
-      const totalRequirements = Number(totalResult?.count ?? 0);
+    if (totalRequirements > 0) {
+      const submittedRows = await db.getDb()('employment_requirement_submissions')
+        .where({ user_id: input.resolvedUser.id, company_id: input.companyId })
+        .distinct('requirement_code');
+      const submittedCount = submittedRows.length;
 
-      if (totalRequirements > 0) {
-        const submittedRows = await input.tenantDb('employment_requirement_submissions')
-          .where({ user_id: input.resolvedUser.id })
-          .distinct('requirement_code');
-        const submittedCount = submittedRows.length;
-
-        if (submittedCount === 0) {
-          await createAndDispatchNotification({
-            tenantDb: input.tenantDb,
-            userId: input.resolvedUser.id,
-            title: 'Submit Your Requirements',
-            message: 'Please submit your employment requirements in My Account > Profile.',
-            type: 'warning',
-            linkUrl: '/account/profile',
-          });
-        } else if (submittedCount < totalRequirements) {
-          const remaining = totalRequirements - submittedCount;
-          await createAndDispatchNotification({
-            tenantDb: input.tenantDb,
-            userId: input.resolvedUser.id,
-            title: 'Complete Your Requirements',
-            message: `You have submitted ${submittedCount} of ${totalRequirements} employment requirements. Please submit the remaining ${remaining}.`,
-            type: 'warning',
-            linkUrl: '/account/profile',
-          });
-        }
+      if (submittedCount === 0) {
+        await createAndDispatchNotification({
+          userId: input.resolvedUser.id,
+          companyId: input.companyId,
+          title: 'Submit Your Requirements',
+          message: 'Please submit your employment requirements in My Account > Profile.',
+          type: 'warning',
+          linkUrl: '/account/profile',
+        });
+      } else if (submittedCount < totalRequirements) {
+        const remaining = totalRequirements - submittedCount;
+        await createAndDispatchNotification({
+          userId: input.resolvedUser.id,
+          companyId: input.companyId,
+          title: 'Complete Your Requirements',
+          message: `You have submitted ${submittedCount} of ${totalRequirements} employment requirements. Please submit the remaining ${remaining}.`,
+          type: 'warning',
+          linkUrl: '/account/profile',
+        });
       }
     }
   } catch (error) {
@@ -296,7 +267,6 @@ async function runLoginNudges(input: {
 }
 
 async function issueCompanySession(input: {
-  masterDb: any;
   resolvedUser: any;
   company: CompanyRow;
   isSuperAdmin: boolean;
@@ -321,35 +291,32 @@ async function issueCompanySession(input: {
   };
 }> {
   const { roles, permissions: rolePermissions } = await loadGlobalUserRolesAndPermissions(
-    input.masterDb,
     input.resolvedUser.id,
   );
   const permissions = input.isSuperAdmin
-    ? await loadAllPermissionKeys(input.masterDb)
+    ? await loadAllPermissionKeys()
     : rolePermissions;
-  const branchIds = await loadAllActiveBranchIdsForCompany(String(input.company.db_name));
+  const branchIds = await loadUserAssignedBranchIds(input.resolvedUser.id, input.isSuperAdmin);
 
   const accessToken = signAccessToken({
     sub: input.resolvedUser.id,
     companyId: input.company.id,
     companySlug: input.company.slug,
-    companyDbName: input.company.db_name,
     roles: roles.map((r) => r.name),
     permissions,
     branchIds,
   });
 
-  const refreshToken = signRefreshToken(input.resolvedUser.id, input.company.db_name);
+  const refreshToken = signRefreshToken(input.resolvedUser.id, input.company.id);
   const tokenHash = crypto.createHash('sha256').update(refreshToken).digest('hex');
-  await input.masterDb('refresh_tokens').insert({
+  await db.getDb()('refresh_tokens').insert({
     user_id: input.resolvedUser.id,
     company_id: input.company.id,
-    company_db_name: input.company.db_name,
     token_hash: tokenHash,
     expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
   });
 
-  await input.masterDb('users')
+  await db.getDb()('users')
     .where({ id: input.resolvedUser.id })
     .update({
       last_login_at: new Date(),
@@ -358,13 +325,12 @@ async function issueCompanySession(input: {
     });
 
   if (input.includeLoginNudges) {
-    const tenantDb = await db.getTenantDb(input.company.db_name as string);
     await runLoginNudges({
-      tenantDb,
+      companyId: input.company.id,
+      companySlug: input.company.slug,
       resolvedUser: input.resolvedUser,
       sessionPermissions: permissions,
       isSuperAdminFallback: Boolean(input.isSuperAdminFallback),
-      companySlug: input.company.slug,
     });
   }
 
@@ -398,18 +364,16 @@ function splitName(fullName: string): { firstName: string; lastName: string } {
 }
 
 async function ensureSuperAdminGlobalUser(input: {
-  masterDb: any;
   companyId?: string | null;
-  companyDbName?: string | null;
   superAdmin: SuperAdminRow;
 }) {
   const { firstName, lastName } = splitName(input.superAdmin.name);
   const normalized = normalizeEmail(input.superAdmin.email);
 
-  let user = await input.masterDb('users').whereRaw('LOWER(email) = ?', [normalized]).first();
+  let user = await db.getDb()('users').whereRaw('LOWER(email) = ?', [normalized]).first();
 
   if (user) {
-    const [updated] = await input.masterDb('users')
+    const [updated] = await db.getDb()('users')
       .where({ id: user.id })
       .update({
         email: normalized,
@@ -423,7 +387,7 @@ async function ensureSuperAdminGlobalUser(input: {
       .returning('*');
     user = updated;
   } else {
-    const [created] = await input.masterDb('users')
+    const [created] = await db.getDb()('users')
       .insert({
         email: normalized,
         password_hash: input.superAdmin.password_hash,
@@ -436,18 +400,18 @@ async function ensureSuperAdminGlobalUser(input: {
     user = created;
   }
 
-  const adminRole = await input.masterDb('roles')
+  const adminRole = await db.getDb()('roles')
     .where({ name: SYSTEM_ROLES.ADMINISTRATOR })
     .first('id');
   if (!adminRole) {
     throw new AppError(500, 'Administrator role is not configured');
   }
 
-  const hasRole = await input.masterDb('user_roles')
+  const hasRole = await db.getDb()('user_roles')
     .where({ user_id: user.id, role_id: adminRole.id })
     .first('id');
   if (!hasRole) {
-    await input.masterDb('user_roles').insert({
+    await db.getDb()('user_roles').insert({
       user_id: user.id,
       role_id: adminRole.id,
       assigned_by: null,
@@ -455,18 +419,18 @@ async function ensureSuperAdminGlobalUser(input: {
   }
 
   if (input.companyId) {
-    const access = await input.masterDb('user_company_access')
+    const access = await db.getDb()('user_company_access')
       .where({ user_id: user.id, company_id: input.companyId })
       .first('id');
     if (!access) {
-      await input.masterDb('user_company_access').insert({
+      await db.getDb()('user_company_access').insert({
         user_id: user.id,
         company_id: input.companyId,
         is_active: true,
         updated_at: new Date(),
       });
     } else {
-      await input.masterDb('user_company_access')
+      await db.getDb()('user_company_access')
         .where({ id: access.id })
         .update({ is_active: true, updated_at: new Date() });
     }
@@ -476,16 +440,15 @@ async function ensureSuperAdminGlobalUser(input: {
 }
 
 export async function loginTenantUser(email: string, password: string, companySlug?: string) {
-  const masterDb = db.getMasterDb();
-  await ensureSystemRolePermissionDefaults(masterDb);
+  await ensureSystemRolePermissionDefaults();
   const normalizedEmail = normalizeEmail(email);
 
-  const superAdminByEmail = await masterDb('super_admins')
+  const superAdminByEmail = await db.getDb()('super_admins')
     .whereRaw('LOWER(email) = ?', [normalizedEmail])
     .select('id', 'email', 'name', 'password_hash')
     .first() as SuperAdminRow | undefined;
 
-  let user = await getGlobalUserByEmail(masterDb, normalizedEmail);
+  let user = await getGlobalUserByEmail(normalizedEmail);
   let isSuperAdmin = false;
   let isSuperAdminFallback = false;
 
@@ -495,9 +458,7 @@ export async function loginTenantUser(email: string, password: string, companySl
     }
 
     user = await ensureSuperAdminGlobalUser({
-      masterDb,
       companyId: null,
-      companyDbName: null,
       superAdmin: superAdminByEmail,
     });
     isSuperAdmin = true;
@@ -507,7 +468,6 @@ export async function loginTenantUser(email: string, password: string, companySl
       'Super admin fallback login used',
     );
   } else if (superAdminByEmail) {
-    // Super admins can access all companies without explicit company assignment rows.
     isSuperAdmin = true;
   }
 
@@ -521,30 +481,12 @@ export async function loginTenantUser(email: string, password: string, companySl
   }
 
   if (isSuperAdmin) {
-    await ensureAdministratorRoleAssignment(masterDb, resolvedUser.id);
+    await ensureAdministratorRoleAssignment(resolvedUser.id);
   }
 
-  const selectedCompany = await resolveCompanyForLogin({
-    masterDb,
-    user: resolvedUser,
-    isSuperAdmin,
-    companySlug,
-  });
-
-  if (isSuperAdminFallback) {
-    await masterDb('user_company_access')
-      .insert({
-        user_id: resolvedUser.id,
-        company_id: selectedCompany.id,
-        is_active: true,
-        updated_at: new Date(),
-      })
-      .onConflict(['user_id', 'company_id'])
-      .merge({ is_active: true, updated_at: new Date() });
-  }
+  const selectedCompany = await resolveCompanyForLogin();
 
   return issueCompanySession({
-    masterDb,
     resolvedUser,
     company: selectedCompany,
     isSuperAdmin,
@@ -559,17 +501,15 @@ export async function listLoginCompanies(userId: string): Promise<Array<{
   slug: string;
   themeColor: string | null;
 }>> {
-  const masterDb = db.getMasterDb();
-  const user = await masterDb('users').where({ id: userId, is_active: true }).first('id', 'email');
+  const user = await db.getDb()('users').where({ id: userId, is_active: true }).first('id', 'email');
   if (!user) throw new AppError(401, 'User not found');
 
-  const isSuperAdmin = Boolean(await masterDb('super_admins')
+  const isSuperAdmin = Boolean(await db.getDb()('super_admins')
     .whereRaw('LOWER(email) = ?', [normalizeEmail(String(user.email ?? ''))])
     .first('id'));
 
   const companies = await listAccessibleCompanies({
-    masterDb,
-    userId: userId,
+    userId,
     isSuperAdmin,
   });
 
@@ -581,28 +521,22 @@ export async function listLoginCompanies(userId: string): Promise<Array<{
   }));
 }
 
-export async function switchCompany(userId: string, companySlug: string) {
-  const masterDb = db.getMasterDb();
-  await ensureSystemRolePermissionDefaults(masterDb);
-  const user = await masterDb('users').where({ id: userId, is_active: true }).first();
+/** @deprecated Company switching is no longer used. Always resolves to the Omnilert root company. */
+export async function switchCompany(userId: string, _companySlug: string) {
+  await ensureSystemRolePermissionDefaults();
+  const user = await db.getDb()('users').where({ id: userId, is_active: true }).first();
   if (!user) throw new AppError(401, 'User not found');
 
-  const isSuperAdmin = Boolean(await masterDb('super_admins')
+  const isSuperAdmin = Boolean(await db.getDb()('super_admins')
     .whereRaw('LOWER(email) = ?', [normalizeEmail(String(user.email ?? ''))])
     .first('id'));
   if (isSuperAdmin) {
-    await ensureAdministratorRoleAssignment(masterDb, user.id as string);
+    await ensureAdministratorRoleAssignment(user.id as string);
   }
 
-  const selectedCompany = await resolveCompanyForLogin({
-    masterDb,
-    user,
-    isSuperAdmin,
-    companySlug,
-  });
+  const selectedCompany = await resolveCompanyForLogin();
 
   return issueCompanySession({
-    masterDb,
     resolvedUser: user,
     company: selectedCompany,
     isSuperAdmin,
@@ -612,17 +546,16 @@ export async function switchCompany(userId: string, companySlug: string) {
 
 export async function refreshTokens(refreshTokenStr: string) {
   const payload = verifyRefreshToken(refreshTokenStr);
-  const masterDb = db.getMasterDb();
-  await ensureSystemRolePermissionDefaults(masterDb);
-  const company = await masterDb('companies')
-    .where({ db_name: payload.companyDbName, is_active: true })
+  await ensureSystemRolePermissionDefaults();
+  const company = await db.getDb()('companies')
+    .where({ id: payload.companyId, is_active: true })
     .first();
   if (!company) {
     throw new AppError(401, 'Company is no longer available');
   }
 
   const tokenHash = crypto.createHash('sha256').update(refreshTokenStr).digest('hex');
-  const storedToken = await masterDb('refresh_tokens')
+  const storedToken = await db.getDb()('refresh_tokens')
     .where({ token_hash: tokenHash, is_revoked: false })
     .where('expires_at', '>', new Date())
     .first();
@@ -631,43 +564,41 @@ export async function refreshTokens(refreshTokenStr: string) {
     throw new AppError(401, 'Invalid refresh token');
   }
 
-  await masterDb('refresh_tokens').where({ id: storedToken.id }).update({ is_revoked: true });
+  await db.getDb()('refresh_tokens').where({ id: storedToken.id }).update({ is_revoked: true });
 
-  const user = await masterDb('users').where({ id: payload.sub, is_active: true }).first();
+  const user = await db.getDb()('users').where({ id: payload.sub, is_active: true }).first();
   if (!user) {
     throw new AppError(401, 'User not found');
   }
 
-  const isSuperAdmin = Boolean(await masterDb('super_admins')
+  const isSuperAdmin = Boolean(await db.getDb()('super_admins')
     .whereRaw('LOWER(email) = ?', [normalizeEmail(String(user.email ?? ''))])
     .first('id'));
 
   if (isSuperAdmin) {
-    await ensureAdministratorRoleAssignment(masterDb, user.id as string);
+    await ensureAdministratorRoleAssignment(user.id as string);
   }
 
-  const { roles, permissions: rolePermissions } = await loadGlobalUserRolesAndPermissions(masterDb, user.id as string);
+  const { roles, permissions: rolePermissions } = await loadGlobalUserRolesAndPermissions(user.id as string);
   const permissions = isSuperAdmin
-    ? await loadAllPermissionKeys(masterDb)
+    ? await loadAllPermissionKeys()
     : rolePermissions;
-  const branchIds = await loadAllActiveBranchIdsForCompany(String(company.db_name));
+  const branchIds = await loadUserAssignedBranchIds(user.id as string, isSuperAdmin);
 
   const newAccessToken = signAccessToken({
     sub: user.id,
     companyId: company.id,
     companySlug: company.slug,
-    companyDbName: company.db_name,
     roles: roles.map((r) => r.name),
     permissions,
     branchIds,
   });
 
-  const newRefreshToken = signRefreshToken(user.id, payload.companyDbName);
+  const newRefreshToken = signRefreshToken(user.id, company.id);
   const newTokenHash = crypto.createHash('sha256').update(newRefreshToken).digest('hex');
-  await masterDb('refresh_tokens').insert({
+  await db.getDb()('refresh_tokens').insert({
     user_id: user.id,
     company_id: company.id,
-    company_db_name: payload.companyDbName,
     token_hash: newTokenHash,
     expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
   });
@@ -678,9 +609,8 @@ export async function refreshTokens(refreshTokenStr: string) {
 export async function logout(refreshTokenStr: string) {
   try {
     verifyRefreshToken(refreshTokenStr);
-    const masterDb = db.getMasterDb();
     const tokenHash = crypto.createHash('sha256').update(refreshTokenStr).digest('hex');
-    await masterDb('refresh_tokens').where({ token_hash: tokenHash }).update({ is_revoked: true });
+    await db.getDb()('refresh_tokens').where({ token_hash: tokenHash }).update({ is_revoked: true });
   } catch {
     // Token already invalid, that's fine.
   }

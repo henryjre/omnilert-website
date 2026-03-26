@@ -53,8 +53,9 @@ export function LoginForm() {
         }
       })
       .catch(() => {
-        // On network error, don't hide the tab — default to showing it
-        setHasCompanies(false);
+        // If the "company existence" check fails, keep Create Company hidden by default.
+        // It should only be shown when we can confirm there are no companies in the DB.
+        setHasCompanies(null);
       });
   }, []);
   const navigate = useNavigate();
@@ -159,7 +160,7 @@ export function LoginForm() {
         </div>
 
         <div className="rounded-xl border border-gray-200 bg-white p-8 shadow-sm">
-          <div className={`mb-4 grid ${hasCompanies ? 'grid-cols-2' : 'grid-cols-3'} rounded-lg bg-gray-100 p-1`}>
+          <div className={`mb-4 grid ${hasCompanies === false ? 'grid-cols-3' : 'grid-cols-2'} rounded-lg bg-gray-100 p-1`}>
             <button
               type="button"
               onClick={() => {
@@ -186,7 +187,7 @@ export function LoginForm() {
             >
               Register
             </button>
-            {!hasCompanies && (
+            {hasCompanies === false && (
               <button
                 type="button"
                 onClick={() => {

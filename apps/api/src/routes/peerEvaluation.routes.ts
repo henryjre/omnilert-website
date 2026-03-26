@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { PERMISSIONS } from '@omnilert/shared';
 import { authenticate } from '../middleware/auth.js';
 import { resolveCompany } from '../middleware/companyResolver.js';
-import { requireAnyPermission, requirePermission } from '../middleware/rbac.js';
+import { requirePermission } from '../middleware/rbac.js';
 import { validateBody } from '../middleware/validateRequest.js';
 import * as peerEvaluationController from '../controllers/peerEvaluation.controller.js';
 
@@ -21,22 +21,22 @@ router.use(authenticate, resolveCompany);
 // IMPORTANT: static routes before /:id
 router.get(
   '/pending-mine',
-  requireAnyPermission(PERMISSIONS.PEER_EVALUATION_VIEW, PERMISSIONS.PEER_EVALUATION_MANAGE),
+  requirePermission(PERMISSIONS.WORKPLACE_RELATIONS_VIEW),
   peerEvaluationController.getMyPending,
 );
 router.get(
   '/',
-  requireAnyPermission(PERMISSIONS.PEER_EVALUATION_VIEW, PERMISSIONS.PEER_EVALUATION_MANAGE),
+  requirePermission(PERMISSIONS.WORKPLACE_RELATIONS_VIEW),
   peerEvaluationController.list,
 );
 router.get(
   '/:id',
-  requireAnyPermission(PERMISSIONS.PEER_EVALUATION_VIEW, PERMISSIONS.PEER_EVALUATION_MANAGE),
+  requirePermission(PERMISSIONS.WORKPLACE_RELATIONS_VIEW),
   peerEvaluationController.getById,
 );
 router.post(
   '/:id/submit',
-  requireAnyPermission(PERMISSIONS.PEER_EVALUATION_VIEW, PERMISSIONS.PEER_EVALUATION_MANAGE),
+  requirePermission(PERMISSIONS.WORKPLACE_RELATIONS_VIEW),
   validateBody(submitSchema),
   peerEvaluationController.submit,
 );

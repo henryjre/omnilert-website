@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/shared/components/ui/Button';
 import { Spinner } from '@/shared/components/ui/Spinner';
 import { api } from '@/shared/services/api.client';
+import { useAppToast } from '@/shared/hooks/useAppToast';
 import { X } from 'lucide-react';
 
 type ShiftExchangeOption = {
@@ -31,6 +32,7 @@ interface ShiftExchangeFlowModalProps {
   fromShift: FromShift | null;
   onClose: () => void;
   onCreated?: () => void;
+  onConfirmed?: (payload: { fromShiftId: string; selectedOption: ShiftExchangeOption }) => void;
 }
 
 function fmtShift(iso: string): string {
@@ -49,7 +51,9 @@ export function ShiftExchangeFlowModal({
   fromShift,
   onClose,
   onCreated,
+  onConfirmed,
 }: ShiftExchangeFlowModalProps) {
+  const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
@@ -71,10 +75,12 @@ export function ShiftExchangeFlowModal({
         setOptions(res.data.data?.options ?? []);
       })
       .catch((err) => {
-        setError(err?.response?.data?.error || err?.response?.data?.message || 'Failed to load exchange options');
+        const message = err?.response?.data?.error || err?.response?.data?.message || 'Failed to load exchange options';
+        setError(message);
+        showErrorToast(message);
       })
       .finally(() => setLoading(false));
-  }, [isOpen, fromShift?.id]);
+  }, [isOpen, fromShift?.id, showErrorToast]);
 
   const isConfirmDisabled = useMemo(() => creating || !selectedOption, [creating, selectedOption]);
 
@@ -88,10 +94,17 @@ export function ShiftExchangeFlowModal({
         toShiftId: selectedOption.shift_id,
         toCompanyId: selectedOption.company_id,
       });
+      showSuccessToast('Shift exchange request submitted.');
+      onConfirmed?.({
+        fromShiftId: fromShift.id,
+        selectedOption,
+      });
       onCreated?.();
       onClose();
     } catch (err: any) {
-      setError(err?.response?.data?.error || err?.response?.data?.message || 'Failed to create shift exchange request');
+      const message = err?.response?.data?.error || err?.response?.data?.message || 'Failed to create shift exchange request';
+      setError(message);
+      showErrorToast(message);
     } finally {
       setCreating(false);
     }

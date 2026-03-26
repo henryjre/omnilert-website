@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { queryClient } from '@/shared/services/queryClient';
+import { parseAccessTokenClaims } from './accessTokenClaims';
 
 interface AuthUser {
   id: string;
@@ -63,7 +64,24 @@ export const useAuthStore = create<AuthState>()(
       },
 
       setTokens: (accessToken, refreshToken) =>
-        set({ accessToken, refreshToken }),
+        set((state) => {
+          const claims = parseAccessTokenClaims(accessToken);
+          const nextUser = state.user
+            ? {
+                ...state.user,
+                permissions: claims.permissions ?? state.user.permissions,
+                branchIds: claims.branchIds ?? state.user.branchIds,
+              }
+            : state.user;
+
+          return {
+            accessToken,
+            refreshToken,
+            user: nextUser,
+            companySlug: claims.companySlug ?? state.companySlug,
+            isAuthenticated: true,
+          };
+        }),
 
       setCompanyThemeColor: (companyThemeColor) => set({ companyThemeColor }),
       setCompanyName: (companyName) => set({ companyName }),

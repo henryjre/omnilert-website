@@ -1,4 +1,3 @@
-import type { Knex } from 'knex';
 import { AppError } from '../middleware/errorHandler.js';
 import { db } from '../config/database.js';
 
@@ -26,8 +25,8 @@ function uniqueIds(ids: string[]): string[] {
   return Array.from(new Set(ids));
 }
 
-async function loadDepartmentsBase(tenantDb: Knex, ids?: string[]): Promise<DepartmentRow[]> {
-  const query = tenantDb('departments as departments')
+async function loadDepartmentsBase(ids?: string[]): Promise<DepartmentRow[]> {
+  const query = db.getDb()('departments as departments')
     .select(
       'departments.id',
       'departments.name',
@@ -48,7 +47,7 @@ async function loadDepartmentMembers(companyId: string, departmentIds: string[])
   const map = new Map<string, DepartmentMember[]>();
   if (departmentIds.length === 0) return map;
 
-  const members = await db.getMasterDb()('users as users')
+  const members = await db.getDb()('users as users')
     .join('user_company_access as uca', 'users.id', 'uca.user_id')
     .where('uca.company_id', companyId)
     .andWhere('uca.is_active', true)
@@ -101,15 +100,15 @@ function toDepartmentView(
   };
 }
 
-export async function listDepartments(tenantDb: Knex, companyId: string) {
-  const rows = await loadDepartmentsBase(tenantDb);
+export async function listDepartments(companyId: string) {
+  const rows = await loadDepartmentsBase();
   const membersByDepartment = await loadDepartmentMembers(
     companyId,
     rows.map((row) => row.id),
   );
   const headUserIds = rows.map((row) => row.head_user_id).filter(Boolean) as string[];
   const heads = headUserIds.length > 0
-    ? await db.getMasterDb()('users')
+    ? await db.getDb()('users')
       .whereIn('id', headUserIds)
       .select('id', 'first_name', 'last_name', 'email', 'avatar_url')
     : [];
@@ -129,7 +128,7 @@ export async function listDepartments(tenantDb: Knex, companyId: string) {
 }
 
 export async function listDepartmentMemberOptions(companyId: string) {
-  return db.getMasterDb()('users as users')
+  return db.getDb()('users as users')
     .join('user_company_access as uca', 'users.id', 'uca.user_id')
     .where('uca.company_id', companyId)
     .andWhere('uca.is_active', true)
@@ -139,14 +138,14 @@ export async function listDepartmentMemberOptions(companyId: string) {
     .orderBy('last_name', 'asc');
 }
 
-async function loadDepartmentById(tenantDb: Knex, companyId: string, departmentId: string) {
-  const rows = await loadDepartmentsBase(tenantDb, [departmentId]);
+async function loadDepartmentById(companyId: string, departmentId: string) {
+  const rows = await loadDepartmentsBase([departmentId]);
   if (rows.length === 0) {
     throw new AppError(404, 'Department not found');
   }
   const membersByDepartment = await loadDepartmentMembers(companyId, [departmentId]);
   const head = rows[0].head_user_id
-    ? await db.getMasterDb()('users')
+    ? await db.getDb()('users')
       .where({ id: rows[0].head_user_id })
       .first('id', 'first_name', 'last_name', 'email', 'avatar_url')
     : null;
@@ -161,7 +160,6 @@ async function loadDepartmentById(tenantDb: Knex, companyId: string, departmentI
 }
 
 export async function createDepartment(input: {
-  tenantDb: Knex;
   companyId: string;
   name: string;
   headUserId: string | null;
@@ -174,7 +172,6 @@ export async function createDepartment(input: {
 }
 
 export async function updateDepartment(input: {
-  tenantDb: Knex;
   companyId: string;
   departmentId: string;
   name: string;
@@ -185,7 +182,6 @@ export async function updateDepartment(input: {
 }
 
 async function upsertDepartmentInternal(input: {
-  tenantDb: Knex;
   companyId: string;
   departmentId: string | null;
   name: string;
@@ -203,7 +199,7 @@ async function upsertDepartmentInternal(input: {
   }
 
   if (memberUserIds.length > 0) {
-    const validMembers = await db.getMasterDb()('users as users')
+    const validMembers = await db.getDb()('users as users')
       .join('user_company_access as uca', 'users.id', 'uca.user_id')
       .where('uca.company_id', input.companyId)
       .andWhere('uca.is_active', true)
@@ -215,7 +211,7 @@ async function upsertDepartmentInternal(input: {
     }
   }
 
-  const duplicate = await input.tenantDb('departments')
+  const duplicate = await db.getDb()('departments')
     .whereRaw('LOWER(name) = LOWER(?)', [normalizedName])
     .modify((query) => {
       if (input.departmentId) {
@@ -228,7 +224,7 @@ async function upsertDepartmentInternal(input: {
     throw new AppError(409, 'Department name already exists');
   }
 
-  const departmentId = await input.tenantDb.transaction(async (trx) => {
+  const departmentId = await db.getDb().transaction(async (trx) => {
     if (input.departmentId) {
       const [updated] = await trx('departments')
         .where({ id: input.departmentId })
@@ -253,7 +249,7 @@ async function upsertDepartmentInternal(input: {
     }
 
     const targetDepartmentId = input.departmentId as string;
-    const existingMembers = await db.getMasterDb()('users as users')
+    const existingMembers = await db.getDb()('users as users')
       .join('user_company_access as uca', 'users.id', 'uca.user_id')
       .where('uca.company_id', input.companyId)
       .andWhere('uca.is_active', true)
@@ -263,7 +259,7 @@ async function upsertDepartmentInternal(input: {
     const toRemove = existingIds.filter((id) => !memberUserIds.includes(id));
 
     if (toRemove.length > 0) {
-      await db.getMasterDb()('users')
+      await db.getDb()('users')
         .whereIn('id', toRemove)
         .update({
           department_id: null,
@@ -272,7 +268,7 @@ async function upsertDepartmentInternal(input: {
     }
 
     if (memberUserIds.length > 0) {
-      await db.getMasterDb()('users')
+      await db.getDb()('users')
         .whereIn('id', memberUserIds)
         .update({
           department_id: targetDepartmentId,
@@ -283,5 +279,5 @@ async function upsertDepartmentInternal(input: {
     return targetDepartmentId;
   });
 
-  return loadDepartmentById(input.tenantDb, input.companyId, departmentId);
+  return loadDepartmentById(input.companyId, departmentId);
 }

@@ -26,7 +26,7 @@ function toPublic(admin: SuperAdminRow) {
 }
 
 export async function hasAnySuperAdmin(): Promise<boolean> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const row = await masterDb<SuperAdminRow>('super_admins').count<{ count: string }>('id as count').first();
   return Number(row?.count ?? 0) > 0;
 }
@@ -36,7 +36,7 @@ export async function createFirstSuperAdmin(input: {
   email: string;
   password: string;
 }) {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const exists = await hasAnySuperAdmin();
   if (exists) {
     throw new AppError(409, 'Super admin already initialized');
@@ -57,7 +57,7 @@ export async function createFirstSuperAdmin(input: {
 }
 
 export async function loginSuperAdmin(emailRaw: string, password: string) {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const email = normalizeEmail(emailRaw);
   const admin = await masterDb<SuperAdminRow>('super_admins').where({ email }).first();
   if (!admin) {
@@ -73,7 +73,7 @@ export async function loginSuperAdmin(emailRaw: string, password: string) {
 }
 
 export async function getSuperAdminById(id: string) {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const admin = await masterDb<SuperAdminRow>('super_admins').where({ id }).first();
   if (!admin) {
     throw new AppError(404, 'Super admin not found');

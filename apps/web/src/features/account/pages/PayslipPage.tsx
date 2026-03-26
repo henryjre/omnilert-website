@@ -1,336 +1,231 @@
-import { useEffect, useState, useRef } from 'react';
-import { Card, CardHeader, CardBody } from '@/shared/components/ui/Card';
-import { Spinner } from '@/shared/components/ui/Spinner';
-import { Button } from '@/shared/components/ui/Button';
-import { api } from '@/shared/services/api.client';
-import { useAppToast } from '@/shared/hooks/useAppToast';
-import { ChevronDown, RefreshCw } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from "react";
+import type { PayslipDetailResponse, PayslipListItem, PayslipStatus } from "@omnilert/shared";
+import { X } from "lucide-react";
+import { api } from "@/shared/services/api.client";
+import { useAppToast } from "@/shared/hooks/useAppToast";
+import { useBranchStore } from "@/shared/store/branchStore";
+import { Spinner } from "@/shared/components/ui/Spinner";
+import { PayslipListContent } from "../components/PayslipListContent";
+import { PayslipDetailPanel } from "../components/PayslipDetailPanel";
 
+type StatusFilter = "all" | PayslipStatus;
+
+const PAGE_SIZE = 10;
+
+/**
+ * Payslip history page.
+ *
+ * - Fetches all payslips (including pending stubs for the current month)
+ *   from GET /dashboard/payslips on mount.
+ * - Uses the global BranchSelector state (useBranchStore) to filter payslips
+ *   client-side by company — no page reload needed.
+ * - Status tabs (All / Pending / Draft / Completed) further filter the list.
+ * - Pagination is handled in-memory (10 per page).
+ * - Clicking a card loads the full detail from GET /dashboard/payslips/:id
+ *   and opens a slide-in side panel.
+ */
 export function PayslipPage() {
-  const { error: showErrorToast } = useAppToast();
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
-  const [branchesLoading, setBranchesLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [allBranches, setAllBranches] = useState<any[]>([]);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [cutoffDropdownOpen, setCutoffDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const cutoffDropdownRef = useRef<HTMLDivElement>(null);
-  const [selectedBranchOdooId, setSelectedBranchOdooId] = useState<string>('');
+  const { error: showError } = useAppToast();
 
-  // Calculate default cutoff based on current date
-  const today = new Date().getDate();
-  const [selectedCutoff, setSelectedCutoff] = useState<number>(today > 16 ? 2 : 1);
+  // ----- Global branch selection state -----
+  const { selectedBranchIds, branches } = useBranchStore();
 
-  // Close dropdowns when clicking outside
+  // ----- Page state -----
+  const [allPayslips, setAllPayslips] = useState<PayslipListItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [page, setPage] = useState(1);
+  const [selectedPayslipId, setSelectedPayslipId] = useState<string | null>(null);
+  const [selectedPayslipDetail, setSelectedPayslipDetail] = useState<PayslipDetailResponse | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  // ----- Fetch all payslips on mount -----
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setDropdownOpen(false);
-      }
-      if (cutoffDropdownRef.current && !cutoffDropdownRef.current.contains(e.target as Node)) {
-        setCutoffDropdownOpen(false);
+    let active = true;
+
+    const fetchPayslips = async () => {
+      setLoading(true);
+      try {
+        const response = await api.get("/dashboard/payslips");
+        if (!active) return;
+        const items = (response.data.data?.items ?? []) as PayslipListItem[];
+        setAllPayslips(items);
+      } catch (err: unknown) {
+        if (!active) return;
+        const axiosErr = err as { response?: { data?: { error?: string; message?: string } } };
+        showError(
+          axiosErr?.response?.data?.error ??
+          axiosErr?.response?.data?.message ??
+          "Failed to load payslips.",
+        );
+      } finally {
+        if (active) setLoading(false);
       }
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
 
-  // Fetch all branches for payslip controls (includes inactive)
+    void fetchPayslips();
+    return () => { active = false; };
+  }, [showError]);
+
+  // ----- Fetch detail when a card is selected -----
   useEffect(() => {
-    setBranchesLoading(true);
-    api
-      .get('/dashboard/payslip-branches')
-      .then((res) => setAllBranches(res.data.data || []))
-      .catch((err: any) => {
-        setAllBranches([]);
-        showErrorToast(err?.response?.data?.error || err?.response?.data?.message || 'Failed to load payslip branches.');
-      })
-      .finally(() => setBranchesLoading(false));
-  }, [showErrorToast]);
-
-  const fetchPayslip = (isRefresh = false) => {
-    if (!selectedBranchOdooId) return;
-    if (isRefresh) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
+    if (!selectedPayslipId) {
+      setSelectedPayslipDetail(null);
+      return;
     }
-    api
-      .get('/dashboard/payslip', { params: { companyId: selectedBranchOdooId, cutoff: selectedCutoff } })
-      .then((res) => setData(res.data.data))
-      .catch((err: any) => {
-        setData(null);
-        showErrorToast(err?.response?.data?.error || err?.response?.data?.message || 'Failed to load payslip data.');
+
+    let active = true;
+    setDetailLoading(true);
+
+    void api.get(`/dashboard/payslips/${encodeURIComponent(selectedPayslipId)}`)
+      .then((response) => {
+        if (!active) return;
+        setSelectedPayslipDetail(response.data.data as PayslipDetailResponse);
+      })
+      .catch((err: unknown) => {
+        if (!active) return;
+        const axiosErr = err as { response?: { data?: { error?: string; message?: string } } };
+        showError(
+          axiosErr?.response?.data?.error ??
+          axiosErr?.response?.data?.message ??
+          "Failed to load payslip details.",
+        );
+        setSelectedPayslipId(null);
+        setSelectedPayslipDetail(null);
       })
       .finally(() => {
-        setLoading(false);
-        setRefreshing(false);
+        if (active) setDetailLoading(false);
       });
+
+    return () => { active = false; };
+  }, [selectedPayslipId, showError]);
+
+  // ----- Reset page when filter or branch selection changes -----
+  useEffect(() => {
+    setPage(1);
+  }, [statusFilter, selectedBranchIds]);
+
+  // ----- Derive the set of selected Odoo company IDs from selected branch IDs -----
+  const selectedOdooCompanyIds = useMemo<Set<number>>(() => {
+    const selectedSet = new Set(selectedBranchIds);
+    const ids = branches
+      .filter((b) => selectedSet.has(b.id) && b.odoo_branch_id)
+      .map((b) => Number(b.odoo_branch_id));
+    return new Set(ids);
+  }, [selectedBranchIds, branches]);
+
+  // ----- Filter and paginate in-memory -----
+  const filteredPayslips = useMemo<PayslipListItem[]>(() => {
+    let result = allPayslips;
+
+    if (selectedOdooCompanyIds.size > 0) {
+      result = result.filter((p) => selectedOdooCompanyIds.has(p.company_id));
+    }
+
+    if (statusFilter !== "all") {
+      result = result.filter((p) => p.status === statusFilter);
+    }
+
+    return result;
+  }, [allPayslips, selectedOdooCompanyIds, statusFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredPayslips.length / PAGE_SIZE));
+  const clampedPage = Math.min(Math.max(page, 1), totalPages);
+  const paginatedPayslips = filteredPayslips.slice(
+    (clampedPage - 1) * PAGE_SIZE,
+    clampedPage * PAGE_SIZE,
+  );
+
+  // ----- Handlers -----
+  const handleSelectPayslip = (id: string) => {
+    setSelectedPayslipId(id);
   };
 
-  // Initialize selected branch
-  useEffect(() => {
-    if (allBranches.length > 0 && !selectedBranchOdooId) {
-      const firstWithOdooId = allBranches.find((b) => b.odoo_branch_id);
-      if (firstWithOdooId?.odoo_branch_id) {
-        setSelectedBranchOdooId(firstWithOdooId.odoo_branch_id);
-      } else {
-        // No selectable Odoo branch IDs; avoid perpetual loading state.
-        setLoading(false);
-      }
-    } else if (allBranches.length === 0) {
-      setLoading(false);
-    }
-  }, [allBranches, selectedBranchOdooId]);
+  const handleClosePanel = () => {
+    setSelectedPayslipId(null);
+    setSelectedPayslipDetail(null);
+  };
 
-  const branchOptions = allBranches
-    .slice()
-    .sort((a, b) => parseInt(a.odoo_branch_id || '0', 10) - parseInt(b.odoo_branch_id || '0', 10))
-    .map((b) => ({ ...b, id: b.id }));
+  const panelOpen = Boolean(selectedPayslipId);
 
-  useEffect(() => {
-    if (!selectedBranchOdooId) return;
-    fetchPayslip();
-  }, [selectedBranchOdooId, selectedCutoff]);
-
-  const selectedBranch = branchOptions.find((b) => b.odoo_branch_id === selectedBranchOdooId);
-  const branchLabel = selectedBranch?.name ?? 'Select branch';
-  const cutoffLabel = selectedCutoff === 1 ? '1st Cutoff' : '2nd Cutoff';
-  const isSecondCutoffDisabled = today <= 16;
-
-  if (branchesLoading || loading) {
-    return (
-      <Card>
-        <CardHeader>
-          <h2 className="text-lg font-semibold text-gray-900">Payslip Details</h2>
-        </CardHeader>
-        <CardBody className="flex items-center justify-center py-12">
-          <Spinner size="lg" />
-        </CardBody>
-      </Card>
-    );
-  }
+  // Resolve the employee name for the panel header
+  const selectedPayslipMeta = allPayslips.find((p) => p.id === selectedPayslipId);
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">Payslip Details</h2>
-          <div className="flex items-center gap-2">
-            {/* Custom Branch Dropdown */}
-            <div ref={dropdownRef} className="relative">
-              <button
-                onClick={() => setDropdownOpen((o) => !o)}
-                className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none"
-              >
-                {branchLabel}
-                <ChevronDown className={`h-3.5 w-3.5 text-gray-400 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
-              </button>
+    <>
+      {/* Main content */}
+      <PayslipListContent
+        loading={loading}
+        items={paginatedPayslips}
+        total={filteredPayslips.length}
+        statusFilter={statusFilter}
+        selectedPayslipId={selectedPayslipId}
+        currentPage={clampedPage}
+        totalPages={totalPages}
+        onStatusFilterChange={(filter) => {
+          setStatusFilter(filter);
+          setSelectedPayslipId(null);
+        }}
+        onSelectPayslip={handleSelectPayslip}
+        onPageChange={setPage}
+      />
 
-              {dropdownOpen && (
-                <div className="absolute right-0 z-50 mt-1 w-52 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
-                  {branchOptions.map((branch) => (
-                    <button
-                      key={branch.id}
-                      onClick={() => {
-                        setSelectedBranchOdooId(branch.odoo_branch_id);
-                        setDropdownOpen(false);
-                      }}
-                      className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-50 ${
-                        selectedBranchOdooId === branch.odoo_branch_id
-                          ? 'bg-primary-50 text-primary-700 font-medium'
-                          : 'text-gray-700'
-                      }`}
-                    >
-                      {branch.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+      {/* Side panel backdrop */}
+      {panelOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/30"
+          onClick={handleClosePanel}
+        />
+      )}
 
-            {/* Custom Cutoff Dropdown */}
-            <div ref={cutoffDropdownRef} className="relative">
-              <button
-                onClick={() => setCutoffDropdownOpen((o) => !o)}
-                className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none"
-              >
-                {cutoffLabel}
-                <ChevronDown className={`h-3.5 w-3.5 text-gray-400 transition-transform ${cutoffDropdownOpen ? 'rotate-180' : ''}`} />
-              </button>
-
-              {cutoffDropdownOpen && (
-                <div className="absolute right-0 z-50 mt-1 w-36 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
-                  <button
-                    onClick={() => {
-                      setSelectedCutoff(1);
-                      setCutoffDropdownOpen(false);
-                    }}
-                    className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-50 ${
-                      selectedCutoff === 1 ? 'bg-primary-50 text-primary-700 font-medium' : 'text-gray-700'
-                    }`}
-                  >
-                    1st Cutoff
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (!isSecondCutoffDisabled) {
-                        setSelectedCutoff(2);
-                        setCutoffDropdownOpen(false);
-                      }
-                    }}
-                    className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-50 ${
-                      selectedCutoff === 2 ? 'bg-primary-50 text-primary-700 font-medium' : 'text-gray-700'
-                    } ${isSecondCutoffDisabled ? 'cursor-not-allowed opacity-50' : ''}`}
-                  >
-                    2nd Cutoff
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Refresh Button with Animation */}
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => fetchPayslip(true)}
-              disabled={refreshing || !selectedBranchOdooId}
-              title="Refresh payslip"
-              className={refreshing ? 'animate-pulse' : ''}
-            >
-              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-            </Button>
-          </div>
-        </div>
-      </CardHeader>
-      <CardBody>
-        {!data ? (
-          <p className="text-sm text-gray-500">No payslip data available.</p>
-        ) : (
+      {/* Side panel */}
+      <div
+        className={`fixed inset-y-0 right-0 z-50 flex w-full max-w-[680px] transform flex-col overflow-hidden bg-white shadow-2xl transition-transform duration-300 ${
+          panelOpen ? "translate-x-0" : "translate-x-full"
+        }`}
+      >
+        {panelOpen && (
           <>
-            {/* Period */}
-            <div className="mb-4 text-sm text-gray-600">Period: {data?.period}</div>
-
-            {/* Attendance Computation */}
-            <div className="mb-6">
-              <h3 className="mb-3 text-sm font-semibold text-gray-900">Attendance Computation</h3>
-              <div className="overflow-x-auto rounded-lg border border-gray-200">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-3 py-2 text-left font-medium text-gray-600">Name</th>
-                      <th className="px-3 py-2 text-right font-medium text-gray-600">Days</th>
-                      <th className="px-3 py-2 text-right font-medium text-gray-600">Hours</th>
-                      <th className="px-3 py-2 text-right font-medium text-gray-600">Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data?.attendance?.items?.map((item: any, index: number) => (
-                      <tr key={index} className="border-t border-gray-100">
-                        <td className="px-3 py-2 text-gray-700">{item.name}</td>
-                        <td className="px-3 py-2 text-right text-gray-700">{item.days?.toFixed(2)}</td>
-                        <td className="px-3 py-2 text-right text-gray-700">{item.hours?.toFixed(2)}</td>
-                        <td className="px-3 py-2 text-right font-medium text-gray-700">
-                          {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(item.amount)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot className="bg-gray-50 font-medium">
-                    <tr className="border-t border-gray-200">
-                      <td className="px-3 py-2 text-gray-700">Total</td>
-                      <td className="px-3 py-2 text-right text-gray-700">{data?.attendance?.totalDays?.toFixed(2)}</td>
-                      <td className="px-3 py-2 text-right text-gray-700">{data?.attendance?.totalHours?.toFixed(2)}</td>
-                      <td className="px-3 py-2 text-right text-gray-700">
-                        {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(data?.attendance?.totalAmount)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </div>
-
-            {/* Salary Computation */}
-            <div>
-              <h3 className="mb-3 text-sm font-semibold text-gray-900">Salary Computation</h3>
-
-              {/* Taxable Salary */}
-              <div className="mb-4">
-                <h4 className="mb-2 text-xs font-medium text-green-700 uppercase">Taxable Salary</h4>
-                {data?.salary?.taxable?.length > 0 ? (
-                  <div className="space-y-1 rounded border border-gray-200 p-3">
-                    {data.salary.taxable.map((item: any, index: number) => (
-                      <div key={index} className="flex justify-between text-sm">
-                        <span className="text-gray-600">{item.description}</span>
-                        <span className="font-medium">
-                          {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(item.amount)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-400 italic">No taxable earnings yet.</p>
+            {/* Panel header */}
+            <div className="flex items-start justify-between border-b border-gray-200 px-6 py-4">
+              <div>
+                <p className="text-lg font-semibold text-gray-900">
+                  {selectedPayslipMeta
+                    ? `${selectedPayslipMeta.cutoff === 1 ? "1st" : "2nd"} Cutoff Payslip`
+                    : "Payslip Detail"}
+                </p>
+                {selectedPayslipMeta && (
+                  <p className="text-xs text-gray-500">
+                    {selectedPayslipMeta.company_name}
+                    {" · "}
+                    {selectedPayslipMeta.date_from} to {selectedPayslipMeta.date_to}
+                  </p>
                 )}
               </div>
-
-              {/* Non-Taxable Salary */}
-              <div className="mb-4">
-                <h4 className="mb-2 text-xs font-medium text-green-700 uppercase">Non-Taxable Salary</h4>
-                {data?.salary?.nonTaxable?.length > 0 ? (
-                  <div className="space-y-1 rounded border border-gray-200 p-3">
-                    {data.salary.nonTaxable.map((item: any, index: number) => (
-                      <div key={index} className="flex justify-between text-sm">
-                        <span className="text-gray-600">{item.description}</span>
-                        <span className="font-medium">
-                          {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(item.amount)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-400 italic">No non-taxable earnings yet.</p>
-                )}
-              </div>
-
-              {/* Deductions */}
-              <div className="mb-4">
-                <h4 className="mb-2 text-xs font-medium text-red-700 uppercase">Deductions</h4>
-                {data?.salary?.deductions?.length > 0 ? (
-                  <div className="space-y-1 rounded border border-gray-200 p-3">
-                    {data.salary.deductions.map((item: any, index: number) => (
-                      <div key={index} className="flex justify-between text-sm">
-                        <span className="text-gray-600">{item.description}</span>
-                        <span className="font-medium text-red-600">
-                          {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(item.amount)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-400 italic">No deductions for this payslip.</p>
-                )}
-              </div>
-
-              {/* Net Pay */}
-              <div className="mt-4 rounded-lg bg-primary-50 p-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-lg font-semibold text-primary-800">Net Pay</span>
-                  <span className="text-2xl font-bold text-primary-700">
-                    {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(data?.netPay)}
-                  </span>
-                </div>
-              </div>
+              <button
+                type="button"
+                onClick={handleClosePanel}
+                className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                aria-label="Close payslip detail"
+              >
+                <X className="h-5 w-5" />
+              </button>
             </div>
 
-            {/* Disclaimer */}
-            <div className="mt-6 rounded bg-amber-50 px-3 py-2 text-center text-xs text-amber-800">
-              This payslip may not be accurate. Official payslips are distributed by the Finance Department through email.
-            </div>
+            {/* Panel body */}
+            {detailLoading && !selectedPayslipDetail ? (
+              <div className="flex flex-1 items-center justify-center">
+                <Spinner size="lg" />
+              </div>
+            ) : (
+              <PayslipDetailPanel
+                detail={selectedPayslipDetail}
+                loading={detailLoading}
+              />
+            )}
           </>
         )}
-      </CardBody>
-    </Card>
+      </div>
+    </>
   );
 }

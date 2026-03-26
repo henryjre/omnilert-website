@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth.js';
 import { resolveCompany } from '../middleware/companyResolver.js';
-import { requirePermission, requireAnyPermission } from '../middleware/rbac.js';
+import { requirePermission } from '../middleware/rbac.js';
 import { PERMISSIONS } from '@omnilert/shared';
 import * as authorizationRequestController from '../controllers/authorizationRequest.controller.js';
 
@@ -11,23 +11,19 @@ router.use(authenticate, resolveCompany);
 
 router.get(
   '/',
-  requireAnyPermission(
-    PERMISSIONS.AUTH_REQUEST_APPROVE_MANAGEMENT,
-    PERMISSIONS.AUTH_REQUEST_VIEW_ALL,
-    PERMISSIONS.AUTH_REQUEST_APPROVE_SERVICE_CREW,
-  ),
+  requirePermission(PERMISSIONS.AUTH_REQUEST_VIEW_PAGE),
   authorizationRequestController.list,
 );
 
 router.post(
   '/:id/approve',
-  requirePermission(PERMISSIONS.AUTH_REQUEST_APPROVE_MANAGEMENT),
+  requirePermission(PERMISSIONS.AUTH_REQUEST_MANAGE_PRIVATE),
   authorizationRequestController.approve,
 );
 
 router.post(
   '/:id/reject',
-  requirePermission(PERMISSIONS.AUTH_REQUEST_APPROVE_MANAGEMENT),
+  requirePermission(PERMISSIONS.AUTH_REQUEST_MANAGE_PRIVATE),
   authorizationRequestController.reject,
 );
 

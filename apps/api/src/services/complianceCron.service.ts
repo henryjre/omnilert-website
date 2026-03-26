@@ -1,6 +1,5 @@
 import { db } from '../config/database.js';
 import { logger } from '../utils/logger.js';
-import { syncGlobalStoreAuditProjectionByAuditId } from './globalStoreAuditIndex.service.js';
 import { getActiveAttendances } from './odoo.service.js';
 import { emitStoreAuditEvent } from './storeAuditRealtime.service.js';
 import { resolveCompanyByOdooBranchId } from './webhook.service.js';
@@ -88,7 +87,7 @@ function scheduleTimeoutUntil(target: Date, callback: () => void): void {
 }
 
 async function getScheduledRunRow(scheduledFor: Date): Promise<ScheduledJobRunRow | null> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const scheduledForKey = formatScheduledForKey(scheduledFor);
   const row = await masterDb('scheduled_job_runs')
     .where({
@@ -101,7 +100,7 @@ async function getScheduledRunRow(scheduledFor: Date): Promise<ScheduledJobRunRo
 }
 
 async function claimComplianceOccurrence(scheduledFor: Date): Promise<boolean> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const scheduledForKey = formatScheduledForKey(scheduledFor);
   const scheduledForManila = formatManilaDateTime(scheduledFor);
   const now = new Date();
@@ -167,7 +166,7 @@ async function claimComplianceOccurrence(scheduledFor: Date): Promise<boolean> {
 }
 
 async function markComplianceOccurrenceSuccess(scheduledFor: Date): Promise<void> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const now = new Date();
 
   await masterDb('scheduled_job_runs')
@@ -187,7 +186,7 @@ async function markComplianceOccurrenceSkipped(
   scheduledFor: Date,
   reason?: string | null,
 ): Promise<void> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const now = new Date();
   const scheduledForKey = formatScheduledForKey(scheduledFor);
   const updated = await masterDb('scheduled_job_runs')
@@ -236,7 +235,7 @@ async function ensureMissedOccurrenceSkipped(
 }
 
 async function markComplianceOccurrenceFailure(scheduledFor: Date, error: unknown): Promise<void> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const now = new Date();
   const errorMessage = error instanceof Error ? error.message : String(error);
 
@@ -269,16 +268,16 @@ export async function runComplianceCron(): Promise<ComplianceRunOutcome> {
     }
 
     const company = await resolveCompanyByOdooBranchId(chosen.company_id);
-    const tenantDb = await db.getTenantDb(company.db_name);
+    // single DB
 
-    const mappedBranch = await tenantDb('branches')
+    const mappedBranch = await db.getDb()('branches')
       .where({
         odoo_branch_id: String(chosen.company_id),
         is_active: true,
       })
       .first('id');
 
-    const branch = mappedBranch ?? await tenantDb('branches')
+    const branch = mappedBranch ?? await db.getDb()('branches')
       .where({ is_active: true })
       .orderBy([{ column: 'is_main_branch', order: 'desc' }, { column: 'created_at', order: 'asc' }])
       .first('id');
@@ -294,8 +293,9 @@ export async function runComplianceCron(): Promise<ComplianceRunOutcome> {
       );
     }
 
-    const [audit] = await tenantDb('store_audits')
+    const [audit] = await db.getDb()('store_audits')
       .insert({
+        company_id: company.id,
         type: 'compliance',
         status: 'pending',
         branch_id: branch.id,
@@ -309,11 +309,6 @@ export async function runComplianceCron(): Promise<ComplianceRunOutcome> {
         updated_at: new Date(),
       })
       .returning('*');
-
-    await syncGlobalStoreAuditProjectionByAuditId({
-      companyId: String(company.id),
-      auditId: String(audit.id),
-    });
 
     emitStoreAuditEvent(String(company.id), 'store-audit:new', audit);
 

@@ -5,7 +5,6 @@ const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
 
 interface ActiveCompanyRow {
   id: string;
-  dbName: string;
 }
 
 interface TenantBranchRow {
@@ -19,7 +18,7 @@ interface GlobalBranchLogger {
 
 interface GlobalBranchResolverDeps {
   listActiveCompanies: () => Promise<ActiveCompanyRow[]>;
-  listTenantBranches: (companyDbName: string) => Promise<TenantBranchRow[]>;
+  listTenantBranches: (companyId: string) => Promise<TenantBranchRow[]>;
   logger?: GlobalBranchLogger;
   now?: () => number;
   ttlMs?: number;
@@ -48,7 +47,7 @@ export function createGlobalActiveOdooBranchIdResolver(
 
     await Promise.all(companies.map(async (company) => {
       try {
-        const rows = await deps.listTenantBranches(company.dbName);
+        const rows = await deps.listTenantBranches(company.id);
         for (const row of rows) {
           if (!row.isActive || !row.odooBranchId) continue;
           const parsed = Number(row.odooBranchId);
@@ -60,7 +59,6 @@ export function createGlobalActiveOdooBranchIdResolver(
           {
             err: error,
             companyId: company.id,
-            companyDbName: company.dbName,
           },
           'Failed to load tenant Odoo branch ids for global EPI benchmark',
         );
@@ -79,20 +77,17 @@ export function createGlobalActiveOdooBranchIdResolver(
 
 export const listGlobalActiveOdooBranchIds = createGlobalActiveOdooBranchIdResolver({
   listActiveCompanies: async () => {
-    const masterDb = db.getMasterDb();
-    const rows = await masterDb('companies')
+    const rows = await db.getDb()('companies')
       .where({ is_active: true })
-      .select('id', 'db_name')
+      .select('id')
       .orderBy('created_at', 'asc');
 
     return rows.map((row: any) => ({
       id: String(row.id),
-      dbName: String(row.db_name),
     }));
   },
-  listTenantBranches: async (companyDbName) => {
-    const tenantDb = await db.getTenantDb(companyDbName);
-    const rows = await tenantDb('branches')
+  listTenantBranches: async (_companyId) => {
+    const rows = await db.getDb()('branches')
       .select('is_active', 'odoo_branch_id');
 
     return rows.map((row: any) => ({

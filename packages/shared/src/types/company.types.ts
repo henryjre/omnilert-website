@@ -2,9 +2,6 @@ export interface Company {
   id: string;
   name: string;
   slug: string;
-  dbName: string;
-  dbHost: string;
-  dbPort: number;
   isActive: boolean;
   odooApiKey: string | null;
   themeColor: string;
