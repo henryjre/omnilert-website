@@ -232,13 +232,13 @@ test('employee requirements namespace and route accept employee_requirements.app
 
   assert.match(
     employeeRequirementsSocketBlock,
-    /PERMISSIONS\.EMPLOYEE_REQUIREMENTS_APPROVE/,
-    'Socket guard for /employee-requirements should allow EMPLOYEE_REQUIREMENTS_APPROVE',
+    /PERMISSIONS\.EMPLOYEE_VERIFICATION_MANAGE_REQUIREMENTS/,
+    'Socket guard for /employee-requirements should allow EMPLOYEE_VERIFICATION_MANAGE_REQUIREMENTS',
   );
   assert.match(
     routeSource,
-    /requireAnyPermission\([\s\S]*PERMISSIONS\.EMPLOYEE_REQUIREMENTS_APPROVE/,
-    'Employee requirements route should use requireAnyPermission including EMPLOYEE_REQUIREMENTS_APPROVE',
+    /requireAnyPermission\([\s\S]*PERMISSIONS\.EMPLOYEE_VERIFICATION_MANAGE_REQUIREMENTS/,
+    'Employee requirements route should use requireAnyPermission including EMPLOYEE_VERIFICATION_MANAGE_REQUIREMENTS',
   );
 });
 
@@ -577,18 +577,13 @@ test('grouped users endpoint is company-context scoped and supports peer evaluat
   );
   assert.match(
     routesSource,
-    /PERMISSIONS\.PEER_EVALUATION_VIEW/,
+    /PERMISSIONS\.WORKPLACE_RELATIONS_VIEW/,
     'grouped-users route should allow peer evaluation viewers',
   );
   assert.match(
     routesSource,
-    /PERMISSIONS\.VIOLATION_NOTICE_CREATE/,
+    /PERMISSIONS\.VIOLATION_NOTICE_MANAGE/,
     'grouped-users route should continue allowing violation notice creators',
-  );
-  assert.match(
-    routesSource,
-    /PERMISSIONS\.VIOLATION_NOTICE_REQUEST/,
-    'grouped-users route should allow request permission for VN request flows',
   );
 });
 
@@ -617,18 +612,18 @@ test('case report VN request flow uses request permission and case-report endpoi
 
   assert.match(
     caseReportRoutesSource,
-    /request-vn',\s*requirePermission\(PERMISSIONS\.VIOLATION_NOTICE_REQUEST\)/,
-    'case report request-vn route should require VIOLATION_NOTICE_REQUEST',
+    /request-vn',\s*requirePermission\(PERMISSIONS\.VIOLATION_NOTICE_MANAGE\)/,
+    'case report request-vn route should require VIOLATION_NOTICE_MANAGE',
   );
   assert.match(
     violationNoticeRoutesSource,
-    /\/from-case-report',[\s\S]*requirePermission\(PERMISSIONS\.VIOLATION_NOTICE_REQUEST\)/,
-    'from-case-report route should require VIOLATION_NOTICE_REQUEST',
+    /\/from-case-report',[\s\S]*requirePermission\(PERMISSIONS\.VIOLATION_NOTICE_MANAGE\)/,
+    'from-case-report route should require VIOLATION_NOTICE_MANAGE',
   );
   assert.match(
     violationNoticeRoutesSource,
-    /\/from-store-audit',[\s\S]*requirePermission\(PERMISSIONS\.VIOLATION_NOTICE_REQUEST\)/,
-    'from-store-audit route should require VIOLATION_NOTICE_REQUEST',
+    /\/from-store-audit',[\s\S]*requirePermission\(PERMISSIONS\.VIOLATION_NOTICE_MANAGE\)/,
+    'from-store-audit route should require VIOLATION_NOTICE_MANAGE',
   );
 });
 
