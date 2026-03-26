@@ -13,6 +13,12 @@ import { emitStoreAuditEvent } from './storeAuditRealtime.service.js';
 import { SYSTEM_ROLES } from '@omnilert/shared';
 
 const DISABLED_AUDIT_ODOO_COMPANY_IDS = new Set<number>([2]);
+const INTERIM_DUTY_AUTH_TYPE = 'interim_duty';
+const PRESERVED_INTERIM_DUTY_STATUSES = new Set(['pending', 'approved', 'rejected']);
+
+export function shouldPreserveInterimDutyPlanningSlotDelete(statuses: string[]): boolean {
+  return statuses.some((status) => PRESERVED_INTERIM_DUTY_STATUSES.has(status));
+}
 
 export async function resolveCompanyByOdooBranchId(odooCompanyId: number) {
   const branch = await db.getDb()('branches')
@@ -443,6 +449,22 @@ export async function processPlanningSlotDelete(
     .first();
   if (!existing) {
     throw new AppError(404, `Shift not found for odoo_shift_id: ${odooShiftId}`);
+  }
+
+  const interimDutyStatuses = (await tenantDb('shift_authorizations')
+      .where({ shift_id: existing.id, auth_type: INTERIM_DUTY_AUTH_TYPE })
+      .select('status'))
+    .map((row: { status: string | null }) => String(row.status ?? '').trim());
+  const preserveInterimDutyHistory = shouldPreserveInterimDutyPlanningSlotDelete(interimDutyStatuses);
+
+  if (preserveInterimDutyHistory) {
+    return {
+      id: existing.id,
+      odoo_shift_id: existing.odoo_shift_id,
+      branch_id: existing.branch_id,
+      deleted: false,
+      preserved: true,
+    };
   }
 
   // Capture human-readable shift info before the row is deleted.
@@ -990,9 +1012,10 @@ export function createAttendanceProcessor(
           new Date(shift.shift_end),
         )
         : false;
+      const allowsInterimDuty = payload.x_company_id !== 1;
 
       let interimReason: 'no_planning_schedule' | 'scheduled_other_branch' | null = null;
-      if (!shift || !linkedShiftHasOverlap) {
+      if (allowsInterimDuty && (!shift || !linkedShiftHasOverlap)) {
         interimReason = await resolveInterimReason(deps, {
           userId: (shift?.user_id as string | null | undefined) ?? resolvedIdentity.userId,
           branchId: branch.id,
@@ -1046,6 +1069,20 @@ export function createAttendanceProcessor(
         await deps.reassignLogsToShift(payload.id, interimShift.id);
         log = { ...log, shift_id: interimShift.id };
         activeShift = interimShift;
+
+        const interimDutyAuth = await deps.createShiftAuthorization({
+          company_id: branch.company_id,
+          shift_id: interimShift.id,
+          shift_log_id: log.id,
+          branch_id: branch.id,
+          user_id: interimShift.user_id ?? null,
+          auth_type: INTERIM_DUTY_AUTH_TYPE,
+          diff_minutes: Math.max(0, Math.round(Number(payload.x_cumulative_minutes ?? 0))),
+          needs_employee_reason: false,
+          status: 'pending',
+        });
+        await deps.incrementShiftPendingApprovals(interimShift.id as string);
+        deps.emitSocketEvent('shift:authorization-new', interimDutyAuth as Record<string, unknown>);
 
         if (shift) {
           restoredScheduledShift = await deps.updateShiftById(shift.id, {

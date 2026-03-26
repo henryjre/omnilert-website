@@ -16,6 +16,7 @@ process.env.OPENAI_PROJECT_ID ??= 'test-openai-project';
 const {
   createAttendanceProcessor,
   reassignUserToSingleCheckedInBranch,
+  shouldPreserveInterimDutyPlanningSlotDelete,
 } = await import('./webhook.service.js');
 
 type ShiftRecord = {
@@ -281,6 +282,29 @@ test('reassignUserToSingleCheckedInBranch is exported and accepts (userId, branc
   assert.equal(reassignUserToSingleCheckedInBranch.length, 2);
 });
 
+test('shouldPreserveInterimDutyPlanningSlotDelete preserves rejected interim-duty history', () => {
+  assert.equal(
+    shouldPreserveInterimDutyPlanningSlotDelete(['rejected']),
+    true,
+  );
+  assert.equal(
+    shouldPreserveInterimDutyPlanningSlotDelete(['pending']),
+    true,
+  );
+  assert.equal(
+    shouldPreserveInterimDutyPlanningSlotDelete(['approved']),
+    true,
+  );
+  assert.equal(
+    shouldPreserveInterimDutyPlanningSlotDelete(['no_approval_needed']),
+    false,
+  );
+  assert.equal(
+    shouldPreserveInterimDutyPlanningSlotDelete([]),
+    false,
+  );
+});
+
 test('createAttendanceProcessor creates a synthetic interim-duty shift for unlinked attendance on checkout', async () => {
   const harness = createAttendanceHarness({
     websiteUserKey: 'website-user-1',
@@ -327,6 +351,37 @@ test('createAttendanceProcessor creates a synthetic interim-duty shift for unlin
 
   assert.equal(harness.logs.length, 2);
   assert.ok(harness.logs.every((log) => log.shift_id === interimShift?.id));
+  assert.equal(harness.auths.length, 1);
+  assert.equal(harness.auths[0]?.auth_type, 'interim_duty');
+  assert.equal(harness.auths[0]?.status, 'pending');
+  assert.equal(harness.auths[0]?.diff_minutes, 480);
+  assert.equal(harness.auths[0]?.shift_id, interimShift?.id);
+  assert.equal(interimShift?.pending_approvals, 1);
+});
+
+test('createAttendanceProcessor does not create interim duty for management attendances without a linked shift', async () => {
+  const harness = createAttendanceHarness({
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+  });
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  await processAttendance({
+    id: 9009,
+    check_in: '2026-03-20 01:00:00',
+    check_out: '2026-03-20 09:00:00',
+    worked_hours: 8,
+    x_company_id: 1,
+    x_cumulative_minutes: 480,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: false,
+    x_website_key: 'website-user-1',
+  });
+
+  const interimShift = harness.shifts.find((shift) => shift.odoo_shift_id === -9009);
+  assert.equal(interimShift, undefined);
+  assert.equal(harness.logs.length, 1);
+  assert.equal(harness.logs[0]?.shift_id, null);
   assert.equal(harness.auths.length, 0);
 });
 
@@ -376,7 +431,11 @@ test('createAttendanceProcessor restores the planned shift and reclassifies a fu
   assert.equal(plannedShift.status, 'open');
   assert.equal(plannedShift.check_in_status, null);
   assert.equal(plannedShift.total_worked_hours, null);
-  assert.equal(harness.auths.length, 0);
+  assert.equal(harness.auths.length, 1);
+  assert.equal(harness.auths[0]?.auth_type, 'interim_duty');
+  assert.equal(harness.auths[0]?.status, 'pending');
+  assert.equal(harness.auths[0]?.shift_id, interimShift?.id);
+  assert.equal(interimShift?.pending_approvals, 1);
   assert.ok(harness.logs.every((log) => log.shift_id === interimShift?.id));
 });
 
@@ -454,7 +513,10 @@ test('createAttendanceProcessor marks cross-branch coverage as scheduled_other_b
 
   const interimPayload = JSON.parse(String(interimShift?.odoo_payload ?? '{}')) as Record<string, unknown>;
   assert.equal(interimPayload.interim_reason, 'scheduled_other_branch');
-  assert.equal(harness.auths.length, 0);
+  assert.equal(harness.auths.length, 1);
+  assert.equal(harness.auths[0]?.auth_type, 'interim_duty');
+  assert.equal(harness.auths[0]?.status, 'pending');
+  assert.equal(harness.auths[0]?.shift_id, interimShift?.id);
 });
 
 test('createAttendanceProcessor keeps overlapping early check-ins on the normal authorization path', async () => {

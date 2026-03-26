@@ -1063,6 +1063,23 @@ test('shift constraints alignment migration exists for live databases', () => {
   );
 });
 
+test('interim duty auth type migration exists for shift authorizations', () => {
+  const migrationNames = fs.readdirSync(migrationsDirPath);
+  const migrationName = migrationNames.find((name) => /015_.*interim.*duty.*\.ts$/i.test(name));
+
+  assert.ok(
+    migrationName,
+    'Expected a 015 migration to add interim_duty to shift_authorizations auth_type check',
+  );
+
+  const source = fs.readFileSync(path.join(migrationsDirPath, migrationName!), 'utf8');
+  assert.match(
+    source,
+    /shift_authorizations_auth_type_check[\s\S]*interim_duty/,
+    'Interim duty migration should include interim_duty in shift_authorizations_auth_type_check',
+  );
+});
+
 test('authorization requests API and page expose approved/rejected reviewer names', () => {
   const controllerSource = fs.readFileSync(authorizationRequestControllerPath, 'utf8');
   const pageSource = fs.readFileSync(authorizationRequestsPagePath, 'utf8');

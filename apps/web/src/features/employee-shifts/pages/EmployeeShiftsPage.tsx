@@ -125,6 +125,7 @@ const AUTH_TYPE_CONFIG: Record<string, { label: string; color: string; Icon: Com
   early_check_out: { label: 'Early Check Out', color: 'yellow', Icon: LogOut, diffLabel: 'early' },
   late_check_out: { label: 'Late Check Out', color: 'purple', Icon: Clock, diffLabel: 'after shift end' },
   overtime: { label: 'Overtime', color: 'red', Icon: Clock, diffLabel: 'overtime' },
+  interim_duty: { label: 'Interim Duty', color: 'indigo', Icon: Briefcase, diffLabel: 'interim duty duration' },
   shift_exchange: { label: 'Shift Exchange', color: 'indigo', Icon: RefreshCw, diffLabel: '' },
 };
 

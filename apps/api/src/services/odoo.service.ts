@@ -1107,6 +1107,50 @@ export async function updateAttendanceCheckOut(
 }
 
 /**
+ * Deletes an Odoo attendance record.
+ * @param attendanceId - The Odoo attendance ID
+ * @returns True if successful
+ */
+export async function deleteAttendanceById(
+  attendanceId: number,
+): Promise<boolean> {
+  try {
+    const result = await callOdooKw(
+      "hr.attendance",
+      "unlink",
+      [[attendanceId]],
+    );
+    logger.info(`Deleted Odoo attendance ${attendanceId}`);
+    return result === true;
+  } catch (err) {
+    logger.error(`Failed to delete Odoo attendance ${attendanceId}: ${err}`);
+    throw err;
+  }
+}
+
+/**
+ * Deletes an Odoo planning slot.
+ * @param planningSlotId - The Odoo planning.slot ID
+ * @returns True if successful
+ */
+export async function deletePlanningSlotById(
+  planningSlotId: number,
+): Promise<boolean> {
+  try {
+    const result = await callOdooKw(
+      "planning.slot",
+      "unlink",
+      [[planningSlotId]],
+    );
+    logger.info(`Deleted Odoo planning.slot ${planningSlotId}`);
+    return result === true;
+  } catch (err) {
+    logger.error(`Failed to delete Odoo planning.slot ${planningSlotId}: ${err}`);
+    throw err;
+  }
+}
+
+/**
  * Updates the opening PCF for a POS session
  * @param posSessionName - The POS session name (e.g., "POS/01858")
  * @param openingPcf - The opening PCF amount

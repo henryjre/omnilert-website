@@ -2,9 +2,90 @@ import type { Request, Response, NextFunction } from 'express';
 import { AppError } from '../middleware/errorHandler.js';
 import { getIO } from '../config/socket.js';
 import { logger } from '../utils/logger.js';
-import { updateAttendanceCheckIn, updateAttendanceCheckOut, searchWorkEntriesByAttendanceId, updateWorkEntryDateStart, updateWorkEntryDateStop } from '../services/odoo.service.js';
+import {
+  deleteAttendanceById,
+  deletePlanningSlotById,
+  searchWorkEntriesByAttendanceId,
+  updateAttendanceCheckIn,
+  updateAttendanceCheckOut,
+  updateWorkEntryDateStart,
+  updateWorkEntryDateStop,
+} from '../services/odoo.service.js';
 import { createAndDispatchNotification } from '../services/notification.service.js';
 import { db } from '../config/database.js';
+
+const INTERIM_DUTY_AUTH_TYPE = 'interim_duty';
+
+type InterimDutyCleanupTargets = {
+  attendanceId: number;
+  planningSlotId: number | null;
+};
+
+type InterimDutyCleanupDeps = {
+  loadShiftLog: (shiftLogId: string) => Promise<{ odoo_attendance_id: number | null } | null>;
+  loadShift: (shiftId: string) => Promise<{ odoo_shift_id: number | null } | null>;
+  deleteAttendance: (attendanceId: number) => Promise<boolean>;
+  deletePlanningSlot: (planningSlotId: number) => Promise<boolean>;
+};
+
+const defaultInterimDutyCleanupDeps: InterimDutyCleanupDeps = {
+  loadShiftLog: async (shiftLogId) =>
+    (await db.getDb()('shift_logs')
+      .where({ id: shiftLogId })
+      .first('odoo_attendance_id')) as { odoo_attendance_id: number | null } | null,
+  loadShift: async (shiftId) =>
+    (await db.getDb()('employee_shifts')
+      .where({ id: shiftId })
+      .first('odoo_shift_id')) as { odoo_shift_id: number | null } | null,
+  deleteAttendance: deleteAttendanceById,
+  deletePlanningSlot: deletePlanningSlotById,
+};
+
+export function resolveInterimDutyCleanupTargets(input: {
+  shiftLog: { odoo_attendance_id: number | null } | null;
+  shift: { odoo_shift_id: number | null } | null;
+}): InterimDutyCleanupTargets {
+  const attendanceId = Number(input.shiftLog?.odoo_attendance_id ?? 0);
+  if (!Number.isFinite(attendanceId) || attendanceId <= 0) {
+    throw new AppError(409, 'Interim duty rejection cannot continue: missing attendance reference');
+  }
+
+  const planningSlotIdRaw = Number(input.shift?.odoo_shift_id ?? 0);
+  const planningSlotId = Number.isFinite(planningSlotIdRaw) && planningSlotIdRaw > 0
+    ? planningSlotIdRaw
+    : null;
+
+  return { attendanceId, planningSlotId };
+}
+
+export async function cleanupInterimDutyOdooArtifacts(
+  auth: Record<string, unknown>,
+  deps: InterimDutyCleanupDeps = defaultInterimDutyCleanupDeps,
+): Promise<void> {
+  const shiftLogId = String(auth.shift_log_id ?? '').trim();
+  const shiftId = String(auth.shift_id ?? '').trim();
+  if (!shiftLogId || !shiftId) {
+    throw new AppError(409, 'Interim duty rejection cannot continue: missing shift references');
+  }
+
+  const [shiftLog, shift] = await Promise.all([
+    deps.loadShiftLog(shiftLogId),
+    deps.loadShift(shiftId),
+  ]);
+  const targets = resolveInterimDutyCleanupTargets({ shiftLog, shift });
+
+  if (targets.planningSlotId !== null) {
+    const planningDeleted = await deps.deletePlanningSlot(targets.planningSlotId);
+    if (!planningDeleted) {
+      throw new AppError(502, `Failed to delete Odoo planning.slot ${targets.planningSlotId}`);
+    }
+  }
+
+  const attendanceDeleted = await deps.deleteAttendance(targets.attendanceId);
+  if (!attendanceDeleted) {
+    throw new AppError(502, `Failed to delete Odoo attendance ${targets.attendanceId}`);
+  }
+}
 
 /** Employee submits a reason for tardiness / late_check_out */
 export async function submitReason(req: Request, res: Response, next: NextFunction) {
@@ -138,7 +219,9 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
     }
 
     // Sync with Odoo for tardiness approval
-    await syncOdooAttendance(auth, 'approve');
+    if (auth.auth_type !== INTERIM_DUTY_AUTH_TYPE) {
+      await syncOdooAttendance(auth, 'approve');
+    }
 
     res.json({ success: true, data: { ...updated, resolved_by_name: managerName } });
   } catch (err) {
@@ -163,6 +246,10 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
     if (!auth) throw new AppError(404, 'Authorization not found');
     if (auth.status !== 'pending') {
       throw new AppError(400, 'Authorization is already resolved');
+    }
+
+    if (auth.auth_type === INTERIM_DUTY_AUTH_TYPE) {
+      await cleanupInterimDutyOdooArtifacts(auth);
     }
 
     const resolvedAt = new Date();
@@ -226,7 +313,9 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
     }
 
     // Sync with Odoo for early_check_in and late_check_out rejection
-    await syncOdooAttendance(auth, 'reject');
+    if (auth.auth_type !== INTERIM_DUTY_AUTH_TYPE) {
+      await syncOdooAttendance(auth, 'reject');
+    }
 
     res.json({ success: true, data: { ...updated, resolved_by_name: managerName } });
   } catch (err) {
@@ -241,6 +330,7 @@ function authTypeLabel(authType: string): string {
     case 'early_check_out': return 'Early Check Out';
     case 'late_check_out': return 'Late Check Out';
     case 'overtime': return 'Overtime';
+    case 'interim_duty': return 'Interim Duty';
     default: return authType;
   }
 }
