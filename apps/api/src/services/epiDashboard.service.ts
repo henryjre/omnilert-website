@@ -101,6 +101,11 @@ interface LeaderboardSummaryDbRow {
   epi_history: unknown;
 }
 
+interface GlobalAverageDbRow {
+  epi_score: number | string | null;
+  epi_history: unknown;
+}
+
 interface ManilaDateParts {
   year: number;
   month: number;
@@ -153,6 +158,7 @@ export interface EpiDashboardResponse {
   currentMonthKey: string;
   currentLive: CurrentLiveSnapshot | null;
   monthlyHistory: HistoricalMonthEntry[];
+  globalAverageByMonth: Record<string, number>;
 }
 
 export interface LeaderboardSummaryUserRow {
@@ -164,6 +170,11 @@ export interface LeaderboardSummaryUserRow {
 }
 
 export interface LeaderboardDetailUserRow extends LeaderboardSummaryUserRow {}
+
+export interface GlobalAverageUserRow {
+  officialEpiScore: number;
+  monthlyHistory: HistoricalMonthEntry[];
+}
 
 export interface EpiLeaderboardSummaryEntry {
   userId: string;
@@ -374,6 +385,54 @@ function toLeaderboardSummaryRow(row: LeaderboardSummaryDbRow): LeaderboardSumma
   };
 }
 
+function toGlobalAverageUserRow(row: GlobalAverageDbRow): GlobalAverageUserRow {
+  return {
+    officialEpiScore: toNumber(row.epi_score, 100),
+    monthlyHistory: historyEntriesToMonthlyHistory(normalizeHistoryEntries(row.epi_history)),
+  };
+}
+
+function accumulateMonthScore(
+  sumsByMonth: Map<string, { sum: number; count: number }>,
+  monthKey: string,
+  score: number,
+): void {
+  const existing = sumsByMonth.get(monthKey);
+  if (!existing) {
+    sumsByMonth.set(monthKey, { sum: score, count: 1 });
+    return;
+  }
+
+  existing.sum += score;
+  existing.count += 1;
+}
+
+export function createGlobalAverageByMonth(
+  rows: GlobalAverageUserRow[],
+  currentMonthKey: string,
+): Record<string, number> {
+  const sumsByMonth = new Map<string, { sum: number; count: number }>();
+
+  for (const row of rows) {
+    accumulateMonthScore(sumsByMonth, currentMonthKey, row.officialEpiScore);
+
+    for (const month of row.monthlyHistory) {
+      if (month.monthKey === currentMonthKey) continue;
+      accumulateMonthScore(sumsByMonth, month.monthKey, month.epiScore);
+    }
+  }
+
+  const sortedEntries = Array.from(sumsByMonth.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  const averages: Record<string, number> = {};
+
+  for (const [monthKey, aggregate] of sortedEntries) {
+    if (aggregate.count === 0) continue;
+    averages[monthKey] = roundToTenth(aggregate.sum / aggregate.count);
+  }
+
+  return averages;
+}
+
 function compareLeaderboardSummaryEntries(a: EpiLeaderboardSummaryEntry, b: EpiLeaderboardSummaryEntry): number {
   if (a.hasData && b.hasData) {
     if (a.displayEpiScore !== b.displayEpiScore) {
@@ -497,16 +556,23 @@ export function applyGlobalLeaderboardFilters(query: any, masterDb: any) {
 
 export async function getEpiDashboard(userId: string): Promise<EpiDashboardResponse> {
   const masterDb = db.getDb();
-  const row = await masterDb('users')
-    .where({ id: userId })
-    .first('id as userId', 'user_key as userKey', 'epi_score', 'epi_history') as DashboardUserRow | undefined;
+  const currentMonthKey = getCurrentMonthKey();
+  const [row, globalAverageRows] = await Promise.all([
+    masterDb('users')
+      .where({ id: userId })
+      .first('id as userId', 'user_key as userKey', 'epi_score', 'epi_history') as Promise<DashboardUserRow | undefined>,
+    applyGlobalLeaderboardFilters(masterDb('users as u'), masterDb)
+      .select('u.epi_score', 'u.epi_history') as Promise<GlobalAverageDbRow[]>,
+  ]);
+  const globalAverageByMonth = createGlobalAverageByMonth(globalAverageRows.map(toGlobalAverageUserRow), currentMonthKey);
 
   if (!row) {
     return {
       officialEpiScore: 100,
-      currentMonthKey: getCurrentMonthKey(),
+      currentMonthKey,
       currentLive: null,
       monthlyHistory: [],
+      globalAverageByMonth,
     };
   }
 
@@ -523,9 +589,10 @@ export async function getEpiDashboard(userId: string): Promise<EpiDashboardRespo
 
   return {
     officialEpiScore,
-    currentMonthKey: getCurrentMonthKey(),
+    currentMonthKey,
     currentLive,
     monthlyHistory,
+    globalAverageByMonth,
   };
 }
 

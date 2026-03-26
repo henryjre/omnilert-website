@@ -201,10 +201,16 @@ const HISTORY: EpiMonthEntry[] = [
 ];
 
 const CURRENT_MONTH = HISTORY[HISTORY.length - 1];
+const MOCK_GLOBAL_AVERAGE_BY_MONTH = HISTORY.reduce<Record<string, number>>((acc, entry) => {
+  // Keep mock averages slightly below each month score so UI demos positive deltas.
+  acc[entry.monthKey] = Math.max(75, Math.round((entry.score - 3) * 10) / 10);
+  return acc;
+}, {});
 
 export const MOCK_EPI_DATA: EpiDashboardData = {
   officialEpiScore: 105.2,
   goalTarget: 120,
   currentMonthKey: CURRENT_MONTH.monthKey,
   history: HISTORY,
+  globalAverageByMonth: MOCK_GLOBAL_AVERAGE_BY_MONTH,
 };

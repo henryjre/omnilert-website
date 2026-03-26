@@ -15,6 +15,7 @@ process.env.OPENAI_PROJECT_ID ??= 'test-openai-project';
 
 const {
   applyGlobalLeaderboardFilters,
+  createGlobalAverageByMonth,
   createLeaderboardDetail,
   createLeaderboardSummaryEntries,
 } = await import('./epiDashboard.service.js');
@@ -22,6 +23,7 @@ const {
 type DashboardCriteria = import('./epiDashboard.service.js').DashboardCriteria;
 type HistoricalMonthEntry = import('./epiDashboard.service.js').HistoricalMonthEntry;
 type LeaderboardDetailUserRow = import('./epiDashboard.service.js').LeaderboardDetailUserRow;
+type GlobalAverageUserRow = import('./epiDashboard.service.js').GlobalAverageUserRow;
 type LeaderboardSummaryUserRow = import('./epiDashboard.service.js').LeaderboardSummaryUserRow;
 
 function createQueryRecorder() {
@@ -268,4 +270,72 @@ test('applyGlobalLeaderboardFilters keeps the leaderboard global while still res
       ],
     },
   ]);
+});
+
+test('createGlobalAverageByMonth computes rounded current and historical averages', () => {
+  const rows: GlobalAverageUserRow[] = [
+    {
+      officialEpiScore: 110,
+      monthlyHistory: [
+        createMonthlyHistory('2026-02', 100, createCriteria()),
+        createMonthlyHistory('2026-01', 90, createCriteria()),
+      ],
+    },
+    {
+      officialEpiScore: 100,
+      monthlyHistory: [
+        createMonthlyHistory('2026-02', 80, createCriteria()),
+        createMonthlyHistory('2026-01', 96.33, createCriteria()),
+      ],
+    },
+    {
+      officialEpiScore: 95,
+      monthlyHistory: [],
+    },
+  ];
+
+  assert.deepEqual(createGlobalAverageByMonth(rows, '2026-03'), {
+    '2026-01': 93.2,
+    '2026-02': 90,
+    '2026-03': 101.7,
+  });
+});
+
+test('createGlobalAverageByMonth omits historical months with no data and handles empty input', () => {
+  const rows: GlobalAverageUserRow[] = [
+    {
+      officialEpiScore: 103.4,
+      monthlyHistory: [],
+    },
+    {
+      officialEpiScore: 96.6,
+      monthlyHistory: [],
+    },
+  ];
+
+  assert.deepEqual(createGlobalAverageByMonth(rows, '2026-03'), {
+    '2026-03': 100,
+  });
+  assert.deepEqual(createGlobalAverageByMonth([], '2026-03'), {});
+});
+
+test('createGlobalAverageByMonth does not double-count current month history entries', () => {
+  const rows: GlobalAverageUserRow[] = [
+    {
+      officialEpiScore: 110,
+      monthlyHistory: [
+        createMonthlyHistory('2026-03', 70, createCriteria()),
+      ],
+    },
+    {
+      officialEpiScore: 90,
+      monthlyHistory: [
+        createMonthlyHistory('2026-03', 70, createCriteria()),
+      ],
+    },
+  ];
+
+  assert.deepEqual(createGlobalAverageByMonth(rows, '2026-03'), {
+    '2026-03': 100,
+  });
 });

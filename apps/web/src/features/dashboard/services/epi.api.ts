@@ -46,6 +46,7 @@ interface BackendEpiDashboardResponse {
   currentMonthKey: string;
   currentLive: BackendCurrentLiveSnapshot | null;
   monthlyHistory: BackendHistoricalMonthEntry[];
+  globalAverageByMonth: Record<string, number> | null;
 }
 
 interface BackendLeaderboardEntry {
@@ -94,6 +95,19 @@ function coerceEpiScore(value: number | null | undefined, fallback: number): num
   if (typeof value !== "number") return fallback;
   if (!Number.isFinite(value)) return fallback;
   return value;
+}
+
+function coerceGlobalAverageByMonth(value: Record<string, number> | null | undefined): Record<string, number> {
+  if (!value || typeof value !== 'object') return {};
+
+  const normalized: Record<string, number> = {};
+  for (const [monthKey, average] of Object.entries(value)) {
+    if (typeof average !== 'number') continue;
+    if (!Number.isFinite(average)) continue;
+    normalized[monthKey] = average;
+  }
+
+  return normalized;
 }
 
 function getEmptyCriteria(): EpiCriteria {
@@ -185,6 +199,7 @@ function buildEmptyDashboard(officialEpiScore: number): EpiDashboardData {
     officialEpiScore,
     goalTarget: 105,
     currentMonthKey: current.monthKey,
+    globalAverageByMonth: {},
     history: [
       {
         monthKey: current.monthKey,
@@ -248,6 +263,7 @@ export async function fetchEpiDashboard(): Promise<EpiDashboardData> {
     goalTarget: 105,
     currentMonthKey: backend.currentMonthKey,
     history,
+    globalAverageByMonth: coerceGlobalAverageByMonth(backend.globalAverageByMonth),
   };
 }
 

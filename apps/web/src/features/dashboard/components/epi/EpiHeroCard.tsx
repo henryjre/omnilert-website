@@ -1,14 +1,15 @@
-import { motion } from 'framer-motion';
-import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { TrendingDown, TrendingUp, Minus } from 'lucide-react';
 import type { EpiDashboardData, EpiMonthEntry } from './types';
-import { getEpiZone, getZoneLabel } from './epiUtils';
+import { getEpiZone } from './epiUtils';
 import { OdometerGauge } from './OdometerGauge';
 import { TrendChart } from './TrendChart';
+import { getHeroZoneLabel, resolveHeroEpiComparison, type HeroEpiZone } from './heroEpiComparison';
 
-const ZONE_COLOR: Record<'green' | 'amber' | 'red', string> = {
+const ZONE_COLOR: Record<HeroEpiZone, string> = {
   green: '#4ade80',
   amber: '#fbbf24',
   red: '#f87171',
+  blue: '#60a5fa',
 };
 const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
 
@@ -17,14 +18,8 @@ interface EpiHeroCardProps {
   selectedEntry: EpiMonthEntry;
 }
 
-/**
- * Formats an EPI score defensively.
- *
- * Even though we normalize API data, this ensures the UI never hard-crashes
- * if a score becomes non-finite due to unexpected data.
- */
-function formatEpiScore(score: number, fractionDigits: number = 1): string {
-  if (!Number.isFinite(score)) return "—";
+function formatEpiScore(score: number, fractionDigits = 1): string {
+  if (!Number.isFinite(score)) return '-';
   return score.toFixed(fractionDigits);
 }
 
@@ -58,7 +53,13 @@ function formatSnapshotDate(date: Date): string {
 export function EpiHeroCard({ data, selectedEntry }: EpiHeroCardProps) {
   const isCurrentMonth = selectedEntry.monthKey === data.currentMonthKey;
   const displayScore = isCurrentMonth ? data.officialEpiScore : selectedEntry.score;
-  const zone = getEpiZone(displayScore);
+  const selectedMonthGlobalAverage = data.globalAverageByMonth[selectedEntry.monthKey] ?? null;
+  const heroComparison = resolveHeroEpiComparison({
+    userEpiScore: displayScore,
+    globalAverageEpi: selectedMonthGlobalAverage,
+  });
+  const chartZone = getEpiZone(displayScore);
+
   const selectedIndex = data.history.findIndex((entry) => entry.monthKey === selectedEntry.monthKey);
   const previousEntry = selectedIndex > 0 ? data.history[selectedIndex - 1] : null;
   const delta = previousEntry ? displayScore - previousEntry.score : 0;
@@ -70,7 +71,7 @@ export function EpiHeroCard({ data, selectedEntry }: EpiHeroCardProps) {
   ));
 
   const DeltaIcon = delta > 0 ? TrendingUp : delta < 0 ? TrendingDown : Minus;
-  const zoneColor = ZONE_COLOR[zone];
+  const zoneColor = ZONE_COLOR[heroComparison.zone];
   const deltaStyle = { color: delta === 0 ? 'rgba(255,255,255,0.5)' : zoneColor };
 
   return (
@@ -86,15 +87,15 @@ export function EpiHeroCard({ data, selectedEntry }: EpiHeroCardProps) {
             key={selectedEntry.monthKey}
             value={displayScore}
             max={150}
-            neutralAt={100}
+            neutralAt={heroComparison.neutralAt}
             width={220}
             strokeWidth={16}
-            zone={zone}
+            zone={heroComparison.zone}
             label={`${selectedEntry.month} ${selectedEntry.year}`}
           />
 
           {previousEntry && (
-            <div className="flex items-center gap-2.5 border-t border-white/10 pt-2.5 w-full justify-center">
+            <div className="flex w-full items-center justify-center gap-2.5 border-t border-white/10 pt-2.5">
               <span className="text-[10px] font-semibold uppercase tracking-widest text-white/50">
                 {previousEntry.month}
               </span>
@@ -114,13 +115,14 @@ export function EpiHeroCard({ data, selectedEntry }: EpiHeroCardProps) {
             <div className="mt-1 flex items-center justify-center gap-2 lg:justify-start">
               <DeltaIcon className="h-5 w-5" style={deltaStyle} />
               <span className="text-sm font-semibold" style={deltaStyle}>
-                {delta > 0 ? "+" : ""}{formatEpiScore(delta)} from {previousEntry?.month ?? "last month"}
+                {delta > 0 ? '+' : ''}
+                {formatEpiScore(delta)} from {previousEntry?.month ?? 'last month'}
               </span>
             </div>
           </div>
 
           <div className="inline-flex w-fit items-center rounded-full bg-white/20 px-3 py-1">
-            <span className="text-sm font-medium text-white">{getZoneLabel(zone)}</span>
+            <span className="text-sm font-medium text-white">{getHeroZoneLabel(heroComparison.zone)}</span>
           </div>
 
           {isCurrentMonth && (
@@ -139,11 +141,11 @@ export function EpiHeroCard({ data, selectedEntry }: EpiHeroCardProps) {
           )}
         </div>
 
-        <div className="flex-1 min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="mb-1 text-xs text-white/60">Last {chartHistory.length} months</p>
           <TrendChart
             history={chartHistory}
-            zone={zone}
+            zone={chartZone}
             height={120}
             strokeColor="rgba(255,255,255,0.8)"
             tickColor="rgba(255,255,255,0.35)"

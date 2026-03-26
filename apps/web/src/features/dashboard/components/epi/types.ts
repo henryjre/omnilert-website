@@ -34,6 +34,7 @@ export interface EpiDashboardData {
   goalTarget: number;
   currentMonthKey: string;
   history: EpiMonthEntry[];
+  globalAverageByMonth: Record<string, number>;
 }
 
 export interface LeaderboardSummaryEntry {
