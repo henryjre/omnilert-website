@@ -10,6 +10,7 @@ import { usePermission } from '@/shared/hooks/usePermission';
 import { useAppToast } from '@/shared/hooks/useAppToast';
 import { PERMISSIONS } from '@omnilert/shared';
 import { ShiftExchangeDetailModal } from '@/features/shift-exchange/components/ShiftExchangeDetailModal';
+import { resolveAuthorizationRequestSectionAccess } from './authorizationRequestAccess';
 import {
   FileText,
   X,
@@ -1043,12 +1044,28 @@ export function AuthorizationRequestsPage() {
   const selectedBranchIds = useBranchStore((s) => s.selectedBranchIds);
   const { hasPermission, hasAnyPermission } = usePermission();
 
-  const canApproveManagement = hasPermission(PERMISSIONS.AUTH_REQUEST_MANAGE_PRIVATE);
-  const canViewServiceCrew = hasAnyPermission(
-    PERMISSIONS.AUTH_REQUEST_VIEW_PAGE,
+  const canViewAuthorizationRequestsPage = hasPermission(PERMISSIONS.AUTH_REQUEST_VIEW_PAGE);
+  const canViewManagementData = hasAnyPermission(
+    PERMISSIONS.AUTH_REQUEST_VIEW_PRIVATE,
+    PERMISSIONS.AUTH_REQUEST_MANAGE_PRIVATE,
+  );
+  const canViewServiceCrewData = hasAnyPermission(
+    PERMISSIONS.AUTH_REQUEST_VIEW_PUBLIC,
     PERMISSIONS.AUTH_REQUEST_MANAGE_PUBLIC,
   );
+  const canApproveManagement = hasPermission(PERMISSIONS.AUTH_REQUEST_MANAGE_PRIVATE);
   const canApproveServiceCrew = hasPermission(PERMISSIONS.AUTH_REQUEST_MANAGE_PUBLIC);
+  const {
+    showManagementSection,
+    showServiceCrewSection,
+    showNoDataPermissionState,
+  } = resolveAuthorizationRequestSectionAccess({
+    canApproveManagement,
+    canApproveServiceCrew,
+    canViewManagementData,
+    canViewServiceCrewData,
+    canViewAuthorizationRequestsPage,
+  });
 
   const filteredManagement = mgmtTab === 'all' ? managementRequests : managementRequests.filter((r) => r.status === mgmtTab);
   const filteredServiceCrew = crewTab === 'all' ? serviceCrewRequests : serviceCrewRequests.filter((r) => r.status === crewTab);
@@ -1059,6 +1076,13 @@ export function AuthorizationRequestsPage() {
   const pagedServiceCrew = filteredServiceCrew.slice((crewPage - 1) * pageSize, crewPage * pageSize);
 
   const fetchRequests = useCallback(async () => {
+    if (!showManagementSection && !showServiceCrewSection) {
+      setManagementRequests([]);
+      setServiceCrewRequests([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
       const res = await api.get(
@@ -1072,7 +1096,7 @@ export function AuthorizationRequestsPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedBranchIds, showErrorToast]);
+  }, [selectedBranchIds, showErrorToast, showManagementSection, showServiceCrewSection]);
 
   useEffect(() => { void fetchRequests(); }, [fetchRequests]);
 
@@ -1149,7 +1173,17 @@ export function AuthorizationRequestsPage() {
           </div>
 
           {/* ─── Management Requests section ───────────────────────── */}
-          {canApproveManagement && (
+          {showNoDataPermissionState && (
+            <div className="flex min-h-[18rem] items-center justify-center rounded-xl border border-gray-200 bg-white px-6 py-10">
+              <div className="text-center">
+                <AlertCircle className="mx-auto h-8 w-8 text-gray-300" />
+                <p className="mt-3 text-sm font-medium text-gray-700">No Accessible Authorization Data</p>
+                <p className="mt-1 text-sm text-gray-500">You have no permission to view data.</p>
+              </div>
+            </div>
+          )}
+
+          {showManagementSection && (
             <section className="space-y-3">
               {/* Section heading + pending count badge */}
               <div className="flex items-center gap-2">
@@ -1240,7 +1274,7 @@ export function AuthorizationRequestsPage() {
           )}
 
           {/* ─── Service Crew Requests section ─────────────────────── */}
-          {canViewServiceCrew && (
+          {showServiceCrewSection && (
             <section className="space-y-3">
               {/* Section heading + pending count badge */}
               <div className="flex items-center gap-2">

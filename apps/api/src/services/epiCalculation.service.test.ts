@@ -13,7 +13,7 @@ process.env.OPENAI_API_KEY ??= 'test-openai-key';
 process.env.OPENAI_ORGANIZATION_ID ??= 'test-openai-org';
 process.env.OPENAI_PROJECT_ID ??= 'test-openai-project';
 
-const { calculateKpiScoresWithQueryDeps } = await import('./epiCalculation.service.js');
+const { calculateKpiScoresWithQueryDeps, getWrsStatusSummary } = await import('./epiCalculation.service.js');
 
 test('calculateKpiScoresWithQueryDeps fetches slots and attendance once for both attendance and punctuality', async () => {
   let employeeIdLookups = 0;
@@ -195,4 +195,41 @@ test('calculateKpiScoresWithQueryDeps keeps employee AOV visible when no attenda
   assert.equal(result.breakdown.aov.value, 150);
   assert.equal(result.breakdown.aov.branch_avg, null);
   assert.equal(result.breakdown.aov.impact, 0);
+});
+
+test('getWrsStatusSummary splits effective vs delayed evaluations using wrs_effective_at', () => {
+  const from = new Date('2026-03-01T00:00:00.000Z');
+  const to = new Date('2026-03-31T23:59:59.999Z');
+
+  const summary = getWrsStatusSummary([
+    {
+      average_score: 4.5,
+      submitted_at: '2026-03-10T08:00:00.000Z',
+      wrs_effective_at: '2026-03-15T08:00:00.000Z',
+    },
+    {
+      average_score: 3.9,
+      submitted_at: '2026-03-20T08:00:00.000Z',
+      wrs_effective_at: '2026-04-02T08:00:00.000Z',
+    },
+  ], from, to);
+
+  assert.equal(summary.effectiveCount, 1);
+  assert.equal(summary.delayedCount, 1);
+});
+
+test('getWrsStatusSummary falls back to submitted_at when wrs_effective_at is null', () => {
+  const from = new Date('2026-03-01T00:00:00.000Z');
+  const to = new Date('2026-03-31T23:59:59.999Z');
+
+  const summary = getWrsStatusSummary([
+    {
+      average_score: 4.2,
+      submitted_at: '2026-03-14T08:00:00.000Z',
+      wrs_effective_at: null,
+    },
+  ], from, to);
+
+  assert.equal(summary.effectiveCount, 1);
+  assert.equal(summary.delayedCount, 0);
 });

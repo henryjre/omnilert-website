@@ -12,13 +12,16 @@ import { useAppToast } from '@/shared/hooks/useAppToast';
 import { useAuthStore } from '@/features/auth/store/authSlice';
 import { PERMISSIONS } from '@omnilert/shared';
 import {
+  resolveEmployeeVerificationTabAccess,
+  type VerificationType,
+} from './employeeVerificationTabAccess';
+import {
   AlertCircle, Calendar, CheckCircle, ClipboardCheck, Clock,
   Copy, Check, CreditCard, ExternalLink, IdCard, Landmark,
   LayoutGrid, Mail, User, UserRoundPlus, Users, X, XCircle,
 } from 'lucide-react';
 
 type VerificationStatus = 'pending' | 'approved' | 'rejected';
-type VerificationType = 'registration' | 'personalInformation' | 'employmentRequirements' | 'bankInformation';
 
 type VerificationData = {
   registration: any[];
@@ -397,17 +400,50 @@ export function EmployeeVerificationsPage() {
   const currentUserId = useAuthStore((s) => s.user?.id ?? null);
 
   const { hasPermission } = usePermission();
+  const canViewEmployeeVerificationPage = hasPermission(PERMISSIONS.EMPLOYEE_VERIFICATION_VIEW_PAGE);
   const canApproveRegistration = hasPermission(PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_REGISTRATION);
   const canApprovePersonalInfo = hasPermission(PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_PERSONAL);
   const canApproveRequirements = hasPermission(PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_REQUIREMENTS);
   const canApproveBankInfo = hasPermission(PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_BANK);
+  const { visibleTypes, showNoDataPermissionState } = useMemo(
+    () =>
+      resolveEmployeeVerificationTabAccess({
+        canApproveRegistration,
+        canApprovePersonalInfo,
+        canApproveRequirements,
+        canApproveBankInfo,
+        canViewEmployeeVerificationPage,
+      }),
+    [
+      canApproveRegistration,
+      canApprovePersonalInfo,
+      canApproveRequirements,
+      canApproveBankInfo,
+      canViewEmployeeVerificationPage,
+    ],
+  );
+  const visibleTypeSet = useMemo(() => new Set<VerificationType>(visibleTypes), [visibleTypes]);
+  const categoryTabs = useMemo(
+    () => ([
+      { key: 'registration' as const, label: 'Registration', Icon: UserRoundPlus },
+      { key: 'personalInformation' as const, label: 'Personal Information', Icon: IdCard },
+      { key: 'employmentRequirements' as const, label: 'Employment Requirements', Icon: ClipboardCheck },
+      { key: 'bankInformation' as const, label: 'Bank Information', Icon: Landmark },
+    ]),
+    [],
+  );
+  const visibleCategoryTabs = useMemo(
+    () => categoryTabs.filter((tab) => visibleTypeSet.has(tab.key)),
+    [categoryTabs, visibleTypeSet],
+  );
 
   const listByType = useMemo(() => {
+    if (!visibleTypeSet.has(activeType)) return [];
     if (activeType === 'registration') return data.registration;
     if (activeType === 'personalInformation') return data.personalInformation;
     if (activeType === 'employmentRequirements') return data.employmentRequirements;
     return data.bankInformation;
-  }, [activeType, data]);
+  }, [activeType, data, visibleTypeSet]);
 
   const filtered = useMemo(() => {
     if (statusFilter === 'all') return listByType;
@@ -449,6 +485,14 @@ export function EmployeeVerificationsPage() {
   useEffect(() => {
     setPage(1);
   }, [activeType, statusFilter]);
+
+  useEffect(() => {
+    if (visibleTypes.length === 0) return;
+    if (!visibleTypeSet.has(activeType)) {
+      setActiveType(visibleTypes[0]);
+      setStatusFilter('pending');
+    }
+  }, [activeType, visibleTypeSet, visibleTypes]);
 
   useEffect(() => {
     setPage((prev) => Math.min(prev, totalPages));
@@ -844,14 +888,16 @@ export function EmployeeVerificationsPage() {
             <Users className="h-6 w-6 text-primary-600" />
             <h1 className="text-2xl font-bold text-gray-900">Employee Verifications</h1>
           </div>
-          <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">{activeTypeLabel}</p>
+          <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
+            {showNoDataPermissionState ? 'No Accessible Verification Data' : activeTypeLabel}
+          </p>
           <p className="mt-1 hidden text-sm text-gray-500 sm:block">
             Review and act on employee verification submissions.
           </p>
         </div>
 
-        {/* Per-category pending counts for the bubbles */}
-        {(() => {
+        {/* Per-category pending counts for the visible tabs */}
+        {visibleCategoryTabs.length > 0 && (() => {
           const pendingByType: Record<VerificationType, number> = {
             registration: data.registration.filter((r) => r.status === 'pending').length,
             personalInformation: data.personalInformation.filter((r) => r.status === 'pending').length,
@@ -860,12 +906,7 @@ export function EmployeeVerificationsPage() {
           };
           return (
             <div className="flex justify-center gap-1 border-b border-gray-200 sm:justify-start">
-              {([
-                { key: 'registration'           as const, label: 'Registration',           Icon: UserRoundPlus  },
-                { key: 'personalInformation'    as const, label: 'Personal Information',   Icon: IdCard         },
-                { key: 'employmentRequirements' as const, label: 'Employment Requirements', Icon: ClipboardCheck },
-                { key: 'bankInformation'        as const, label: 'Bank Information',       Icon: Landmark       },
-              ]).map((tab) => (
+              {visibleCategoryTabs.map((tab) => (
                 <button
                   key={tab.key}
                   type="button"
@@ -889,93 +930,105 @@ export function EmployeeVerificationsPage() {
           );
         })()}
 
-        <div className="flex w-full gap-1 border-b border-gray-200">
-          {STATUS_TABS.map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => { setStatusFilter(tab.key); setPage(1); }}
-              className={`flex flex-1 items-center justify-center gap-1.5 border-b-2 px-3 py-1.5 text-xs font-medium transition-colors sm:flex-none ${
-                statusFilter === tab.key
-                  ? 'border-primary-600 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <tab.Icon className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">{tab.label}</span>
-            </button>
-          ))}
-        </div>
-
-        <div className="space-y-4">
-          {loading ? (
-            <div className="flex flex-col gap-2">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div key={i} className="animate-pulse rounded-xl border border-gray-200 bg-white p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 space-y-1.5">
-                      <div className="h-4 w-32 rounded bg-gray-200" />
-                      <div className="h-3 w-40 rounded bg-gray-200" />
-                    </div>
-                    <div className="h-5 w-16 rounded-full bg-gray-200" />
-                  </div>
-                  <div className="mt-6 flex items-center justify-between border-t border-gray-100 pt-2.5">
-                    <div className="h-3 w-28 rounded bg-gray-200" />
-                    <div className="h-4 w-4 rounded bg-gray-200" />
-                  </div>
-                </div>
+        {showNoDataPermissionState ? (
+          <div className="flex min-h-[18rem] items-center justify-center rounded-xl border border-gray-200 bg-white px-6 py-10">
+            <div className="text-center">
+              <AlertCircle className="mx-auto h-8 w-8 text-gray-300" />
+              <p className="mt-3 text-sm font-medium text-gray-700">No Accessible Verification Data</p>
+              <p className="mt-1 text-sm text-gray-500">You have no permission to view data.</p>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="flex w-full gap-1 border-b border-gray-200">
+              {STATUS_TABS.map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => { setStatusFilter(tab.key); setPage(1); }}
+                  className={`flex flex-1 items-center justify-center gap-1.5 border-b-2 px-3 py-1.5 text-xs font-medium transition-colors sm:flex-none ${
+                    statusFilter === tab.key
+                      ? 'border-primary-600 text-primary-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  <tab.Icon className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">{tab.label}</span>
+                </button>
               ))}
             </div>
-          ) : filtered.length === 0 ? (
-            <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3.5">
-              {activeType === 'registration' && <UserRoundPlus className="h-4 w-4 shrink-0 text-gray-300" />}
-              {activeType === 'personalInformation' && <IdCard className="h-4 w-4 shrink-0 text-gray-300" />}
-              {activeType === 'employmentRequirements' && <ClipboardCheck className="h-4 w-4 shrink-0 text-gray-300" />}
-              {activeType === 'bankInformation' && <Landmark className="h-4 w-4 shrink-0 text-gray-300" />}
-              <p className="text-sm text-gray-400">
-                {statusFilter === 'all'
-                  ? `No ${activeTypeLabel.toLowerCase()} verifications yet.`
-                  : `No ${statusFilter} ${activeTypeLabel.toLowerCase()} verifications.`}
-              </p>
-            </div>
-          ) : (
-            <>
-              <div className="flex flex-col gap-2">
-                {pagedFiltered.map((item: any) => (
-                  <VerificationCard
-                    key={item.id}
-                    type={activeType}
-                    item={item}
-                    onClick={() => openPanel(activeType, item)}
-                  />
-                ))}
-              </div>
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between text-sm text-gray-600">
-                  <span>Page {page} of {totalPages}</span>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-                      disabled={page === 1}
-                      className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      Previous
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
-                      disabled={page === totalPages}
-                      className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      Next
-                    </button>
-                  </div>
+
+            <div className="space-y-4">
+              {loading ? (
+                <div className="flex flex-col gap-2">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <div key={i} className="animate-pulse rounded-xl border border-gray-200 bg-white p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 space-y-1.5">
+                          <div className="h-4 w-32 rounded bg-gray-200" />
+                          <div className="h-3 w-40 rounded bg-gray-200" />
+                        </div>
+                        <div className="h-5 w-16 rounded-full bg-gray-200" />
+                      </div>
+                      <div className="mt-6 flex items-center justify-between border-t border-gray-100 pt-2.5">
+                        <div className="h-3 w-28 rounded bg-gray-200" />
+                        <div className="h-4 w-4 rounded bg-gray-200" />
+                      </div>
+                    </div>
+                  ))}
                 </div>
+              ) : filtered.length === 0 ? (
+                <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3.5">
+                  {activeType === 'registration' && <UserRoundPlus className="h-4 w-4 shrink-0 text-gray-300" />}
+                  {activeType === 'personalInformation' && <IdCard className="h-4 w-4 shrink-0 text-gray-300" />}
+                  {activeType === 'employmentRequirements' && <ClipboardCheck className="h-4 w-4 shrink-0 text-gray-300" />}
+                  {activeType === 'bankInformation' && <Landmark className="h-4 w-4 shrink-0 text-gray-300" />}
+                  <p className="text-sm text-gray-400">
+                    {statusFilter === 'all'
+                      ? `No ${activeTypeLabel.toLowerCase()} verifications yet.`
+                      : `No ${statusFilter} ${activeTypeLabel.toLowerCase()} verifications.`}
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <div className="flex flex-col gap-2">
+                    {pagedFiltered.map((item: any) => (
+                      <VerificationCard
+                        key={item.id}
+                        type={activeType}
+                        item={item}
+                        onClick={() => openPanel(activeType, item)}
+                      />
+                    ))}
+                  </div>
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-between text-sm text-gray-600">
+                      <span>Page {page} of {totalPages}</span>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                          disabled={page === 1}
+                          className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Previous
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+                          disabled={page === totalPages}
+                          className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
-            </>
-          )}
-        </div>
+            </div>
+          </>
+        )}
       </div>
 
       {createPortal(

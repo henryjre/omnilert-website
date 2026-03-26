@@ -47,9 +47,9 @@ NOT synced (DB only): SSS, TIN, Pag-IBIG, PhilHealth, marital status, emergency 
 Order of resolution:
 
 1. Resolve canonical partner by `x_website_key` (fallback email).
-2. Prefer existing `hr.employee.bank_account_id` when valid.
+2. Prefer existing `hr.employee.bank_account_ids` when valid.
 3. Fallback: latest `res.partner.bank` by `write_date`.
-4. Attach missing `bank_account_id` to linked employees via `work_contact_id`.
+4. Attach missing `bank_account_ids` to linked employees via `work_contact_id`.
 5. Write `users.bank_id` and `users.bank_account_number` (via `user_sensitive_info`).
 6. Seed approved `bank_information_verifications` record for each assigned company.
 

@@ -125,7 +125,7 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
         title: `${label} Approved`,
         message: `Your ${label.toLowerCase()} authorization has been approved.`,
         type: 'success',
-        linkUrl: '/account/schedule',
+        linkUrl: `/account/schedule?shiftId=${String(auth.shift_id)}&highlight=authorization_resolved`,
       });
     }
 
@@ -213,7 +213,7 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
         title: `${label} Rejected`,
         message: `Your ${label.toLowerCase()} authorization has been rejected: ${reason.trim()}`,
         type: 'danger',
-        linkUrl: '/account/schedule',
+        linkUrl: `/account/schedule?shiftId=${String(auth.shift_id)}&highlight=authorization_resolved`,
       });
     }
 

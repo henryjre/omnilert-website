@@ -43,7 +43,7 @@ async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKp
       .select(
         dbConn.raw(`(q1_score + q2_score + q3_score) / 3.0 as average_score`),
         dbConn.raw(`submitted_at::text`),
-        dbConn.raw(`NULL::text as wrs_effective_at`),
+        dbConn.raw(`wrs_effective_at::text`),
       ),
     // Compliance audits: the user was the auditor
     dbConn('store_audits')
@@ -321,12 +321,11 @@ function historyEntriesToMonthlyHistory(entries: EpiHistoryEntry[]): HistoricalM
   return Array.from(deduped.values()).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
 }
 
-async function buildCurrentLiveSnapshot(user: DashboardUserRow): Promise<CurrentLiveSnapshot | null> {
+async function buildCurrentLiveSnapshot(user: UserKpiData, officialEpiScore: number): Promise<CurrentLiveSnapshot | null> {
   if (!user.userKey) return null;
 
   const now = new Date();
   const from = new Date(now.getTime() - THIRTY_DAY_WINDOW_MS);
-  const officialEpiScore = toNumber(user.epi_score, 100);
   const parts = getManilaDateParts(now);
 
   const { breakdown, delta, raw_delta, capped } = await calculateKpiScores({
@@ -517,7 +516,7 @@ export async function getEpiDashboard(userId: string): Promise<EpiDashboardRespo
   let currentLive: CurrentLiveSnapshot | null = null;
   try {
     const kpiData = await fetchUserKpiData(row.userId, row.userKey);
-    currentLive = await buildCurrentLiveSnapshot(kpiData);
+    currentLive = await buildCurrentLiveSnapshot(kpiData, officialEpiScore);
   } catch (error) {
     logger.error({ err: error, userId }, 'Failed to build live EPI dashboard snapshot');
   }
@@ -591,7 +590,7 @@ export async function getEpiLeaderboardDetail(
   if (isCurrentMonth) {
     try {
       const kpiData = await fetchUserKpiData(row.userId, row.userKey);
-      currentLive = await buildCurrentLiveSnapshot(kpiData);
+      currentLive = await buildCurrentLiveSnapshot(kpiData, detailRow.officialEpiScore);
     } catch (error) {
       logger.error({ err: error, userId: row.userId }, 'Failed to build live leaderboard detail snapshot');
     }

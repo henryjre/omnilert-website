@@ -1,6 +1,6 @@
 # Omnilert Project Context
 
-Last updated: 2026-03-22
+Last updated: 2026-03-26
 
 This document is for AI and engineer handoff. It captures the current implementation state of this repository from code-confirmed behavior.
 
@@ -58,10 +58,11 @@ Key frontend areas (`apps/web/src`):
 
 - `app/` router and app shell
 - `features/` domain pages/components
-  - `employee-verifications/`
+  - `employee-verifications/` (management queue UI)
+  - `authorization-requests/` (management + service crew authorization queues)
   - `employee-requirements/`
   - `registration-requests/` (compatibility feature folder)
-- `shared/components/ui` reusable UI components
+- `shared/components/ui` reusable UI components (includes `AnimatedModal` — framer-motion portal wrapper for confirm dialogs)
 - `shared/services/api.client.ts` axios client and refresh handling
 - `shared/hooks/useSocket.ts` socket namespace connector
 
@@ -218,96 +219,84 @@ Permission source:
 
 - `packages/shared/src/constants/permissions.ts`
 
-Current permission keys:
+Current permission keys (38 total across 12 categories — migration `013_rbac_permission_rework.ts`):
 
-Admin
+Administration
 
-- `admin.manage_roles`
-- `admin.manage_users`
-- `admin.manage_branches`
-- `admin.view_all_branches`
-- `admin.toggle_branch`
+- `admin.manage_companies` — Full company/branch/department configuration
+- `admin.manage_departments` — Department management
+- `admin.manage_roles` — Role and permission management
+- `admin.manage_users` — User account and access management
 
 Dashboard
 
-- `dashboard.view`
-- `dashboard.view_performance_index`
-- `dashboard.view_payslip` — gates the Payslip page at `/account/payslip` (My Account sidebar)
+- `dashboard.view` — View the main dashboard
+- `dashboard.view_epi` — View EPI/KPI performance metrics and leaderboard
 
-POS Verification
+POS
 
-- `pos_verification.view`
-- `pos_verification.confirm_reject`
-- `pos_verification.upload_image`
+- `pos.view` — Access POS Verification and POS Session pages
 
-POS Session
+Account (My Account — personal, no permission gate on payslip/notifications/profile)
 
-- `pos_session.view`
-- `pos_session.audit_complete`
-
-Account
-
-- `account.view_schedule`
-- `account.view_auth_requests`
-- `account.submit_private_auth_request`
-- `account.submit_public_auth_request`
-- `account.view_cash_requests`
-- `account.submit_cash_request`
-- `account.view_notifications`
-
-Employee
-
-- `employee.view_own_profile`
-- `employee.edit_own_profile`
-- `employee.view_all_profiles`
-- `employee.edit_work_profile`
-
-Shifts
-
-- `shift.view_all`
-- `shift.approve_authorizations`
-- `shift.end_shift`
+- `account.view_schedule` — View personal shift schedule
+- `account.manage_schedule` — Request schedule changes (prerequisite: `account.view_schedule`)
+- `account.submit_auth_request` — Submit shift authorization requests
+- `account.submit_cash_request` — Submit cash advance/loan requests
 
 Authorization Requests
 
-- `auth_request.approve_management`
-- `auth_request.view_all`
-- `auth_request.approve_service_crew`
-
-Cash Requests
-
-- `cash_request.view_all`
-- `cash_request.approve`
+- `authorization_requests.view` — View all authorization requests queue
+- `authorization_requests.process` — Approve or reject authorization requests (prerequisite: `authorization_requests.view`)
 
 Employee Verifications
 
-- `employee_verification.view`
-- `registration.approve`
-- `personal_information.approve`
-- `employee_requirements.approve`
-- `bank_information.approve`
-
-Store Audits
-
-- `store_audit.view`
-- `store_audit.process`
+- `employee_verifications.view` — View employee verification queue
+- `employee_verifications.approve_registration` — Approve registration requests
+- `employee_verifications.approve_personal_info` — Approve personal information updates
+- `employee_verifications.approve_employee_requirements` — Approve employment requirements
+- `employee_verifications.approve_bank_info` — Approve bank information updates
 
 Case Reports
 
-- `case_report.view`
-- `case_report.create`
-- `case_report.close`
-- `case_report.manage`
+- `case_reports.view` — View case reports
+- `case_reports.create` — Create new case reports (prerequisite: `case_reports.view`)
+- `case_reports.manage` — Manage case report lifecycle (prerequisite: `case_reports.view`)
+
+Store Audits
+
+- `store_audits.view` — View store audit records
+- `store_audits.manage` — Create and process store audits (prerequisite: `store_audits.view`)
+
+Employee Profiles
+
+- `employee_profiles.view_all` — View all employee profiles
+- `employee_profiles.edit` — Edit employee work profiles (prerequisite: `employee_profiles.view_all`)
+
+Employee Schedule
+
+- `employee_schedule.view` — View company-wide shift schedules
+- `employee_schedule.manage` — Manage shifts and approve authorizations (prerequisite: `employee_schedule.view`)
 
 Violation Notices
 
-- `violation_notice.view`
-- `violation_notice.create`
-- `violation_notice.confirm`
-- `violation_notice.reject`
-- `violation_notice.issue`
-- `violation_notice.complete`
-- `violation_notice.manage`
+- `violation_notices.view` — View violation notices
+- `violation_notice.create` — Create new violation notices (prerequisite: `violation_notices.view`)
+- `violation_notice.confirm` — Confirm violation notices (prerequisite: `violation_notices.view`)
+- `violation_notice.reject` — Reject violation notices (prerequisite: `violation_notices.view`)
+- `violation_notice.issue` — Issue formal notices (prerequisite: `violation_notices.view`)
+- `violation_notice.complete` — Mark violation notices complete (prerequisite: `violation_notices.view`)
+- `violation_notice.manage` — Full lifecycle management (prerequisite: `violation_notices.view`)
+
+Workplace Relations
+
+- `peer_evaluations.view` — View peer evaluations
+- `peer_evaluations.manage` — Create and manage peer evaluations (prerequisite: `peer_evaluations.view`)
+
+Cash Requests
+
+- `cash_requests.view` — View all cash requests
+- `cash_requests.manage` — Approve or reject cash requests (prerequisite: `cash_requests.view`)
 
 Auth behavior highlights (`apps/api/src/services/auth.service.ts`):
 
@@ -551,6 +540,12 @@ Employment requirements:
 - Fixed requirement catalog is seeded via `employment_requirement_types` global table.
 - Display status mapping: `approved → complete`, `pending → verification`, missing → `pending` (Incomplete in UI), `rejected → rejected`.
 
+Bank information verification (approval → Odoo, `odoo.service.ts`):
+
+- Resolves canonical `res.partner` by `x_website_key` (fallback: email).
+- **`res.partner.bank`**: If a row already exists for the same partner + trimmed account number, it is **updated** (`bank_id`, `allow_out_payment`); otherwise **created**. Avoids Odoo uniqueness errors on duplicate approval.
+- **`hr.employee`**: Links the partner bank to employees via **`bank_account_ids`** (many2many). Writes use Odoo command **`(6, 0, [partnerBankId])`** to set the employee’s linked bank record(s). Older Odoo builds used a singular `bank_account_id` field — this codebase targets the m2m field.
+
 ## 10) Email and Notification Behavior
 
 Mail service (`apps/api/src/services/mail.service.ts`):
@@ -653,11 +648,20 @@ Login page:
 - Modes: Sign In, Register (submits `/auth/register-request`), Create Company (super-admin driven).
 - Sign In and Register no longer include company selection — backend auto-selects.
 
-Employee Verifications UI:
+Employee Verifications UI (`features/employee-verifications/pages/EmployeeVerificationsPage.tsx`):
 
-- Card list + right-side detail panel.
-- Type tabs: Registration, Personal Information, Employment Requirements, Bank Information.
-- Status tabs: All, Pending, Approved, Rejected (default Pending).
+- **Grid** of compact equal-height cards (`sm:grid-cols-2` / `lg:grid-cols-3`) + **slide-over detail panel**; backdrop and panel are **`createPortal(..., document.body)`** (stacking above page chrome).
+- **Type tabs** (underline): Registration, Personal Information, Employment Requirements, Bank Information — **pending count badges** per type; switching type **resets status filter to Pending**.
+- **Status sub-tabs** (second underline row): All, Pending, Approved, Rejected (default **Pending**); pagination resets on status change.
+- **Badge** for status on cards and panel header; **skeleton** loading state for header + tabs + grid; typed **empty state** when a filter has no rows.
+- Panel sections use icon + definition lists; rejection callouts with bordered alert styling; bank detail supports **copy account number**.
+- **Approve / reject confirmation**: **`AnimatedModal`** + **`AnimatePresence`** (`framer-motion`), with **`zIndexClass="z-[60]"`** so the dialog stacks above the `z-50` panel.
+- Realtime: `useSocket('/employee-verifications')`; registration approval still streams **`employee-verification:approval-progress`**.
+
+Authorization Requests UI (`features/authorization-requests/pages/AuthorizationRequestsPage.tsx`):
+
+- Management requests and service crew (shift authorization) queues: card list + slide-over detail panels (existing layout).
+- **Approve / reject confirmation** uses the same **`AnimatedModal`** + **`AnimatePresence`** pattern with **`z-[60]`** above the drawer.
 
 Employee Schedule page:
 

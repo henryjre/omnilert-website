@@ -5,9 +5,10 @@ import type {
   ListAccountAuditResultsResponse,
   StoreAuditType,
 } from '@omnilert/shared';
-import { X } from 'lucide-react';
+import { GitBranch, X } from 'lucide-react';
 import { Spinner } from '../../../shared/components/ui/Spinner';
 import { useAppToast } from '../../../shared/hooks/useAppToast';
+import { useBranchStore } from '../../../shared/store/branchStore';
 import { api } from '../../../shared/services/api.client';
 import { resolveStoreAuditPaginationState } from '../../store-audits/pages/storeAuditPagination';
 import { AuditResultsPageContent } from '../components/AuditResultsPageContent';
@@ -16,8 +17,25 @@ import { AccountAuditResultDetailPanel } from '../components/AccountAuditResultD
 type CategoryTab = 'all' | StoreAuditType;
 const PAGE_SIZE = 10;
 
+function formatDate(value: string | null): string {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('en-PH', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(date);
+}
+
 export function AuditResultsPage() {
   const { error: showErrorToast } = useAppToast();
+  const { selectedBranchIds } = useBranchStore();
+
   const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState<CategoryTab>('all');
   const [items, setItems] = useState<AccountAuditResultListItem[]>([]);
@@ -42,6 +60,7 @@ export function AuditResultsPage() {
         const response = await api.get('/account/audit-results', {
           params: {
             type: category === 'all' ? undefined : category,
+            branchIds: selectedBranchIds.length > 0 ? selectedBranchIds.join(',') : undefined,
             page,
             pageSize: PAGE_SIZE,
           },
@@ -67,9 +86,10 @@ export function AuditResultsPage() {
         }
 
         setItems(data.items ?? []);
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (!active) return;
-        showErrorToast(err.response?.data?.error || 'Failed to load audit results');
+        const axiosErr = err as { response?: { data?: { error?: string } } };
+        showErrorToast(axiosErr.response?.data?.error ?? 'Failed to load audit results');
       } finally {
         if (active) {
           setLoading(false);
@@ -82,7 +102,13 @@ export function AuditResultsPage() {
     return () => {
       active = false;
     };
-  }, [category, page, showErrorToast]);
+  }, [category, page, selectedBranchIds, showErrorToast]);
+
+  /** Reset to page 1 when category or branch selection changes. */
+  useEffect(() => {
+    setPage(1);
+    setSelectedAuditId(null);
+  }, [category, selectedBranchIds]);
 
   useEffect(() => {
     if (!selectedAuditId) {
@@ -98,11 +124,12 @@ export function AuditResultsPage() {
         if (!active) return;
         setSelectedAudit(response.data.data as AccountAuditResultDetail);
       })
-      .catch((err: any) => {
+      .catch((err: unknown) => {
         if (!active) return;
+        const axiosErr = err as { response?: { data?: { error?: string } } };
         setSelectedAuditId(null);
         setSelectedAudit(null);
-        showErrorToast(err.response?.data?.error || 'Failed to load audit result');
+        showErrorToast(axiosErr.response?.data?.error ?? 'Failed to load audit result');
       })
       .finally(() => {
         if (active) {
@@ -136,16 +163,13 @@ export function AuditResultsPage() {
         onSelectAudit={(auditId) => {
           setSelectedAuditId(auditId);
         }}
-        onPrevious={() => {
-          setPage(Math.max(1, currentPage - 1));
-          setSelectedAuditId(null);
-        }}
-        onNext={() => {
-          setPage(Math.min(totalPages, currentPage + 1));
+        onPageChange={(p) => {
+          setPage(p);
           setSelectedAuditId(null);
         }}
       />
 
+      {/* Backdrop */}
       {(selectedAudit || detailLoading) && (
         <div
           className="fixed inset-0 z-40 bg-black/30"
@@ -153,6 +177,7 @@ export function AuditResultsPage() {
         />
       )}
 
+      {/* Slide-in detail panel */}
       <div
         className={`fixed inset-y-0 right-0 z-50 w-full max-w-[680px] transform overflow-y-auto bg-white shadow-2xl transition-transform duration-300 ${
           selectedAuditId ? 'translate-x-0' : 'translate-x-full'
@@ -160,13 +185,19 @@ export function AuditResultsPage() {
       >
         {(selectedAudit || detailLoading) && (
           <div className="flex h-full flex-col">
+            {/* Panel header */}
             <div className="flex items-start justify-between border-b border-gray-200 px-6 py-4">
               <div>
                 <p className="text-lg font-semibold text-gray-900">
                   {selectedAudit?.type_label ?? 'Audit Result'}
                 </p>
                 {selectedAudit && (
-                  <p className="text-xs text-gray-500">Audit ID: {selectedAudit.id}</p>
+                  <p className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-500">
+                    <GitBranch className="h-3 w-3 shrink-0" />
+                    {selectedAudit.branch.name}
+                    <span className="text-gray-300">·</span>
+                    {formatDate(selectedAudit.completed_at)}
+                  </p>
                 )}
               </div>
               <button

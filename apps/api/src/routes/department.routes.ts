@@ -8,7 +8,7 @@ import * as departmentController from '../controllers/department.controller.js';
 
 const router = Router();
 
-router.use(authenticate, resolveCompany, requirePermission(PERMISSIONS.ADMIN_MANAGE_USERS));
+router.use(authenticate, resolveCompany, requirePermission(PERMISSIONS.ADMIN_MANAGE_DEPARTMENTS));
 
 router.get('/', departmentController.list);
 router.get('/options/members', departmentController.listMemberOptions);

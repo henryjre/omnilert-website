@@ -62,12 +62,16 @@ All verification approve/reject paths:
 2. Emit realtime socket event to `company:{companyId}` room.
 3. Send web push if user is offline (no active socket in `/notifications` room).
 
-## UI Pattern for Verification Pages
+## UI Pattern for Verification Pages (`EmployeeVerificationsPage`)
 
-- Card list (left) + right-side detail panel (right) — not centered modals.
-- Status tabs order: All → Pending → Approved → Rejected (default: Pending).
-- Type tabs: Registration, Personal Information, Employment Requirements, Bank Information.
-- Registration approval panel streams backend progress log via `employee-verification:approval-progress` event.
+- **Layout**: Responsive **grid of compact cards** (not only a single-column list) + **slide-over detail panel** (backdrop + panel **`createPortal`** to `document.body`). No centered modal for record detail.
+- **Type tabs** (underline strip): Registration, Personal Information, Employment Requirements, Bank Information — **pending count badges** per type when count > 0; switching type **resets status filter to Pending**.
+- **Status sub-tabs** (second underline row): All → Pending → Approved → Rejected (default **Pending**); icons + labels; pagination resets when status changes.
+- **Cards**: **`Badge`** for status; summary lines + date footer; **empty state** row with type icon when filtered list is empty.
+- **Loading**: **Skeleton** matching header + tabs + grid (not a lone spinner).
+- **Panel body**: icon + **`dl`** sections for metadata; rejection callouts with **`AlertCircle`** and bordered red panel; bank detail includes copy-to-clipboard for account number where applicable.
+- **Approve / reject confirm**: **`AnimatedModal`** + **`AnimatePresence`**, **`zIndexClass="z-[60]"`** above the panel; backdrop dismiss disabled while saving.
+- Registration approval panel streams backend progress log via **`employee-verification:approval-progress`** socket event.
 
 ## Store Audits (Internal Audit)
 

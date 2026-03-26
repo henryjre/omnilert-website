@@ -31,6 +31,14 @@ interface MasterUserRow {
   epi_score: number;
 }
 
+function getWeeklyEligibilityCutoffDate(referenceDate: Date = new Date()): Date {
+  return new Date(referenceDate.getTime() - THIRTY_DAY_WINDOW_MS);
+}
+
+function isEligibleForWeeklyEpiByAccountAge(createdAt: Date, referenceDate: Date = new Date()): boolean {
+  return createdAt.getTime() <= getWeeklyEligibilityCutoffDate(referenceDate).getTime();
+}
+
 async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKpiData> {
   const dbConn = db.getDb();
   const [cssAudits, peerEvaluations, complianceAuditRows, violationNotices] = await Promise.all([
@@ -44,7 +52,7 @@ async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKp
       .select(
         dbConn.raw(`(q1_score + q2_score + q3_score) / 3.0 as average_score`),
         dbConn.raw(`submitted_at::text`),
-        dbConn.raw(`NULL::text as wrs_effective_at`),
+        dbConn.raw(`wrs_effective_at::text`),
       ),
     // Compliance audits: the user was the auditor
     dbConn('store_audits')
@@ -521,6 +529,22 @@ async function getActiveServiceCrewUsers(): Promise<MasterUserRow[]> {
     .orderBy('u.id') as Promise<MasterUserRow[]>;
 }
 
+async function getWeeklyEligibleServiceCrewUsers(referenceDate: Date = new Date()): Promise<MasterUserRow[]> {
+  const masterDb = db.getDb();
+  const cutoffDate = getWeeklyEligibilityCutoffDate(referenceDate);
+
+  return masterDb('users as u')
+    .join('user_roles as ur', 'u.id', 'ur.user_id')
+    .join('roles as r', 'ur.role_id', 'r.id')
+    .where('u.is_active', true)
+    .where('u.employment_status', 'active')
+    .where('r.name', 'Service Crew')
+    .where('u.created_at', '<=', cutoffDate)
+    .select('u.id', 'u.user_key', 'u.epi_score')
+    .distinct('u.id')
+    .orderBy('u.id') as Promise<MasterUserRow[]>;
+}
+
 export async function runWeeklyEpiSnapshot(input?: { scheduledFor?: Date }): Promise<void> {
   const scheduledFor = input?.scheduledFor ?? new Date();
   const snapshotDate = formatManilaDate(scheduledFor);
@@ -528,7 +552,7 @@ export async function runWeeklyEpiSnapshot(input?: { scheduledFor?: Date }): Pro
   logger.info({ snapshotDate }, 'EPI weekly snapshot started');
 
   const masterDb = db.getDb();
-  const users = await getActiveServiceCrewUsers();
+  const users = await getWeeklyEligibleServiceCrewUsers(scheduledFor);
   const reportDataList: EpiReportData[] = [];
 
   logger.info({ snapshotDate, count: users.length }, 'EPI weekly snapshot: processing users');
@@ -734,3 +758,6 @@ export function stopEpiSnapshotCrons(): void {
     clearScheduledHandle(job);
   }
 }
+
+export { getWeeklyEligibilityCutoffDate };
+export { isEligibleForWeeklyEpiByAccountAge };

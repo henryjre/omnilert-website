@@ -138,62 +138,38 @@ async function getMaxEmployeeNumberFromOdoo(
 
 async function resolveOrCreateEmployeeIdentity(
   email: string,
-): Promise<{ employeeNumber: number; websiteKey: string; identityId: string; wasExisting: boolean }> {
+): Promise<{ employeeNumber: number; websiteKey: string; identityId: string | null; wasExisting: boolean }> {
   return db.getDb().transaction(async (trx) => {
-    const existingIdentity = await trx('employee_identities')
-      .where({ email })
-      .forUpdate()
-      .first();
-    if (existingIdentity) {
-      return {
-        employeeNumber: existingIdentity.employee_number as number,
-        websiteKey: existingIdentity.website_key as string,
-        identityId: existingIdentity.id as string,
-        wasExisting: true,
-      };
-    }
-
+    // Check if a user with this email already has an employee number + website key allocated
     const existingUser = await trx('users')
       .whereRaw('LOWER(email) = ?', [email])
       .whereNotNull('employee_number')
       .whereNotNull('user_key')
+      .forUpdate()
       .first('id', 'employee_number', 'user_key');
-    if (existingUser) {
-      const [createdIdentity] = await trx('employee_identities').insert({
-        email,
-        employee_number: existingUser.employee_number,
-        website_key: existingUser.user_key,
-        updated_at: new Date(),
-      }).returning('*');
 
+    if (existingUser) {
       return {
         employeeNumber: existingUser.employee_number as number,
         websiteKey: existingUser.user_key as string,
-        identityId: createdIdentity.id as string,
+        identityId: existingUser.id as string,
         wasExisting: true,
       };
     }
 
-    const identityMax = await trx('employee_identities')
-      .max<{ max: string | number | null }>('employee_number as max')
-      .first();
+    // New identity — compute next employee number from users table
     const usersMax = await trx('users')
       .max<{ max: string | number | null }>('employee_number as max')
       .first();
-    const nextEmployeeNumber = Math.max(Number(identityMax?.max ?? 0), Number(usersMax?.max ?? 0)) + 1;
+    const nextEmployeeNumber = Number(usersMax?.max ?? 0) + 1;
     const websiteKey = randomUUID();
 
-    const [createdIdentity] = await trx('employee_identities').insert({
-      email,
-      employee_number: nextEmployeeNumber,
-      website_key: websiteKey,
-      updated_at: new Date(),
-    }).returning('*');
-
+    // identityId is null for new users — the user row doesn't exist yet at this point.
+    // The correct employee_number will be set when the user record is created later.
     return {
       employeeNumber: nextEmployeeNumber,
       websiteKey,
-      identityId: createdIdentity.id as string,
+      identityId: null,
       wasExisting: false,
     };
   });
@@ -374,7 +350,7 @@ export async function listRegistrationAssignmentOptions(): Promise<{
 
   for (const company of companies) {
     const branches = await db.getDb()('branches')
-      .where({ is_active: true })
+      .where({ company_id: company.id, is_active: true })
       .select('id', 'name', 'odoo_branch_id')
       .orderBy('name', 'asc');
 
@@ -548,8 +524,10 @@ export async function approveRegistrationRequest(input: {
     employeeNumber = input.employeeNumber;
   }
 
-  if (employeeNumber !== identity.employeeNumber) {
-    await masterDb('employee_identities')
+  // If the user already exists and the employee number shifted (Odoo collision),
+  // update it on the users row now so the final user upsert uses the correct value.
+  if (identity.identityId && employeeNumber !== identity.employeeNumber) {
+    await masterDb('users')
       .where({ id: identity.identityId })
       .update({ employee_number: employeeNumber, updated_at: new Date() });
   }

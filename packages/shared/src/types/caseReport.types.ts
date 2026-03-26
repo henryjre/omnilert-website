@@ -20,6 +20,9 @@ export interface CaseReport {
   unread_reply_count: number;
   is_joined: boolean;
   is_muted: boolean;
+  branch_id?: string | null;
+  branch_name?: string | null;
+  company_name?: string | null;
   created_at: string;
   updated_at: string;
 }

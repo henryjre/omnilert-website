@@ -124,12 +124,21 @@ export async function endShift(req: Request, res: Response, next: NextFunction) 
     const { companyId } = req.companyContext!;
     const tenantDb = db.getDb();
     const managerId = req.user!.sub;
+    const userPermissions = new Set(req.user!.permissions);
+    const canEndAnyShift = userPermissions.has(PERMISSIONS.SCHEDULE_MANAGE_SHIFT)
+      || userPermissions.has(PERMISSIONS.SCHEDULE_END_SHIFT)
+      || userPermissions.has(PERMISSIONS.AUTH_REQUEST_MANAGE_PUBLIC);
+    const canEndOwnShift = req.user!.permissions.includes(PERMISSIONS.ACCOUNT_MANAGE_SCHEDULE);
+    if (!canEndAnyShift && !canEndOwnShift) throw new AppError(403, 'Forbidden');
     const id = req.params.id as string;
 
     const shift = await tenantDb('employee_shifts').where({ id }).first();
     if (!shift) throw new AppError(404, 'Shift not found');
     if (shift.status === 'ended') throw new AppError(400, 'Shift is already ended');
     if (shift.status === 'open') throw new AppError(400, 'Cannot end a shift that has not started');
+    if (!canEndAnyShift && shift.user_id !== managerId) {
+      throw new AppError(403, 'You can only end your own shift');
+    }
 
     // Update shift status to ended
     const [updated] = await tenantDb('employee_shifts')

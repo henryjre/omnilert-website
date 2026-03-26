@@ -33,6 +33,14 @@ export type UserWorkScope = {
   borrow_branches: UserWorkBranchRef[];
 };
 
+export function filterDisabledRoles(
+  roles: GlobalRole[],
+  disabledRoleIds: Set<string>,
+): GlobalRole[] {
+  if (disabledRoleIds.size === 0) return roles;
+  return roles.filter((role) => !disabledRoleIds.has(role.id));
+}
+
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
@@ -53,15 +61,25 @@ export async function loadGlobalUserRolesAndPermissions(userId: string): Promise
   roles: GlobalRole[];
   permissions: string[];
 }> {
-  const roles = (await db.getDb()('user_roles')
-    .join('roles', 'user_roles.role_id', 'roles.id')
-    .where('user_roles.user_id', userId)
-    .select('roles.id', 'roles.name', 'roles.color', 'roles.priority')
-    .orderBy('roles.priority', 'desc')) as GlobalRole[];
+  const [roles, disabledRows] = await Promise.all([
+    db.getDb()('user_roles')
+      .join('roles', 'user_roles.role_id', 'roles.id')
+      .where('user_roles.user_id', userId)
+      .select('roles.id', 'roles.name', 'roles.color', 'roles.priority')
+      .orderBy('roles.priority', 'desc') as Promise<GlobalRole[]>,
+    db.getDb()('user_role_disables')
+      .where({ user_id: userId })
+      .select('role_id') as Promise<Array<{ role_id: string }>>,
+  ]);
 
-  const roleIds = roles.map((role) => role.id);
+  const effectiveRoles = filterDisabledRoles(
+    roles,
+    new Set(disabledRows.map((row) => String(row.role_id))),
+  );
+
+  const roleIds = effectiveRoles.map((role) => role.id);
   if (roleIds.length === 0) {
-    return { roles, permissions: [] };
+    return { roles: effectiveRoles, permissions: [] };
   }
 
   const permissions = await db.getDb()('role_permissions')
@@ -71,7 +89,7 @@ export async function loadGlobalUserRolesAndPermissions(userId: string): Promise
     .select('permissions.key');
 
   return {
-    roles,
+    roles: effectiveRoles,
     permissions: permissions.map((row: any) => row.key as string),
   };
 }

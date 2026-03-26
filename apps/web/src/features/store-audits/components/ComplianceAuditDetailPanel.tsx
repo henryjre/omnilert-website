@@ -2,8 +2,23 @@ import type { ChangeEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { StoreAudit, StoreAuditAttachment, StoreAuditMessage } from '@omnilert/shared';
-import { ExternalLink, Paperclip, Pencil, Send, Trash2, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  Banknote,
+  CheckCircle2,
+  ClipboardCheck,
+  ClipboardList,
+  ExternalLink,
+  Paperclip,
+  Pencil,
+  Send,
+  ShieldCheck,
+  Sparkles,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { ImagePreviewModal } from '@/features/case-reports/components/ImagePreviewModal';
+import { normalizeFileForUpload } from '@/shared/utils/fileUpload';
 import { Button } from '@/shared/components/ui/Button';
 import { useAppToast } from '@/shared/hooks/useAppToast';
 import { api } from '@/shared/services/api.client';
@@ -11,7 +26,7 @@ import { resolveComplianceAuditPanelTiming } from './complianceAuditTiming';
 import { YesNoPill } from './YesNoPill';
 
 function formatDateTime(value: string | null): string {
-  if (!value) return '-';
+  if (!value) return '—';
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return new Intl.DateTimeFormat('en-PH', {
@@ -117,14 +132,14 @@ function MarkdownReport({ text }: { text: string }) {
 
     if (isBullet) {
       elements.push(
-        <div key={key++} className="flex gap-2 text-sm text-gray-800">
-          <span className="mt-0.5 shrink-0 text-gray-400">-</span>
+        <div key={key++} className="flex gap-2 text-sm text-gray-700">
+          <span className="mt-0.5 shrink-0 text-gray-400">•</span>
           <span>{renderInline(content)}</span>
         </div>,
       );
     } else {
       elements.push(
-        <p key={key++} className="text-sm text-gray-800">
+        <p key={key++} className="text-sm text-gray-700">
           {renderInline(content)}
         </p>,
       );
@@ -236,6 +251,7 @@ export function ComplianceAuditDetailPanel({
   const [editingContent, setEditingContent] = useState('');
   const [savingMessageId, setSavingMessageId] = useState<string | null>(null);
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
+  const [showAllMessages, setShowAllMessages] = useState(false);
   const [previewMedia, setPreviewMedia] = useState<{
     items: { url: string; fileName: string }[];
     index: number;
@@ -304,6 +320,7 @@ export function ComplianceAuditDetailPanel({
     setEditingMessageId(null);
     setEditingContent('');
     setPreviewMedia(null);
+    setShowAllMessages(false);
     void fetchMessages();
   }, [fetchMessages]);
 
@@ -338,6 +355,15 @@ export function ComplianceAuditDetailPanel({
     [audit, currentTime],
   );
 
+  const completedMediaAttachments = useMemo(
+    () => visibleMessages.flatMap((message) => message.attachments),
+    [visibleMessages],
+  );
+  const mediaOnlyAttachments = useMemo(
+    () => completedMediaAttachments.filter((attachment) => isImageAttachment(attachment) || isVideoAttachment(attachment)),
+    [completedMediaAttachments],
+  );
+
   const openPreview = useCallback((attachment: StoreAuditAttachment, source: StoreAuditAttachment[]) => {
     const mediaItems = toPreviewItems(source);
     const index = mediaItems.findIndex((item) => item.url === attachment.file_url);
@@ -347,9 +373,10 @@ export function ComplianceAuditDetailPanel({
   }, []);
 
   const handleFileChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const incoming = Array.from(event.target.files ?? []);
-      if (incoming.length === 0) return;
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const raw = Array.from(event.target.files ?? []);
+      if (raw.length === 0) return;
+      const incoming = await Promise.all(raw.map(normalizeFileForUpload));
 
       let invalidTypeFound = false;
       let oversizeFound = false;
@@ -367,18 +394,12 @@ export function ComplianceAuditDetailPanel({
         accepted.push(file);
       }
 
-      if (invalidTypeFound) {
-        showErrorToast('Only image and video attachments are allowed');
-      }
-      if (oversizeFound) {
-        showErrorToast('Each attachment must be 50MB or smaller');
-      }
+      if (invalidTypeFound) showErrorToast('Only image and video attachments are allowed');
+      if (oversizeFound) showErrorToast('Each attachment must be 50MB or smaller');
 
       setSelectedFiles((current) => {
         const combined = [...current, ...accepted];
-        if (combined.length > 10) {
-          showErrorToast('Maximum of 10 attachments is allowed per message');
-        }
+        if (combined.length > 10) showErrorToast('Maximum of 10 attachments is allowed per message');
         return combined.slice(0, 10);
       });
 
@@ -469,9 +490,12 @@ export function ComplianceAuditDetailPanel({
   );
 
   const renderAttachment = useCallback(
-    (attachment: StoreAuditAttachment, source: StoreAuditAttachment[]) => {
+    (attachment: StoreAuditAttachment, source: StoreAuditAttachment[], variant: 'message' | 'gallery' = 'message') => {
       const isImage = isImageAttachment(attachment);
       const isVideo = isVideoAttachment(attachment);
+      const thumbClass = variant === 'gallery'
+        ? 'h-28 w-full object-cover'
+        : 'max-h-[170px] max-w-[220px] object-cover';
 
       if (isImage) {
         return (
@@ -479,7 +503,7 @@ export function ComplianceAuditDetailPanel({
             key={attachment.id}
             src={attachment.file_url}
             alt={attachment.file_name}
-            className="max-h-[170px] max-w-[220px] cursor-pointer rounded-lg border border-gray-200 object-cover hover:opacity-90"
+            className={`${thumbClass} cursor-pointer rounded-lg border border-gray-200 hover:opacity-90`}
             onClick={() => openPreview(attachment, source)}
           />
         );
@@ -491,9 +515,16 @@ export function ComplianceAuditDetailPanel({
             key={attachment.id}
             type="button"
             onClick={() => openPreview(attachment, source)}
-            className="group relative max-h-[170px] max-w-[220px] overflow-hidden rounded-lg border border-gray-200 bg-black"
+            className={`group relative overflow-hidden rounded-lg border border-gray-200 bg-black ${
+              variant === 'gallery' ? 'h-28 w-full' : 'max-h-[170px] max-w-[220px]'
+            }`}
           >
-            <video src={attachment.file_url} className="max-h-[170px] max-w-[220px] object-cover opacity-75" muted preload="metadata" />
+            <video
+              src={attachment.file_url}
+              className={`${thumbClass} opacity-75`}
+              muted
+              preload="metadata"
+            />
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-black/60 text-white transition group-hover:bg-black/70">
                 <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5 pl-0.5">
@@ -522,20 +553,38 @@ export function ComplianceAuditDetailPanel({
 
   const renderMessageTrail = (readOnly: boolean) => {
     if (messagesLoading) {
-      return <p className="text-sm text-gray-500">Loading audit messages...</p>;
+      return (
+        <div className="space-y-2">
+          {Array.from({ length: 2 }).map((_, i) => (
+            <div key={i} className="animate-pulse rounded-lg border border-gray-200 bg-white p-3">
+              <div className="flex items-start gap-3">
+                <div className="h-8 w-8 rounded-full bg-gray-200" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-3 w-24 rounded bg-gray-200" />
+                  <div className="h-3 w-full rounded bg-gray-200" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      );
     }
 
     if (messages.length === 0) {
       return (
         <p className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-4 text-sm text-gray-500">
-          No audit messages yet.
+          No audit notes yet.
         </p>
       );
     }
 
+    const displayMessages = readOnly && !showAllMessages && messages.length > 5
+      ? messages.slice(0, 5)
+      : messages;
+
     return (
-      <div className="space-y-3">
-        {messages.map((message) => {
+      <div className="space-y-2">
+        {displayMessages.map((message) => {
           const messageOwner = message.user_name?.trim() || 'Unknown User';
           const isOwn = message.user_id === currentUserId;
           const canEditDelete = !readOnly && canMutateMessages && isOwn && !message.is_deleted;
@@ -549,11 +598,11 @@ export function ComplianceAuditDetailPanel({
                     <img
                       src={message.user_avatar}
                       alt={messageOwner}
-                      className="h-9 w-9 rounded-full object-cover"
+                      className="h-8 w-8 rounded-full object-cover"
                     />
                   ) : (
                     <div
-                      className="flex h-9 w-9 items-center justify-center rounded-full text-xs font-semibold text-white"
+                      className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold text-white"
                       style={{ backgroundColor: getAvatarColor(messageOwner) }}
                     >
                       {getInitials(messageOwner)}
@@ -639,207 +688,359 @@ export function ComplianceAuditDetailPanel({
             </div>
           );
         })}
+
+        {readOnly && messages.length > 5 && (
+          <button
+            type="button"
+            onClick={() => setShowAllMessages((prev) => !prev)}
+            className="w-full rounded-lg border border-dashed border-gray-300 py-2 text-xs text-gray-500 hover:bg-gray-50"
+          >
+            {showAllMessages ? 'Show fewer messages' : `Show all ${messages.length} messages`}
+          </button>
+        )}
       </div>
     );
   };
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex-1 space-y-4 overflow-y-auto px-6 py-5">
-        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-          <span className="text-gray-500">Company</span>
-          <span className="font-medium text-gray-900">{audit.company?.name || '-'}</span>
-          <span className="text-gray-500">Employee</span>
-          <span className="font-medium text-gray-900">{audit.comp_employee_name || '-'}</span>
-          <span className="text-gray-500">Branch</span>
-          <span className="font-medium text-gray-900">{audit.branch_name || '-'}</span>
-          <span className="text-gray-500">Created</span>
-          <span className="font-medium text-gray-900">{formatDateTime(audit.created_at)}</span>
-          {timing.kind === 'active' ? (
-            <>
-              <span className="text-gray-500">Employee Active Since</span>
-              <span className="font-medium text-gray-900">{formatDateTime(timing.activeSince)}</span>
-              <span className="text-gray-500">Minutes Active</span>
-              <span className="font-medium text-gray-900">{timing.durationText ?? '-'}</span>
-            </>
-          ) : (
-            <>
-              <span className="text-gray-500">Audit Duration</span>
-              <span className="font-medium text-gray-900">{timing.durationText ?? '-'}</span>
-            </>
-          )}
-        </div>
+      <div className="flex-1 overflow-y-auto">
 
+        {/* ── PENDING STATE ──────────────────────────────────────────── */}
+        {audit.status === 'pending' && (
+          <div className="px-6 py-5">
+            <div className="mb-3 flex items-center gap-2">
+              <ClipboardList className="h-4 w-4 text-gray-400" />
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Audit Details</p>
+            </div>
+            <dl className="divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white">
+              {[
+                { label: 'Company', value: audit.company?.name || '—' },
+                { label: 'Branch', value: audit.branch_name || '—' },
+                { label: 'Employee', value: audit.comp_employee_name || '—' },
+                { label: 'Created', value: formatDateTime(audit.created_at) },
+                ...(timing.kind === 'active'
+                  ? [
+                      { label: 'Active Since', value: formatDateTime(timing.activeSince) },
+                      { label: 'Minutes Active', value: timing.durationText ?? '—' },
+                    ]
+                  : [
+                      { label: 'Audit Duration', value: timing.durationText ?? '—' },
+                    ]
+                ),
+              ].map(({ label, value }) => (
+                <div key={label} className="flex items-baseline gap-4 px-4 py-2.5">
+                  <dt className="w-28 shrink-0 text-xs text-gray-500">{label}</dt>
+                  <dd className="min-w-0 flex-1 text-sm font-medium text-gray-900">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        )}
+
+        {/* ── PROCESSING STATE ───────────────────────────────────────── */}
         {audit.status === 'processing' && (
-          <div className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
+          <div className="space-y-0">
+            {/* Subject banner */}
+            <div className="border-b border-blue-100 bg-blue-50 px-6 py-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1 rounded-md bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-800 ring-1 ring-inset ring-blue-200">
+                      <ShieldCheck className="h-3 w-3" />
+                      Compliance Audit
+                    </span>
+                    <span className="text-xs text-blue-700">In Progress</span>
+                  </div>
+                  <p className="mt-1 truncate font-semibold text-blue-900">
+                    {audit.comp_employee_name || '—'}
+                  </p>
+                  <p className="text-xs text-blue-700">{audit.branch_name || ''}</p>
+                </div>
+                <div className="shrink-0 text-right">
+                  {timing.durationText && (
+                    <div>
+                      <p className="text-xs text-blue-600">{timing.kind === 'active' ? 'Active for' : 'Duration'}</p>
+                      <p className="text-sm font-semibold text-blue-900">{timing.durationText}</p>
+                    </div>
+                  )}
+                  {audit.auditor_name && (
+                    <div className="mt-1">
+                      <p className="text-xs text-blue-600">Auditor</p>
+                      <p className="text-sm font-medium text-blue-900">{audit.auditor_name}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Scoring section */}
             {canComplete && (
-              <>
-                <p className="text-sm font-semibold text-gray-800">Compliance Criteria Scores</p>
-                <div className="space-y-3">
+              <div className="border-b border-gray-200 px-6 py-5">
+                <div className="mb-3 flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-blue-500" />
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Compliance Criteria</p>
+                </div>
+                <div className="space-y-2">
                   {QUESTIONS.map((question) => (
-                    <div key={question.key} className="rounded-lg border border-gray-200 bg-white p-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-medium text-gray-800">{question.label}</p>
-                          <p className="text-xs text-gray-500">{question.question}</p>
+                    <div key={question.key} className="rounded-xl border border-gray-200 bg-white p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-gray-800">{question.label}</p>
+                          <p className="mt-0.5 text-xs text-gray-500">{question.question}</p>
                         </div>
-                        <YesNoPill
-                          value={answers[question.key]}
-                          onChange={(value) => setAnswers((prev) => ({ ...prev, [question.key]: value }))}
-                          disabled={actionLoading}
-                        />
+                        <div className="shrink-0">
+                          <YesNoPill
+                            value={answers[question.key]}
+                            onChange={(value) => setAnswers((prev) => ({ ...prev, [question.key]: value }))}
+                            disabled={actionLoading}
+                          />
+                        </div>
                       </div>
                     </div>
                   ))}
                 </div>
                 {allAnswered && (
-                  <div className="flex items-center gap-2 rounded-lg bg-primary-50 px-3 py-2">
-                    <span className="text-sm text-gray-600">Final Score:</span>
-                    <span className="text-sm font-semibold text-primary-700">{positiveCount} / {QUESTIONS.length}</span>
+                  <div className="mt-3 flex items-center justify-between rounded-xl bg-primary-50 px-4 py-3">
+                    <span className="text-sm font-medium text-primary-700">Compliance Score</span>
+                    <span className="text-lg font-bold text-primary-700">{positiveCount} / {QUESTIONS.length} passed</span>
                   </div>
                 )}
-              </>
-            )}
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-gray-800">Audit Log</label>
-              {renderMessageTrail(false)}
-            </div>
-
-            {canMutateMessages && (
-              <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-3">
-                {selectedFiles.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {selectedFiles.map((file) => (
-                      <span
-                        key={`${file.name}-${file.size}`}
-                        className="inline-flex items-center gap-2 rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700"
-                      >
-                        <span className="max-w-[180px] truncate">{file.name}</span>
-                        <span className="text-[11px] text-gray-500">{formatFileSize(file.size)}</span>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedFiles((current) => current.filter((item) => item !== file))}
-                          className="rounded-full p-0.5 hover:bg-gray-300"
-                          title="Remove attachment"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                <textarea
-                  rows={4}
-                  value={messageDraft}
-                  onChange={(event) => setMessageDraft(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' && !event.shiftKey) {
-                      event.preventDefault();
-                      void handleSendMessage();
-                    }
-                  }}
-                  placeholder="Write detailed audit findings..."
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                />
-
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                  >
-                    <Paperclip className="h-4 w-4" />
-                    Attach Media
-                  </button>
-
-                  <Button
-                    onClick={() => void handleSendMessage()}
-                    disabled={actionLoading || sendingMessage || (!messageDraft.trim() && selectedFiles.length === 0)}
-                  >
-                    <span className="inline-flex items-center gap-2">
-                      <Send className="h-4 w-4" />
-                      {sendingMessage ? 'Sending...' : 'Send Message'}
-                    </span>
-                  </Button>
-                </div>
-
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*,video/*"
-                  multiple
-                  className="hidden"
-                  onChange={handleFileChange}
-                />
               </div>
             )}
 
-            {canComplete && !hasVisibleMessages && !messagesLoading && (
-              <p className="text-xs text-amber-700">
-                Send at least one non-deleted message before completing this audit.
-              </p>
-            )}
+            {/* Audit notes / log */}
+            <div className="px-6 py-5">
+              <div className="mb-3 flex items-center gap-2">
+                <ClipboardCheck className="h-4 w-4 text-gray-400" />
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Audit Notes</p>
+              </div>
+
+              {renderMessageTrail(false)}
+
+              {canMutateMessages && (
+                <div className="mt-3 rounded-xl border border-gray-200 bg-white p-3">
+                  {selectedFiles.length > 0 && (
+                    <div className="mb-2 flex flex-wrap gap-2">
+                      {selectedFiles.map((file) => (
+                        <span
+                          key={`${file.name}-${file.size}`}
+                          className="inline-flex items-center gap-2 rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700"
+                        >
+                          <span className="max-w-[180px] truncate">{file.name}</span>
+                          <span className="text-[11px] text-gray-500">{formatFileSize(file.size)}</span>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedFiles((current) => current.filter((item) => item !== file))}
+                            className="rounded-full p-0.5 hover:bg-gray-300"
+                            title="Remove attachment"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  <textarea
+                    rows={3}
+                    value={messageDraft}
+                    onChange={(event) => setMessageDraft(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && !event.shiftKey) {
+                        event.preventDefault();
+                        void handleSendMessage();
+                      }
+                    }}
+                    placeholder="Add observation, finding, or note…"
+                    className="w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                  />
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50"
+                    >
+                      <Paperclip className="h-3.5 w-3.5" />
+                      Attach Media
+                    </button>
+
+                    <Button
+                      size="sm"
+                      onClick={() => void handleSendMessage()}
+                      disabled={actionLoading || sendingMessage || (!messageDraft.trim() && selectedFiles.length === 0)}
+                    >
+                      <span className="inline-flex items-center gap-1.5">
+                        <Send className="h-3.5 w-3.5" />
+                        {sendingMessage ? 'Sending…' : 'Add Note'}
+                      </span>
+                    </Button>
+                  </div>
+
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*,video/*"
+                    multiple
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+                </div>
+              )}
+
+              {canComplete && !hasVisibleMessages && !messagesLoading && (
+                <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                  <p className="text-xs text-amber-700">
+                    Add at least one audit note before completing this audit.
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
+        {/* ── COMPLETED STATE ────────────────────────────────────────── */}
         {audit.status === 'completed' && (
-          <div className="space-y-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Auditor</p>
-              <p className="text-sm text-gray-900">{audit.auditor_name || '-'}</p>
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Rate</p>
-              <p className="text-sm text-gray-900">
-                {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(audit.monetary_reward ?? 0))}
-              </p>
+          <div className="space-y-0">
+            {/* Receipt header */}
+            <div className="border-b border-green-100 bg-green-50 px-6 py-5">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-100">
+                  <CheckCircle2 className="h-5 w-5 text-green-600" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-green-900">Audit Completed</p>
+                  <p className="mt-0.5 text-xs text-green-700">{formatDateTime(audit.completed_at ?? null)}</p>
+                  {audit.auditor_name && (
+                    <p className="mt-0.5 text-xs text-green-700">by {audit.auditor_name}</p>
+                  )}
+                </div>
+                {Number(audit.monetary_reward ?? 0) > 0 && (
+                  <div className="shrink-0 rounded-lg bg-green-100 px-3 py-1.5 text-right">
+                    <div className="flex items-center gap-1 text-xs text-green-700">
+                      <Banknote className="h-3.5 w-3.5" />
+                      <span>Rate</span>
+                    </div>
+                    <p className="text-sm font-bold text-green-800">
+                      {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(audit.monetary_reward ?? 0))}
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
 
-            <div>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Criteria Scores</p>
-              <div className="space-y-1">
-                {QUESTIONS.map((question) => {
+            {/* Audit details */}
+            <div className="border-b border-gray-200 px-6 py-5">
+              <div className="mb-3 flex items-center gap-2">
+                <ClipboardList className="h-4 w-4 text-gray-400" />
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Audit Details</p>
+              </div>
+              <dl className="divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white">
+                {[
+                  { label: 'Company', value: audit.company?.name || '—' },
+                  { label: 'Branch', value: audit.branch_name || '—' },
+                  { label: 'Employee', value: audit.comp_employee_name || '—' },
+                  { label: 'Created', value: formatDateTime(audit.created_at) },
+                  { label: 'Duration', value: timing.durationText ?? '—' },
+                ].map(({ label, value }) => (
+                  <div key={label} className="flex items-baseline gap-4 px-4 py-2.5">
+                    <dt className="w-28 shrink-0 text-xs text-gray-500">{label}</dt>
+                    <dd className="min-w-0 flex-1 text-sm font-medium text-gray-900">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+
+            {/* Scorecard */}
+            <div className="border-b border-gray-200 px-6 py-5">
+              <div className="mb-3 flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-blue-500" />
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Compliance Scorecard</p>
+              </div>
+              <div className="overflow-hidden rounded-xl border border-gray-200">
+                {QUESTIONS.map((question, index) => {
                   const value = answers[question.key];
                   return (
-                    <div key={question.key} className="flex items-center justify-between text-sm">
-                      <span className="text-gray-700">{question.label}</span>
-                      <span className={`font-medium ${value ? 'text-green-700' : 'text-red-700'}`}>
-                        {value ? 'Yes' : 'No'}
+                    <div
+                      key={question.key}
+                      className={`flex items-center justify-between gap-4 px-4 py-3 ${
+                        index < QUESTIONS.length - 1 ? 'border-b border-gray-100' : ''
+                      }`}
+                    >
+                      <span className="text-sm text-gray-700">{question.label}</span>
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                          value === true
+                            ? 'bg-green-100 text-green-700'
+                            : value === false
+                              ? 'bg-red-100 text-red-700'
+                              : 'bg-gray-100 text-gray-500'
+                        }`}
+                      >
+                        {value === true ? 'Pass' : value === false ? 'Fail' : '—'}
                       </span>
                     </div>
                   );
                 })}
+                <div className="flex items-center justify-between border-t-2 border-gray-200 bg-gray-50 px-4 py-3">
+                  <span className="text-sm font-semibold text-gray-800">Overall Score</span>
+                  <span className="text-base font-bold text-primary-700">
+                    {positiveCount} / {QUESTIONS.length} passed
+                  </span>
+                </div>
               </div>
-              <div className="mt-2 flex items-center justify-between border-t border-gray-200 pt-2 text-sm">
-                <span className="font-medium text-gray-700">Overall Positive</span>
-                <span className="font-semibold text-primary-700">
-                  {positiveCount} / {QUESTIONS.length}
-                </span>
+            </div>
+
+            {/* Audit log */}
+            <div className="border-b border-gray-200 px-6 py-5">
+              <div className="mb-3 flex items-center gap-2">
+                <ClipboardCheck className="h-4 w-4 text-gray-400" />
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Audit Notes</p>
               </div>
+              {renderMessageTrail(true)}
             </div>
 
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Audit Log</p>
-              <div className="mt-2">{renderMessageTrail(true)}</div>
-            </div>
+            {/* Media gallery */}
+            {mediaOnlyAttachments.length > 0 && (
+              <div className="border-b border-gray-200 px-6 py-5">
+                <div className="mb-3 flex items-center gap-2">
+                  <Paperclip className="h-4 w-4 text-gray-400" />
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Media Attachments</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {mediaOnlyAttachments.map((attachment) => (
+                    <div key={attachment.id} className="space-y-1">
+                      {renderAttachment(attachment, mediaOnlyAttachments, 'gallery')}
+                      <p className="truncate text-xs text-gray-400" title={attachment.file_name}>
+                        {attachment.file_name}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">AI Report</p>
-              {audit.comp_ai_report
-                ? <MarkdownReport text={audit.comp_ai_report} />
-                : <p className="text-sm text-gray-800">-</p>
-              }
-            </div>
+            {/* AI Report */}
+            {audit.comp_ai_report && (
+              <div className="border-b border-gray-200 px-6 py-5">
+                <div className="mb-3 flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-primary-500" />
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">AI Report</p>
+                </div>
+                <div className="rounded-xl bg-gray-50 p-4">
+                  <MarkdownReport text={audit.comp_ai_report} />
+                </div>
+              </div>
+            )}
 
+            {/* Linked VN */}
             {audit.linked_vn_id && (
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Violation Notice</p>
+              <div className="px-6 py-5">
                 <button
                   type="button"
                   onClick={() => navigate(`/violation-notices?vnId=${audit.linked_vn_id}`)}
-                  className="mt-1 inline-flex items-center gap-1 text-sm text-primary-700 hover:underline"
+                  className="inline-flex items-center gap-1.5 text-sm text-primary-700 hover:underline"
                 >
                   <ExternalLink className="h-3.5 w-3.5" />
                   View Violation Notice
@@ -850,15 +1051,19 @@ export function ComplianceAuditDetailPanel({
         )}
       </div>
 
+      {/* Footer actions */}
       <div className="border-t border-gray-200 px-6 py-4">
-        {panelError && (
-          <p className="mb-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600">{panelError}</p>
-        )}
+        {panelError && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{panelError}</p>}
+
         {audit.status === 'pending' && canProcess && (
           <Button className="w-full" onClick={onProcess} disabled={actionLoading}>
-            {actionLoading ? 'Processing...' : 'Process'}
+            <span className="inline-flex items-center gap-2">
+              <ClipboardCheck className="h-4 w-4" />
+              {actionLoading ? 'Processing…' : 'Process Audit'}
+            </span>
           </Button>
         )}
+
         {audit.status === 'processing' && canComplete && (
           <Button
             className="w-full"
@@ -875,12 +1080,16 @@ export function ComplianceAuditDetailPanel({
             }}
             disabled={actionLoading || messagesLoading || !allAnswered || !hasVisibleMessages}
           >
-            {actionLoading ? 'Completing...' : 'Audit Complete'}
+            <span className="inline-flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4" />
+              {actionLoading ? 'Completing…' : 'Complete Audit'}
+            </span>
           </Button>
         )}
-        {audit.status === 'completed' && !audit.vn_requested && canRequestVN && (
+
+        {audit.status === 'completed' && canRequestVN && (
           <Button className="w-full" variant="danger" onClick={onRequestVN}>
-            Request VN
+            Request Violation Notice
           </Button>
         )}
       </div>

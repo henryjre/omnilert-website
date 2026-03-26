@@ -57,6 +57,7 @@ export async function create(req: Request, res: Response, next: NextFunction) {
       userId: req.user!.sub,
       title: String(req.body.title ?? ''),
       description: String(req.body.description ?? ''),
+      branchId: typeof req.body.branchId === 'string' ? req.body.branchId : null,
     });
     res.status(201).json({ success: true, data });
   } catch (error) {

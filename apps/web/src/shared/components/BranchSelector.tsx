@@ -32,6 +32,8 @@ function BranchSelectorContent({
   onToggleAll,
   onToggleCompany,
   onToggleBranch,
+  onApply,
+  onDiscard,
   onClose,
   mobile = false,
 }: {
@@ -41,6 +43,8 @@ function BranchSelectorContent({
   onToggleAll: () => void;
   onToggleCompany: (companyBranchIds: string[]) => void;
   onToggleBranch: (branchId: string) => void;
+  onApply: () => void;
+  onDiscard: () => void;
   onClose: () => void;
   mobile?: boolean;
 }) {
@@ -161,12 +165,14 @@ function BranchSelectorContent({
       <div className="flex items-center gap-2 border-t border-gray-100 px-3 py-3">
         <button
           type="button"
+          onClick={onDiscard}
           className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-800"
         >
           Discard
         </button>
         <button
           type="button"
+          onClick={onApply}
           className="flex-1 rounded-xl bg-primary-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-700"
         >
           Apply
@@ -179,14 +185,24 @@ function BranchSelectorContent({
 export function BranchSelector() {
   const { companyBranchGroups, selectedBranchIds, setSelectedBranchIds } = useBranchStore();
   const [open, setOpen] = useState(false);
+  // Local draft — mutations happen here; only committed to the store on Apply.
+  const [draftIds, setDraftIds] = useState<string[]>(selectedBranchIds);
   const ref = useRef<HTMLDivElement>(null);
 
   const orderedBranchIds = flattenCompanyBranchIds(companyBranchGroups);
-  const selectedBranchIdSet = new Set(selectedBranchIds);
+  const draftIdSet = new Set(draftIds);
   const allSelected =
-    orderedBranchIds.length > 0 && orderedBranchIds.every((id) => selectedBranchIdSet.has(id));
+    orderedBranchIds.length > 0 && orderedBranchIds.every((id) => draftIdSet.has(id));
   const label = formatBranchSelectionLabel(companyBranchGroups, selectedBranchIds);
   const canToggle = orderedBranchIds.length > 1;
+
+  // Sync draft to the committed selection every time the panel opens so
+  // previous uncommitted changes don't bleed into a fresh session.
+  useEffect(() => {
+    if (open) {
+      setDraftIds(selectedBranchIds);
+    }
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!open) return;
@@ -228,24 +244,32 @@ export function BranchSelector() {
 
   if (!canToggle) return null;
 
+  // Draft toggle handlers — mutate local state only, not the store.
   const handleToggleAll = () => {
     if (allSelected) {
-      setSelectedBranchIds(clearAllBranchesToFirst(companyBranchGroups));
+      setDraftIds(clearAllBranchesToFirst(companyBranchGroups));
       return;
     }
-    setSelectedBranchIds(orderedBranchIds);
+    setDraftIds(orderedBranchIds);
   };
 
   const handleToggleBranch = (branchId: string) => {
-    setSelectedBranchIds(
-      toggleGroupedBranchSelection(selectedBranchIds, branchId, orderedBranchIds),
-    );
+    setDraftIds(toggleGroupedBranchSelection(draftIds, branchId, orderedBranchIds));
   };
 
   const handleToggleCompany = (companyBranchIds: string[]) => {
-    setSelectedBranchIds(
-      toggleCompanyBranchSelection(selectedBranchIds, companyBranchIds, orderedBranchIds),
-    );
+    setDraftIds(toggleCompanyBranchSelection(draftIds, companyBranchIds, orderedBranchIds));
+  };
+
+  // Commit draft to the store and close.
+  const handleApply = () => {
+    setSelectedBranchIds(draftIds);
+    setOpen(false);
+  };
+
+  // Revert draft changes back to the last committed selection, but keep the panel open.
+  const handleDiscard = () => {
+    setDraftIds(selectedBranchIds);
   };
 
   return (
@@ -294,11 +318,13 @@ export function BranchSelector() {
             >
               <BranchSelectorContent
                 companyBranchGroups={companyBranchGroups}
-                selectedBranchIds={selectedBranchIds}
+                selectedBranchIds={draftIds}
                 allSelected={allSelected}
                 onToggleAll={handleToggleAll}
                 onToggleCompany={handleToggleCompany}
                 onToggleBranch={handleToggleBranch}
+                onApply={handleApply}
+                onDiscard={handleDiscard}
                 onClose={() => setOpen(false)}
                 mobile
               />
@@ -314,11 +340,13 @@ export function BranchSelector() {
             >
               <BranchSelectorContent
                 companyBranchGroups={companyBranchGroups}
-                selectedBranchIds={selectedBranchIds}
+                selectedBranchIds={draftIds}
                 allSelected={allSelected}
                 onToggleAll={handleToggleAll}
                 onToggleCompany={handleToggleCompany}
                 onToggleBranch={handleToggleBranch}
+                onApply={handleApply}
+                onDiscard={handleDiscard}
                 onClose={() => setOpen(false)}
               />
             </motion.div>

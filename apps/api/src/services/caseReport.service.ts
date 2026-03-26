@@ -25,6 +25,7 @@ type CaseReportRow = {
   corrective_action: string | null;
   resolution: string | null;
   vn_requested: boolean;
+  branch_id: string | null;
   created_by: string;
   closed_by: string | null;
   closed_at: Date | string | null;
@@ -358,6 +359,7 @@ async function enrichCaseReports(
       .select('case_id', 'is_joined', 'is_muted', 'last_read_at'),
     db.getDb()('case_messages')
       .whereIn('case_id', caseIds)
+      .where('is_system', false)
       .groupBy('case_id')
       .select('case_id')
       .count<{ count: string }[]>({ count: '*' }),
@@ -431,6 +433,9 @@ async function enrichCaseReports(
       unread_reply_count: unreadReplyCountMap.get(row.id) ?? 0,
       is_joined: participant?.is_joined ?? false,
       is_muted: participant?.is_muted ?? false,
+      branch_id: (row as any).branch_id ?? null,
+      branch_name: (row as any).branch_name ?? null,
+      company_name: (row as any).company_name ?? null,
       created_at: new Date(row.created_at).toISOString(),
       updated_at: new Date(row.updated_at).toISOString(),
     };
@@ -531,7 +536,12 @@ export async function listCaseReports(input: {
 
   const [countRow, rows] = await Promise.all([
     query.clone().count<{ count: string }>({ count: '*' }).first(),
-    query.clone().orderBy('created_at', normalizeSortOrder(input.sortOrder)).select('*'),
+    query
+      .clone()
+      .leftJoin('branches', 'case_reports.branch_id', 'branches.id')
+      .leftJoin('companies', 'case_reports.company_id', 'companies.id')
+      .orderBy('case_reports.created_at', normalizeSortOrder(input.sortOrder))
+      .select('case_reports.*', 'branches.name as branch_name', 'companies.name as company_name'),
   ]);
 
   const items = await enrichCaseReports(rows as CaseReportRow[], input.userId);
@@ -543,7 +553,7 @@ export async function getCaseReport(input: {
   caseId: string;
   markRead?: boolean;
 }): Promise<CaseReport & { attachments: CaseAttachment[] }> {
-  const record = await getCaseOrThrow(input.caseId);
+  const rawRecord = await getCaseOrThrow(input.caseId);
   if (input.markRead) {
     await upsertParticipant(input.caseId, input.userId, {
       is_joined: true,
@@ -551,6 +561,14 @@ export async function getCaseReport(input: {
     });
   }
 
+  const recordWithCompany = await db.getDb()('case_reports')
+    .where('case_reports.id', input.caseId)
+    .leftJoin('branches', 'case_reports.branch_id', 'branches.id')
+    .leftJoin('companies', 'case_reports.company_id', 'companies.id')
+    .select('case_reports.*', 'branches.name as branch_name', 'companies.name as company_name')
+    .first();
+
+  const record = recordWithCompany ?? rawRecord;
   const [report] = await enrichCaseReports([record], input.userId);
   const attachments = await db.getDb()('case_attachments')
     .where({ case_id: input.caseId })
@@ -575,6 +593,7 @@ export async function createCaseReport(input: {
   userId: string;
   title: string;
   description: string;
+  branchId?: string | null;
 }): Promise<CaseReport> {
   const title = ensureNonEmpty(input.title, 'Title');
   const description = ensureNonEmpty(input.description, 'Description');
@@ -589,6 +608,7 @@ export async function createCaseReport(input: {
         title,
         description,
         created_by: input.userId,
+        branch_id: input.branchId ?? null,
       })
       .returning('*');
     await upsertParticipant(created.id, input.userId, {
@@ -611,7 +631,14 @@ export async function createCaseReport(input: {
     createdBy: report.created_by,
   });
 
-  const [enriched] = await enrichCaseReports([report], input.userId);
+  const reportWithNames = await db.getDb()('case_reports')
+    .where('case_reports.id', report.id)
+    .leftJoin('branches', 'case_reports.branch_id', 'branches.id')
+    .leftJoin('companies', 'case_reports.company_id', 'companies.id')
+    .select('case_reports.*', 'branches.name as branch_name', 'companies.name as company_name')
+    .first() ?? report;
+
+  const [enriched] = await enrichCaseReports([reportWithNames], input.userId);
   return enriched;
 }
 
@@ -758,6 +785,7 @@ export async function requestViolationNotice(input: {
     targetUserIds: input.targetUserIds,
     category: 'case_reports',
     sourceCaseReportId: input.caseId,
+    branchId: current.branch_id ?? null,
   });
 
   return getCaseReport({ userId: input.userId, caseId: input.caseId });

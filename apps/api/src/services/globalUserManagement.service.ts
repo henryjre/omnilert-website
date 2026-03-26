@@ -155,10 +155,7 @@ async function getNextEmployeeNumber(): Promise<number> {
   const userMax = await knex('users')
     .max<{ max: string | number | null }>('employee_number as max')
     .first();
-  const identityMax = await knex('employee_identities')
-    .max<{ max: string | number | null }>('employee_number as max')
-    .first();
-  return Math.max(Number(userMax?.max ?? 0), Number(identityMax?.max ?? 0)) + 1;
+  return Number(userMax?.max ?? 0) + 1;
 }
 
 async function syncOdooEmployeesForAssignments(input: {

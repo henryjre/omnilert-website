@@ -26,11 +26,17 @@ export async function list(req: Request, res: Response, next: NextFunction) {
     if (allBranchIds.length === 0) {
       return res.json({ success: true, data: { managementRequests: [], serviceCrewRequests: [] } });
     }
+    const canViewManagementRequests =
+      userPermissions.has(PERMISSIONS.AUTH_REQUEST_VIEW_PRIVATE)
+      || userPermissions.has(PERMISSIONS.AUTH_REQUEST_MANAGE_PRIVATE);
+    const canViewServiceCrewRequests =
+      userPermissions.has(PERMISSIONS.AUTH_REQUEST_VIEW_PUBLIC)
+      || userPermissions.has(PERMISSIONS.AUTH_REQUEST_MANAGE_PUBLIC);
 
     // Management-level requests
     let managementRows: any[] = [];
     let managementRequests: any[] = [];
-    if (userPermissions.has(PERMISSIONS.AUTH_REQUEST_MANAGE_PRIVATE)) {
+    if (canViewManagementRequests) {
       let q = tenantDb('authorization_requests as ar')
         .whereIn('ar.branch_id', allBranchIds)
         .where('ar.level', 'management')
@@ -48,10 +54,7 @@ export async function list(req: Request, res: Response, next: NextFunction) {
     // Service-crew requests (shift_authorizations)
     let authRows: any[] = [];
     let serviceCrewRequests: any[] = [];
-    if (
-      userPermissions.has(PERMISSIONS.AUTH_REQUEST_VIEW_PAGE) ||
-      userPermissions.has(PERMISSIONS.AUTH_REQUEST_MANAGE_PUBLIC)
-    ) {
+    if (canViewServiceCrewRequests) {
       let q = tenantDb('shift_authorizations')
         .whereIn('shift_authorizations.branch_id', allBranchIds)
         .leftJoin('employee_shifts', 'shift_authorizations.shift_id', 'employee_shifts.id')
@@ -98,10 +101,7 @@ export async function list(req: Request, res: Response, next: NextFunction) {
       reviewed_by_name: row.reviewed_by ? (namesById[row.reviewed_by] ?? null) : null,
     }));
 
-    if (
-      userPermissions.has(PERMISSIONS.AUTH_REQUEST_VIEW_PAGE) ||
-      userPermissions.has(PERMISSIONS.AUTH_REQUEST_MANAGE_PUBLIC)
-    ) {
+    if (canViewServiceCrewRequests) {
       const mappedAuthRows = authRows.map((row: any) => ({
         ...row,
         employee_name: namesById[row.user_id] || row.shift_employee_name || null,

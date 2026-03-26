@@ -44,14 +44,18 @@ const SHIFT_STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
 // --- Helpers ---
 
 function fmtShift(iso: string) {
-  return new Date(iso).toLocaleString('en-US', {
-    month: 'long',
-    day: '2-digit',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
+  const d = new Date(iso);
+  const date = d.toLocaleString("en-US", {
+    month: "long",
+    day: "2-digit",
+    year: "numeric",
+  });
+  const time = d.toLocaleString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
     hour12: true,
   });
+  return `${date} at ${time}`;
 }
 
 function fmtTime(iso: string) {
@@ -61,6 +65,22 @@ function fmtTime(iso: string) {
   const year = d.getFullYear();
   const time = d.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
   return `${month} ${day}, ${year} at ${time}`;
+}
+
+function fmtShiftUpdatedValue(field: string, value: unknown): string {
+  if (value == null) return "—";
+  if (typeof value !== "string") return String(value);
+
+  const isShiftDateTimeField = field === "start_datetime"
+    || field === "end_datetime"
+    || field === "shift_start"
+    || field === "shift_end";
+
+  if (!isShiftDateTimeField) return value;
+
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return fmtShift(d.toISOString());
 }
 
 function parseEmployeeName(raw: string): { prefix: string; name: string } {
@@ -670,30 +690,30 @@ function LogEntry({
           </div>
           {!isLast && <div className="w-px flex-1 bg-gray-200" />}
         </div>
-        <div className="pb-4">
+        <div className="min-w-0 flex-1 pb-4">
           <p className="font-medium text-gray-900">Shift Updated</p>
           <p className="text-xs text-gray-500">{fmtTime(log.event_time)}</p>
           {changes && Object.keys(changes).length > 0 && (
-            <div className="mt-2 overflow-hidden rounded border border-gray-200 text-xs">
-              <table className="w-full">
+            <div className="mt-2 overflow-x-auto rounded border border-gray-200 text-xs">
+              <table className="min-w-full whitespace-nowrap">
                 <thead>
                   <tr className="bg-gray-50">
-                    <th className="px-2 py-1 text-left text-gray-500">Field</th>
-                    <th className="px-2 py-1 text-left text-gray-500">From</th>
-                    <th className="px-2 py-1 text-left text-gray-500">To</th>
+                    <th className="px-3 py-1.5 text-left font-medium text-gray-500">Field</th>
+                    <th className="px-3 py-1.5 text-left font-medium text-gray-500">From</th>
+                    <th className="px-3 py-1.5 text-left font-medium text-gray-500">To</th>
                   </tr>
                 </thead>
                 <tbody>
                   {Object.entries(changes).map(([field, { from, to }]) => (
                     <tr key={field} className="border-t border-gray-100">
-                      <td className="px-2 py-1 font-medium text-gray-700">
+                      <td className="px-3 py-1.5 font-medium text-gray-700">
                         {FIELD_LABELS[field] ?? field}
                       </td>
-                      <td className="max-w-[100px] truncate px-2 py-1 text-gray-500 line-through">
-                        {String(from ?? '—')}
+                      <td className="px-3 py-1.5 text-gray-500 line-through">
+                        {fmtShiftUpdatedValue(field, from)}
                       </td>
-                      <td className="max-w-[100px] truncate px-2 py-1 text-gray-900">
-                        {String(to ?? '—')}
+                      <td className="px-3 py-1.5 font-medium text-gray-900">
+                        {fmtShiftUpdatedValue(field, to)}
                       </td>
                     </tr>
                   ))}
@@ -1143,10 +1163,24 @@ export function EmployeeShiftsPage() {
   const branchList = useBranchStore((s) => s.branches);
   const socket = useSocket('/employee-shifts');
   const currentUser = useAuthStore((s) => s.user);
-  const { hasPermission } = usePermission();
-  const canApprove = hasPermission(PERMISSIONS.AUTH_REQUEST_MANAGE_PUBLIC);
-  const canEndShift = hasPermission(PERMISSIONS.SCHEDULE_END_SHIFT);
+  const { hasAnyPermission, hasPermission } = usePermission();
+  const canManageShift = hasAnyPermission(
+    PERMISSIONS.SCHEDULE_MANAGE_SHIFT,
+    PERMISSIONS.SCHEDULE_END_SHIFT,
+    PERMISSIONS.AUTH_REQUEST_MANAGE_PUBLIC,
+  );
+  const canApprove = canManageShift;
+  const canEndShift = canManageShift;
   const canSubmitPublicAuthRequest = hasPermission(PERMISSIONS.ACCOUNT_MANAGE_SCHEDULE);
+
+  type EndShiftConfirmStep = 1 | 2;
+  interface EndShiftConfirmState {
+    shiftId: string;
+    step: EndShiftConfirmStep;
+  }
+
+  const [endShiftConfirm, setEndShiftConfirm] = useState<EndShiftConfirmState | null>(null);
+  const [endShiftLoading, setEndShiftLoading] = useState(false);
 
   useEffect(() => {
     api
@@ -1189,14 +1223,15 @@ export function EmployeeShiftsPage() {
     try {
       const res = await api.get(`/employee-shifts/${shiftId}`);
       setSelectedShift(res.data.data);
-    } catch (err: any) {
-      showErrorToast(err?.response?.data?.error || 'Failed to load shift detail');
+    } catch (err: unknown) {
+      const message = getApiErrorMessage(err, "Failed to load shift detail");
+      showErrorToast(message);
     } finally {
       setDetailLoading(false);
     }
   };
 
-  const handleEndShift = async (shiftId: string) => {
+  const handleEndShift = async (shiftId: string): Promise<boolean> => {
     try {
       const res = await api.post(`/employee-shifts/${shiftId}/end`);
       setShifts((prev) =>
@@ -1205,8 +1240,35 @@ export function EmployeeShiftsPage() {
         ),
       );
       showSuccessToast('Shift ended successfully.');
-    } catch (err: any) {
-      showErrorToast(err?.response?.data?.error || 'Failed to end shift');
+      return true;
+    } catch (err: unknown) {
+      const message = getApiErrorMessage(err, "Failed to end shift");
+      showErrorToast(message);
+      return false;
+    }
+  };
+
+  const requestEndShift = (shiftId: string) => {
+    setEndShiftConfirm({ shiftId, step: 1 });
+  };
+
+  const closeEndShiftConfirm = () => {
+    if (endShiftLoading) return;
+    setEndShiftConfirm(null);
+  };
+
+  const continueEndShiftConfirm = () => {
+    setEndShiftConfirm((prev) => (prev ? { ...prev, step: 2 } : prev));
+  };
+
+  const confirmEndShift = async () => {
+    if (!endShiftConfirm) return;
+    setEndShiftLoading(true);
+    try {
+      const ok = await handleEndShift(endShiftConfirm.shiftId);
+      if (ok) setEndShiftConfirm(null);
+    } finally {
+      setEndShiftLoading(false);
     }
   };
 
@@ -1619,7 +1681,7 @@ export function EmployeeShiftsPage() {
                     && shift.user_id === currentUser?.id
                   }
                   onClick={() => openDetail(shift.id)}
-                  onEndShift={handleEndShift}
+                  onEndShift={requestEndShift}
                   onExchangeShift={setExchangeShiftSource}
                 />
               ))}
@@ -1657,6 +1719,71 @@ export function EmployeeShiftsPage() {
           onClick={() => setSelectedShift(null)}
         />
       )}
+
+      {/* End shift confirmation (2-step) */}
+      <AnimatePresence>
+        {endShiftConfirm && (
+          <AnimatedModal
+            maxWidth="max-w-sm"
+            zIndexClass="z-[60]"
+            onBackdropClick={endShiftLoading ? undefined : closeEndShiftConfirm}
+          >
+            <div className="border-b border-gray-200 px-5 py-4">
+              <p className="font-semibold text-gray-900">
+                {endShiftConfirm.step === 1 ? "End this shift?" : "Final confirmation"}
+              </p>
+            </div>
+            <div className="px-5 py-4">
+              {endShiftConfirm.step === 1 ? (
+                <p className="text-sm text-gray-700">
+                  This will end the active shift and record a checkout time for the employee.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-sm text-gray-700">
+                    You are about to end this shift.
+                  </p>
+                  <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                    <p className="text-sm text-amber-800">
+                      This action can’t be undone.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex gap-3 border-t border-gray-200 px-5 py-4">
+              <Button
+                className="flex-1"
+                variant="secondary"
+                disabled={endShiftLoading}
+                onClick={closeEndShiftConfirm}
+              >
+                Cancel
+              </Button>
+              {endShiftConfirm.step === 1 ? (
+                <Button
+                  className="flex-1"
+                  variant="primary"
+                  disabled={endShiftLoading}
+                  onClick={continueEndShiftConfirm}
+                >
+                  Continue
+                </Button>
+              ) : (
+                <Button
+                  className="flex-1"
+                  variant="danger"
+                  disabled={endShiftLoading}
+                  onClick={confirmEndShift}
+                >
+                  {endShiftLoading ? "Ending..." : "End Shift"}
+                </Button>
+              )}
+            </div>
+          </AnimatedModal>
+        )}
+      </AnimatePresence>
 
       {/* Detail panel */}
       <div
@@ -1716,4 +1843,22 @@ export function EmployeeShiftsPage() {
       />
     </>
   );
+}
+
+function getApiErrorMessage(err: unknown, fallback: string): string {
+  if (!err || typeof err !== "object") return fallback;
+
+  const maybeResponse = "response" in err ? err.response : undefined;
+  if (!maybeResponse || typeof maybeResponse !== "object") return fallback;
+
+  const maybeData = "data" in maybeResponse ? maybeResponse.data : undefined;
+  if (!maybeData || typeof maybeData !== "object") return fallback;
+
+  const maybeError = "error" in maybeData ? maybeData.error : undefined;
+  if (typeof maybeError === "string" && maybeError.trim() !== "") return maybeError;
+
+  const maybeMessage = "message" in maybeData ? maybeData.message : undefined;
+  if (typeof maybeMessage === "string" && maybeMessage.trim() !== "") return maybeMessage;
+
+  return fallback;
 }

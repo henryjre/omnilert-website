@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth.js';
 import { resolveCompany } from '../middleware/companyResolver.js';
-import { requirePermission } from '../middleware/rbac.js';
+import { requireAnyPermission, requirePermission } from '../middleware/rbac.js';
 import { PERMISSIONS } from '@omnilert/shared';
 import * as shiftAuthorizationController from '../controllers/shiftAuthorization.controller.js';
 
@@ -19,14 +19,22 @@ router.post(
 /** Manager approves an authorization */
 router.post(
   '/:id/approve',
-  requirePermission(PERMISSIONS.AUTH_REQUEST_MANAGE_PUBLIC),
+  requireAnyPermission(
+    PERMISSIONS.SCHEDULE_MANAGE_SHIFT,
+    PERMISSIONS.SCHEDULE_END_SHIFT,
+    PERMISSIONS.AUTH_REQUEST_MANAGE_PUBLIC,
+  ),
   shiftAuthorizationController.approve,
 );
 
 /** Manager rejects an authorization */
 router.post(
   '/:id/reject',
-  requirePermission(PERMISSIONS.AUTH_REQUEST_MANAGE_PUBLIC),
+  requireAnyPermission(
+    PERMISSIONS.SCHEDULE_MANAGE_SHIFT,
+    PERMISSIONS.SCHEDULE_END_SHIFT,
+    PERMISSIONS.AUTH_REQUEST_MANAGE_PUBLIC,
+  ),
   shiftAuthorizationController.reject,
 );
 

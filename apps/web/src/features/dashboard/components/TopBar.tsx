@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bell, CheckCheck, Menu, X } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 import axios from 'axios';
 import { BranchSelector } from '@/shared/components/BranchSelector';
 import { useAuthStore } from '@/features/auth/store/authSlice';
@@ -29,6 +30,12 @@ function getShiftExchangeId(linkUrl: string | null | undefined): string | null {
   return match?.[1] ?? null;
 }
 
+function getShiftId(linkUrl: string | null | undefined): string | null {
+  if (!linkUrl) return null;
+  const match = linkUrl.match(/[?&]shiftId=([0-9a-f-]{36})/i);
+  return match?.[1] ?? null;
+}
+
 const TYPE_DOT: Record<string, string> = {
   success: 'bg-green-500',
   warning: 'bg-yellow-500',
@@ -45,38 +52,18 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
   const updateUser = useAuthStore((s) => s.updateUser);
   const setTokens = useAuthStore((s) => s.setTokens);
   const logoutStore = useAuthStore((s) => s.logout);
-  const { fetchBranches, setSelectedBranchIds } = useBranchStore();
+  const { fetchBranches } = useBranchStore();
   const { hasPermission } = usePermission();
   const navigate = useNavigate();
   const socket = useSocket('/notifications');
-  const shiftSocket = useSocket('/employee-shifts');
 
   const { unreadCount, setUnreadCount, increment, decrement, reset, pushNotification } = useNotificationStore();
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<any[]>([]);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const syncSelectedBranchFromActiveShift = useCallback(async () => {
-    try {
-      const res = await api.get('/account/schedule');
-      const schedule: any[] = res.data.data || [];
-      const activeShift = schedule
-        .filter((s) => s.status === 'active' && !!s.branch_id)
-        .sort(
-          (a, b) => new Date(b.shift_start).getTime() - new Date(a.shift_start).getTime(),
-        )[0];
-      if (activeShift?.branch_id) {
-        setSelectedBranchIds([activeShift.branch_id]);
-      }
-    } catch {
-      // Ignore sync failures; user can still use current branch selection.
-    }
-  }, [setSelectedBranchIds]);
-
   useEffect(() => {
-    fetchBranches().then(() => {
-      void syncSelectedBranchFromActiveShift();
-    });
+    void fetchBranches();
   }, []);
 
   // Fetch notification count + recent notifications on mount
@@ -107,6 +94,19 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
       navigate('/login', { replace: true });
     });
 
+    socket.on('user:auth-scope-updated', async () => {
+      const refreshToken = useAuthStore.getState().refreshToken;
+      if (!refreshToken) return;
+
+      try {
+        const res = await axios.post('/api/v1/auth/refresh', { refreshToken });
+        const { accessToken, refreshToken: newRefreshToken } = res.data.data;
+        setTokens(accessToken, newRefreshToken);
+      } catch {
+        // Ignore: client can still recover on next auth refresh cycle.
+      }
+    });
+
     socket.on('user:branch-assignments-updated', async (data: any) => {
       const nextBranchIds: string[] = Array.isArray(data?.branchIds) ? data.branchIds : [];
 
@@ -126,43 +126,15 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
       }
 
       await fetchBranches();
-
-      await syncSelectedBranchFromActiveShift();
     });
 
     return () => {
       socket.off('notification:new');
       socket.off('auth:force-logout');
+      socket.off('user:auth-scope-updated');
       socket.off('user:branch-assignments-updated');
     };
-  }, [socket, updateUser, setTokens, fetchBranches, hasPermission, setSelectedBranchIds, increment, pushNotification, syncSelectedBranchFromActiveShift, logoutStore, navigate]);
-
-  // Real-time: auto-select designated branch after employee check-in / active shift updates.
-  useEffect(() => {
-    if (!shiftSocket) return;
-
-    const handleShiftData = (data: any) => {
-      if (data?.user_id !== user?.id) return;
-      if (data?.status === 'active' && data?.branch_id) {
-        setSelectedBranchIds([data.branch_id]);
-      }
-    };
-
-    const handleShiftLog = (data: any) => {
-      if (data?.log_type !== 'check_in') return;
-      void syncSelectedBranchFromActiveShift();
-    };
-
-    shiftSocket.on('shift:new', handleShiftData);
-    shiftSocket.on('shift:updated', handleShiftData);
-    shiftSocket.on('shift:log-new', handleShiftLog);
-
-    return () => {
-      shiftSocket.off('shift:new', handleShiftData);
-      shiftSocket.off('shift:updated', handleShiftData);
-      shiftSocket.off('shift:log-new', handleShiftLog);
-    };
-  }, [shiftSocket, user?.id, setSelectedBranchIds, syncSelectedBranchFromActiveShift]);
+  }, [socket, updateUser, setTokens, fetchBranches, hasPermission, increment, pushNotification, logoutStore, navigate]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -195,6 +167,10 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
       decrement();
     }
     setOpen(false);
+    if (typeof n.link_url === "string" && (n.link_url.startsWith("/account/authorization-requests") || n.link_url.startsWith("/account/cash-requests"))) {
+      navigate(n.link_url);
+      return;
+    }
     if (n.link_url?.startsWith('/case-reports')) {
       navigate(n.link_url);
       return;
@@ -205,6 +181,12 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
     }
     if (n.link_url === '/account/settings') {
       navigate('/account/settings');
+      return;
+    }
+    const shiftId = getShiftId(n.link_url);
+    if (shiftId) {
+      // Navigate using the full link_url to preserve extra params like ?highlight=.
+      navigate(n.link_url ?? `/account/schedule?shiftId=${shiftId}`);
       return;
     }
     const shiftExchangeId = getShiftExchangeId(n.link_url);
@@ -223,7 +205,7 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
   const unreadNotifications = notifications.filter((n) => !n.is_read);
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center border-b border-gray-200 bg-white px-3 sm:px-6 relative">
+    <header className="sticky top-0 z-30 flex h-16 items-center border-b border-gray-200 bg-white px-3 sm:px-6">
       <div className="flex items-center lg:hidden">
         <button
           type="button"
@@ -255,16 +237,29 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
             )}
           </button>
 
-          {open && (
+          <AnimatePresence initial={false}>
+            {open && (
             <>
-              {/* Mobile panel */}
-              <button
+              {/* Mobile backdrop */}
+              <motion.button
                 type="button"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
                 className="fixed inset-0 z-40 bg-black/30 md:hidden"
                 onClick={() => setOpen(false)}
                 aria-label="Close notifications"
               />
-              <div className="fixed inset-x-3 top-20 bottom-3 z-50 flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl md:hidden">
+
+              {/* Mobile panel */}
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.15, ease: [0.2, 0, 0, 1] }}
+                className="fixed inset-x-3 top-20 bottom-3 z-50 flex flex-col overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl md:hidden"
+              >
                 <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
                   <h3 className="text-sm font-semibold text-gray-900">Notifications</h3>
                   <div className="flex items-center gap-2">
@@ -322,10 +317,16 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
                     View all notifications
                   </button>
                 </div>
-              </div>
+              </motion.div>
 
               {/* Desktop dropdown */}
-              <div className="absolute right-0 top-full z-50 mt-2 hidden w-96 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl md:block">
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 8 }}
+                transition={{ duration: 0.15, ease: [0.2, 0, 0, 1] }}
+                className="absolute right-0 top-full z-50 mt-2 hidden w-96 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl md:block"
+              >
                 <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
                   <h3 className="text-sm font-semibold text-gray-900">Notifications</h3>
                   {unreadCount > 0 && (
@@ -373,9 +374,10 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
                     View all notifications
                   </button>
                 </div>
-              </div>
+              </motion.div>
             </>
           )}
+          </AnimatePresence>
         </div>
 
         <div className="flex items-center gap-2">

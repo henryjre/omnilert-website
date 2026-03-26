@@ -55,13 +55,25 @@ async function enrichAuditRows(rows: any[]): Promise<StoreAudit[]> {
     const auditor = auditorIds.length > 0 && normalized.auditor_user_id
       ? auditors[normalized.auditor_user_id]
       : null;
+    const companyId = typeof (row as { company_id?: unknown }).company_id === 'string'
+      ? (row as { company_id: string }).company_id
+      : null;
+    const companyName = typeof (row as { company_name?: unknown }).company_name === 'string'
+      ? (row as { company_name: string }).company_name
+      : null;
+    const companySlug = typeof (row as { company_slug?: unknown }).company_slug === 'string'
+      ? (row as { company_slug: string }).company_slug
+      : null;
     return {
       ...normalized,
       branch_name: branchMap.get(normalized.branch_id) ?? null,
       auditor_name: auditor
         ? `${auditor.first_name ?? ''} ${auditor.last_name ?? ''}`.trim() || null
         : null,
-      company_name: (row as any).company_name ?? null,
+      company:
+        companyId && companyName && companySlug
+          ? { id: companyId, name: companyName, slug: companySlug }
+          : null,
     };
   });
 }
@@ -153,7 +165,12 @@ async function defaultListStoreAuditRows(input: {
 
   const rows = await query
     .clone()
-    .select('store_audits.*', 'companies.name as company_name')
+    .select(
+      'store_audits.*',
+      'companies.id as company_id',
+      'companies.slug as company_slug',
+      'companies.name as company_name',
+    )
     .orderBy(sortOrder as Array<{ column: string; order: 'asc' | 'desc'; nulls?: 'first' | 'last' }>)
     .limit(pageSize)
     .offset((page - 1) * pageSize);
@@ -172,7 +189,12 @@ async function defaultGetAuditById(auditId: string): Promise<any | null> {
   const row = await db.getDb()('store_audits')
     .leftJoin('companies', 'store_audits.company_id', 'companies.id')
     .where('store_audits.id', auditId)
-    .select('store_audits.*', 'companies.name as company_name')
+    .select(
+      'store_audits.*',
+      'companies.id as company_id',
+      'companies.slug as company_slug',
+      'companies.name as company_name',
+    )
     .first();
   return row ?? null;
 }

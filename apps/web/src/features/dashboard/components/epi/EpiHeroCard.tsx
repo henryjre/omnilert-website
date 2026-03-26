@@ -17,6 +17,17 @@ interface EpiHeroCardProps {
   selectedEntry: EpiMonthEntry;
 }
 
+/**
+ * Formats an EPI score defensively.
+ *
+ * Even though we normalize API data, this ensures the UI never hard-crashes
+ * if a score becomes non-finite due to unexpected data.
+ */
+function formatEpiScore(score: number, fractionDigits: number = 1): string {
+  if (!Number.isFinite(score)) return "—";
+  return score.toFixed(fractionDigits);
+}
+
 function getNextWeeklySnapshotDate(now: Date = new Date()): Date {
   const manilaNow = new Date(now.getTime() + MANILA_OFFSET_MS);
   const nextSnapshot = new Date(manilaNow.getTime());
@@ -63,10 +74,7 @@ export function EpiHeroCard({ data, selectedEntry }: EpiHeroCardProps) {
   const deltaStyle = { color: delta === 0 ? 'rgba(255,255,255,0.5)' : zoneColor };
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, delay: 0.1, ease: 'easeOut' }}
+    <div
       className="rounded-xl p-6 shadow-lg"
       style={{
         background: 'linear-gradient(135deg, rgb(var(--primary-600)) 0%, rgb(var(--primary-700)) 50%, rgb(var(--primary-800)) 100%)',
@@ -92,7 +100,7 @@ export function EpiHeroCard({ data, selectedEntry }: EpiHeroCardProps) {
               </span>
               <span className="h-[3px] w-[3px] rounded-full bg-white/20" />
               <span className="text-sm font-bold tabular-nums text-white/70">
-                {previousEntry.score.toFixed(1)}
+                {formatEpiScore(previousEntry.score)}
               </span>
             </div>
           )}
@@ -106,7 +114,7 @@ export function EpiHeroCard({ data, selectedEntry }: EpiHeroCardProps) {
             <div className="mt-1 flex items-center justify-center gap-2 lg:justify-start">
               <DeltaIcon className="h-5 w-5" style={deltaStyle} />
               <span className="text-sm font-semibold" style={deltaStyle}>
-                {delta > 0 ? '+' : ''}{delta.toFixed(1)} from {previousEntry?.month ?? 'last month'}
+                {delta > 0 ? "+" : ""}{formatEpiScore(delta)} from {previousEntry?.month ?? "last month"}
               </span>
             </div>
           </div>
@@ -120,7 +128,7 @@ export function EpiHeroCard({ data, selectedEntry }: EpiHeroCardProps) {
               <p className="text-[10px] font-semibold uppercase tracking-widest text-white/60">
                 Projected EPI
               </p>
-              <p className="text-lg font-bold text-white">{selectedEntry.score.toFixed(1)}</p>
+              <p className="text-lg font-bold text-white">{formatEpiScore(selectedEntry.score)}</p>
               <p className="mt-1 text-[10px] font-medium text-white/60">
                 Next weekly calculation on:
               </p>
@@ -142,6 +150,6 @@ export function EpiHeroCard({ data, selectedEntry }: EpiHeroCardProps) {
           />
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 }

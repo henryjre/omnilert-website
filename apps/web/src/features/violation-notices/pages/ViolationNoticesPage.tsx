@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import type { ViolationNotice, ViolationNoticeDetail, ViolationNoticeMessage } from '@omnilert/shared';
+import type { ViolationNotice, ViolationNoticeDetail, ViolationNoticeMessage, GroupedUsersResponse } from '@omnilert/shared';
 import { PERMISSIONS } from '@omnilert/shared';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from '@/features/auth/hooks/useAuth';
@@ -28,6 +28,7 @@ import { useBranchStore } from '@/shared/store/branchStore';
 import {
   deleteVNMessage,
   editVNMessage,
+  getGroupedUsers,
   getViolationNotice,
   getVNMentionables,
   leaveVNDiscussion,
@@ -43,6 +44,7 @@ import type { MentionableUser, MentionableRole } from '../../case-reports/servic
 import { ViolationNoticeCard } from '../components/ViolationNoticeCard';
 import { ViolationNoticeDetailPanel } from '../components/ViolationNoticeDetailPanel';
 import { CreateVNModal } from '../components/CreateVNModal';
+import { GroupedUserSelect } from '../components/GroupedUserSelect';
 
 type StatusTab = 'all' | 'queued' | 'discussion' | 'issuance' | 'disciplinary_meeting' | 'completed' | 'rejected';
 
@@ -117,6 +119,8 @@ export function ViolationNoticesPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
 
+  const [groupedUsers, setGroupedUsers] = useState<GroupedUsersResponse | null>(null);
+  const [loadingGroupedUsers, setLoadingGroupedUsers] = useState(false);
 
   const canManage = hasPermission(PERMISSIONS.VIOLATION_NOTICE_MANAGE);
 
@@ -205,6 +209,14 @@ export function ViolationNoticesPage() {
         setMentionables({ users: data.users as MentionableUser[], roles: data.roles as MentionableRole[] });
       })
       .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    setLoadingGroupedUsers(true);
+    void getGroupedUsers()
+      .then((data) => setGroupedUsers(data))
+      .catch(() => undefined)
+      .finally(() => setLoadingGroupedUsers(false));
   }, []);
 
 

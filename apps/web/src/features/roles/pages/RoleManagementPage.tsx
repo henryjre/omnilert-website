@@ -8,6 +8,7 @@ import { Spinner } from '@/shared/components/ui/Spinner';
 import { api } from '@/shared/services/api.client';
 import { useAppToast } from '@/shared/hooks/useAppToast';
 import {
+  PERMISSIONS,
   PERMISSION_CATEGORIES,
   PERMISSION_DESCRIPTIONS,
   PERMISSION_PREREQUISITES,
@@ -30,6 +31,21 @@ interface Permission {
   name: string;
   key: string;
   category: string;
+}
+
+const PERMISSION_NAME_OVERRIDES: Partial<Record<string, string>> = {
+  [PERMISSIONS.CASE_REPORT_MANAGE]: 'Manage Case Reports',
+  [PERMISSIONS.EMPLOYEE_PROFILES_VIEW]: 'View',
+  [PERMISSIONS.SCHEDULE_VIEW]: 'View',
+  [PERMISSIONS.SCHEDULE_MANAGE_SHIFT]: 'Manage Shift',
+  [PERMISSIONS.SCHEDULE_END_SHIFT]: 'Manage Shift',
+  [PERMISSIONS.VIOLATION_NOTICE_MANAGE]: 'Manage Violations',
+  [PERMISSIONS.WORKPLACE_RELATIONS_VIEW]: 'View',
+  [PERMISSIONS.CASH_REQUESTS_VIEW]: 'View',
+};
+
+function isManageShiftPermissionKey(key: string): boolean {
+  return key === PERMISSIONS.SCHEDULE_MANAGE_SHIFT || key === PERMISSIONS.SCHEDULE_END_SHIFT;
 }
 
 function TogglePill({
@@ -104,7 +120,10 @@ export function RoleManagementPage() {
         api.get('/permissions'),
       ]);
       const nextRoles = (rolesRes.data.data || []) as Role[];
-      const nextPermissions = (permsRes.data.data || []) as Permission[];
+      const nextPermissions = ((permsRes.data.data || []) as Permission[]).map((permission) => ({
+        ...permission,
+        name: PERMISSION_NAME_OVERRIDES[permission.key] ?? permission.name,
+      }));
       setRoles(nextRoles);
       setPermissions(nextPermissions);
       return { roles: nextRoles, permissions: nextPermissions };
@@ -157,12 +176,16 @@ export function RoleManagementPage() {
   const togglePermission = (permId: string) => {
     setRoleDraft((prev) => {
       if (!prev) return prev;
+      const toggledPermission = permissions.find((p) => p.id === permId);
+      const linkedManageShiftIds = toggledPermission?.key === PERMISSIONS.AUTH_REQUEST_MANAGE_PUBLIC
+        ? permissions.filter((permission) => isManageShiftPermissionKey(permission.key)).map((permission) => permission.id)
+        : [];
       const isEnabling = !prev.permissionIds.includes(permId);
       let nextIds = new Set(prev.permissionIds);
 
       if (isEnabling) {
         // Walk up the prerequisite chain (enable all prerequisites)
-        const toEnable = [permId];
+        const toEnable = [permId, ...linkedManageShiftIds];
         while (toEnable.length > 0) {
           const id = toEnable.pop()!;
           nextIds.add(id);
@@ -179,7 +202,7 @@ export function RoleManagementPage() {
         }
       } else {
         // Walk down the dependents chain (disable all dependents)
-        const toDisable = [permId];
+        const toDisable = [permId, ...linkedManageShiftIds];
         while (toDisable.length > 0) {
           const id = toDisable.pop()!;
           nextIds.delete(id);
@@ -527,15 +550,7 @@ export function RoleManagementPage() {
                               return (
                                 <div
                                   key={permission.id}
-                                  className="flex cursor-pointer items-start gap-3 rounded-lg px-2 py-2 hover:bg-gray-50"
-                                  onClick={() =>
-                                    !isPrerequisite && togglePermission(permission.id)
-                                  }
-                                  title={
-                                    isPrerequisite
-                                      ? 'Disable dependent permissions first'
-                                      : undefined
-                                  }
+                                  className="flex items-start gap-3 rounded-lg px-2 py-2 hover:bg-gray-50"
                                 >
                                   <div className="mt-0.5 flex-shrink-0">
                                     <TogglePill

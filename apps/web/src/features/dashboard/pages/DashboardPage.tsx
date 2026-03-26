@@ -7,7 +7,12 @@ import { useAppToast } from '@/shared/hooks/useAppToast';
 import { Button } from '@/shared/components/ui/Button';
 import { EpiDashboard } from '../components/epi/EpiDashboard';
 import { DashboardPageSkeleton } from '../components/epi/EpiSkeletons';
-import { fetchEpiDashboard, fetchEpiLeaderboardSummary, getCurrentManilaMonthKey } from '../services/epi.api';
+import {
+  fetchDashboardCheckInStatus,
+  fetchEpiDashboard,
+  fetchEpiLeaderboardSummary,
+  getCurrentManilaMonthKey,
+} from '../services/epi.api';
 import {
   resolveDashboardPullMetrics,
 } from '../services/dashboardPullRefresh';
@@ -74,11 +79,21 @@ export function DashboardPage() {
     ...refreshPolicy,
     gcTime: Number.POSITIVE_INFINITY,
   });
+  const checkInStatusQuery = useQuery({
+    queryKey: ['dashboard-check-in-status'],
+    queryFn: fetchDashboardCheckInStatus,
+    enabled: canViewPerformanceIndex,
+    ...refreshPolicy,
+    gcTime: Number.POSITIVE_INFINITY,
+  });
 
   const leaderboardDetailFetchCount = useIsFetching({
     queryKey: ['epi-leaderboard-detail', selectedMonthKey],
   });
-  const isRefreshing = dashboardQuery.isFetching || leaderboardSummaryQuery.isFetching || leaderboardDetailFetchCount > 0;
+  const isRefreshing = dashboardQuery.isFetching
+    || leaderboardSummaryQuery.isFetching
+    || checkInStatusQuery.isFetching
+    || leaderboardDetailFetchCount > 0;
   const showPullIndicator = isMobileViewport && !showPullRefreshSkeleton && (pullPhase === 'pulling' || pullPhase === 'armed');
   const pullIconRotation = pullMetrics.progress * 180;
   const pullIconScale = 0.78 + (pullMetrics.progress * 0.22);
@@ -125,6 +140,7 @@ export function DashboardPage() {
       const results = await Promise.allSettled([
         dashboardQuery.refetch({ cancelRefetch: false, throwOnError: true }),
         leaderboardSummaryQuery.refetch({ cancelRefetch: false, throwOnError: true }),
+        checkInStatusQuery.refetch({ cancelRefetch: false, throwOnError: true }),
         queryClient.refetchQueries(
           {
             queryKey: ['epi-leaderboard-detail', selectedMonthKey],
@@ -147,7 +163,7 @@ export function DashboardPage() {
         setPullPhase('idle');
       }
     }
-  }, [dashboardQuery, leaderboardSummaryQuery, queryClient, selectedMonthKey, showErrorToast]);
+  }, [dashboardQuery, leaderboardSummaryQuery, checkInStatusQuery, queryClient, selectedMonthKey, showErrorToast]);
 
   const triggerPullRefresh = useCallback(() => {
     if (pullRefreshFrameRef.current !== null) {
@@ -276,29 +292,33 @@ export function DashboardPage() {
             </div>
           )}
           {dashboardQuery.data && !showPullRefreshSkeleton && (
-            <EpiDashboard
-              data={dashboardQuery.data}
-              leaderboard={leaderboardSummaryQuery.data ?? []}
-              leaderboardLoading={leaderboardSummaryQuery.isPending}
-              leaderboardError={leaderboardSummaryQuery.error ? 'Failed to load leaderboard.' : null}
-              firstName={user?.firstName || 'User'}
-              headerAction={!isMobileViewport ? (
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => { void handleRefresh(); }}
-                  disabled={isRefreshing}
-                  title="Refresh dashboard"
-                  className="hidden gap-2 rounded-xl border border-gray-200 bg-white/80 px-3.5 py-2 text-gray-700 shadow-sm backdrop-blur-sm hover:bg-white sm:inline-flex dark:border-gray-700 dark:bg-gray-900/50 dark:text-gray-100 dark:hover:bg-gray-800"
-                >
-                  <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-                  <span>{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
-                </Button>
-              ) : null}
-              selectedMonthKey={selectedMonthKey}
-              onSelectMonth={setSelectedMonthKey}
-            />
+            <>
+              <EpiDashboard
+                data={dashboardQuery.data}
+                leaderboard={leaderboardSummaryQuery.data ?? []}
+                leaderboardLoading={leaderboardSummaryQuery.isPending}
+                leaderboardError={leaderboardSummaryQuery.error ? 'Failed to load leaderboard.' : null}
+                checkInStatus={checkInStatusQuery.data ?? null}
+                checkInStatusLoading={checkInStatusQuery.isPending && !checkInStatusQuery.data}
+                firstName={user?.firstName || 'User'}
+                headerAction={!isMobileViewport ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => { void handleRefresh(); }}
+                    disabled={isRefreshing}
+                    title="Refresh dashboard"
+                    className="hidden gap-2 rounded-xl border border-gray-200 bg-white/80 px-3.5 py-2 text-gray-700 shadow-sm backdrop-blur-sm hover:bg-white sm:inline-flex dark:border-gray-700 dark:bg-gray-900/50 dark:text-gray-100 dark:hover:bg-gray-800"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                    <span>{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
+                  </Button>
+                ) : null}
+                selectedMonthKey={selectedMonthKey}
+                onSelectMonth={setSelectedMonthKey}
+              />
+            </>
           )}
         </>
       )}

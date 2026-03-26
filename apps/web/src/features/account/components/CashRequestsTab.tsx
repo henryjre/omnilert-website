@@ -515,25 +515,81 @@ export function CashRequestsTab() {
   const [selectedRequest, setSelectedRequest] = useState<CashRequest | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  const { selectedBranchIds } = useBranchStore();
+  const selectedBranchIds = useBranchStore((s) => s.selectedBranchIds);
+  const branches = useBranchStore((s) => s.branches);
+  const branchesLoading = useBranchStore((s) => s.loading);
   const { hasPermission } = usePermission();
   const { error: showErrorToast } = useAppToast();
   const canSubmitCashRequest = hasPermission(PERMISSIONS.ACCOUNT_MANAGE_CASH_REQUEST);
 
   useEffect(() => {
-    api
-      .get('/account/cash-requests')
-      .then((res) => setRequests((res.data.data as CashRequest[]) ?? []))
-      .catch((err: unknown) => {
-        const axiosErr = err as { response?: { data?: { error?: string; message?: string } } };
-        showErrorToast(
-          axiosErr?.response?.data?.error ??
-          axiosErr?.response?.data?.message ??
-          'Failed to load cash requests.',
+    /**
+     * On hard reload, branches hydrate async and our API client only attaches X-Company-Id
+     * once branches are loaded. If we fetch too early, the request can be scoped to the
+     * user's "default" company and return an empty list, and we won't refetch.
+     *
+     * Fix: wait for branches to be available, then fetch for each selected company
+     * (or all accessible companies when selection is empty) and merge results.
+     */
+    if (branchesLoading) return;
+    if (branches.length === 0) return;
+
+    let cancelled = false;
+    setLoading(true);
+
+    const selectedBranchIdSet = new Set(selectedBranchIds);
+    const selectedCompanyIds = Array.from(
+      new Set(
+        branches
+          .filter((b) => selectedBranchIdSet.size === 0 || selectedBranchIdSet.has(b.id))
+          .map((b) => b.companyId),
+      ),
+    );
+
+    void (async () => {
+      try {
+        const results = await Promise.allSettled(
+          selectedCompanyIds.map((companyId) =>
+            api.get("/account/cash-requests", {
+              headers: { "X-Company-Id": companyId },
+            }),
+          ),
         );
-      })
-      .finally(() => setLoading(false));
-  }, [showErrorToast]);
+
+        const merged: CashRequest[] = [];
+        for (const r of results) {
+          if (r.status !== "fulfilled") continue;
+          const data = r.value.data?.data;
+          const arr = Array.isArray(data) ? (data as CashRequest[]) : [];
+          merged.push(...arr);
+        }
+
+        const uniqueById = new Map<string, CashRequest>();
+        for (const req of merged) uniqueById.set(req.id, req);
+
+        const deduped = Array.from(uniqueById.values()).sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+        );
+
+        if (!cancelled) setRequests(deduped);
+      } catch (err: unknown) {
+        const axiosErr = err as { response?: { data?: { error?: string; message?: string } } };
+        if (!cancelled) {
+          showErrorToast(
+            axiosErr?.response?.data?.error ??
+            axiosErr?.response?.data?.message ??
+            "Failed to load cash requests.",
+          );
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [branchesLoading, branches, selectedBranchIds, showErrorToast]);
 
   /** Fetch full detail for the selected request. */
   const openDetail = async (id: string) => {
@@ -541,7 +597,11 @@ export function CashRequestsTab() {
     const partial = requests.find((r) => r.id === id) ?? null;
     setSelectedRequest(partial);
     try {
-      const res = await api.get(`/account/cash-requests/${id}`);
+      const companyId = partial?.company_id;
+      const res = await api.get(
+        `/account/cash-requests/${id}`,
+        companyId ? { headers: { "X-Company-Id": companyId } } : undefined,
+      );
       setSelectedRequest(res.data.data as CashRequest);
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { error?: string; message?: string } } };

@@ -3,6 +3,7 @@ import { X, Clock } from 'lucide-react';
 import { api } from '@/shared/services/api.client';
 import { Button } from '@/shared/components/ui/Button';
 import { Spinner } from '@/shared/components/ui/Spinner';
+import { AnimatedModal } from "@/shared/components/ui/AnimatedModal";
 import { useAppToast } from '@/shared/hooks/useAppToast';
 
 interface EvaluatedUser {
@@ -393,13 +394,13 @@ export function PeerEvaluationModal({
 
   if (loading) {
     return (
-      <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4">
-        <div className="w-full max-w-lg overflow-hidden rounded-xl bg-white shadow-xl">
+      <AnimatedModal onBackdropClick={onClose} zIndexClass="z-[70]" maxWidth="max-w-lg">
+        <div className="w-full overflow-hidden rounded-xl bg-white shadow-xl">
           <div className="flex justify-center py-16">
             <Spinner size="lg" />
           </div>
         </div>
-      </div>
+      </AnimatedModal>
     );
   }
 
@@ -472,9 +473,9 @@ export function PeerEvaluationModal({
   ];
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4">
+    <AnimatedModal onBackdropClick={handleClose} zIndexClass="z-[70]" maxWidth="max-w-lg">
       <div
-        className="w-full max-w-lg overflow-hidden rounded-xl bg-white shadow-xl"
+        className="w-full overflow-hidden rounded-xl bg-white shadow-xl"
         role="dialog"
         aria-modal="true"
         aria-label="Peer Evaluation"
@@ -614,6 +615,6 @@ export function PeerEvaluationModal({
           )}
         </div>
       </div>
-    </div>
+    </AnimatedModal>
   );
 }

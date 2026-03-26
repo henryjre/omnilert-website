@@ -83,6 +83,9 @@ export interface ViolationNotice {
   rejected_by: string | null;
   rejected_by_name?: string | null;
   rejection_reason: string | null;
+  branch_id: string | null;
+  branch_name?: string | null;
+  company_name?: string | null;
   source_case_report_id: string | null;
   source_store_audit_id: string | null;
   issuance_file_url: string | null;

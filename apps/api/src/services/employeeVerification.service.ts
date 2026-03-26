@@ -420,8 +420,8 @@ export async function approveEmploymentRequirementSubmission(input: {
 
     // Shared canonical valid ID sync from requirement submission.
     if (submission.requirement_code === 'government_issued_id') {
-      await db.getDb()('users')
-        .where({ id: submission.user_id })
+      await trx('user_sensitive_info')
+        .where({ user_id: submission.user_id })
         .update({
           valid_id_url: submission.document_url,
           valid_id_updated_at: new Date(),

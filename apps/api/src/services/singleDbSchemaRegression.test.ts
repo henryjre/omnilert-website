@@ -37,6 +37,7 @@ const branchManagementPagePath = path.resolve(srcDir, '..', '..', 'web', 'src', 
 const roleManagementPagePath = path.resolve(srcDir, '..', '..', 'web', 'src', 'features', 'roles', 'pages', 'RoleManagementPage.tsx');
 const requestVNModalPath = path.resolve(srcDir, '..', '..', 'web', 'src', 'features', 'violation-notices', 'components', 'RequestVNModal.tsx');
 const caseReportDetailPanelPath = path.resolve(srcDir, '..', '..', 'web', 'src', 'features', 'case-reports', 'components', 'CaseReportDetailPanel.tsx');
+const storeAuditsPagePath = path.resolve(srcDir, '..', '..', 'web', 'src', 'features', 'store-audits', 'pages', 'StoreAuditsPage.tsx');
 const authorizationRequestsPagePath = path.resolve(srcDir, '..', '..', 'web', 'src', 'features', 'authorization-requests', 'pages', 'AuthorizationRequestsPage.tsx');
 const sharedPermissionsConstantsPath = path.resolve(srcDir, '..', '..', '..', 'packages', 'shared', 'src', 'constants', 'permissions.ts');
 
@@ -585,12 +586,18 @@ test('grouped users endpoint is company-context scoped and supports peer evaluat
     /PERMISSIONS\.VIOLATION_NOTICE_MANAGE/,
     'grouped-users route should continue allowing violation notice creators',
   );
+  assert.match(
+    routesSource,
+    /PERMISSIONS\.STORE_AUDIT_MANAGE/,
+    'grouped-users route should allow store audit managers requesting VNs',
+  );
 });
 
 test('case report VN request flow uses request permission and case-report endpoint', () => {
   const modalSource = fs.readFileSync(requestVNModalPath, 'utf8');
   const violationNoticeRoutesSource = fs.readFileSync(violationNoticeRoutesPath, 'utf8');
   const caseReportRoutesSource = fs.readFileSync(caseReportRoutesPath, 'utf8');
+  const storeAuditsSource = fs.readFileSync(storeAuditsPagePath, 'utf8');
 
   assert.match(
     modalSource,
@@ -609,6 +616,11 @@ test('case report VN request flow uses request permission and case-report endpoi
     /\{canRequestVN && !report\.vn_requested && !report\.linked_vn_id && \(/,
     'Case report Request VN button should be gated by canRequestVN to match backend authorization',
   );
+  assert.match(
+    storeAuditsSource,
+    /const canRequestVN = hasAnyPermission\([\s\S]*PERMISSIONS\.STORE_AUDIT_MANAGE[\s\S]*PERMISSIONS\.VIOLATION_NOTICE_MANAGE[\s\S]*\)/,
+    'Store audits Request VN action should allow STORE_AUDIT_MANAGE and VIOLATION_NOTICE_MANAGE users',
+  );
 
   assert.match(
     caseReportRoutesSource,
@@ -622,8 +634,8 @@ test('case report VN request flow uses request permission and case-report endpoi
   );
   assert.match(
     violationNoticeRoutesSource,
-    /\/from-store-audit',[\s\S]*requirePermission\(PERMISSIONS\.VIOLATION_NOTICE_MANAGE\)/,
-    'from-store-audit route should require VIOLATION_NOTICE_MANAGE',
+    /\/from-store-audit',[\s\S]*requireAnyPermission\([\s\S]*PERMISSIONS\.STORE_AUDIT_MANAGE[\s\S]*PERMISSIONS\.VIOLATION_NOTICE_MANAGE[\s\S]*\)/,
+    'from-store-audit route should allow STORE_AUDIT_MANAGE or VIOLATION_NOTICE_MANAGE',
   );
 });
 

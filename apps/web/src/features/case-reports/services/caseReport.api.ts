@@ -36,7 +36,7 @@ export async function getCaseReport(caseId: string) {
   return response.data.data as CaseReportDetail;
 }
 
-export async function createCaseReport(payload: { title: string; description: string }) {
+export async function createCaseReport(payload: { title: string; description: string; branchId?: string | null }) {
   const response = await api.post('/case-reports', payload);
   return response.data.data as CaseReport;
 }

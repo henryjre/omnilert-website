@@ -13,12 +13,38 @@ Available namespaces: `/pos-verification`, `/pos-session`, `/employee-shifts`, `
 
 Standard pattern for any page that shows a list of items with detail/actions:
 
-- Left: scrollable card list
-- Right: detail panel that opens on card selection
-- Do NOT use centered modals for item detail or approval/rejection actions.
-- Exception: two-step confirmation prompts (e.g., permanent delete confirm) may use a modal.
+- **List**: scrollable **vertical stack** or **responsive grid** of clickable cards (e.g. `sm:grid-cols-2 lg:grid-cols-3`). Use **equal-height** card shells (flex column, spacer, footer row) when cards show the same kind of summary (Employee Verifications, audit-style lists).
+- **Detail**: slide-over (or full-width on small screens) that opens on card selection — not a centered dialog for the main record.
+- Do **not** use centered modals for item detail or inline approve/reject forms.
+- **Confirmation** for destructive or irreversible actions (approve/reject confirm): use **`AnimatedModal`** (see below), not ad-hoc `fixed inset-0` markup.
+
+### Tabs and filters (management lists)
+
+- **Primary row** (category / type): underline style — `border-b` on container, active tab `border-b-2 border-primary-600 text-primary-600`; optional **pending count** pills on tabs when useful.
+- **Secondary row** (status): same underline pattern; icons + labels (hide labels on narrow breakpoints if needed). Changing status should reset pagination to page 1 when applicable.
+- **Status chips** on cards and in panel headers: use shared **`Badge`** (`variant`: `success` | `danger` | `warning` | `default`) instead of one-off `rounded-full` color classes.
+
+### Detail panel + stacking
+
+- When the panel must sit above app layout reliably, render **backdrop + panel** with **`createPortal(..., document.body)`**.
+- Use a **higher z-index** for confirm layers than the panel (e.g. panel `z-50`, confirm modal `z-[60]`).
+
+### Loading (dense management pages)
+
+- Prefer a **full-section skeleton** (header, tab bars, grid of placeholder cards with `animate-pulse`) over a single centered spinner when the page structure is stable.
+
+### AnimatedModal (approve / reject and similar)
+
+- Import **`AnimatedModal`** from `@/shared/components/ui/AnimatedModal` and wrap conditional open state in **`AnimatePresence`** from `framer-motion` (exit animations require both).
+- Props: **`maxWidth`** (e.g. `max-w-sm` for short confirms), optional **`zIndexClass`** (default `z-50`; use **`z-[60]`** when stacking above a `z-50` slide panel), **`onBackdropClick`** to dismiss (omit or pass `undefined` while async work is in flight so backdrop does not close).
+- **Cancel** should be **`disabled`** while the primary action is processing, matching the primary button.
+- Inner layout: header border-b, body padding, footer border-t with **`Button`** variants — keep content inside the modal card; **`AnimatedModal`** already provides backdrop + scaled card motion and portals to `document.body`.
+
+**Reference implementations:** `EmployeeVerificationsPage.tsx` (confirm over portaled panel), `AuthorizationRequestsPage.tsx` (`ManagementDetailPanel` / `ServiceCrewDetailPanel` confirm flows).
 
 ## Filter Panels
+
+- Applies to **expandable filter sheets** (e.g. Employee Profiles, report-style filters). **Tab-only** status/type strips (underline tabs, no Apply button) are a separate pattern — see **Tabs and filters** above (Employee Verifications, Authorization Requests, Store Audits).
 
 - Use staged controls: explicit **Apply**, **Clear**, and **Cancel** actions.
 - Do NOT apply filters live on input change.

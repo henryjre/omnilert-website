@@ -9,7 +9,9 @@
       "Bash(pnpm install:*)",
       "Bash(pnpm --filter @omnilert/web build)",
       "Bash(pnpm --filter @omnilert/shared build)",
-      "Bash(pnpm --filter @omnilert/api build)"
+      "Bash(pnpm --filter @omnilert/api build)",
+      "Bash(git:*)",
+      "Bash(node -e \":*)"
     ]
   }
 }

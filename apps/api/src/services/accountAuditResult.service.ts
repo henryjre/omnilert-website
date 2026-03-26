@@ -393,6 +393,7 @@ export function createAccountAuditResultService(
     async listAccountAuditResults(input: {
       userId: string;
       type?: StoreAuditType | 'all';
+      branchIds?: string[];
       page?: number;
       pageSize?: number;
     }): Promise<ListAccountAuditResultsResponse> {
@@ -404,9 +405,14 @@ export function createAccountAuditResultService(
         type: input.type && input.type !== 'all' ? input.type : undefined,
       });
 
+      const branchIdSet = input.branchIds && input.branchIds.length > 0
+        ? new Set(input.branchIds)
+        : null;
+
       const ownedRows = rows
         .filter((row) => row.status === 'completed')
         .filter((row) => isOwnedByViewer(row, viewerIdentity))
+        .filter((row) => branchIdSet === null || branchIdSet.has(row.branch_id))
         .sort(sortCompletedRowsDesc);
 
       const total = ownedRows.length;

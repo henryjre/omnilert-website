@@ -46,8 +46,10 @@ export const PERMISSIONS = {
   EMPLOYEE_PROFILES_VIEW: 'employee_profiles.view',
   EMPLOYEE_PROFILES_MANAGE_WORK: 'employee_profiles.manage_work',
 
-  // Employee Schedule (2)
+  // Employee Schedule (3)
   SCHEDULE_VIEW: 'schedule.view',
+  SCHEDULE_MANAGE_SHIFT: 'schedule.manage_shift',
+  // Legacy compatibility key while roles migrate to schedule.manage_shift
   SCHEDULE_END_SHIFT: 'schedule.end_shift',
 
   // Violation Notices (2)
@@ -142,6 +144,7 @@ export const PERMISSION_CATEGORIES: Record<string, { label: string; permissions:
     label: 'Employee Schedule',
     permissions: [
       PERMISSIONS.SCHEDULE_VIEW,
+      PERMISSIONS.SCHEDULE_MANAGE_SHIFT,
       PERMISSIONS.SCHEDULE_END_SHIFT,
     ],
   },
@@ -184,6 +187,7 @@ export const PERMISSION_PREREQUISITES: Partial<Record<PermissionKey, PermissionK
   [PERMISSIONS.CASE_REPORT_MANAGE]: PERMISSIONS.CASE_REPORT_VIEW,
   [PERMISSIONS.STORE_AUDIT_MANAGE]: PERMISSIONS.STORE_AUDIT_VIEW,
   [PERMISSIONS.EMPLOYEE_PROFILES_MANAGE_WORK]: PERMISSIONS.EMPLOYEE_PROFILES_VIEW,
+  [PERMISSIONS.SCHEDULE_MANAGE_SHIFT]: PERMISSIONS.SCHEDULE_VIEW,
   [PERMISSIONS.SCHEDULE_END_SHIFT]: PERMISSIONS.SCHEDULE_VIEW,
   [PERMISSIONS.VIOLATION_NOTICE_MANAGE]: PERMISSIONS.VIOLATION_NOTICE_VIEW,
   [PERMISSIONS.CASH_REQUESTS_MANAGE]: PERMISSIONS.CASH_REQUESTS_VIEW,
@@ -223,7 +227,8 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
   [PERMISSIONS.EMPLOYEE_PROFILES_VIEW]: 'Access the Employee Profiles page and view profile data',
   [PERMISSIONS.EMPLOYEE_PROFILES_MANAGE_WORK]: 'Edit work information on employee profiles',
   [PERMISSIONS.SCHEDULE_VIEW]: 'Access the Employee Schedule page and view schedule data',
-  [PERMISSIONS.SCHEDULE_END_SHIFT]: 'End shifts for all employees on the schedule',
+  [PERMISSIONS.SCHEDULE_MANAGE_SHIFT]: 'Approve/reject public shift authorizations and end shifts for all employees on the schedule',
+  [PERMISSIONS.SCHEDULE_END_SHIFT]: 'Approve/reject public shift authorizations and end shifts for all employees on the schedule',
   [PERMISSIONS.VIOLATION_NOTICE_VIEW]: 'Access the Violation Notices page and view notice data',
   [PERMISSIONS.VIOLATION_NOTICE_MANAGE]: 'Create, confirm, reject, issue, and complete violation notices',
   [PERMISSIONS.WORKPLACE_RELATIONS_VIEW]: 'Access the Workplace Relations page and view peer evaluations',

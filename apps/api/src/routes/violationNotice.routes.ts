@@ -77,6 +77,7 @@ router.use(authenticate, resolveCompany);
 router.get(
   '/grouped-users',
   requireAnyPermission(
+    PERMISSIONS.STORE_AUDIT_MANAGE,
     PERMISSIONS.VIOLATION_NOTICE_MANAGE,
     PERMISSIONS.VIOLATION_NOTICE_VIEW,
     PERMISSIONS.WORKPLACE_RELATIONS_VIEW,
@@ -92,7 +93,7 @@ router.post(
 );
 router.post(
   '/from-store-audit',
-  requirePermission(PERMISSIONS.VIOLATION_NOTICE_MANAGE),
+  requireAnyPermission(PERMISSIONS.STORE_AUDIT_MANAGE, PERMISSIONS.VIOLATION_NOTICE_MANAGE),
   validateBody(fromStoreAuditSchema),
   violationNoticeController.createFromStoreAudit,
 );

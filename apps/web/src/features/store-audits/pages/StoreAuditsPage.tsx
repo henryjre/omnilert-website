@@ -22,7 +22,7 @@ import { CssAuditCard } from '../components/CssAuditCard';
 import { ComplianceAuditCard } from '../components/ComplianceAuditCard';
 import { CssAuditDetailPanel } from '../components/CssAuditDetailPanel';
 import { ComplianceAuditDetailPanel } from '../components/ComplianceAuditDetailPanel';
-import { StoreAuditPaginationFooter } from '../components/StoreAuditPaginationFooter';
+import { Pagination } from '../../../shared/components/ui/Pagination';
 import { resolveStoreAuditPaginationState } from './storeAuditPagination';
 
 type CategoryTab = 'all' | StoreAuditType;
@@ -80,12 +80,12 @@ function StoreAuditsSkeleton() {
 
 export function StoreAuditsPage() {
   const socket = useSocket('/store-audits');
-  const { hasPermission } = usePermission();
+  const { hasAnyPermission, hasPermission } = usePermission();
   const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const currentUserId = useAuthStore((state) => state.user?.id ?? null);
   const selectedBranchIds = useBranchStore((s) => s.selectedBranchIds);
   const canProcessAudit = hasPermission(PERMISSIONS.STORE_AUDIT_MANAGE);
-  const canRequestVN = hasPermission(PERMISSIONS.VIOLATION_NOTICE_MANAGE);
+  const canRequestVN = hasAnyPermission(PERMISSIONS.STORE_AUDIT_MANAGE, PERMISSIONS.VIOLATION_NOTICE_MANAGE);
   const [searchParams, setSearchParams] = useSearchParams();
   const initialAuditIdRef = useRef<string | null>(searchParams.get('auditId'));
   const groupedUsersReqIdRef = useRef(0);
@@ -465,20 +465,14 @@ export function StoreAuditsPage() {
                 ))}
               </div>
 
-              {totalPages > 1 && (
-                <StoreAuditPaginationFooter
-                  currentPage={currentPage}
-                  totalPages={totalPages}
-                  onPrevious={() => {
-                    setPage(Math.max(1, currentPage - 1));
-                    setSelectedAuditId(null);
-                  }}
-                  onNext={() => {
-                    setPage(Math.min(totalPages, currentPage + 1));
-                    setSelectedAuditId(null);
-                  }}
-                />
-              )}
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={(p) => {
+                  setPage(p);
+                  setSelectedAuditId(null);
+                }}
+              />
             </>
           )}
         </div>

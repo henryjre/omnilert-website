@@ -226,13 +226,30 @@ export async function changeMyPassword(req: Request, res: Response, next: NextFu
     }
 
     const passwordHash = await hashPassword(newPassword);
-    // Ensure provided refresh token belongs to this user/session context
+    if (typeof currentRefreshToken !== 'string' || currentRefreshToken.trim().length === 0) {
+      throw new AppError(400, 'Current session token is required');
+    }
+
+    // Ensure provided refresh token belongs to the authenticated user and is still active.
+    // Note: Company context can be overridden by X-Company-Id for cross-company views, so we
+    // validate the token against persisted sessions instead of comparing token companyId.
     const refreshPayload = verifyRefreshToken(currentRefreshToken);
-    if (refreshPayload.sub !== userId || refreshPayload.companyId !== req.companyContext!.companyId) {
+    if (refreshPayload.sub !== userId) {
       throw new AppError(401, 'Invalid current session token');
     }
 
     const currentTokenHash = crypto.createHash('sha256').update(currentRefreshToken).digest('hex');
+    const activeSession = await masterDb('refresh_tokens')
+      .where({
+        user_id: userId,
+        token_hash: currentTokenHash,
+        is_revoked: false,
+      })
+      .first('id');
+
+    if (!activeSession) {
+      throw new AppError(401, 'Invalid current session token');
+    }
 
     await masterDb.transaction(async (trx) => {
       await trx('users')

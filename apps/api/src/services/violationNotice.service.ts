@@ -25,12 +25,14 @@ type VNRow = {
   status: string;
   category: string;
   description: string;
+  company_id: string;
   created_by: string;
   confirmed_by: string | null;
   issued_by: string | null;
   completed_by: string | null;
   rejected_by: string | null;
   rejection_reason: string | null;
+  branch_id: string | null;
   source_case_report_id: string | null;
   source_store_audit_id: string | null;
   issuance_file_url: string | null;
@@ -316,7 +318,10 @@ async function enrichViolationNotices(
     ),
   ];
 
-  const [participants, messageCounts, unreadCounts, unreadReplyCounts, userNames, targetRows] =
+  const branchIds = [...new Set(vnRows.map((r) => r.branch_id).filter(Boolean) as string[])];
+  const companyIds = [...new Set(vnRows.map((r) => r.company_id).filter(Boolean) as string[])];
+
+  const [participants, messageCounts, unreadCounts, unreadReplyCounts, userNames, targetRows, branchRows, companyRows] =
     await Promise.all([
       db.getDb()('violation_notice_participants')
         .whereIn('violation_notice_id', vnIds)
@@ -324,6 +329,7 @@ async function enrichViolationNotices(
         .select('violation_notice_id', 'is_joined', 'is_muted', 'last_read_at'),
       db.getDb()('violation_notice_messages')
         .whereIn('violation_notice_id', vnIds)
+        .andWhere({ type: 'message' })
         .groupBy('violation_notice_id')
         .select('violation_notice_id')
         .count<{ count: string }[]>({ count: '*' }),
@@ -332,6 +338,7 @@ async function enrichViolationNotices(
         .where('vp.user_id', userId)
         .whereIn('vp.violation_notice_id', vnIds)
         .andWhere('vm.user_id', '!=', userId)
+        .andWhere('vm.type', 'message')
         .andWhere((builder) => {
           builder.whereNull('vp.last_read_at').orWhereRaw('vm.created_at > vp.last_read_at');
         })
@@ -346,6 +353,7 @@ async function enrichViolationNotices(
         .whereIn('reply.violation_notice_id', vnIds)
         .where('parent.user_id', userId)
         .where('reply.user_id', '!=', userId)
+        .andWhere('reply.type', 'message')
         .andWhere((builder) => {
           builder.whereNull('vp.last_read_at').orWhereRaw('reply.created_at > vp.last_read_at');
         })
@@ -354,6 +362,12 @@ async function enrichViolationNotices(
         .count<{ count: string }[]>({ count: 'reply.id' }),
       resolveUserNames(userIdSet),
       db.getDb()('violation_notice_targets').whereIn('violation_notice_id', vnIds).select('*'),
+      branchIds.length > 0
+        ? db.getDb()('branches').whereIn('id', branchIds).select('id', 'name')
+        : Promise.resolve([]),
+      companyIds.length > 0
+        ? db.getDb()('companies').whereIn('id', companyIds).select('id', 'name')
+        : Promise.resolve([]),
     ]);
 
   // Hydrate target user names
@@ -372,6 +386,13 @@ async function enrichViolationNotices(
   const unreadReplyCountMap = new Map(
     unreadReplyCounts.map((row: any) => [String(row.violation_notice_id), Number(row.count ?? 0)]),
   );
+  const branchMap = new Map<string, string>(
+    (branchRows as any[]).map((b: any) => [String(b.id), String(b.name)]),
+  );
+  const companyMap = new Map<string, string>(
+    (companyRows as any[]).map((c: any) => [String(c.id), String(c.name)]),
+  );
+
   const targetsByVN = new Map<string, typeof targetRows>();
   for (const row of targetRows as any[]) {
     const vnId = String(row.violation_notice_id);
@@ -411,6 +432,9 @@ async function enrichViolationNotices(
       rejected_by: row.rejected_by,
       rejected_by_name: row.rejected_by ? (userNames[row.rejected_by] ?? undefined) : null,
       rejection_reason: row.rejection_reason,
+      branch_id: row.branch_id ?? null,
+      branch_name: row.branch_id ? (branchMap.get(row.branch_id) ?? null) : null,
+      company_name: companyMap.get(row.company_id) ?? null,
       source_case_report_id: row.source_case_report_id,
       source_store_audit_id: row.source_store_audit_id,
       issuance_file_url: row.issuance_file_url,
@@ -633,6 +657,7 @@ export async function createViolationNotice(input: {
   userId: string;
   description: string;
   targetUserIds: string[];
+  branchId?: string | null;
   category?: string;
   sourceCaseReportId?: string;
   sourceStoreAuditId?: string;
@@ -654,6 +679,7 @@ export async function createViolationNotice(input: {
         category: input.category ?? 'manual',
         description,
         created_by: input.userId,
+        branch_id: input.branchId ?? null,
         source_case_report_id: input.sourceCaseReportId ?? null,
         source_store_audit_id: input.sourceStoreAuditId ?? null,
       })
@@ -795,9 +821,47 @@ export async function issueViolationNotice(input: {
     status: 'issuance',
   });
 
+  try {
+    await notifyViolationNoticeIssuanceTargets({
+      companyId: input.companyId,
+      vnId: input.vnId,
+      vnNumber: record.vn_number,
+    });
+  } catch (err) {
+    logger.error({ err, vnId: input.vnId }, "Failed to notify VN issuance to target users");
+  }
+
   const updated = await getVNOrThrow(input.vnId);
   const [enriched] = await enrichViolationNotices(input.userId, [updated]);
   return enriched;
+}
+
+async function notifyViolationNoticeIssuanceTargets(input: {
+  companyId: string;
+  vnId: string;
+  vnNumber: number;
+}): Promise<void> {
+  const targets = await db.getDb()("violation_notice_targets")
+    .where({ violation_notice_id: input.vnId })
+    .select("user_id");
+  if (targets.length === 0) return;
+
+  const vnLabel = `VN-${String(input.vnNumber).padStart(4, "0")}`;
+  const message =
+    `A Violation Notice (${vnLabel}) has been issued. Please review the details and wait for further instructions from HR regarding the disciplinary meeting.`;
+
+  await Promise.all(
+    targets.map(async (target: { user_id: unknown }) => {
+      await createAndDispatchNotification({
+        userId: String(target.user_id),
+        companyId: input.companyId,
+        title: "Official Violation Notice",
+        message,
+        type: "danger",
+        linkUrl: `/violation-notices?vnId=${input.vnId}`,
+      });
+    }),
+  );
 }
 
 export async function uploadIssuanceFile(input: {
@@ -952,16 +1016,16 @@ async function notifyViolationNoticeCompletionTargets(input: {
   const vnLabel = `VN-${String(input.vnNumber).padStart(4, '0')}`;
   const epiMessage =
     input.epiDecrease > 0
-      ? ` EPI decrease applied: ${input.epiDecrease.toFixed(1)}.`
-      : '';
+      ? ` EPI decrease: ${input.epiDecrease.toFixed(1)} will be applied at the next EPI calculation.`
+      : "";
 
   await Promise.all(
-    targets.map(async (target: any) => {
+    targets.map(async (target: { user_id: unknown }) => {
       await createAndDispatchNotification({
         userId: String(target.user_id),
         companyId: input.companyId,
-        title: 'Violation notice completed',
-        message: `Violation Notice ${vnLabel} has been completed.${epiMessage}`,
+        title: "Violation Notice Completed",
+        message: `Violation Notice ${vnLabel} has been completed.${epiMessage ? ` ${epiMessage}` : ""}`,
         type: input.epiDecrease > 0 ? 'warning' : 'info',
         linkUrl: `/violation-notices?vnId=${input.vnId}`,
       });
@@ -1305,46 +1369,74 @@ export async function getMentionables(input: {
 }
 
 export async function getGroupedUsersForVN(input: {
-  companyId: string;
+  companyId?: string;
+  includeAllCompanies?: boolean;
 }): Promise<GroupedUsersResponse> {
   const masterDb = db.getDb();
 
-  const [userRows, superAdminRows] = await Promise.all([
-    masterDb('user_company_access as uca')
-      .join('users', 'uca.user_id', 'users.id')
-      .where('uca.company_id', input.companyId)
-      .andWhere('uca.is_active', true)
-      .andWhere('users.is_active', true)
-      .select('users.id', 'users.email', 'users.first_name', 'users.last_name', 'users.avatar_url'),
-    masterDb('super_admins').select('email'),
-  ]);
+  type UserRow = {
+    id: string;
+    email: string;
+    first_name: string | null;
+    last_name: string | null;
+    avatar_url: string | null;
+  };
 
-  const superAdminEmails = new Set(superAdminRows.map((row: any) => String(row.email).toLowerCase()));
+  type SuperAdminRow = {
+    email: string;
+  };
 
-  const filteredUsers = (userRows as any[]).filter(
-    (row) => !superAdminEmails.has(String(row.email).toLowerCase()),
-  );
+  type UserRoleRow = {
+    user_id: string;
+    name: string;
+    priority: number;
+  };
+
+  if (!input.includeAllCompanies && !input.companyId) {
+    throw new AppError(400, 'companyId is required unless includeAllCompanies is enabled');
+  }
+
+  const [userRows, superAdminRows] = input.includeAllCompanies
+    ? await Promise.all([
+      masterDb('users')
+        .where('users.is_active', true)
+        .select('users.id', 'users.email', 'users.first_name', 'users.last_name', 'users.avatar_url'),
+      masterDb('super_admins').select('email'),
+    ])
+    : await Promise.all([
+      masterDb('user_company_access as uca')
+        .join('users', 'uca.user_id', 'users.id')
+        .where('uca.company_id', input.companyId)
+        .andWhere('uca.is_active', true)
+        .andWhere('users.is_active', true)
+        .select('users.id', 'users.email', 'users.first_name', 'users.last_name', 'users.avatar_url'),
+      masterDb('super_admins').select('email'),
+    ]);
+
+  const typedUserRows = userRows as UserRow[];
+  const typedSuperAdmins = superAdminRows as SuperAdminRow[];
+  const superAdminEmails = new Set(typedSuperAdmins.map((row) => String(row.email).toLowerCase()));
+
+  const filteredUsers = typedUserRows.filter((row) => !superAdminEmails.has(String(row.email).toLowerCase()));
 
   if (filteredUsers.length === 0) {
     return { management: [], service_crew: [], other: [] };
   }
 
-  const userIds = filteredUsers.map((row: any) => String(row.id));
+  const userIds = filteredUsers.map((row) => String(row.id));
 
   // Fetch highest-priority role for each user
-  const userRoleRows = await masterDb('user_roles as ur')
+  const userRoleRows = (await masterDb('user_roles as ur')
     .join('roles as r', 'ur.role_id', 'r.id')
     .whereIn('ur.user_id', userIds)
     .select('ur.user_id', 'r.name', 'r.priority')
-    .orderBy('r.priority', 'desc');
+    .orderBy('r.priority', 'desc')) as UserRoleRow[];
 
   // Build a map of userId → highest-priority role name
   const userTopRoleMap = new Map<string, string>();
-  for (const row of userRoleRows as any[]) {
+  for (const row of userRoleRows) {
     const userId = String(row.user_id);
-    if (!userTopRoleMap.has(userId)) {
-      userTopRoleMap.set(userId, String(row.name));
-    }
+    if (!userTopRoleMap.has(userId)) userTopRoleMap.set(userId, String(row.name));
   }
 
   const management: GroupedUsersResponse['management'] = [];

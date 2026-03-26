@@ -14,6 +14,7 @@ export interface AssignedBranchGroup {
 export async function getAssignedBranches(
   userId: string,
   isSuperAdmin: boolean,
+  canViewAllBranches: boolean,
 ): Promise<AssignedBranchGroup[]> {
   let rows: Array<{
     company_id: string;
@@ -27,6 +28,25 @@ export async function getAssignedBranches(
   if (isSuperAdmin) {
     rows = await db.getDb()('branches as b')
       .join('companies as c', 'b.company_id', 'c.id')
+      .where('b.is_active', true)
+      .where('c.is_active', true)
+      .where('c.is_root', false)
+      .select(
+        'c.id as company_id',
+        'c.name as company_name',
+        'c.slug as company_slug',
+        'b.id as branch_id',
+        'b.name as branch_name',
+        'b.odoo_branch_id',
+      )
+      .orderBy('c.name', 'asc')
+      .orderBy('b.name', 'asc');
+  } else if (canViewAllBranches) {
+    rows = await db.getDb()('user_company_access as uca')
+      .join('companies as c', 'uca.company_id', 'c.id')
+      .join('branches as b', 'b.company_id', 'c.id')
+      .where('uca.user_id', userId)
+      .where('uca.is_active', true)
       .where('b.is_active', true)
       .where('c.is_active', true)
       .where('c.is_root', false)

@@ -13,6 +13,11 @@ router.get(
 );
 
 router.get(
+  '/check-in-status',
+  dashboardController.getCheckInStatus,
+);
+
+router.get(
   '/payslip',
   dashboardController.getPayslip,
 );

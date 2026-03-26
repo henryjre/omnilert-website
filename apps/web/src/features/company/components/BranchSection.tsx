@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import { Plus, Pencil, GitBranch, X } from 'lucide-react';
 import { api } from '@/shared/services/api.client';
 import { useAppToast } from '@/shared/hooks/useAppToast';
@@ -41,15 +42,18 @@ function Toggle({ value, onChange }: ToggleProps) {
   return (
     <button
       type="button"
+      role="switch"
+      aria-checked={value}
       onClick={() => onChange(!value)}
-      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-        value ? 'bg-primary-600' : 'bg-gray-300'
+      className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1 ${
+        value ? 'bg-primary-600' : 'bg-gray-200'
       }`}
     >
-      <span
-        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-          value ? 'translate-x-4' : 'translate-x-0.5'
-        }`}
+      <motion.span
+        animate={{ x: value ? 16 : 2 }}
+        transition={{ type: 'spring', stiffness: 700, damping: 30 }}
+        className="inline-block h-4 w-4 rounded-full bg-white shadow-sm"
+        style={{ marginTop: '2px' }}
       />
     </button>
   );
@@ -163,12 +167,17 @@ export function BranchSection({ companyId }: BranchSectionProps) {
   };
 
   const handleToggleActive = async (branch: Branch) => {
+    setBranches((prev) =>
+      prev.map((b) => (b.id === branch.id ? { ...b, is_active: !branch.is_active } : b)),
+    );
     try {
       await api.put(`/super/companies/${companyId}/branches/${branch.id}`, {
         isActive: !branch.is_active,
       });
-      await fetchBranches();
     } catch (err: any) {
+      setBranches((prev) =>
+        prev.map((b) => (b.id === branch.id ? { ...b, is_active: branch.is_active } : b)),
+      );
       showErrorToast(err.response?.data?.error || 'Failed to update branch');
     }
   };

@@ -59,12 +59,16 @@ export async function getById(req: Request, res: Response, next: NextFunction) {
 export async function create(req: Request, res: Response, next: NextFunction) {
   try {
     const { companyId } = req.companyContext!;
+    const branchId = typeof req.body.branchId === 'string' ? req.body.branchId : null;
+    console.log('[VN create] branchId received:', branchId);
     const data = await violationNoticeService.createViolationNotice({
       companyId,
       userId: req.user!.sub,
       description: String(req.body.description ?? ''),
       targetUserIds: req.body.targetUserIds,
+      branchId,
     });
+    console.log('[VN create] returned branch_id:', data.branch_id, 'branch_name:', data.branch_name);
     res.status(201).json({ success: true, data });
   } catch (error) {
     next(error);
@@ -314,14 +318,24 @@ export async function groupedUsers(req: Request, res: Response, next: NextFuncti
   try {
     const { companyId } = req.companyContext!;
     const auditId = String(req.query.auditId ?? '').trim();
-    let auditCompanyId: string | null = null;
+    const caseId = String(req.query.caseId ?? '').trim();
+    const queryCompanyId = String(req.query.companyId ?? '').trim();
+    const allCompaniesParam = String(req.query.allCompanies ?? '').trim().toLowerCase();
+    const includeAllCompanies = allCompaniesParam === 'true' || allCompaniesParam === '1';
+    let resolvedCompanyId = companyId;
     if (auditId) {
       const auditRow = await db.getDb()('store_audits').where({ id: auditId }).first('company_id');
-      auditCompanyId = auditRow?.company_id ?? null;
+      resolvedCompanyId = auditRow?.company_id ?? companyId;
+    } else if (caseId && /^[0-9a-f-]{36}$/i.test(caseId)) {
+      const caseRow = await db.getDb()('case_reports').where({ id: caseId }).first('company_id');
+      resolvedCompanyId = caseRow?.company_id ?? companyId;
+    } else if (queryCompanyId && /^[0-9a-f-]{36}$/i.test(queryCompanyId)) {
+      resolvedCompanyId = queryCompanyId;
     }
-    const data = await violationNoticeService.getGroupedUsersForVN({
-      companyId: auditCompanyId ?? companyId,
-    });
+
+    const data = includeAllCompanies
+      ? await violationNoticeService.getGroupedUsersForVN({ includeAllCompanies: true })
+      : await violationNoticeService.getGroupedUsersForVN({ companyId: resolvedCompanyId });
     res.json({ success: true, data });
   } catch (error) {
     next(error);
@@ -331,13 +345,18 @@ export async function groupedUsers(req: Request, res: Response, next: NextFuncti
 export async function createFromCaseReport(req: Request, res: Response, next: NextFunction) {
   try {
     const { companyId } = req.companyContext!;
+    const caseId = String(req.body.caseId ?? '');
+    const caseRow = caseId
+      ? await db.getDb()('case_reports').where({ id: caseId }).first('branch_id')
+      : null;
     const data = await violationNoticeService.createViolationNotice({
       companyId,
       userId: req.user!.sub,
       description: String(req.body.description ?? ''),
       targetUserIds: req.body.targetUserIds,
       category: 'case_reports',
-      sourceCaseReportId: String(req.body.caseId ?? ''),
+      sourceCaseReportId: caseId,
+      branchId: caseRow?.branch_id ?? null,
     });
     res.status(201).json({ success: true, data });
   } catch (error) {
@@ -348,7 +367,7 @@ export async function createFromCaseReport(req: Request, res: Response, next: Ne
 export async function createFromStoreAudit(req: Request, res: Response, next: NextFunction) {
   try {
     const auditId = String(req.body.auditId ?? '');
-    const auditRow = await db.getDb()('store_audits').where({ id: auditId }).first('company_id');
+    const auditRow = await db.getDb()('store_audits').where({ id: auditId }).first('company_id', 'branch_id');
     if (!auditRow) {
       throw new AppError(404, 'Store audit not found');
     }
@@ -360,6 +379,7 @@ export async function createFromStoreAudit(req: Request, res: Response, next: Ne
       targetUserIds: req.body.targetUserIds,
       category: 'store_audits',
       sourceStoreAuditId: auditId,
+      branchId: auditRow.branch_id ?? null,
     });
     if (auditId) {
       await db.getDb()('store_audits').where({ id: auditId }).update({

@@ -7,6 +7,7 @@ import { Card, CardBody } from '@/shared/components/ui/Card';
 import { Badge } from '@/shared/components/ui/Badge';
 import { Button } from '@/shared/components/ui/Button';
 import { Spinner } from '@/shared/components/ui/Spinner';
+import { AnimatedModal } from '@/shared/components/ui/AnimatedModal';
 import { api } from '@/shared/services/api.client';
 import { useAuthStore } from '@/features/auth/store/authSlice';
 import { useBranchStore } from '@/shared/store/branchStore';
@@ -64,6 +65,22 @@ function fmtTime(iso: string) {
   const year = d.getFullYear();
   const time = d.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
   return `${month} ${day}, ${year} at ${time}`;
+}
+
+function fmtShiftUpdatedValue(field: string, value: unknown): string {
+  if (value == null) return "—";
+  if (typeof value !== "string") return String(value);
+
+  const isShiftDateTimeField = field === "start_datetime"
+    || field === "end_datetime"
+    || field === "shift_start"
+    || field === "shift_end";
+
+  if (!isShiftDateTimeField) return value;
+
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return fmtShift(d.toISOString());
 }
 
 function fmtTimeShort(dt: string) {
@@ -462,10 +479,10 @@ function LogEntry({
                         {FIELD_LABELS[field] ?? field}
                       </td>
                       <td className="px-3 py-1.5 text-gray-500 line-through">
-                        {String(from ?? '—')}
+                        {fmtShiftUpdatedValue(field, from)}
                       </td>
                       <td className="px-3 py-1.5 font-medium text-gray-900">
-                        {String(to ?? '—')}
+                        {fmtShiftUpdatedValue(field, to)}
                       </td>
                     </tr>
                   ))}
@@ -955,6 +972,7 @@ function MyShiftCard({
   shift,
   branchName,
   canExchangeShift,
+  canEndShift,
   onClick,
   onEndShift,
   onExchangeShift,
@@ -962,6 +980,7 @@ function MyShiftCard({
   shift: any;
   branchName?: string;
   canExchangeShift: boolean;
+  canEndShift: boolean;
   onClick: () => void;
   onEndShift: (id: string) => void;
   onExchangeShift: (shift: any) => void;
@@ -1062,7 +1081,7 @@ function MyShiftCard({
         </div>
 
         {/* Action buttons */}
-        {(canExchangeShift || shift.status === 'active') && (
+        {(canExchangeShift || (shift.status === 'active' && canEndShift)) && (
           <div className="mt-auto flex gap-2 border-t border-gray-100 pt-3">
             {canExchangeShift && (
               <Button
@@ -1077,7 +1096,7 @@ function MyShiftCard({
                 Exchange Shift
               </Button>
             )}
-            {shift.status === 'active' && (
+            {shift.status === 'active' && canEndShift && (
               <Button
                 variant="primary"
                 size="sm"
@@ -1178,6 +1197,18 @@ export function ScheduleTab() {
   const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const canApprove = hasPermission(PERMISSIONS.AUTH_REQUEST_MANAGE_PUBLIC);
   const canSubmitPublicAuthRequest = hasPermission(PERMISSIONS.ACCOUNT_MANAGE_SCHEDULE);
+  const canEndOwnShift = hasPermission(PERMISSIONS.ACCOUNT_MANAGE_SCHEDULE)
+    || hasPermission(PERMISSIONS.SCHEDULE_MANAGE_SHIFT)
+    || hasPermission(PERMISSIONS.SCHEDULE_END_SHIFT);
+
+  type EndShiftConfirmStep = 1 | 2;
+  interface EndShiftConfirmState {
+    shiftId: string;
+    step: EndShiftConfirmStep;
+  }
+
+  const [endShiftConfirm, setEndShiftConfirm] = useState<EndShiftConfirmState | null>(null);
+  const [endShiftLoading, setEndShiftLoading] = useState(false);
 
   useEffect(() => {
     api
@@ -1344,7 +1375,7 @@ export function ScheduleTab() {
     }
   };
 
-  const handleEndShift = async (shiftId: string) => {
+  const handleEndShift = async (shiftId: string): Promise<boolean> => {
     try {
       const res = await api.post(`/employee-shifts/${shiftId}/end`);
       const updated = res.data.data;
@@ -1352,8 +1383,34 @@ export function ScheduleTab() {
         prev.map((s) => (s.id === shiftId ? { ...s, ...updated } : s)),
       );
       showSuccessToast('Shift ended successfully.');
-    } catch (err: any) {
-      showErrorToast(err?.response?.data?.error || err?.response?.data?.message || 'Failed to end shift.');
+      return true;
+    } catch (err: unknown) {
+      showErrorToast(getApiErrorMessage(err, "Failed to end shift."));
+      return false;
+    }
+  };
+
+  const requestEndShift = (shiftId: string) => {
+    setEndShiftConfirm({ shiftId, step: 1 });
+  };
+
+  const closeEndShiftConfirm = () => {
+    if (endShiftLoading) return;
+    setEndShiftConfirm(null);
+  };
+
+  const continueEndShiftConfirm = () => {
+    setEndShiftConfirm((prev) => (prev ? { ...prev, step: 2 } : prev));
+  };
+
+  const confirmEndShift = async () => {
+    if (!endShiftConfirm) return;
+    setEndShiftLoading(true);
+    try {
+      const ok = await handleEndShift(endShiftConfirm.shiftId);
+      if (ok) setEndShiftConfirm(null);
+    } finally {
+      setEndShiftLoading(false);
     }
   };
 
@@ -1730,8 +1787,9 @@ export function ScheduleTab() {
                     && s.user_id
                     && s.user_id === currentUser?.id
                   }
+                  canEndShift={canEndOwnShift}
                   onClick={() => openDetail(s.id)}
-                  onEndShift={handleEndShift}
+                  onEndShift={requestEndShift}
                   onExchangeShift={setExchangeShiftSource}
                 />
               ))}
@@ -1950,6 +2008,89 @@ export function ScheduleTab() {
         initialEvaluationId={peerEvaluationModalId}
         onClose={() => setPeerEvaluationModalId(null)}
       />
+
+      {/* End shift confirmation (2-step) */}
+      <AnimatePresence>
+        {endShiftConfirm && (
+          <AnimatedModal
+            maxWidth="max-w-sm"
+            zIndexClass="z-[60]"
+            onBackdropClick={endShiftLoading ? undefined : closeEndShiftConfirm}
+          >
+            <div className="border-b border-gray-200 px-5 py-4">
+              <p className="font-semibold text-gray-900">
+                {endShiftConfirm.step === 1 ? "End this shift?" : "Final confirmation"}
+              </p>
+            </div>
+            <div className="px-5 py-4">
+              {endShiftConfirm.step === 1 ? (
+                <p className="text-sm text-gray-700">
+                  This will end your active shift and record your checkout time.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-sm text-gray-700">
+                    You are about to end this shift.
+                  </p>
+                  <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                    <p className="text-sm text-amber-800">
+                      This action can’t be undone.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="flex gap-3 border-t border-gray-200 px-5 py-4">
+              <Button
+                className="flex-1"
+                variant="secondary"
+                disabled={endShiftLoading}
+                onClick={closeEndShiftConfirm}
+              >
+                Cancel
+              </Button>
+              {endShiftConfirm.step === 1 ? (
+                <Button
+                  className="flex-1"
+                  variant="primary"
+                  disabled={endShiftLoading}
+                  onClick={continueEndShiftConfirm}
+                >
+                  Continue
+                </Button>
+              ) : (
+                <Button
+                  className="flex-1"
+                  variant="danger"
+                  disabled={endShiftLoading}
+                  onClick={confirmEndShift}
+                >
+                  {endShiftLoading ? "Ending..." : "End Shift"}
+                </Button>
+              )}
+            </div>
+          </AnimatedModal>
+        )}
+      </AnimatePresence>
     </div>
   );
+}
+
+function getApiErrorMessage(err: unknown, fallback: string): string {
+  if (!err || typeof err !== "object") return fallback;
+
+  const maybeResponse = "response" in err ? err.response : undefined;
+  if (!maybeResponse || typeof maybeResponse !== "object") return fallback;
+
+  const maybeData = "data" in maybeResponse ? maybeResponse.data : undefined;
+  if (!maybeData || typeof maybeData !== "object") return fallback;
+
+  const maybeError = "error" in maybeData ? maybeData.error : undefined;
+  if (typeof maybeError === "string" && maybeError.trim() !== "") return maybeError;
+
+  const maybeMessage = "message" in maybeData ? maybeData.message : undefined;
+  if (typeof maybeMessage === "string" && maybeMessage.trim() !== "") return maybeMessage;
+
+  return fallback;
 }

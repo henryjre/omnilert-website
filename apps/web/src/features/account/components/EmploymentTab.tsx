@@ -282,6 +282,84 @@ function shouldApplyRequestedValue(key: string, requestedValue: unknown, current
 const PERSONAL_DRAFT_KEY = 'omnilert:profile:personal-draft';
 const BANK_DRAFT_KEY = 'omnilert:profile:bank-draft';
 
+type PersonalDraft = {
+  firstName: string;
+  lastName: string;
+  mobileNumber: string;
+  legalName: string;
+  birthday: string;
+  gender: string;
+  address: string;
+  sssNumber: string;
+  tinNumber: string;
+  pagibigNumber: string;
+  philhealthNumber: string;
+  maritalStatus: string;
+  emergencyContact: string;
+  emergencyPhone: string;
+  emergencyRelationship: string;
+};
+
+type BankDraft = {
+  bankId: string;
+  bankAccountNumber: string;
+};
+
+function normalizeDraftString(value: unknown): string {
+  return typeof value === 'string' ? value : String(value ?? '');
+}
+
+function buildPersonalDraft(input: Partial<Record<keyof PersonalDraft, unknown>>): PersonalDraft {
+  return {
+    firstName: normalizeDraftString(input.firstName).trim(),
+    lastName: normalizeDraftString(input.lastName).trim(),
+    mobileNumber: normalizeDraftString(input.mobileNumber).trim(),
+    legalName: normalizeDraftString(input.legalName).trim(),
+    birthday: normalizeDraftString(input.birthday).trim(),
+    gender: normalizeDraftString(input.gender).trim(),
+    address: normalizeDraftString(input.address).trim(),
+    sssNumber: normalizeDraftString(input.sssNumber).trim(),
+    tinNumber: normalizeDraftString(input.tinNumber).trim(),
+    pagibigNumber: normalizeDraftString(input.pagibigNumber).trim(),
+    philhealthNumber: normalizeDraftString(input.philhealthNumber).trim(),
+    maritalStatus: normalizeDraftString(input.maritalStatus).trim(),
+    emergencyContact: normalizeDraftString(input.emergencyContact).trim(),
+    emergencyPhone: normalizeDraftString(input.emergencyPhone).trim(),
+    emergencyRelationship: normalizeDraftString(input.emergencyRelationship).trim(),
+  };
+}
+
+function buildBankDraft(input: Partial<Record<keyof BankDraft, unknown>>): BankDraft {
+  return {
+    bankId: normalizeDraftString(input.bankId).trim(),
+    bankAccountNumber: normalizeDraftString(input.bankAccountNumber).trim(),
+  };
+}
+
+function arePersonalDraftsEqual(a: PersonalDraft, b: PersonalDraft): boolean {
+  return (
+    a.firstName === b.firstName
+    && a.lastName === b.lastName
+    && a.mobileNumber === b.mobileNumber
+    && a.legalName === b.legalName
+    && a.birthday === b.birthday
+    && a.gender === b.gender
+    && a.address === b.address
+    && a.sssNumber === b.sssNumber
+    && a.tinNumber === b.tinNumber
+    && a.pagibigNumber === b.pagibigNumber
+    && a.philhealthNumber === b.philhealthNumber
+    && a.maritalStatus === b.maritalStatus
+    && a.emergencyContact === b.emergencyContact
+    && a.emergencyPhone === b.emergencyPhone
+    && a.emergencyRelationship === b.emergencyRelationship
+  );
+}
+
+function areBankDraftsEqual(a: BankDraft, b: BankDraft): boolean {
+  return a.bankId === b.bankId && a.bankAccountNumber === b.bankAccountNumber;
+}
+
 export function EmploymentTab() {
   const updateUser = useAuthStore((s) => s.updateUser);
   const { hasPermission } = usePermission();
@@ -327,6 +405,8 @@ export function EmploymentTab() {
   const [bankDraftRestored, setBankDraftRestored] = useState(false);
   /** Prevents the "draft restored" banner from re-appearing on subsequent fetchProfile calls. */
   const isFirstProfileLoad = useRef(true);
+  const personalBaselineRef = useRef<PersonalDraft | null>(null);
+  const bankBaselineRef = useRef<BankDraft | null>(null);
   const validIdInputRef = useRef<HTMLInputElement>(null);
 
   const [selectedRequirement, setSelectedRequirement] = useState<RequirementItem | null>(null);
@@ -446,6 +526,112 @@ export function EmploymentTab() {
         : (payload.user.bank_account_number || ''),
     );
 
+    // Capture baseline values after applying server + pending-change overlay.
+    const nextPersonalBaseline = buildPersonalDraft({
+      firstName: (
+        isPersonalPending && shouldApplyRequestedValue('firstName', requestedChanges.firstName, payload.user.first_name)
+          ? String(requestedChanges.firstName ?? '')
+          : (payload.user.first_name || '')
+      ),
+      lastName: (
+        isPersonalPending && shouldApplyRequestedValue('lastName', requestedChanges.lastName, payload.user.last_name)
+          ? String(requestedChanges.lastName ?? '')
+          : (payload.user.last_name || '')
+      ),
+      mobileNumber: (
+        isPersonalPending
+        && shouldApplyRequestedValue('mobileNumber', requestedChanges.mobileNumber, payload.user.mobile_number)
+          ? String(requestedChanges.mobileNumber ?? '')
+          : (payload.user.mobile_number || '')
+      ),
+      legalName: (
+        isPersonalPending && shouldApplyRequestedValue('legalName', requestedChanges.legalName, payload.user.legal_name)
+          ? String(requestedChanges.legalName ?? '')
+          : (payload.user.legal_name || '')
+      ),
+      birthday: (
+        isPersonalPending && shouldApplyRequestedValue('birthday', requestedChanges.birthday, payload.user.birthday)
+          ? toDateInput((requestedChanges.birthday as string | null) ?? null)
+          : toDateInput(payload.user.birthday)
+      ),
+      gender: (
+        isPersonalPending && shouldApplyRequestedValue('gender', requestedChanges.gender, payload.user.gender)
+          ? String(requestedChanges.gender ?? '')
+          : (payload.user.gender || '')
+      ),
+      address: (
+        isPersonalPending && shouldApplyRequestedValue('address', requestedChanges.address, payload.user.address)
+          ? String(requestedChanges.address ?? '')
+          : (payload.user.address || '')
+      ),
+      sssNumber: (
+        isPersonalPending && shouldApplyRequestedValue('sssNumber', requestedChanges.sssNumber, payload.user.sss_number)
+          ? String(requestedChanges.sssNumber ?? '')
+          : (payload.user.sss_number || '')
+      ),
+      tinNumber: (
+        isPersonalPending && shouldApplyRequestedValue('tinNumber', requestedChanges.tinNumber, payload.user.tin_number)
+          ? String(requestedChanges.tinNumber ?? '')
+          : (payload.user.tin_number || '')
+      ),
+      pagibigNumber: (
+        isPersonalPending
+        && shouldApplyRequestedValue('pagibigNumber', requestedChanges.pagibigNumber, payload.user.pagibig_number)
+          ? String(requestedChanges.pagibigNumber ?? '')
+          : (payload.user.pagibig_number || '')
+      ),
+      philhealthNumber: (
+        isPersonalPending
+        && shouldApplyRequestedValue('philhealthNumber', requestedChanges.philhealthNumber, payload.user.philhealth_number)
+          ? String(requestedChanges.philhealthNumber ?? '')
+          : (payload.user.philhealth_number || '')
+      ),
+      maritalStatus: (
+        isPersonalPending
+        && shouldApplyRequestedValue('maritalStatus', requestedChanges.maritalStatus, payload.user.marital_status)
+          ? normalizeMaritalStatusValue(requestedChanges.maritalStatus)
+          : normalizeMaritalStatusValue(payload.user.marital_status)
+      ),
+      emergencyContact: (
+        isPersonalPending
+        && shouldApplyRequestedValue('emergencyContact', requestedChanges.emergencyContact, payload.user.emergency_contact)
+          ? String(requestedChanges.emergencyContact ?? '')
+          : (payload.user.emergency_contact || '')
+      ),
+      emergencyPhone: (
+        isPersonalPending
+        && shouldApplyRequestedValue('emergencyPhone', requestedChanges.emergencyPhone, payload.user.emergency_phone)
+          ? String(requestedChanges.emergencyPhone ?? '')
+          : (payload.user.emergency_phone || '')
+      ),
+      emergencyRelationship: (
+        isPersonalPending
+        && shouldApplyRequestedValue(
+          'emergencyRelationship',
+          requestedChanges.emergencyRelationship,
+          payload.user.emergency_relationship,
+        )
+          ? String(requestedChanges.emergencyRelationship ?? '')
+          : (payload.user.emergency_relationship || '')
+      ),
+    });
+
+    const nextBankBaseline = buildBankDraft({
+      bankId: (
+        isBankPending
+          ? (payload.bankVerification.latest?.bank_id ? String(payload.bankVerification.latest.bank_id) : '')
+          : (payload.user.bank_id ? String(payload.user.bank_id) : '')
+      ),
+      bankAccountNumber: (
+        isBankPending
+          ? String(payload.bankVerification.latest?.account_number ?? '')
+          : (payload.user.bank_account_number || '')
+      ),
+    });
+
+    personalBaselineRef.current = nextPersonalBaseline;
+    bankBaselineRef.current = nextBankBaseline;
+
     // ── Restore localStorage drafts (only on first load, only when not locked) ──
     if (isFirstProfileLoad.current) {
       isFirstProfileLoad.current = false;
@@ -454,23 +640,32 @@ export function EmploymentTab() {
         try {
           const raw = localStorage.getItem(PERSONAL_DRAFT_KEY);
           if (raw) {
-            const d = JSON.parse(raw) as Record<string, string>;
-            if (d.firstName != null) setFirstName(d.firstName);
-            if (d.lastName != null) setLastName(d.lastName);
-            if (d.mobileNumber != null) setMobileNumber(d.mobileNumber);
-            if (d.legalName != null) setLegalName(d.legalName);
-            if (d.birthday != null) setBirthday(d.birthday);
-            if (d.gender != null) setGender(d.gender);
-            if (d.address != null) setAddress(d.address);
-            if (d.sssNumber != null) setSssNumber(d.sssNumber);
-            if (d.tinNumber != null) setTinNumber(d.tinNumber);
-            if (d.pagibigNumber != null) setPagibigNumber(d.pagibigNumber);
-            if (d.philhealthNumber != null) setPhilhealthNumber(d.philhealthNumber);
-            if (d.maritalStatus != null) setMaritalStatus(d.maritalStatus);
-            if (d.emergencyContact != null) setEmergencyContact(d.emergencyContact);
-            if (d.emergencyPhone != null) setEmergencyPhone(d.emergencyPhone);
-            if (d.emergencyRelationship != null) setEmergencyRelationship(d.emergencyRelationship);
-            setPersonalDraftRestored(true);
+            const parsed: unknown = JSON.parse(raw);
+            const draft = buildPersonalDraft((parsed && typeof parsed === 'object') ? (parsed as Partial<Record<keyof PersonalDraft, unknown>>) : {});
+            const baseline = personalBaselineRef.current;
+
+            // If draft equals current baseline, it isn't an "unsaved change" — clear it silently.
+            if (baseline && arePersonalDraftsEqual(draft, baseline)) {
+              localStorage.removeItem(PERSONAL_DRAFT_KEY);
+              setPersonalDraftRestored(false);
+            } else {
+              setFirstName(draft.firstName);
+              setLastName(draft.lastName);
+              setMobileNumber(draft.mobileNumber);
+              setLegalName(draft.legalName);
+              setBirthday(draft.birthday);
+              setGender(draft.gender);
+              setAddress(draft.address);
+              setSssNumber(draft.sssNumber);
+              setTinNumber(draft.tinNumber);
+              setPagibigNumber(draft.pagibigNumber);
+              setPhilhealthNumber(draft.philhealthNumber);
+              setMaritalStatus(draft.maritalStatus);
+              setEmergencyContact(draft.emergencyContact);
+              setEmergencyPhone(draft.emergencyPhone);
+              setEmergencyRelationship(draft.emergencyRelationship);
+              setPersonalDraftRestored(true);
+            }
           }
         } catch { /* ignore malformed draft */ }
       } else {
@@ -481,10 +676,18 @@ export function EmploymentTab() {
         try {
           const raw = localStorage.getItem(BANK_DRAFT_KEY);
           if (raw) {
-            const d = JSON.parse(raw) as Record<string, string>;
-            if (d.bankId != null) setBankId(d.bankId);
-            if (d.bankAccountNumber != null) setBankAccountNumber(d.bankAccountNumber);
-            setBankDraftRestored(true);
+            const parsed: unknown = JSON.parse(raw);
+            const draft = buildBankDraft((parsed && typeof parsed === 'object') ? (parsed as Partial<Record<keyof BankDraft, unknown>>) : {});
+            const baseline = bankBaselineRef.current;
+
+            if (baseline && areBankDraftsEqual(draft, baseline)) {
+              localStorage.removeItem(BANK_DRAFT_KEY);
+              setBankDraftRestored(false);
+            } else {
+              setBankId(draft.bankId);
+              setBankAccountNumber(draft.bankAccountNumber);
+              setBankDraftRestored(true);
+            }
           }
         } catch { /* ignore malformed draft */ }
       } else {
@@ -522,14 +725,20 @@ export function EmploymentTab() {
   useEffect(() => {
     if (loading || personalPending) return;
     try {
-      localStorage.setItem(
-        PERSONAL_DRAFT_KEY,
-        JSON.stringify({
-          firstName, lastName, mobileNumber, legalName, birthday, gender,
-          address, sssNumber, tinNumber, pagibigNumber, philhealthNumber,
-          maritalStatus, emergencyContact, emergencyPhone, emergencyRelationship,
-        }),
-      );
+      const baseline = personalBaselineRef.current;
+      const draft = buildPersonalDraft({
+        firstName, lastName, mobileNumber, legalName, birthday, gender,
+        address, sssNumber, tinNumber, pagibigNumber, philhealthNumber,
+        maritalStatus, emergencyContact, emergencyPhone, emergencyRelationship,
+      });
+
+      // If form matches baseline, there is no "unsaved change" to persist.
+      if (baseline && arePersonalDraftsEqual(draft, baseline)) {
+        localStorage.removeItem(PERSONAL_DRAFT_KEY);
+        return;
+      }
+
+      localStorage.setItem(PERSONAL_DRAFT_KEY, JSON.stringify(draft));
     } catch { /* ignore storage quota errors */ }
   }, [
     firstName, lastName, mobileNumber, legalName, birthday, gender,
@@ -542,7 +751,13 @@ export function EmploymentTab() {
   useEffect(() => {
     if (loading || bankPending) return;
     try {
-      localStorage.setItem(BANK_DRAFT_KEY, JSON.stringify({ bankId, bankAccountNumber }));
+      const baseline = bankBaselineRef.current;
+      const draft = buildBankDraft({ bankId, bankAccountNumber });
+      if (baseline && areBankDraftsEqual(draft, baseline)) {
+        localStorage.removeItem(BANK_DRAFT_KEY);
+        return;
+      }
+      localStorage.setItem(BANK_DRAFT_KEY, JSON.stringify(draft));
     } catch { /* ignore */ }
   }, [bankId, bankAccountNumber, loading, bankPending]);
 

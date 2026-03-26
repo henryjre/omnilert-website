@@ -157,12 +157,25 @@ async function resolveAndValidateBranchId(
     .where({ company_id: companyId, user_id: userId })
     .select('branch_id');
 
-  if (assignedBranches.length > 0) {
-    const isAssigned = assignedBranches.some(
+  /**
+   * Branch assignment source of truth is `user_company_branches` (single-db redesign),
+   * but we keep `user_branches` as a legacy/compat fallback.
+   *
+   * We enforce assignment only when at least one assignment row exists.
+   */
+  const companyBranchAssignments = await tenantDb("user_company_branches")
+    .where({ company_id: companyId, user_id: userId })
+    .select("branch_id");
+
+  const effectiveAssignments =
+    companyBranchAssignments.length > 0 ? companyBranchAssignments : assignedBranches;
+
+  if (effectiveAssignments.length > 0) {
+    const isAssigned = effectiveAssignments.some(
       (row: { branch_id: string }) => row.branch_id === branchId,
     );
     if (!isAssigned) {
-      throw new AppError(403, 'You are not assigned to the selected branch');
+      throw new AppError(403, "You are not assigned to the selected branch");
     }
   }
 
@@ -261,11 +274,46 @@ export async function getAuthorizationRequests(req: Request, res: Response, next
     const tenantDb = db.getDb();
     const userId = req.user!.sub;
 
-    const requests = await tenantDb('authorization_requests')
-      .where({ company_id: companyId, user_id: userId })
-      .orderBy('created_at', 'desc');
+    const requests = await tenantDb('authorization_requests as ar')
+      .leftJoin('branches as b', 'b.id', 'ar.branch_id')
+      .leftJoin('users as rev', 'rev.id', 'ar.reviewed_by')
+      .where({ 'ar.company_id': companyId, 'ar.user_id': userId })
+      .select(
+        'ar.*',
+        'b.name as branch_name',
+        tenantDb.raw("CONCAT(rev.first_name, ' ', rev.last_name) as reviewed_by_name"),
+      )
+      .orderBy('ar.created_at', 'desc');
 
     res.json({ success: true, data: requests });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getAuthorizationRequestById(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
+    const userId = req.user!.sub;
+    const { id } = req.params;
+
+    const request = await tenantDb('authorization_requests as ar')
+      .leftJoin('branches as b', 'b.id', 'ar.branch_id')
+      .leftJoin('users as rev', 'rev.id', 'ar.reviewed_by')
+      .where({ 'ar.id': id, 'ar.company_id': companyId, 'ar.user_id': userId })
+      .select(
+        'ar.*',
+        'b.name as branch_name',
+        tenantDb.raw("CONCAT(rev.first_name, ' ', rev.last_name) as reviewed_by_name"),
+      )
+      .first();
+
+    if (!request) {
+      throw new AppError(404, 'Authorization request not found');
+    }
+
+    res.json({ success: true, data: request });
   } catch (err) {
     next(err);
   }
@@ -316,9 +364,16 @@ export async function getCashRequests(req: Request, res: Response, next: NextFun
     const tenantDb = db.getDb();
     const userId = req.user!.sub;
 
-    const requests = await tenantDb('cash_requests')
-      .where({ company_id: companyId, user_id: userId })
-      .orderBy('created_at', 'desc');
+    const requests = await tenantDb('cash_requests as cr')
+      .leftJoin('branches as b', 'b.id', 'cr.branch_id')
+      .leftJoin('users as rev', 'rev.id', 'cr.reviewed_by')
+      .where({ 'cr.company_id': companyId, 'cr.user_id': userId })
+      .select(
+        'cr.*',
+        'b.name as branch_name',
+        tenantDb.raw("CONCAT(rev.first_name, ' ', rev.last_name) as reviewed_by_name"),
+      )
+      .orderBy('cr.created_at', 'desc');
 
     res.json({ success: true, data: requests });
   } catch (err) {
@@ -326,11 +381,47 @@ export async function getCashRequests(req: Request, res: Response, next: NextFun
   }
 }
 
+export async function getCashRequestById(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
+    const userId = req.user!.sub;
+    const { id } = req.params;
+
+    const request = await tenantDb('cash_requests as cr')
+      .leftJoin('branches as b', 'b.id', 'cr.branch_id')
+      .leftJoin('users as rev', 'rev.id', 'cr.reviewed_by')
+      .where({ 'cr.id': id, 'cr.company_id': companyId, 'cr.user_id': userId })
+      .select(
+        'cr.*',
+        'b.name as branch_name',
+        tenantDb.raw("CONCAT(rev.first_name, ' ', rev.last_name) as reviewed_by_name"),
+      )
+      .first();
+
+    if (!request) {
+      throw new AppError(404, 'Cash request not found');
+    }
+
+    res.json({ success: true, data: request });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function getAuditResults(req: Request, res: Response, next: NextFunction) {
   try {
+    const rawBranchIds = req.query.branchIds;
+    const branchIds: string[] = Array.isArray(rawBranchIds)
+      ? rawBranchIds.map(String)
+      : typeof rawBranchIds === 'string' && rawBranchIds.length > 0
+        ? rawBranchIds.split(',')
+        : [];
+
     const data = await listAccountAuditResults({
       userId: req.user!.sub,
       type: req.query.type as 'customer_service' | 'compliance' | 'all' | undefined,
+      branchIds: branchIds.length > 0 ? branchIds : undefined,
       page: req.query.page ? Number(req.query.page) : undefined,
       pageSize: req.query.pageSize ? Number(req.query.pageSize) : undefined,
     });
@@ -387,7 +478,7 @@ export async function createCashRequest(req: Request, res: Response, next: NextF
       }
     }
 
-    const [request] = await tenantDb('cash_requests')
+    const [{ id: newId }] = await tenantDb('cash_requests')
       .insert({
         company_id: companyId,
         user_id: userId,
@@ -400,7 +491,18 @@ export async function createCashRequest(req: Request, res: Response, next: NextF
         account_number: accountNumber || null,
         attachment_url: attachmentUrl,
       })
-      .returning('*');
+      .returning('id');
+
+    const request = await tenantDb('cash_requests as cr')
+      .leftJoin('branches as b', 'b.id', 'cr.branch_id')
+      .leftJoin('users as rev', 'rev.id', 'cr.reviewed_by')
+      .where('cr.id', newId)
+      .select(
+        'cr.*',
+        'b.name as branch_name',
+        tenantDb.raw("CONCAT(rev.first_name, ' ', rev.last_name) as reviewed_by_name"),
+      )
+      .first();
 
     res.status(201).json({ success: true, data: request });
   } catch (err) {

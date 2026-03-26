@@ -1,19 +1,24 @@
 import { useMemo, type ReactNode } from 'react';
+import { motion } from 'framer-motion';
 import type { EpiDashboardData, LeaderboardSummaryEntry } from './types';
 import { GreetingGoalRow } from './GreetingGoalRow';
 import { EpiHeroCard } from './EpiHeroCard';
+import { CheckInStatusCard } from '../checkin/CheckInStatusCard';
 import { MonthSelector } from './MonthSelector';
 import { PerformanceScoresSection } from './PerformanceScoresSection';
 import { OperationalMetricsSection } from './OperationalMetricsSection';
 import { OperationalComplianceSection } from './OperationalComplianceSection';
 import { DisciplineRecognitionSection } from './DisciplineRecognitionSection';
 import { EpiLeaderboard } from './EpiLeaderboard';
+import type { DashboardCheckInStatus } from '../../services/epi.api';
 
 interface EpiDashboardProps {
   data: EpiDashboardData;
   leaderboard: LeaderboardSummaryEntry[];
   leaderboardLoading: boolean;
   leaderboardError: string | null;
+  checkInStatus: DashboardCheckInStatus | null;
+  checkInStatusLoading: boolean;
   firstName: string;
   headerAction?: ReactNode;
   selectedMonthKey: string;
@@ -25,6 +30,8 @@ export function EpiDashboard({
   leaderboard,
   leaderboardLoading,
   leaderboardError,
+  checkInStatus,
+  checkInStatusLoading,
   firstName,
   headerAction,
   selectedMonthKey,
@@ -40,10 +47,25 @@ export function EpiDashboard({
     <div className="space-y-6">
       <GreetingGoalRow firstName={firstName} action={headerAction} />
 
-      <EpiHeroCard
-        data={data}
-        selectedEntry={selectedEntry}
-      />
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.1, ease: 'easeOut' }}
+        className="relative flex flex-col w-full"
+      >
+        <div className="relative z-10 w-full">
+          <EpiHeroCard
+            data={data}
+            selectedEntry={selectedEntry}
+          />
+        </div>
+        <div className="relative z-0 w-full -mt-4">
+          <CheckInStatusCard
+            status={checkInStatus}
+            loading={checkInStatusLoading}
+          />
+        </div>
+      </motion.div>
 
       <div className="space-y-2">
         <p className="text-center text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500">

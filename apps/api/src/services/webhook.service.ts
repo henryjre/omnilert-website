@@ -4,8 +4,13 @@ import { enqueueEarlyCheckInAuthJob } from './attendanceQueue.service.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import { createAndDispatchNotification } from './notification.service.js';
-import { getAttendanceIdentityByAttendanceId } from './odoo.service.js';
+import {
+  batchCheckOutAttendances,
+  getActiveAttendancesForWebsiteUserKey,
+  getAttendanceIdentityByAttendanceId,
+} from './odoo.service.js';
 import { emitStoreAuditEvent } from './storeAuditRealtime.service.js';
+import { SYSTEM_ROLES } from '@omnilert/shared';
 
 const DISABLED_AUDIT_ODOO_COMPANY_IDS = new Set<number>([2]);
 
@@ -347,13 +352,29 @@ export async function processEmployeeShift(
     }
 
     const existingUserId = (existing.user_id as string | null) ?? null;
+
+    // Notify the same assigned user when their shift's time or duty type changes.
+    const relevantShiftFieldChanged = Object.keys(changes).some(
+      (f) => ['start_datetime', 'end_datetime', 'x_role_name'].includes(f),
+    );
+    if (userId && userId === existingUserId && relevantShiftFieldChanged) {
+      await createAndDispatchNotification({
+        userId,
+        title: 'Shift Updated',
+        message: `Your ${shiftLabel} (${shiftWindow}) has been updated.`,
+        type: 'warning',
+        linkUrl: `/account/schedule?shiftId=${String(shift.id)}&highlight=shift_updated`,
+      });
+    }
+
+    // Notify the newly assigned user if the shift was re-assigned.
     if (userId && userId !== existingUserId) {
       await createAndDispatchNotification({
         userId,
         title: 'New Shift Assigned',
         message: `You have been assigned a ${shiftLabel} (${shiftWindow}).`,
         type: 'info',
-        linkUrl: '/account/schedule',
+        linkUrl: `/account/schedule?shiftId=${String(shift.id)}`,
       });
     }
   } else {
@@ -388,7 +409,7 @@ export async function processEmployeeShift(
         title: 'New Shift Assigned',
         message: `You have been assigned a ${shiftLabel} (${shiftWindow}).`,
         type: 'info',
-        linkUrl: '/account/schedule',
+        linkUrl: `/account/schedule?shiftId=${String(shift.id)}`,
       });
     }
   }
@@ -424,6 +445,13 @@ export async function processPlanningSlotDelete(
     throw new AppError(404, `Shift not found for odoo_shift_id: ${odooShiftId}`);
   }
 
+  // Capture human-readable shift info before the row is deleted.
+  const deletedShiftLabel = (existing.duty_type as string | null) || 'Scheduled Shift';
+  const deletedShiftStart = new Date(existing.shift_start as string);
+  const deletedShiftEnd = new Date(existing.shift_end as string);
+  const deletedShiftWindow = `${deletedShiftStart.toLocaleString()} - ${deletedShiftEnd.toLocaleString()}`;
+  const deletedUserId = (existing.user_id as string | null) ?? null;
+
   await db.getDb().transaction(async (trx) => {
     await trx('shift_exchange_requests')
       .where('requester_shift_id', existing.id)
@@ -446,6 +474,19 @@ export async function processPlanningSlotDelete(
       });
   } catch {
     logger.warn('Socket.IO not available for employee shift delete emit');
+  }
+
+  // Notify the assigned user that their shift has been removed.
+  // No deep-link is provided since the shift record no longer exists in the DB;
+  // the link takes the user to their general schedule instead.
+  if (deletedUserId) {
+    await createAndDispatchNotification({
+      userId: deletedUserId,
+      title: 'Shift Cancelled',
+      message: `Your ${deletedShiftLabel} (${deletedShiftWindow}) has been removed from your schedule.`,
+      type: 'danger',
+      linkUrl: null,
+    });
   }
 
   return {
@@ -564,6 +605,19 @@ interface ResolvedAttendanceIdentity {
   employeeName: string;
 }
 
+interface UserRoleMembership {
+  roleId: string;
+  roleName: string;
+}
+
+interface IdentityActiveAttendance {
+  id: number;
+  company_id: number;
+  check_in: string;
+}
+
+type CheckInRoleType = typeof SYSTEM_ROLES.MANAGEMENT | typeof SYSTEM_ROLES.SERVICE_CREW;
+
 interface AttendanceProcessorDeps {
   now: () => Date;
   findBranchByOdooCompanyId: (odooCompanyId: number) => Promise<AttendanceBranchRow | null>;
@@ -579,6 +633,12 @@ interface AttendanceProcessorDeps {
     input: { userId: string | null; branchId: string; attendanceStart: Date; attendanceEnd: Date },
   ) => Promise<AttendanceShiftRow | null>;
   resolveAttendanceIdentity: (payload: AttendancePayload) => Promise<ResolvedAttendanceIdentity>;
+  listUserRoleMembership: (userId: string) => Promise<UserRoleMembership[]>;
+  disableUserRole: (userId: string, roleId: string) => Promise<void>;
+  enableUserRole: (userId: string, roleId: string) => Promise<void>;
+  clearUserDisabledRoles: (userId: string) => Promise<number>;
+  listActiveAttendancesByWebsiteUserKey: (websiteUserKey: string) => Promise<IdentityActiveAttendance[]>;
+  checkOutAttendancesByIds: (attendanceIds: number[], checkOutTime: Date) => Promise<void>;
   reassignUserToSingleCheckedInBranch: (
     userId: string,
     branchId: string,
@@ -609,6 +669,16 @@ function hasPositiveWindowOverlap(
 ): boolean {
   return Math.max(rangeStart.getTime(), shiftStart.getTime())
     < Math.min(rangeEnd.getTime(), shiftEnd.getTime());
+}
+
+function resolveCheckInRoleType(odooCompanyId: number): CheckInRoleType {
+  return odooCompanyId === 1 ? SYSTEM_ROLES.MANAGEMENT : SYSTEM_ROLES.SERVICE_CREW;
+}
+
+function resolveOppositeRoleType(roleType: CheckInRoleType): CheckInRoleType {
+  return roleType === SYSTEM_ROLES.MANAGEMENT
+    ? SYSTEM_ROLES.SERVICE_CREW
+    : SYSTEM_ROLES.MANAGEMENT;
 }
 
 async function defaultResolveAttendanceIdentity(
@@ -722,6 +792,40 @@ const defaultAttendanceProcessorDeps: AttendanceProcessorDeps = {
       .first()) as AttendanceShiftRow | null;
   },
   resolveAttendanceIdentity: defaultResolveAttendanceIdentity,
+  listUserRoleMembership: async (userId) =>
+    (await db.getDb()('user_roles as ur')
+      .join('roles as r', 'ur.role_id', 'r.id')
+      .where('ur.user_id', userId)
+      .select('r.id as roleId', 'r.name as roleName')) as UserRoleMembership[],
+  disableUserRole: async (userId, roleId) => {
+    await db.getDb()('user_role_disables')
+      .insert({
+        user_id: userId,
+        role_id: roleId,
+        created_at: new Date(),
+        updated_at: new Date(),
+      })
+      .onConflict(['user_id', 'role_id'])
+      .merge({ updated_at: new Date() });
+  },
+  enableUserRole: async (userId, roleId) => {
+    await db.getDb()('user_role_disables')
+      .where({ user_id: userId, role_id: roleId })
+      .delete();
+  },
+  clearUserDisabledRoles: async (userId) => Number(await db.getDb()('user_role_disables')
+    .where({ user_id: userId })
+    .delete()),
+  listActiveAttendancesByWebsiteUserKey: async (websiteUserKey) =>
+    (await getActiveAttendancesForWebsiteUserKey(websiteUserKey))
+      .map((attendance) => ({
+        id: attendance.id,
+        company_id: attendance.company_id,
+        check_in: attendance.check_in,
+      })),
+  checkOutAttendancesByIds: async (attendanceIds, checkOutTime) => {
+    await batchCheckOutAttendances(attendanceIds, checkOutTime);
+  },
   reassignUserToSingleCheckedInBranch: (userId, branchId) =>
     reassignUserToSingleCheckedInBranch(
       userId,
@@ -737,6 +841,15 @@ const defaultAttendanceProcessorDeps: AttendanceProcessorDeps = {
         if (!userId) return;
         io.of('/notifications').to(`user:${userId}`).emit(event as any, {
           branchIds: Array.isArray(payload.branchIds) ? payload.branchIds : [],
+        } as any);
+        return;
+      }
+
+      if (event === 'user:auth-scope-updated') {
+        const userId = String(payload.userId ?? '').trim();
+        if (!userId) return;
+        io.of('/notifications').to(`user:${userId}`).emit(event as any, {
+          userId,
         } as any);
         return;
       }
@@ -761,6 +874,59 @@ async function resolveInterimReason(
 ): Promise<'no_planning_schedule' | 'scheduled_other_branch'> {
   const otherBranchShift = await deps.findOverlappingShiftInOtherBranches(input);
   return otherBranchShift ? 'scheduled_other_branch' : 'no_planning_schedule';
+}
+
+async function applyCheckInRoleScopeAndAttendanceGuard(input: {
+  deps: AttendanceProcessorDeps;
+  payload: AttendancePayload;
+  checkInTime: Date;
+  resolvedIdentity: ResolvedAttendanceIdentity;
+}): Promise<void> {
+  const { deps, payload, checkInTime, resolvedIdentity } = input;
+  const userId = resolvedIdentity.userId;
+  const websiteUserKey = resolvedIdentity.websiteUserKey;
+
+  if (!userId || !websiteUserKey) {
+    return;
+  }
+
+  const roleMembership = await deps.listUserRoleMembership(userId);
+  const roleByName = new Map<string, UserRoleMembership>(
+    roleMembership.map((role) => [role.roleName, role]),
+  );
+
+  if (roleByName.has(SYSTEM_ROLES.ADMINISTRATOR)) {
+    return;
+  }
+
+  const checkInRoleType = resolveCheckInRoleType(payload.x_company_id);
+  const oppositeRoleType = resolveOppositeRoleType(checkInRoleType);
+  const checkInRole = roleByName.get(checkInRoleType);
+  const oppositeRole = roleByName.get(oppositeRoleType);
+
+  if (!checkInRole) {
+    return;
+  }
+
+  await deps.enableUserRole(userId, checkInRole.roleId);
+  if (oppositeRole) {
+    await deps.disableUserRole(userId, oppositeRole.roleId);
+  }
+
+  const activeAttendances = await deps.listActiveAttendancesByWebsiteUserKey(websiteUserKey);
+  const attendanceIdsToCheckOut = checkInRoleType === SYSTEM_ROLES.MANAGEMENT
+    ? activeAttendances
+      .filter((attendance) => attendance.id !== payload.id)
+      .map((attendance) => attendance.id)
+    : activeAttendances
+      .filter((attendance) => attendance.id !== payload.id && attendance.company_id === 1)
+      .map((attendance) => attendance.id);
+
+  if (attendanceIdsToCheckOut.length > 0) {
+    await deps.checkOutAttendancesByIds(attendanceIdsToCheckOut, checkInTime);
+  }
+
+  deps.emitSocketEvent('user:auth-scope-updated', { userId });
 }
 
 export function createAttendanceProcessor(
@@ -796,16 +962,26 @@ export function createAttendanceProcessor(
       odoo_payload: JSON.stringify(payload),
     });
 
+    const resolvedIdentity = await deps.resolveAttendanceIdentity(payload);
+
     let updatedTotalWorkedHours: number | null = null;
     let createdInterimShift = false;
     let restoredScheduledShift: AttendanceShiftRow | null = null;
     let activeShift: AttendanceShiftRow | null = shift;
     let skipStandardAuthorizationFlow = false;
 
+    if (!isCheckOut) {
+      await applyCheckInRoleScopeAndAttendanceGuard({
+        deps,
+        payload,
+        checkInTime: eventTime,
+        resolvedIdentity,
+      });
+    }
+
     if (isCheckOut) {
       const attendanceStart = parseOdooUtcDateTime(payload.check_in);
       const attendanceEnd = eventTime;
-      const resolvedIdentity = await deps.resolveAttendanceIdentity(payload);
       const linkedShiftHasOverlap = shift
         ? hasPositiveWindowOverlap(
           attendanceStart,
@@ -1015,6 +1191,20 @@ export function createAttendanceProcessor(
         createdInterimShift ? 'shift:new' : 'shift:updated',
         activeShift as Record<string, unknown>,
       );
+    }
+
+    if (isCheckOut && resolvedIdentity.userId && resolvedIdentity.websiteUserKey) {
+      const activeAttendances = await deps.listActiveAttendancesByWebsiteUserKey(
+        resolvedIdentity.websiteUserKey,
+      );
+      if (activeAttendances.length === 0) {
+        const clearedCount = await deps.clearUserDisabledRoles(resolvedIdentity.userId);
+        if (clearedCount > 0) {
+          deps.emitSocketEvent('user:auth-scope-updated', {
+            userId: resolvedIdentity.userId,
+          });
+        }
+      }
     }
 
     deps.emitSocketEvent('shift:log-new', {

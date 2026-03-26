@@ -1,8 +1,8 @@
 import React from 'react';
 import type { AccountAuditResultListItem } from '@omnilert/shared';
-import { ShieldCheck, Star } from 'lucide-react';
+import { Building2, ChevronRight, GitBranch, ShieldCheck, Star } from 'lucide-react';
 
-function formatDateTime(value: string | null): string {
+function formatDate(value: string | null): string {
   if (!value) return '-';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -36,38 +36,48 @@ export function AccountAuditResultCard({
     <button
       type="button"
       onClick={onSelect}
-      className={`w-full rounded-xl border px-4 py-3 text-left transition-colors ${
-        selected ? 'border-primary-500 bg-primary-50' : 'border-gray-200 bg-white hover:bg-gray-50'
+      className={`w-full rounded-xl border px-4 py-3.5 text-left transition-colors ${
+        selected
+          ? 'border-primary-300 bg-primary-50'
+          : 'border-gray-200 bg-white hover:border-primary-200 hover:bg-primary-50/30'
       }`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 space-y-2">
-          <span
-            className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset ${typeStyles}`}
-          >
-            <TypeIcon className="h-3 w-3" />
-            {typeLabel}
-          </span>
-          <p className="text-sm font-semibold text-gray-900">{audit.type_label}</p>
+      <div className="flex items-center justify-between gap-3">
+        {/* Left: type badge + type label + branch + company */}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span
+              className={`inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset ${typeStyles}`}
+            >
+              <TypeIcon className="h-3 w-3" />
+              {typeLabel}
+            </span>
+            <p className="truncate text-sm font-semibold text-gray-900">{audit.type_label}</p>
+          </div>
+
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+            <span className="flex items-center gap-1 text-xs text-gray-500">
+              <GitBranch className="h-3 w-3 shrink-0 text-gray-400" />
+              {audit.branch.name}
+            </span>
+            {audit.company?.name && (
+              <span className="flex items-center gap-1 text-xs text-gray-400">
+                <Building2 className="h-3 w-3 shrink-0" />
+                {audit.company.name}
+              </span>
+            )}
+          </div>
+
+          <p className="mt-1 text-xs text-gray-400">{formatDate(audit.completed_at)}</p>
         </div>
-        <span className="text-right text-xs text-gray-500">
-          {formatDateTime(audit.completed_at)}
-        </span>
-      </div>
 
-      <div className="mt-2 flex items-center justify-between gap-3 text-xs text-gray-600">
-        <span className="truncate">Branch: {audit.branch.name}</span>
-        <span className="shrink-0">
-          Observed: {formatDateTime(audit.observed_at)}
-        </span>
-      </div>
-
-      <div className="mt-1 text-xs text-gray-500">
-        Company: {audit.company?.name || '-'}
-      </div>
-
-      <div className="mt-2 text-sm font-medium text-gray-800">
-        {audit.summary.result_line}
+        {/* Right: result line + chevron */}
+        <div className="flex shrink-0 items-center gap-2">
+          <p className="text-right text-sm font-semibold text-primary-700">
+            {audit.summary.result_line.replace('Overall score: ', '').replace('Passed checks: ', '')}
+          </p>
+          <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" />
+        </div>
       </div>
     </button>
   );
