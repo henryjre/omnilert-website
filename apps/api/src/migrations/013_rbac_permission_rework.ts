@@ -201,7 +201,7 @@ const STAGE1_RENAMES: PermissionRename[] = [
   },
   {
     fromKey: 'cash_request.approve',
-    toKey: 'cash_request.manage',
+    toKey: 'cash_requests.manage',
     fromCategory: 'cash_request',
     toCategory: 'cash_requests',
     toName: 'Manage Requests',
@@ -317,7 +317,7 @@ const STAGE4_DESCRIPTIONS: Record<string, string> = {
     'Create, confirm, reject, issue, and complete violation notices',
   'workplace_relations.view': 'Access the Workplace Relations page and view peer evaluations',
   'cash_requests.view': 'Access the Cash Requests management page',
-  'cash_request.manage': 'Approve, reject, and disburse cash requests',
+  'cash_requests.manage': 'Approve, reject, and disburse cash requests',
 };
 
 // ===========================================================================
@@ -507,7 +507,7 @@ export async function down(knex: Knex): Promise<void> {
         toKey: rename.fromKey,
         fromCategory: rename.toCategory,
         toCategory: rename.fromCategory,
-        // toName is omitted — original names are auto-generated from key leaf
+        // toName is omitted — original names are NOT restored by down()
       });
     }
   });
