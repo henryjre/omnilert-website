@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import { Card, CardHeader, CardBody } from '@/shared/components/ui/Card';
 import { Button } from '@/shared/components/ui/Button';
 import { Badge } from '@/shared/components/ui/Badge';
@@ -6,7 +7,12 @@ import { Input } from '@/shared/components/ui/Input';
 import { Spinner } from '@/shared/components/ui/Spinner';
 import { api } from '@/shared/services/api.client';
 import { useAppToast } from '@/shared/hooks/useAppToast';
-import { PERMISSION_CATEGORIES } from '@omnilert/shared';
+import {
+  PERMISSION_CATEGORIES,
+  PERMISSION_DESCRIPTIONS,
+  PERMISSION_PREREQUISITES,
+  type PermissionKey,
+} from '@omnilert/shared';
 import { Plus, Shield, Trash2 } from 'lucide-react';
 import { createRoleEditorDraft, hasRoleEditorChanges, type RoleEditorDraft } from './roleEditorState';
 
@@ -26,27 +32,49 @@ interface Permission {
   category: string;
 }
 
-const CATEGORY_NORMALIZATION_ALIASES: Record<string, string> = {
-  shift: 'shift',
-  shifts: 'shift',
-  auth_request: 'auth_request',
-  auth_requests: 'auth_request',
-  cash_request: 'cash_request',
-  cash_requests: 'cash_request',
-};
-
-function normalizePermissionCategory(category: string): string {
-  return CATEGORY_NORMALIZATION_ALIASES[category] ?? category;
+function TogglePill({
+  checked,
+  onChange,
+  disabled,
+}: {
+  checked: boolean;
+  onChange: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={onChange}
+      disabled={disabled}
+      className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1 ${
+        checked ? 'bg-primary-600' : 'bg-gray-200'
+      } ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
+    >
+      <motion.span
+        animate={{ x: checked ? 16 : 2 }}
+        transition={{ type: 'spring', stiffness: 700, damping: 30 }}
+        className="inline-block h-4 w-4 rounded-full bg-white shadow-sm"
+        style={{ marginTop: '2px' }}
+      />
+    </button>
+  );
 }
 
-function permissionBelongsToCategory(
-  permission: Permission,
-  categoryKey: string,
-  categoryPermissionKeys: string[],
+function isEnabledAsPrerequisite(
+  permId: string,
+  permissionIds: string[],
+  permissions: Permission[],
 ): boolean {
-  // Prefer canonical key matching so category renames/build drift cannot hide permissions.
-  if (categoryPermissionKeys.includes(permission.key)) return true;
-  return normalizePermissionCategory(permission.category) === normalizePermissionCategory(categoryKey);
+  const perm = permissions.find((p) => p.id === permId);
+  if (!perm || !permissionIds.includes(permId)) return false;
+  return permissions.some((p) => {
+    const prereqKey = PERMISSION_PREREQUISITES[p.key as PermissionKey];
+    if (!prereqKey) return false;
+    const prereqPerm = permissions.find((pp) => pp.key === prereqKey);
+    return prereqPerm?.id === permId && permissionIds.includes(p.id);
+  });
 }
 
 export function RoleManagementPage() {
@@ -94,10 +122,11 @@ export function RoleManagementPage() {
     void fetchData({ showLoader: true });
   }, []);
 
-  const isDirty = selectedRole !== null
-    && originalDraft !== null
-    && roleDraft !== null
-    && hasRoleEditorChanges(originalDraft, roleDraft);
+  const isDirty =
+    selectedRole !== null &&
+    originalDraft !== null &&
+    roleDraft !== null &&
+    hasRoleEditorChanges(originalDraft, roleDraft);
 
   const selectRole = async (role: Role) => {
     if (selectedRole?.id === role.id) {
@@ -128,13 +157,51 @@ export function RoleManagementPage() {
   const togglePermission = (permId: string) => {
     setRoleDraft((prev) => {
       if (!prev) return prev;
-      const nextPermissionIds = prev.permissionIds.includes(permId)
-        ? prev.permissionIds.filter((id) => id !== permId)
-        : [...prev.permissionIds, permId];
+      const isEnabling = !prev.permissionIds.includes(permId);
+      let nextIds = new Set(prev.permissionIds);
+
+      if (isEnabling) {
+        // Walk up the prerequisite chain (enable all prerequisites)
+        const toEnable = [permId];
+        while (toEnable.length > 0) {
+          const id = toEnable.pop()!;
+          nextIds.add(id);
+          const perm = permissions.find((p) => p.id === id);
+          if (perm) {
+            const prereqKey = PERMISSION_PREREQUISITES[perm.key as PermissionKey];
+            if (prereqKey) {
+              const prereqPerm = permissions.find((p) => p.key === prereqKey);
+              if (prereqPerm && !nextIds.has(prereqPerm.id)) {
+                toEnable.push(prereqPerm.id);
+              }
+            }
+          }
+        }
+      } else {
+        // Walk down the dependents chain (disable all dependents)
+        const toDisable = [permId];
+        while (toDisable.length > 0) {
+          const id = toDisable.pop()!;
+          nextIds.delete(id);
+          const perm = permissions.find((p) => p.id === id);
+          if (perm) {
+            // Find all permissions that depend on this one
+            const dependentKeys = Object.entries(PERMISSION_PREREQUISITES)
+              .filter(([, prereqKey]) => prereqKey === perm.key)
+              .map(([depKey]) => depKey);
+            for (const depKey of dependentKeys) {
+              const depPerm = permissions.find((p) => p.key === depKey);
+              if (depPerm && nextIds.has(depPerm.id)) {
+                toDisable.push(depPerm.id);
+              }
+            }
+          }
+        }
+      }
 
       return {
         ...prev,
-        permissionIds: nextPermissionIds.sort((a, b) => a.localeCompare(b)),
+        permissionIds: [...nextIds].sort((a, b) => a.localeCompare(b)),
       };
     });
   };
@@ -143,11 +210,13 @@ export function RoleManagementPage() {
     if (!selectedRole || !roleDraft || !originalDraft) return;
 
     const trimmedName = roleDraft.name.trim();
-    const metadataChanged = trimmedName !== originalDraft.name
-      || roleDraft.color !== originalDraft.color
-      || roleDraft.priority !== originalDraft.priority;
-    const permissionsChanged = JSON.stringify([...roleDraft.permissionIds].sort())
-      !== JSON.stringify([...originalDraft.permissionIds].sort());
+    const metadataChanged =
+      trimmedName !== originalDraft.name ||
+      roleDraft.color !== originalDraft.color ||
+      roleDraft.priority !== originalDraft.priority;
+    const permissionsChanged =
+      JSON.stringify([...roleDraft.permissionIds].sort()) !==
+      JSON.stringify([...originalDraft.permissionIds].sort());
 
     if (!metadataChanged && !permissionsChanged) {
       return;
@@ -312,9 +381,7 @@ export function RoleManagementPage() {
                     <p className="font-medium text-gray-900">{role.name}</p>
                     <p className="text-xs text-gray-500">Priority: {role.priority}</p>
                   </div>
-                  {role.is_system && (
-                    <Badge variant="default">System</Badge>
-                  )}
+                  {role.is_system && <Badge variant="default">System</Badge>}
                 </div>
                 {!role.is_system && (
                   <button
@@ -339,7 +406,9 @@ export function RoleManagementPage() {
               <div>
                 <h2 className="font-semibold text-gray-900">Role Editor</h2>
                 <p className="text-sm text-gray-500">
-                  {selectedRole ? 'Edit role settings and permissions.' : 'Select a role to start editing.'}
+                  {selectedRole
+                    ? 'Edit role settings and permissions.'
+                    : 'Select a role to start editing.'}
                 </p>
               </div>
               {selectedRole && (
@@ -348,7 +417,9 @@ export function RoleManagementPage() {
                   <Button
                     size="sm"
                     onClick={saveRole}
-                    disabled={editorLoading || savingRole || !roleDraft || !roleDraft.name.trim() || !isDirty}
+                    disabled={
+                      editorLoading || savingRole || !roleDraft || !roleDraft.name.trim() || !isDirty
+                    }
                   >
                     {savingRole ? 'Saving...' : 'Save'}
                   </Button>
@@ -383,21 +454,27 @@ export function RoleManagementPage() {
                       label="Priority"
                       type="number"
                       value={String(roleDraft.priority)}
-                      onChange={(e) => setRoleDraft({ ...roleDraft, priority: Number(e.target.value) })}
+                      onChange={(e) =>
+                        setRoleDraft({ ...roleDraft, priority: Number(e.target.value) })
+                      }
                       min="0"
                       max="99"
                     />
                   </div>
 
                   <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Preview</p>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      Preview
+                    </p>
                     <div className="mt-3 flex items-center gap-3">
                       <div
                         className="h-5 w-5 rounded-full border border-white shadow-sm"
                         style={{ backgroundColor: roleDraft.color }}
                       />
                       <div>
-                        <p className="font-medium text-gray-900">{roleDraft.name.trim() || 'Untitled role'}</p>
+                        <p className="font-medium text-gray-900">
+                          {roleDraft.name.trim() || 'Untitled role'}
+                        </p>
                         <p className="text-xs text-gray-500">Priority: {roleDraft.priority}</p>
                       </div>
                     </div>
@@ -432,27 +509,63 @@ export function RoleManagementPage() {
                   <div className="space-y-4">
                     {Object.entries(PERMISSION_CATEGORIES).map(([key, category]) => (
                       <div key={key}>
-                        <h4 className="mb-2 text-sm font-semibold text-gray-700">{category.label}</h4>
+                        <h4 className="mb-2 text-sm font-semibold text-gray-700">
+                          {category.label}
+                        </h4>
                         <div className="space-y-1">
                           {permissions
                             .filter((permission) =>
-                              permissionBelongsToCategory(permission, key, category.permissions),
+                              category.permissions.includes(permission.key as PermissionKey),
                             )
-                            .map((permission) => (
-                              <label
-                                key={permission.id}
-                                className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-gray-50"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={roleDraft.permissionIds.includes(permission.id)}
-                                  onChange={() => togglePermission(permission.id)}
-                                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                                />
-                                <span className="text-sm text-gray-700">{permission.name}</span>
-                                <span className="text-xs text-gray-400">({permission.key})</span>
-                              </label>
-                            ))}
+                            .map((permission) => {
+                              const isChecked = roleDraft.permissionIds.includes(permission.id);
+                              const isPrerequisite = isEnabledAsPrerequisite(
+                                permission.id,
+                                roleDraft.permissionIds,
+                                permissions,
+                              );
+                              return (
+                                <div
+                                  key={permission.id}
+                                  className="flex cursor-pointer items-start gap-3 rounded-lg px-2 py-2 hover:bg-gray-50"
+                                  onClick={() =>
+                                    !isPrerequisite && togglePermission(permission.id)
+                                  }
+                                  title={
+                                    isPrerequisite
+                                      ? 'Disable dependent permissions first'
+                                      : undefined
+                                  }
+                                >
+                                  <div className="mt-0.5 flex-shrink-0">
+                                    <TogglePill
+                                      checked={isChecked}
+                                      onChange={() =>
+                                        !isPrerequisite && togglePermission(permission.id)
+                                      }
+                                      disabled={isPrerequisite}
+                                    />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <p className="text-sm font-medium text-gray-800">
+                                        {permission.name}
+                                      </p>
+                                      {isPrerequisite && (
+                                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700">
+                                          Required
+                                        </span>
+                                      )}
+                                    </div>
+                                    {PERMISSION_DESCRIPTIONS[permission.key as PermissionKey] && (
+                                      <p className="text-xs text-gray-500">
+                                        {PERMISSION_DESCRIPTIONS[permission.key as PermissionKey]}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
                         </div>
                       </div>
                     ))}
