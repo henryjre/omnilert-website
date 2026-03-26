@@ -1,5 +1,6 @@
 // Types
 export type * from './types/api.types.js';
+export type * from './types/payslip.types.js';
 export type * from './types/accountAuditResult.types.js';
 export type * from './types/branch.types.js';
 export type * from './types/caseReport.types.js';
@@ -13,7 +14,13 @@ export type * from './types/violationNotice.types.js';
 export type * from './types/webhook.types.js';
 
 // Constants
-export { PERMISSIONS, ALL_PERMISSIONS, PERMISSION_CATEGORIES } from './constants/permissions.js';
+export {
+  PERMISSIONS,
+  ALL_PERMISSIONS,
+  PERMISSION_CATEGORIES,
+  PERMISSION_PREREQUISITES,
+  PERMISSION_DESCRIPTIONS,
+} from './constants/permissions.js';
 export type { PermissionKey } from './constants/permissions.js';
 export {
   SYSTEM_ROLES,
