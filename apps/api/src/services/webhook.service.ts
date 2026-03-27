@@ -675,6 +675,44 @@ interface AttendanceProcessorDeps {
   emitSocketEvent: (event: string, payload: Record<string, unknown>) => void;
 }
 
+interface SocketNamespaceEmitter {
+  to: (room: string) => {
+    emit: (event: string, payload: Record<string, unknown>) => void;
+  };
+}
+
+interface SocketEmitterLike {
+  of: (namespace: string) => SocketNamespaceEmitter;
+}
+
+export function emitAttendanceSocketEvent(
+  io: SocketEmitterLike,
+  event: string,
+  payload: Record<string, unknown>,
+): void {
+  if (event === 'user:branch-assignments-updated') {
+    const userId = String(payload.userId ?? '').trim();
+    if (!userId) return;
+    io.of('/user-events').to(`user:${userId}`).emit(event, {
+      branchIds: Array.isArray(payload.branchIds) ? payload.branchIds : [],
+    });
+    return;
+  }
+
+  if (event === 'user:auth-scope-updated' || event === 'user:check-in-status-updated') {
+    const userId = String(payload.userId ?? '').trim();
+    if (!userId) return;
+    io.of('/user-events').to(`user:${userId}`).emit(event, {
+      userId,
+    });
+    return;
+  }
+
+  const branchId = String(payload.branch_id ?? payload.branchId ?? '').trim();
+  if (!branchId) return;
+  io.of('/employee-shifts').to(`branch:${branchId}`).emit(event, payload);
+}
+
 function parseOdooUtcDateTime(value: string): Date {
   return new Date(`${value} UTC`);
 }
@@ -858,36 +896,7 @@ const defaultAttendanceProcessorDeps: AttendanceProcessorDeps = {
   emitSocketEvent: (event, payload) => {
     try {
       const io = getIO();
-      if (event === 'user:branch-assignments-updated') {
-        const userId = String(payload.userId ?? '').trim();
-        if (!userId) return;
-        io.of('/user-events').to(`user:${userId}`).emit(event as any, {
-          branchIds: Array.isArray(payload.branchIds) ? payload.branchIds : [],
-        } as any);
-        return;
-      }
-
-      if (event === 'user:auth-scope-updated') {
-        const userId = String(payload.userId ?? '').trim();
-        if (!userId) return;
-        io.of('/user-events').to(`user:${userId}`).emit(event as any, {
-          userId,
-        } as any);
-        return;
-      }
-
-      if (event === 'user:check-in-status-updated') {
-        const userId = String(payload.userId ?? '').trim();
-        if (!userId) return;
-        io.of('/user-events').to(`user:${userId}`).emit(event as any, {
-          userId,
-        } as any);
-        return;
-      }
-
-      const branchId = String(payload.branch_id ?? payload.branchId ?? '').trim();
-      if (!branchId) return;
-      io.of('/employee-shifts').to(`branch:${branchId}`).emit(event as any, payload as any);
+      emitAttendanceSocketEvent(io as SocketEmitterLike, event, payload);
     } catch {
       logger.warn(`Socket.IO not available for ${event} emit`);
     }

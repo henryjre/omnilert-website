@@ -15,6 +15,7 @@ process.env.OPENAI_PROJECT_ID ??= 'test-openai-project';
 
 const {
   createAttendanceProcessor,
+  emitAttendanceSocketEvent,
   reassignUserToSingleCheckedInBranch,
   shouldPreserveInterimDutyPlanningSlotDelete,
 } = await import('./webhook.service.js');
@@ -831,4 +832,80 @@ test('createAttendanceProcessor checkout re-enables all temporarily disabled rol
 
   assert.equal(harness.disabledRoleIdsByUserId.get('user-1')?.size ?? 0, 0);
   assert.ok(harness.socketEvents.some((evt) => evt.event === 'user:auth-scope-updated'));
+});
+
+function createSocketEmitHarness() {
+  const emits: Array<{
+    namespace: string;
+    room: string;
+    event: string;
+    payload: Record<string, unknown>;
+  }> = [];
+
+  const io = {
+    of(namespace: string) {
+      return {
+        to(room: string) {
+          return {
+            emit(event: string, payload: Record<string, unknown>) {
+              emits.push({ namespace, room, event, payload });
+            },
+          };
+        },
+      };
+    },
+  };
+
+  return { io, emits };
+}
+
+test('emitAttendanceSocketEvent routes auth scope updates to /user-events namespace', () => {
+  const harness = createSocketEmitHarness();
+
+  emitAttendanceSocketEvent(harness.io, 'user:auth-scope-updated', {
+    userId: 'user-1',
+  });
+
+  assert.equal(harness.emits.length, 1);
+  assert.deepEqual(harness.emits[0], {
+    namespace: '/user-events',
+    room: 'user:user-1',
+    event: 'user:auth-scope-updated',
+    payload: { userId: 'user-1' },
+  });
+});
+
+test('emitAttendanceSocketEvent routes branch assignment updates to /user-events namespace', () => {
+  const harness = createSocketEmitHarness();
+
+  emitAttendanceSocketEvent(harness.io, 'user:branch-assignments-updated', {
+    userId: 'user-2',
+    branchIds: ['branch-a', 'branch-b'],
+  });
+
+  assert.equal(harness.emits.length, 1);
+  assert.deepEqual(harness.emits[0], {
+    namespace: '/user-events',
+    room: 'user:user-2',
+    event: 'user:branch-assignments-updated',
+    payload: { branchIds: ['branch-a', 'branch-b'] },
+  });
+});
+
+test('emitAttendanceSocketEvent routes shift events to /employee-shifts namespace', () => {
+  const harness = createSocketEmitHarness();
+  const eventPayload = {
+    branch_id: 'branch-main',
+    shift_id: 'shift-1',
+  };
+
+  emitAttendanceSocketEvent(harness.io, 'shift:updated', eventPayload);
+
+  assert.equal(harness.emits.length, 1);
+  assert.deepEqual(harness.emits[0], {
+    namespace: '/employee-shifts',
+    room: 'branch:branch-main',
+    event: 'shift:updated',
+    payload: eventPayload,
+  });
 });
