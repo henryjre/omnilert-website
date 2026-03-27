@@ -861,7 +861,7 @@ const defaultAttendanceProcessorDeps: AttendanceProcessorDeps = {
       if (event === 'user:branch-assignments-updated') {
         const userId = String(payload.userId ?? '').trim();
         if (!userId) return;
-        io.of('/notifications').to(`user:${userId}`).emit(event as any, {
+        io.of('/user-events').to(`user:${userId}`).emit(event as any, {
           branchIds: Array.isArray(payload.branchIds) ? payload.branchIds : [],
         } as any);
         return;
@@ -870,7 +870,7 @@ const defaultAttendanceProcessorDeps: AttendanceProcessorDeps = {
       if (event === 'user:auth-scope-updated') {
         const userId = String(payload.userId ?? '').trim();
         if (!userId) return;
-        io.of('/notifications').to(`user:${userId}`).emit(event as any, {
+        io.of('/user-events').to(`user:${userId}`).emit(event as any, {
           userId,
         } as any);
         return;
@@ -879,7 +879,7 @@ const defaultAttendanceProcessorDeps: AttendanceProcessorDeps = {
       if (event === 'user:check-in-status-updated') {
         const userId = String(payload.userId ?? '').trim();
         if (!userId) return;
-        io.of('/notifications').to(`user:${userId}`).emit(event as any, {
+        io.of('/user-events').to(`user:${userId}`).emit(event as any, {
           userId,
         } as any);
         return;

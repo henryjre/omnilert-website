@@ -7,7 +7,6 @@ import { BranchSelector } from '@/shared/components/BranchSelector';
 import { useAuthStore } from '@/features/auth/store/authSlice';
 import { useBranchStore } from '@/shared/store/branchStore';
 import { useNotificationStore } from '@/shared/store/notificationStore';
-import { usePermission } from '@/shared/hooks/usePermission';
 import { useSocket } from '@/shared/hooks/useSocket';
 import { api } from '@/shared/services/api.client';
 import { applyCompanyThemeFromHex, DEFAULT_THEME_COLOR } from '@/shared/utils/theme';
@@ -53,9 +52,9 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
   const setTokens = useAuthStore((s) => s.setTokens);
   const logoutStore = useAuthStore((s) => s.logout);
   const { fetchBranches } = useBranchStore();
-  const { hasPermission } = usePermission();
   const navigate = useNavigate();
-  const socket = useSocket('/notifications');
+  const notificationsSocket = useSocket('/notifications');
+  const userEventsSocket = useSocket('/user-events');
 
   const { unreadCount, setUnreadCount, increment, decrement, reset, pushNotification } = useNotificationStore();
   const [open, setOpen] = useState(false);
@@ -78,9 +77,9 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
 
   // Real-time: listen for new notifications
   useEffect(() => {
-    if (!socket) return;
+    if (!notificationsSocket) return;
 
-    socket.on('notification:new', (data: any) => {
+    notificationsSocket.on('notification:new', (data: any) => {
       if (data?.id) {
         setNotifications((prev) => [data, ...prev].slice(0, 20));
         pushNotification(data);
@@ -88,13 +87,21 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
       increment();
     });
 
-    socket.on('auth:force-logout', () => {
+    return () => {
+      notificationsSocket.off('notification:new');
+    };
+  }, [notificationsSocket, increment, pushNotification]);
+
+  useEffect(() => {
+    if (!userEventsSocket) return;
+
+    userEventsSocket.on('auth:force-logout', () => {
       applyCompanyThemeFromHex(DEFAULT_THEME_COLOR);
       logoutStore();
       navigate('/login', { replace: true });
     });
 
-    socket.on('user:auth-scope-updated', async () => {
+    userEventsSocket.on('user:auth-scope-updated', async () => {
       const refreshToken = useAuthStore.getState().refreshToken;
       if (!refreshToken) return;
 
@@ -107,7 +114,7 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
       }
     });
 
-    socket.on('user:branch-assignments-updated', async (data: any) => {
+    userEventsSocket.on('user:branch-assignments-updated', async (data: any) => {
       const nextBranchIds: string[] = Array.isArray(data?.branchIds) ? data.branchIds : [];
 
       // Sync auth user branch scope in-memory immediately.
@@ -129,12 +136,11 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
     });
 
     return () => {
-      socket.off('notification:new');
-      socket.off('auth:force-logout');
-      socket.off('user:auth-scope-updated');
-      socket.off('user:branch-assignments-updated');
+      userEventsSocket.off('auth:force-logout');
+      userEventsSocket.off('user:auth-scope-updated');
+      userEventsSocket.off('user:branch-assignments-updated');
     };
-  }, [socket, updateUser, setTokens, fetchBranches, hasPermission, increment, pushNotification, logoutStore, navigate]);
+  }, [userEventsSocket, updateUser, setTokens, fetchBranches, logoutStore, navigate]);
 
   // Close dropdown when clicking outside
   useEffect(() => {

@@ -175,10 +175,10 @@ function emitForceLogoutToUsers(userIds: string[], companyId: string, excludeUse
   };
 
   try {
-    const notificationNs = getIO().of('/notifications');
+    const userEventsNs = getIO().of('/user-events');
     for (const userId of userIds) {
       if (excludeUserId && userId === excludeUserId) continue;
-      notificationNs.to(`user:${userId}`).emit('auth:force-logout', payload);
+      userEventsNs.to(`user:${userId}`).emit('auth:force-logout', payload);
     }
   } catch {
     // best effort only

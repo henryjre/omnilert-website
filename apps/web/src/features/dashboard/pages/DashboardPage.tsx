@@ -30,7 +30,7 @@ export function DashboardPage() {
   const user = useAuthStore((s) => s.user);
   const queryClient = useQueryClient();
   const { error: showErrorToast } = useAppToast();
-  const notificationSocket = useSocket('/notifications');
+  const userEventsSocket = useSocket('/user-events');
   const canViewPerformanceIndex = true;
   const pullRefreshFrameRef = useRef<number | null>(null);
   const touchStartYRef = useRef<number | null>(null);
@@ -134,20 +134,20 @@ export function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    if (!notificationSocket || !canViewPerformanceIndex) return;
+    if (!userEventsSocket || !canViewPerformanceIndex) return;
 
     const syncCheckInStatus = () => {
       void queryClient.invalidateQueries({ queryKey: ['dashboard-check-in-status'] });
     };
 
-    notificationSocket.on('user:check-in-status-updated', syncCheckInStatus);
-    notificationSocket.on('user:auth-scope-updated', syncCheckInStatus);
+    userEventsSocket.on('user:check-in-status-updated', syncCheckInStatus);
+    userEventsSocket.on('user:auth-scope-updated', syncCheckInStatus);
 
     return () => {
-      notificationSocket.off('user:check-in-status-updated', syncCheckInStatus);
-      notificationSocket.off('user:auth-scope-updated', syncCheckInStatus);
+      userEventsSocket.off('user:check-in-status-updated', syncCheckInStatus);
+      userEventsSocket.off('user:auth-scope-updated', syncCheckInStatus);
     };
-  }, [canViewPerformanceIndex, notificationSocket, queryClient]);
+  }, [canViewPerformanceIndex, userEventsSocket, queryClient]);
 
   const handleRefresh = useCallback(async ({ showSkeleton = false }: { showSkeleton?: boolean } = {}) => {
     if (showSkeleton) {

@@ -294,7 +294,7 @@ export function initializeSocket(
     logger.debug(`Peer Evaluations: ${socket.data.user?.sub} connected`);
   });
 
-  // Notification namespace
+  // Notification namespace (bell/feed notifications only)
   const notificationNs = io.of('/notifications');
   notificationNs.use((socket, next) => {
     const token = socket.handshake.auth.token as string | undefined;
@@ -309,6 +309,27 @@ export function initializeSocket(
   });
 
   notificationNs.on('connection', (socket) => {
+    const userId = socket.data.user?.sub;
+    if (userId) {
+      socket.join(`user:${userId}`);
+    }
+  });
+
+  // User events namespace (session + account state updates)
+  const userEventsNs = io.of('/user-events');
+  userEventsNs.use((socket, next) => {
+    const token = socket.handshake.auth.token as string | undefined;
+    if (!token) return next(new Error('Authentication required'));
+    try {
+      const payload = verifyAccessToken(token);
+      socket.data.user = payload;
+      next();
+    } catch {
+      next(new Error('Invalid token'));
+    }
+  });
+
+  userEventsNs.on('connection', (socket) => {
     const userId = socket.data.user?.sub;
     if (userId) {
       socket.join(`user:${userId}`);
