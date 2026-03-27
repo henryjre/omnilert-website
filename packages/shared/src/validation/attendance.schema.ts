@@ -14,8 +14,8 @@ export const odooAttendancePayloadSchema = z.object({
   x_employee_contact_name: z.string(),
   x_planning_slot_id: z.union([z.number(), z.literal(false)]),
   x_prev_attendance_id: z.union([z.number(), z.literal(false)]).optional(),
-  x_shift_end: z.string().optional(),
-  x_shift_start: z.string().optional(),
+  x_shift_end: z.union([z.string(), z.literal(false)]).optional(),
+  x_shift_start: z.union([z.string(), z.literal(false)]).optional(),
 });
 
 export type OdooAttendancePayloadInput = z.infer<typeof odooAttendancePayloadSchema>;
