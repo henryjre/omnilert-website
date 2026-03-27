@@ -10,10 +10,10 @@
     "permissions:audit": "tsx src/scripts/permissions-audit.ts",
     "permissions:probe": "tsx src/scripts/permissions-runtime-probe.ts",
     "permissions:verify": "pnpm run permissions:audit && pnpm run permissions:probe",
-    "migrate": "tsx --no-cache ./node_modules/knex/bin/cli.js migrate:latest --knexfile knexfile.ts --env development",
-    "migrate:rollback": "tsx --no-cache ./node_modules/knex/bin/cli.js migrate:rollback --knexfile knexfile.ts --env development",
-    "migrate:status": "tsx --no-cache ./node_modules/knex/bin/cli.js migrate:status --knexfile knexfile.ts --env development",
-    "seed": "tsx ./node_modules/knex/bin/cli.js seed:run --knexfile knexfile.ts --env development",
+    "migrate": "tsx --no-cache ./node_modules/knex/bin/cli.js migrate:latest --knexfile knexfile.ts",
+    "migrate:rollback": "tsx --no-cache ./node_modules/knex/bin/cli.js migrate:rollback --knexfile knexfile.ts",
+    "migrate:status": "tsx --no-cache ./node_modules/knex/bin/cli.js migrate:status --knexfile knexfile.ts",
+    "seed": "tsx ./node_modules/knex/bin/cli.js seed:run --knexfile knexfile.ts",
     "clean": "rimraf dist"
   },
   "dependencies": {
