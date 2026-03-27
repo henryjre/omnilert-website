@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react';
+import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Button } from '@/shared/components/ui/Button';
 import { Input } from '@/shared/components/ui/Input';
@@ -11,6 +12,7 @@ import { useAuthStore } from '@/features/auth/store/authSlice';
 import { useBranchStore } from '@/shared/store/branchStore';
 import { PERMISSIONS } from '@omnilert/shared';
 import { AlertTriangle, BadgeCheck, Building2, Check, ChevronDown, ChevronUp, Clock3, ExternalLink, Filter, GitBranch, Hash, LogOut, MapPin, Phone, ShieldOff, UserCheck, UserMinus, Users, X } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
 type RequirementStatus = 'complete' | 'rejected' | 'verification' | 'pending';
 
@@ -1171,12 +1173,12 @@ export function EmployeeProfilesPage() {
     void saveWorkInformation();
   };
 
-  const STATUS_TABS: Array<{ key: StatusFilter; label: string; Icon: ComponentType<{ className?: string }> }> = [
-    { key: 'all', label: 'All', Icon: Users },
-    { key: 'active', label: 'Active', Icon: UserCheck },
-    { key: 'resigned', label: 'Resigned', Icon: LogOut },
-    { key: 'inactive', label: 'Inactive', Icon: UserMinus },
-    { key: 'suspended', label: 'Suspended', Icon: ShieldOff },
+  const STATUS_TABS: Array<{ id: StatusFilter; label: string; icon: LucideIcon }> = [
+    { id: 'all', label: 'All', icon: Users },
+    { id: 'active', label: 'Active', icon: UserCheck },
+    { id: 'resigned', label: 'Resigned', icon: LogOut },
+    { id: 'inactive', label: 'Inactive', icon: UserMinus },
+    { id: 'suspended', label: 'Suspended', icon: ShieldOff },
   ];
 
   return (
@@ -1189,7 +1191,7 @@ export function EmployeeProfilesPage() {
               <h1 className="text-2xl font-bold text-gray-900">Employee Profiles</h1>
             </div>
             <p className="mt-0.5 text-sm font-medium text-primary-600 capitalize sm:hidden">
-              {STATUS_TABS.find((t) => t.key === status)?.label}
+              {STATUS_TABS.find((t) => t.id === status)?.label}
             </p>
             <p className="mt-1 hidden text-sm text-gray-500 sm:block">
               Manage employee profiles, work information, and requirements.
@@ -1198,23 +1200,13 @@ export function EmployeeProfilesPage() {
         </div>
 
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-          <div className="flex w-full gap-1 border-b border-gray-200 sm:flex-1">
-            {STATUS_TABS.map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setStatus(tab.key)}
-                className={`flex flex-1 items-center justify-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors sm:flex-none ${
-                  status === tab.key
-                    ? 'border-primary-600 text-primary-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                <tab.Icon className="h-4 w-4" />
-                <span className="hidden sm:inline">{tab.label}</span>
-              </button>
-            ))}
-          </div>
+          <ViewToggle
+            options={STATUS_TABS}
+            activeId={status}
+            onChange={(id) => setStatus(id)}
+            layoutId="employee-profile-tabs"
+            className="sm:flex-1"
+          />
           <button
             type="button"
             onClick={openFilters}

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ElementType } from 'react';
+import { ViewToggle, type ViewOption } from '@/shared/components/ui/ViewToggle';
 import { createPortal } from 'react-dom';
 import { AnimatePresence } from 'framer-motion';
 import { useSearchParams } from "react-router-dom";
@@ -60,11 +61,11 @@ const STATUS_VARIANT: Record<string, 'success' | 'danger' | 'warning'> = {
   rejected: 'danger',
 };
 
-const STATUS_TABS: { key: StatusFilter; label: string; Icon: ElementType }[] = [
-  { key: 'all',      label: 'All',      Icon: LayoutGrid  },
-  { key: 'pending',  label: 'Pending',  Icon: Clock       },
-  { key: 'approved', label: 'Approved', Icon: CheckCircle },
-  { key: 'rejected', label: 'Rejected', Icon: XCircle     },
+const STATUS_TABS: ViewOption<StatusFilter>[] = [
+  { id: 'all',      label: 'All',      icon: LayoutGrid  },
+  { id: 'pending',  label: 'Pending',  icon: Clock       },
+  { id: 'approved', label: 'Approved', icon: CheckCircle },
+  { id: 'rejected', label: 'Rejected', icon: XCircle     },
 ];
 
 const REQUEST_TYPES = [
@@ -644,7 +645,7 @@ export function AuthorizationRequestsTab() {
         </div>
         {/* Mobile: active tab name as a compact subtitle */}
         <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
-          {STATUS_TABS.find((t) => t.key === statusFilter)?.label}
+          {STATUS_TABS.find((t) => t.id === statusFilter)?.label}
         </p>
         {/* Desktop: full description */}
         <p className="mt-1 hidden text-sm text-gray-500 sm:block">
@@ -654,23 +655,16 @@ export function AuthorizationRequestsTab() {
 
       {/* Status tabs + New Request button */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-        <div className="flex w-full gap-1 border-b border-gray-200 sm:flex-1">
-          {STATUS_TABS.map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => { setStatusFilter(tab.key); setPage(1); }}
-              className={`flex flex-1 items-center justify-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors sm:flex-none ${
-                statusFilter === tab.key
-                  ? 'border-primary-600 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <tab.Icon className="h-4 w-4" />
-              <span className="hidden sm:inline">{tab.label}</span>
-            </button>
-          ))}
-        </div>
+        <ViewToggle
+          options={STATUS_TABS}
+          activeId={statusFilter}
+          onChange={(id) => {
+            setStatusFilter(id);
+            setPage(1);
+          }}
+          layoutId="auth-status-tabs"
+          className="sm:flex-1"
+        />
 
         {canSubmitPrivateRequest && (
           <button

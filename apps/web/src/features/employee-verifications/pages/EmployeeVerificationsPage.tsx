@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import { createPortal } from 'react-dom';
 import { AnimatePresence } from 'framer-motion';
 import { Badge } from '@/shared/components/ui/Badge';
@@ -20,6 +21,7 @@ import {
   Copy, Check, CreditCard, ExternalLink, IdCard, Landmark,
   LayoutGrid, Mail, User, UserRoundPlus, Users, X, XCircle,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
 type VerificationStatus = 'pending' | 'approved' | 'rejected';
 
@@ -68,11 +70,11 @@ function statusVariant(status: string): 'success' | 'danger' | 'warning' {
 
 type StatusFilter = 'all' | VerificationStatus;
 
-const STATUS_TABS: { key: StatusFilter; label: string; Icon: React.ElementType }[] = [
-  { key: 'all',      label: 'All',      Icon: LayoutGrid  },
-  { key: 'pending',  label: 'Pending',  Icon: Clock       },
-  { key: 'approved', label: 'Approved', Icon: CheckCircle },
-  { key: 'rejected', label: 'Rejected', Icon: XCircle     },
+const STATUS_TABS: { id: StatusFilter; label: string; icon: LucideIcon }[] = [
+  { id: 'all',      label: 'All',      icon: LayoutGrid  },
+  { id: 'pending',  label: 'Pending',  icon: Clock       },
+  { id: 'approved', label: 'Approved', icon: CheckCircle },
+  { id: 'rejected', label: 'Rejected', icon: XCircle     },
 ];
 
 type PersonalInfoKey =
@@ -425,15 +427,15 @@ export function EmployeeVerificationsPage() {
   const visibleTypeSet = useMemo(() => new Set<VerificationType>(visibleTypes), [visibleTypes]);
   const categoryTabs = useMemo(
     () => ([
-      { key: 'registration' as const, label: 'Registration', Icon: UserRoundPlus },
-      { key: 'personalInformation' as const, label: 'Personal Information', Icon: IdCard },
-      { key: 'employmentRequirements' as const, label: 'Employment Requirements', Icon: ClipboardCheck },
-      { key: 'bankInformation' as const, label: 'Bank Information', Icon: Landmark },
+      { id: 'registration' as const, label: 'Registration', icon: UserRoundPlus },
+      { id: 'personalInformation' as const, label: 'Personal Information', icon: IdCard },
+      { id: 'employmentRequirements' as const, label: 'Employment Requirements', icon: ClipboardCheck },
+      { id: 'bankInformation' as const, label: 'Bank Information', icon: Landmark },
     ]),
     [],
   );
   const visibleCategoryTabs = useMemo(
-    () => categoryTabs.filter((tab) => visibleTypeSet.has(tab.key)),
+    () => categoryTabs.filter((tab) => visibleTypeSet.has(tab.id)),
     [categoryTabs, visibleTypeSet],
   );
 
@@ -905,28 +907,27 @@ export function EmployeeVerificationsPage() {
             bankInformation: data.bankInformation.filter((r) => r.status === 'pending').length,
           };
           return (
-            <div className="flex justify-center gap-1 border-b border-gray-200 sm:justify-start">
-              {visibleCategoryTabs.map((tab) => (
-                <button
-                  key={tab.key}
-                  type="button"
-                  onClick={() => { setActiveType(tab.key); setStatusFilter('pending'); }}
-                  className={`flex items-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
-                    activeType === tab.key
-                      ? 'border-primary-600 text-primary-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  <tab.Icon className="h-4 w-4" />
-                  <span className="hidden sm:inline">{tab.label}</span>
-                  {pendingByType[tab.key] > 0 && (
+          <ViewToggle
+            options={visibleCategoryTabs.map((tab) => ({
+              ...tab,
+              label: (
+                <div className="flex items-center gap-2">
+                  <span>{tab.label}</span>
+                  {pendingByType[tab.id] > 0 && (
                     <span className="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary-600 px-1 text-[9px] font-bold text-white">
-                      {pendingByType[tab.key]}
+                      {pendingByType[tab.id]}
                     </span>
                   )}
-                </button>
-              ))}
-            </div>
+                </div>
+              ),
+            }))}
+            activeId={activeType}
+            onChange={(id) => {
+              setActiveType(id);
+              setStatusFilter('pending');
+            }}
+            layoutId="verification-category-tabs"
+          />
           );
         })()}
 
@@ -940,23 +941,15 @@ export function EmployeeVerificationsPage() {
           </div>
         ) : (
           <>
-            <div className="flex w-full gap-1 border-b border-gray-200">
-              {STATUS_TABS.map((tab) => (
-                <button
-                  key={tab.key}
-                  type="button"
-                  onClick={() => { setStatusFilter(tab.key); setPage(1); }}
-                  className={`flex flex-1 items-center justify-center gap-1.5 border-b-2 px-3 py-1.5 text-xs font-medium transition-colors sm:flex-none ${
-                    statusFilter === tab.key
-                      ? 'border-primary-600 text-primary-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  <tab.Icon className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">{tab.label}</span>
-                </button>
-              ))}
-            </div>
+            <ViewToggle
+              options={STATUS_TABS}
+              activeId={statusFilter}
+              onChange={(id) => {
+                setStatusFilter(id);
+                setPage(1);
+              }}
+              layoutId="verification-status-tabs"
+            />
 
             <div className="space-y-4">
               {loading ? (

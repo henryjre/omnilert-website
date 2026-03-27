@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import { useSearchParams } from 'react-router-dom';
 import type { ElementType } from 'react';
 import type { CaseMessage, CaseReport, GroupedUsersResponse } from '@omnilert/shared';
@@ -7,8 +8,9 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import {
   ArrowDown, ArrowUp, FileWarning, Filter, FolderCheck, FolderOpen,
-  LayoutGrid, Plus,
+  LayoutGrid, MessageCircle, Plus, Search, CheckCircle2, XCircle
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/shared/components/ui/Button';
 import { DateRangePicker } from '@/shared/components/ui/DateRangePicker';
 import { usePermission } from '@/shared/hooks/usePermission';
@@ -50,10 +52,10 @@ type OptimisticMessage = CaseMessage & { isPending?: boolean };
 
 const DEFAULT_FILTERS: CaseReportFilters = { sort_order: 'desc' };
 
-const STATUS_TABS: { key: StatusTab; label: string; Icon: ElementType }[] = [
-  { key: 'all',    label: 'All',    Icon: LayoutGrid  },
-  { key: 'open',   label: 'Open',   Icon: FolderOpen  },
-  { key: 'closed', label: 'Closed', Icon: FolderCheck },
+const STATUS_TABS: { id: StatusTab; label: string; icon: LucideIcon }[] = [
+  { id: 'all',    label: 'All',    icon: LayoutGrid  },
+  { id: 'open',   label: 'Open',   icon: FolderOpen  },
+  { id: 'closed', label: 'Closed', icon: FolderCheck },
 ];
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
@@ -283,7 +285,7 @@ export function CaseReportsPage() {
             )}
           </div>
           <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
-            {STATUS_TABS.find((t) => t.key === statusTab)?.label}
+            {STATUS_TABS.find((t) => t.id === statusTab)?.label}
           </p>
           <p className="mt-1 hidden text-sm text-gray-500 sm:block">
             Document, track, and resolve workplace incidents and operational issues.
@@ -292,24 +294,13 @@ export function CaseReportsPage() {
 
         {/* Status tabs + New Case Report + Filters */}
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-          {/* Underline tab bar */}
-          <div className="flex w-full gap-1 border-b border-gray-200 sm:flex-1">
-            {STATUS_TABS.map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setStatusTab(tab.key)}
-                className={`flex flex-1 items-center justify-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors sm:flex-none ${
-                  statusTab === tab.key
-                    ? 'border-primary-600 text-primary-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                <tab.Icon className="h-4 w-4" />
-                <span className="hidden sm:inline">{tab.label}</span>
-              </button>
-            ))}
-          </div>
+          <ViewToggle
+            options={STATUS_TABS}
+            activeId={statusTab}
+            onChange={(id) => setStatusTab(id)}
+            layoutId="case-report-tabs"
+            className="sm:flex-1"
+          />
 
           {/* Controls */}
           <div className="flex w-full items-center gap-2 sm:w-auto">

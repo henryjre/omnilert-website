@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import { createPortal } from 'react-dom';
 import { AnimatePresence } from 'framer-motion';
 import { AnimatedModal } from '@/shared/components/ui/AnimatedModal';
@@ -16,6 +17,7 @@ import {
   Clock, DollarSign, FileText, GitBranch, LayoutGrid, Paperclip,
   X, XCircle, Copy, Check,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { ElementType } from 'react';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -36,12 +38,12 @@ const STATUS_VARIANT: Record<string, 'success' | 'danger' | 'warning'> = {
 
 type StatusTab = 'all' | 'pending' | 'approved' | 'disbursed' | 'rejected';
 
-const STATUS_TABS: { key: StatusTab; label: string; Icon: ElementType }[] = [
-  { key: 'all',       label: 'All',       Icon: LayoutGrid  },
-  { key: 'pending',   label: 'Pending',   Icon: Clock       },
-  { key: 'approved',  label: 'Approved',  Icon: CheckCircle },
-  { key: 'disbursed', label: 'Disbursed', Icon: Banknote    },
-  { key: 'rejected',  label: 'Rejected',  Icon: XCircle     },
+const STATUS_TABS: { id: StatusTab; label: string; icon: LucideIcon }[] = [
+  { id: 'all',       label: 'All',       icon: LayoutGrid  },
+  { id: 'pending',   label: 'Pending',   icon: Clock       },
+  { id: 'approved',  label: 'Approved',  icon: CheckCircle },
+  { id: 'disbursed', label: 'Disbursed', icon: Banknote    },
+  { id: 'rejected',  label: 'Rejected',  icon: XCircle     },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -561,7 +563,7 @@ export function CashRequestsPage() {
             )}
           </div>
           <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
-            {STATUS_TABS.find((t) => t.key === statusTab)?.label}
+            {STATUS_TABS.find((t) => t.id === statusTab)?.label}
           </p>
           <p className="mt-1 hidden text-sm text-gray-500 sm:block">
             Review and act on employee cash request submissions.
@@ -570,23 +572,13 @@ export function CashRequestsPage() {
 
         {/* Status tabs */}
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-          <div className="flex w-full gap-1 border-b border-gray-200 sm:flex-1">
-            {STATUS_TABS.map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => { setStatusTab(tab.key); setPage(1); }}
-                className={`flex flex-1 items-center justify-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors sm:flex-none ${
-                  statusTab === tab.key
-                    ? 'border-primary-600 text-primary-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                <tab.Icon className="h-4 w-4" />
-                <span className="hidden sm:inline">{tab.label}</span>
-              </button>
-            ))}
-          </div>
+          <ViewToggle
+            options={STATUS_TABS}
+            activeId={statusTab}
+            onChange={(id) => { setStatusTab(id); setPage(1); }}
+            layoutId="cash-request-tabs"
+            className="sm:flex-1"
+          />
         </div>
 
         {/* Content */}

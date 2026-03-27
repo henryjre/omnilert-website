@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import { useSearchParams } from 'react-router-dom';
 import type { ViolationNotice, ViolationNoticeDetail, ViolationNoticeMessage, GroupedUsersResponse } from '@omnilert/shared';
 import { PERMISSIONS } from '@omnilert/shared';
@@ -18,6 +19,7 @@ import {
   Users,
   XCircle,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { ElementType } from 'react';
 import { Button } from '@/shared/components/ui/Button';
 import { DateRangePicker } from '@/shared/components/ui/DateRangePicker';
@@ -52,14 +54,14 @@ type OptimisticMessage = ViolationNoticeMessage & { isPending?: boolean };
 
 const DEFAULT_FILTERS: ViolationNoticeFilters = { sort_order: 'desc' };
 
-const STATUS_TABS: { key: StatusTab; label: string; Icon: ElementType }[] = [
-  { key: 'all',                  label: 'All',                  Icon: LayoutGrid    },
-  { key: 'queued',               label: 'Queued',               Icon: Clock         },
-  { key: 'discussion',           label: 'Discussion',           Icon: MessageCircle },
-  { key: 'issuance',             label: 'Issuance',             Icon: FileText      },
-  { key: 'disciplinary_meeting', label: 'Disciplinary Meeting', Icon: Users         },
-  { key: 'completed',            label: 'Completed',            Icon: CheckCircle2  },
-  { key: 'rejected',             label: 'Rejected',             Icon: XCircle       },
+const STATUS_TABS: { id: StatusTab; label: string; icon: LucideIcon }[] = [
+  { id: 'all',                  label: 'All',                  icon: LayoutGrid    },
+  { id: 'queued',               label: 'Queued',               icon: Clock         },
+  { id: 'discussion',           label: 'Discussion',           icon: MessageCircle },
+  { id: 'issuance',             label: 'Issuance',             icon: FileText      },
+  { id: 'disciplinary_meeting', label: 'Disciplinary Meeting', icon: Users         },
+  { id: 'completed',            label: 'Completed',            icon: CheckCircle2  },
+  { id: 'rejected',             label: 'Rejected',             icon: XCircle       },
 ];
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
@@ -416,39 +418,23 @@ export function ViolationNoticesPage() {
               </span>
             )}
           </div>
-          <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
-            {STATUS_TABS.find((t) => t.key === statusTab)?.label}
-          </p>
-          <p className="mt-1 hidden text-sm text-gray-500 sm:block">
-            Manage employee violation notices through the issuance workflow.
-          </p>
+            <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
+              {STATUS_TABS.find((t) => t.id === statusTab)?.label}
+            </p>
+            <p className="mt-1 hidden text-sm text-gray-500 sm:block">
+              Manage employee violation notices through the issuance workflow.
+            </p>
         </div>
 
         {/* Status tabs + New VN + Filters */}
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-          {/* Tab bar — full-width equal-spaced icon-only on mobile, scrollable icon+label on sm+ */}
-          <div className="w-full sm:flex-1">
-            <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-              <div className="flex w-full border-b border-gray-200 sm:w-max sm:min-w-full">
-                {STATUS_TABS.map((tab) => (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => setStatusTab(tab.key)}
-                    title={tab.label}
-                    className={`flex flex-1 items-center justify-center gap-2 border-b-2 px-2 py-2 text-sm font-medium transition-colors sm:flex-none sm:px-3 ${
-                      statusTab === tab.key
-                        ? 'border-primary-600 text-primary-600'
-                        : 'border-transparent text-gray-500 hover:text-gray-700'
-                    }`}
-                  >
-                    <tab.Icon className="h-4 w-4 shrink-0" />
-                    <span className="hidden sm:inline">{tab.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
+          <ViewToggle
+            options={STATUS_TABS}
+            activeId={statusTab}
+            onChange={(id) => setStatusTab(id)}
+            layoutId="violation-notice-tabs"
+            className="sm:flex-1"
+          />
 
           {/* Controls */}
           <div className="flex w-full items-center gap-2 sm:w-auto">

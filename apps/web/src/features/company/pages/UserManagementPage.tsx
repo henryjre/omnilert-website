@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
+import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import { Card, CardBody, CardHeader } from '@/shared/components/ui/Card';
 import { Button } from '@/shared/components/ui/Button';
 import { Input } from '@/shared/components/ui/Input';
 import { Spinner } from '@/shared/components/ui/Spinner';
 import { api } from '@/shared/services/api.client';
 import { useAppToast } from '@/shared/hooks/useAppToast';
-import { Plus, Save, X } from 'lucide-react';
+import { Archive, LayoutGrid, Plus, Save, UserCheck, Users, X } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
 type Role = {
   id: string;
@@ -21,6 +23,12 @@ type AssignmentOptionCompany = {
 };
 
 type StatusFilter = 'all' | 'active' | 'archived';
+
+const STATUS_TABS: { id: StatusFilter; label: string; icon: LucideIcon }[] = [
+  { id: 'all',      label: 'All Users', icon: Users },
+  { id: 'active',   label: 'Active',    icon: UserCheck },
+  { id: 'archived', label: 'Archived',  icon: Archive },
+];
 
 type UserItem = {
   id: string;
@@ -503,22 +511,12 @@ export function UserManagementPage() {
           </Card>
         )}
 
-        <div className="flex gap-1 rounded-lg bg-gray-100 p-1 w-fit">
-          {(['all', 'active', 'archived'] as StatusFilter[]).map((item) => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => setStatusFilter(item)}
-              className={`rounded-md px-4 py-1.5 text-sm font-medium capitalize transition-colors ${
-                statusFilter === item
-                  ? 'bg-primary-600 text-white shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {item}
-            </button>
-          ))}
-        </div>
+        <ViewToggle
+          options={STATUS_TABS}
+          activeId={statusFilter}
+          onChange={(id) => setStatusFilter(id)}
+          layoutId="user-management-tabs"
+        />
 
         {loading ? (
           <div className="flex justify-center py-12">

@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import { createPortal } from 'react-dom';
 import { AnimatePresence } from 'framer-motion';
 import { Badge } from '@/shared/components/ui/Badge';
@@ -33,6 +34,7 @@ import {
   Briefcase,
   ArrowLeftRight,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
 // --- Constants ---
 
@@ -64,11 +66,11 @@ const STATUS_VARIANT: Record<string, 'success' | 'danger' | 'warning' | 'default
 
 type StatusTab = 'all' | 'pending' | 'approved' | 'rejected';
 
-const STATUS_TABS: { key: StatusTab; label: string; Icon: React.ElementType }[] = [
-  { key: 'all',      label: 'All',      Icon: LayoutList },
-  { key: 'pending',  label: 'Pending',  Icon: Clock },
-  { key: 'approved', label: 'Approved', Icon: CheckCircle },
-  { key: 'rejected', label: 'Rejected', Icon: XCircle },
+const STATUS_TABS: { id: StatusTab; label: string; icon: LucideIcon }[] = [
+  { id: 'all',      label: 'All',      icon: LayoutList },
+  { id: 'pending',  label: 'Pending',  icon: Clock },
+  { id: 'approved', label: 'Approved', icon: CheckCircle },
+  { id: 'rejected', label: 'Rejected', icon: XCircle },
 ];
 
 function fmtAmount(amount: string | number | null) {
@@ -1198,27 +1200,15 @@ export function AuthorizationRequestsPage() {
                 )}
               </div>
 
-              {/* Border-bottom underline tab strip */}
-              <div className="flex w-full gap-1 border-b border-gray-200">
-                {STATUS_TABS.map((tab) => (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => {
-                      setMgmtTab(tab.key);
-                      setMgmtPage(1);
-                    }}
-                    className={`flex flex-1 items-center justify-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors sm:flex-none ${
-                      mgmtTab === tab.key
-                        ? 'border-primary-600 text-primary-600'
-                        : 'border-transparent text-gray-500 hover:text-gray-700'
-                    }`}
-                  >
-                    <tab.Icon className="h-4 w-4" />
-                    <span className="hidden sm:inline">{tab.label}</span>
-                  </button>
-                ))}
-              </div>
+              <ViewToggle
+                options={STATUS_TABS}
+                activeId={mgmtTab}
+                onChange={(id) => {
+                  setMgmtTab(id);
+                  setMgmtPage(1);
+                }}
+                layoutId="mgmt-request-tabs"
+              />
 
               {/* Empty state or card grid */}
               {loading ? (
@@ -1289,27 +1279,15 @@ export function AuthorizationRequestsPage() {
                 )}
               </div>
 
-              {/* Border-bottom underline tab strip */}
-              <div className="flex w-full gap-1 border-b border-gray-200">
-                {STATUS_TABS.map((tab) => (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    onClick={() => {
-                      setCrewTab(tab.key);
-                      setCrewPage(1);
-                    }}
-                    className={`flex flex-1 items-center justify-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors sm:flex-none ${
-                      crewTab === tab.key
-                        ? 'border-primary-600 text-primary-600'
-                        : 'border-transparent text-gray-500 hover:text-gray-700'
-                    }`}
-                  >
-                    <tab.Icon className="h-4 w-4" />
-                    <span className="hidden sm:inline">{tab.label}</span>
-                  </button>
-                ))}
-              </div>
+              <ViewToggle
+                options={STATUS_TABS}
+                activeId={crewTab}
+                onChange={(id) => {
+                  setCrewTab(id);
+                  setCrewPage(1);
+                }}
+                layoutId="crew-request-tabs"
+              />
 
               {/* Empty state or card grid */}
               {loading ? (

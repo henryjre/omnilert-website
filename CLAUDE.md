@@ -34,7 +34,6 @@ Read the relevant skill file at the start of any task touching that domain. When
 ## Plans
 Always save the plans as markdown files inside `.claude/plans/` folder.
 
-<<<<<<< HEAD
 <!-- rtk-instructions v2 -->
 # RTK (Rust Token Killer) - Token-Optimized Commands
 
@@ -168,16 +167,3 @@ rtk init --global       # Add RTK to ~/.claude/CLAUDE.md
 
 Overall average: **60-90% token reduction** on common development operations.
 <!-- /rtk-instructions -->
-=======
-## Keeping Docs in Sync
-After any major change (new architecture decision, new pattern, schema change, new module, etc.):
-
-1. Update `project-context/PROJECT_CONTEXT.md` to reflect the change.
-2. Identify and update any relevant skill files under `.claude/skills/` that cover the affected area (refer to the Skills table above).
-3. If a change introduces a new domain not covered by existing skills, create a new skill file and add it to the Skills table.
-
-### Debugging Approach
-- **When stuck on a bug, stop speculating and gather real information first**
-- If a root cause isn't obvious from reading the code, add logging/instrumentation and ask the user to run it — don't keep re-theorising without data
-- Avoid the "wait, actually the real issue is..." loop: form one clear hypothesis, test it, then reassess based on evidence
->>>>>>> 95b4b9a20873710ae73d237b532bc345c90a2917

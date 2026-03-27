@@ -211,7 +211,7 @@ const STAGE1_RENAMES: PermissionRename[] = [
     toKey: 'account.manage_employee_requirements',
     fromCategory: 'account',
     toCategory: 'account',
-    toName: 'Manage Employee Requirements',
+    toName: 'Manage Own Requirements',
   },
 ];
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { ViewToggle, type ViewOption } from '@/shared/components/ui/ViewToggle';
 import { useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { DateRangePicker } from '@/shared/components/ui/DateRangePicker';
@@ -1415,11 +1416,11 @@ export function ScheduleTab() {
     }
   };
 
-  const TABS: { key: TabType; label: string; Icon: ComponentType<{ className?: string }> }[] = [
-    { key: 'all', label: 'All', Icon: LayoutGrid },
-    { key: 'active', label: 'Active', Icon: CheckCircle },
-    { key: 'open', label: 'Open', Icon: Clock },
-    { key: 'ended', label: 'Closed', Icon: XCircle },
+  const TABS: ViewOption<TabType>[] = [
+    { id: 'all',    label: 'All',    icon: LayoutGrid },
+    { id: 'active', label: 'Active', icon: CheckCircle },
+    { id: 'open',   label: 'Open',   icon: Clock },
+    { id: 'ended',  label: 'Closed', icon: XCircle },
   ];
 
   const hasActiveFilters =
@@ -1569,7 +1570,7 @@ export function ScheduleTab() {
           </div>
           {/* Mobile: active tab name as a compact subtitle */}
           <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
-            {TABS.find((t) => t.key === activeTab)?.label}
+            {TABS.find((t) => t.id === activeTab)?.label}
           </p>
           {/* Desktop: full description */}
           <p className="mt-1 hidden text-sm text-gray-500 sm:block">
@@ -1610,26 +1611,16 @@ export function ScheduleTab() {
             the way to just before the filter button. sm:items-end keeps the filter button's
             bottom aligned with the border line. */}
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-          <div className="flex w-full gap-1 border-b border-gray-200 sm:flex-1">
-            {TABS.map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => {
-                  setActiveTab(tab.key);
-                  setPage(1);
-                }}
-                className={`flex flex-1 items-center justify-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors sm:flex-none ${
-                  activeTab === tab.key
-                    ? 'border-primary-600 text-primary-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                <tab.Icon className="h-4 w-4" />
-                <span className="hidden sm:inline">{tab.label}</span>
-              </button>
-            ))}
-          </div>
+          <ViewToggle
+            options={TABS}
+            activeId={activeTab}
+            onChange={(id) => {
+              setActiveTab(id);
+              setPage(1);
+            }}
+            layoutId="schedule-status-tabs"
+            className="sm:flex-1"
+          />
 
           <button
             type="button"

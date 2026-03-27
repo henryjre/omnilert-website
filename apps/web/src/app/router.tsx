@@ -27,6 +27,7 @@ import { StoreAuditsPage } from '@/features/store-audits/pages/StoreAuditsPage';
 import { CaseReportsPage } from '@/features/case-reports/pages/CaseReportsPage';
 import { ViolationNoticesPage } from '@/features/violation-notices/pages/ViolationNoticesPage';
 import { PeerEvaluationsPage } from '@/features/peer-evaluations/pages/PeerEvaluationsPage';
+import { EmployeeAnalyticsPage } from '@/features/employee-analytics/pages/EmployeeAnalyticsPage';
 import { PERMISSIONS } from '@omnilert/shared';
 
 export const router = createBrowserRouter([
@@ -160,6 +161,10 @@ export const router = createBrowserRouter([
                 <EmployeeProfilesPage />
               </PermissionGuard>
             ),
+          },
+          {
+            path: 'employee-analytics',
+            element: <EmployeeAnalyticsPage />,
           },
           {
             path: 'store-audits',

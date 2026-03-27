@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import { useSearchParams } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import type { GroupedUsersResponse } from '@omnilert/shared';
 import { PERMISSIONS } from '@omnilert/shared';
-import { ArrowDown, ArrowUp, BarChart2, BriefcaseBusiness, CheckCircle, ChevronDown, ChevronUp, Clock, Filter, LayoutGrid, Users, XCircle } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, BarChart2, BriefcaseBusiness, CheckCircle, ChevronDown, ChevronUp, Clock, Filter, LayoutGrid, Users, XCircle } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/shared/components/ui/Button';
 import { Card, CardBody } from '@/shared/components/ui/Card';
 import { DateRangePicker } from '@/shared/components/ui/DateRangePicker';
@@ -25,11 +27,11 @@ import { PeerEvaluationDetailPanel } from '../components/PeerEvaluationDetailPan
 
 type StatusTab = 'all' | 'pending' | 'completed' | 'expired';
 
-const STATUS_TABS: { key: StatusTab; label: string; Icon: React.ElementType }[] = [
-  { key: 'all',       label: 'All',       Icon: LayoutGrid  },
-  { key: 'pending',   label: 'Pending',   Icon: Clock       },
-  { key: 'completed', label: 'Completed', Icon: CheckCircle },
-  { key: 'expired',   label: 'Expired',   Icon: XCircle     },
+const STATUS_TABS: { id: StatusTab; label: string; icon: LucideIcon }[] = [
+  { id: 'all',       label: 'All',       icon: LayoutGrid  },
+  { id: 'pending',   label: 'Pending',   icon: Clock       },
+  { id: 'completed', label: 'Completed', icon: CheckCircle },
+  { id: 'expired',   label: 'Expired',   icon: XCircle     },
 ];
 
 const DEFAULT_FILTERS: PeerEvalFilters = { sort_order: 'desc' };
@@ -250,23 +252,13 @@ export function PeerEvaluationsPage() {
 
       {/* Status tabs + filter toggle */}
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex w-full gap-1 border-b border-gray-200 sm:w-auto">
-          {STATUS_TABS.map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => setActiveStatus(tab.key)}
-              className={`flex flex-1 items-center justify-center gap-1.5 border-b-2 px-3 py-1.5 text-xs font-medium transition-colors sm:flex-none ${
-                activeStatus === tab.key
-                  ? 'border-primary-600 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <tab.Icon className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">{tab.label}</span>
-            </button>
-          ))}
-        </div>
+        <ViewToggle
+          options={STATUS_TABS}
+          activeId={activeStatus}
+          onChange={(id) => setActiveStatus(id)}
+          layoutId="peer-evaluation-tabs"
+          className="sm:flex-1"
+        />
 
         <button
           type="button"

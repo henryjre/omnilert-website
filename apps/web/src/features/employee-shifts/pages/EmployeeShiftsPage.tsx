@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ComponentType } from 'react';
+import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AnimatedModal } from '@/shared/components/ui/AnimatedModal';
 import { Button } from '@/shared/components/ui/Button';
@@ -14,6 +15,7 @@ import { ShiftExchangeFlowModal } from '@/features/shift-exchange/components/Shi
 import { PeerEvaluationModal } from '@/features/peer-evaluations/components/PeerEvaluationModal';
 import { PERMISSIONS } from '@omnilert/shared';
 import { AlertTriangle, ArrowDown, ArrowUp, BadgeCheck, Briefcase, CalendarDays, Check, CheckCircle, ChevronDown, ChevronUp, Clock, Clock3, Filter, GitBranch, LogIn, LogOut, MapPin, RefreshCw, Square, Users, X, XCircle } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
 // --- Constants ---
 
@@ -1421,11 +1423,11 @@ export function EmployeeShiftsPage() {
     setFiltersOpen(false);
   };
 
-  const TABS: { key: TabType; label: string; Icon: ComponentType<{ className?: string }> }[] = [
-    { key: 'all', label: 'All', Icon: Users },
-    { key: 'open', label: 'Open', Icon: CalendarDays },
-    { key: 'active', label: 'Active', Icon: Clock },
-    { key: 'ended', label: 'Closed', Icon: X },
+  const TABS: { id: TabType; label: string; icon: LucideIcon }[] = [
+    { id: 'all', label: 'All', icon: Users },
+    { id: 'open', label: 'Open', icon: CalendarDays },
+    { id: 'active', label: 'Active', icon: Clock },
+    { id: 'ended', label: 'Closed', icon: X },
   ];
 
   const pageSize = isMobile ? 6 : 12;
@@ -1454,7 +1456,7 @@ export function EmployeeShiftsPage() {
             <h1 className="text-2xl font-bold text-gray-900">Employee Schedule</h1>
           </div>
           <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
-            {TABS.find((t) => t.key === activeTab)?.label}
+            {TABS.find((t) => t.id === activeTab)?.label}
           </p>
           <p className="mt-1 hidden text-sm text-gray-500 sm:block">
             Monitor and manage employee shifts across branches.
@@ -1463,23 +1465,16 @@ export function EmployeeShiftsPage() {
 
         {/* Status tabs + filter toggle */}
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-          <div className="flex w-full gap-1 border-b border-gray-200 sm:flex-1">
-            {TABS.map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => { setActiveTab(tab.key); setPage(1); }}
-                className={`flex flex-1 items-center justify-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors sm:flex-none ${
-                  activeTab === tab.key
-                    ? 'border-primary-600 text-primary-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                <tab.Icon className="h-4 w-4" />
-                <span className="hidden sm:inline">{tab.label}</span>
-              </button>
-            ))}
-          </div>
+          <ViewToggle
+            options={TABS}
+            activeId={activeTab}
+            onChange={(id) => {
+              setActiveTab(id);
+              setPage(1);
+            }}
+            layoutId="employee-shift-tabs"
+            className="sm:flex-1"
+          />
 
           <button
             type="button"

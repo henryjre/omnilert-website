@@ -2,6 +2,7 @@ import React from 'react';
 import type { AccountAuditResultListItem, StoreAuditType } from '@omnilert/shared';
 import { ClipboardList, LayoutGrid, ShieldCheck, Star } from 'lucide-react';
 import { Pagination } from '../../../shared/components/ui/Pagination';
+import { ViewToggle, type ViewOption } from '@/shared/components/ui/ViewToggle';
 import { AccountAuditResultCard } from './AccountAuditResultCard';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -11,10 +12,10 @@ type CategoryTab = 'all' | StoreAuditType;
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /** Extracted so both the tabs row and the mobile header label can reference it. */
-const CATEGORY_TABS: { key: CategoryTab; label: string; icon: React.ElementType }[] = [
-  { key: 'all',              label: 'All Categories',       icon: LayoutGrid  },
-  { key: 'customer_service', label: 'Customer Service',     icon: Star        },
-  { key: 'compliance',       label: 'Compliance Audit',     icon: ShieldCheck },
+const CATEGORY_TABS: ViewOption<CategoryTab>[] = [
+  { id: 'all',              label: 'All Categories',       icon: LayoutGrid  },
+  { id: 'customer_service', label: 'Customer Service',     icon: Star        },
+  { id: 'compliance',       label: 'Compliance Audit',     icon: ShieldCheck },
 ];
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
@@ -65,7 +66,7 @@ export function AuditResultsPageContent({
   onSelectAudit: (auditId: string) => void;
   onPageChange: (page: number) => void;
 }) {
-  const activeCategoryLabel = CATEGORY_TABS.find((t) => t.key === category)?.label ?? '';
+  const activeCategoryLabel = CATEGORY_TABS.find((t) => t.id === category)?.label ?? '';
 
   return (
     <div className="space-y-5">
@@ -85,24 +86,12 @@ export function AuditResultsPageContent({
         </p>
       </div>
 
-      {/* Category tabs */}
-      <div className="flex w-full gap-1 border-b border-gray-200">
-        {CATEGORY_TABS.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => onCategoryChange(tab.key)}
-            className={`flex flex-1 items-center justify-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors sm:flex-none ${
-              category === tab.key
-                ? 'border-primary-600 text-primary-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <tab.icon className="h-4 w-4" />
-            <span className="hidden sm:inline">{tab.label}</span>
-          </button>
-        ))}
-      </div>
+      <ViewToggle
+        options={CATEGORY_TABS}
+        activeId={category}
+        onChange={onCategoryChange}
+        layoutId="audit-category-tabs"
+      />
 
       {/* Content */}
       {loading ? (

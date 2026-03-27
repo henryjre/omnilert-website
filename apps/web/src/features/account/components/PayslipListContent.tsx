@@ -2,6 +2,7 @@ import React from "react";
 import type { PayslipListItem, PayslipStatus } from "@omnilert/shared";
 import { FileText, LayoutGrid, Clock, FileEdit, CheckCircle2 } from "lucide-react";
 import { Pagination } from "../../../shared/components/ui/Pagination";
+import { ViewToggle, type ViewOption } from "@/shared/components/ui/ViewToggle";
 import { PayslipCard } from "./PayslipCard";
 
 type StatusFilter = "all" | PayslipStatus;
@@ -40,11 +41,11 @@ function PayslipCardSkeleton() {
   );
 }
 
-const STATUS_TABS: TabConfig[] = [
-  { key: "all", label: "All", icon: LayoutGrid },
-  { key: "pending", label: "Pending", icon: Clock },
-  { key: "draft", label: "Draft", icon: FileEdit },
-  { key: "completed", label: "Completed", icon: CheckCircle2 },
+const STATUS_TABS: ViewOption<StatusFilter>[] = [
+  { id: "all", label: "All", icon: LayoutGrid },
+  { id: "pending", label: "Pending", icon: Clock },
+  { id: "draft", label: "Draft", icon: FileEdit },
+  { id: "completed", label: "Completed", icon: CheckCircle2 },
 ];
 
 interface PayslipListContentProps {
@@ -96,7 +97,7 @@ export function PayslipListContent({
         </div>
         {/* Mobile: active tab name as a compact subtitle */}
         <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
-          {STATUS_TABS.find((t) => t.key === statusFilter)?.label}
+          {STATUS_TABS.find((t) => t.id === statusFilter)?.label}
         </p>
         {/* Desktop: full description */}
         <p className="mt-1 hidden text-sm text-gray-500 sm:block">
@@ -104,24 +105,12 @@ export function PayslipListContent({
         </p>
       </div>
 
-      {/* Status filter tabs */}
-      <div className="flex w-full gap-1 border-b border-gray-200 sm:w-auto">
-        {STATUS_TABS.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => onStatusFilterChange(tab.key)}
-            className={`flex flex-1 items-center justify-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors sm:flex-none ${
-              statusFilter === tab.key
-                ? "border-primary-600 text-primary-600"
-                : "border-transparent text-gray-500 hover:text-gray-700"
-            }`}
-          >
-            <tab.icon className="h-4 w-4" />
-            <span className="hidden sm:inline">{tab.label}</span>
-          </button>
-        ))}
-      </div>
+      <ViewToggle
+        options={STATUS_TABS}
+        activeId={statusFilter}
+        onChange={onStatusFilterChange}
+        layoutId="payslip-status-tabs"
+      />
 
       {/* Content area */}
       {loading ? (

@@ -22,6 +22,7 @@ import {
   ClipboardList,
   TriangleAlert,
   FileWarning,
+  BarChart2,
 } from 'lucide-react';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useAuth } from '@/features/auth/hooks/useAuth';
@@ -54,6 +55,7 @@ interface SidebarProps {
 }
 
 const HR_PATHS = ['/employee-profiles', '/employee-schedule', '/violation-notices', '/workplace-relations'];
+const ANALYTICS_PATHS = ['/employee-analytics'];
 const FINANCE_PATHS = ['/cash-requests'];
 const AUDIT_PATHS = ['/store-audits'];
 
@@ -141,8 +143,8 @@ export function Sidebar({ className = '' }: SidebarProps) {
           <LayoutDashboard className="h-5 w-5" />
           Dashboard
         </AnimatedNavLink>
-
         <div className="my-2 border-t border-gray-200" />
+
         {categoryLabel('My Account')}
         {hasPermission(PERMISSIONS.ACCOUNT_VIEW_SCHEDULE) && (
           <AnimatedNavLink to="/account/schedule" className={linkClass}>
@@ -183,6 +185,13 @@ export function Sidebar({ className = '' }: SidebarProps) {
         <AnimatedNavLink to="/account/settings" className={linkClass}>
           <Settings className="h-5 w-5" />
           My Settings
+        </AnimatedNavLink>
+
+        <div className="my-2 border-t border-gray-200" />
+        {categoryLabel('Analytics')}
+        <AnimatedNavLink to="/employee-analytics" className={linkClass}>
+          <BarChart2 className="h-5 w-5" />
+          Employee Analytics
         </AnimatedNavLink>
 
         {/* Management */}

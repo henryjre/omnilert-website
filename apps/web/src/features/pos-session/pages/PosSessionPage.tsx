@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import type { ElementType } from 'react';
 import { Monitor, Layers, LayoutGrid, FolderOpen, FolderCheck, BadgeCheck, ChevronLeft, ChevronRight } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { useSocket } from '@/shared/hooks/useSocket';
 import { useBranchStore } from '@/shared/store/branchStore';
 import { api } from '@/shared/services/api.client';
@@ -13,11 +15,11 @@ import { SessionDetailPanel } from '../components/SessionDetailPanel';
 
 type StatusTab = 'all' | 'open' | 'closed' | 'audited';
 
-const TABS: { id: StatusTab; label: string; Icon: ElementType }[] = [
-  { id: 'all',     label: 'All',     Icon: LayoutGrid  },
-  { id: 'open',    label: 'Open',    Icon: FolderOpen  },
-  { id: 'closed',  label: 'Closed',  Icon: FolderCheck },
-  { id: 'audited', label: 'Audited', Icon: BadgeCheck  },
+const TABS: { id: StatusTab; label: string; icon: LucideIcon }[] = [
+  { id: 'all',     label: 'All',     icon: LayoutGrid  },
+  { id: 'open',    label: 'Open',    icon: FolderOpen  },
+  { id: 'closed',  label: 'Closed',  icon: FolderCheck },
+  { id: 'audited', label: 'Audited', icon: BadgeCheck  },
 ];
 
 function getSessionTab(status: string): StatusTab {
@@ -177,24 +179,16 @@ export function PosSessionPage() {
           </p>
         </div>
 
-        {/* Status tabs */}
-        <div className="flex w-full gap-1 border-b border-gray-200">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex flex-1 items-center justify-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors sm:flex-none ${
-                activeTab === tab.id
-                  ? 'border-primary-600 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <tab.Icon className="h-4 w-4" />
-              <span className="hidden sm:inline">{tab.label}</span>
-            </button>
-          ))}
-        </div>
+        <ViewToggle
+          options={TABS}
+          activeId={activeTab}
+          onChange={(id) => {
+            setActiveTab(id);
+            setPage(1);
+          }}
+          layoutId="pos-session-tabs"
+          className="sm:flex-1"
+        />
 
         {/* Content */}
         {loading ? (

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import { useSearchParams } from 'react-router-dom';
 import type {
   CssCriteriaScores,
@@ -10,6 +11,7 @@ import type {
 } from '@omnilert/shared';
 import { PERMISSIONS } from '@omnilert/shared';
 import { CheckCircle, ClipboardList, Clock, LayoutGrid, Loader2, ShieldCheck, Star, X } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useSocket } from '@/shared/hooks/useSocket';
 import { useAppToast } from '@/shared/hooks/useAppToast';
@@ -28,10 +30,10 @@ import { resolveStoreAuditPaginationState } from './storeAuditPagination';
 type CategoryTab = 'all' | StoreAuditType;
 const PAGE_SIZE = 10;
 
-const STATUS_TABS: { key: StoreAuditStatus; label: string; Icon: React.ElementType }[] = [
-  { key: 'pending', label: 'Pending', Icon: Clock },
-  { key: 'processing', label: 'Processing', Icon: Loader2 },
-  { key: 'completed', label: 'Completed', Icon: CheckCircle },
+const STATUS_TABS: { id: StoreAuditStatus; label: string; icon: LucideIcon }[] = [
+  { id: 'pending', label: 'Pending', icon: Clock },
+  { id: 'processing', label: 'Processing', icon: Loader2 },
+  { id: 'completed', label: 'Completed', icon: CheckCircle },
 ];
 
 function StoreAuditsSkeleton() {
@@ -372,60 +374,43 @@ export function StoreAuditsPage() {
           <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">{activeCategoryLabel}</p>
         </div>
 
-        {/* Category tabs */}
-        <div className="flex justify-center gap-1 border-b border-gray-200 sm:justify-start">
-          {([
-            { key: 'all', label: 'All Categories', icon: LayoutGrid },
-            { key: 'customer_service', label: 'Customer Service', icon: Star },
-            { key: 'compliance', label: 'Compliance', icon: ShieldCheck },
-          ] as const).map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => {
-                setCategory(tab.key);
-                setPage(1);
-                setSelectedAuditId(null);
-              }}
-              className={`flex items-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
-                category === tab.key
-                  ? 'border-primary-600 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <tab.icon className="h-4 w-4" />
-              <span className="hidden sm:inline">{tab.label}</span>
-              {pendingCounts[tab.key] > 0 && (
-                <span className="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary-600 px-1 text-[9px] font-bold text-white">
-                  {pendingCounts[tab.key]}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
+        <ViewToggle
+          options={([
+            { id: 'all', label: 'All Categories', icon: LayoutGrid },
+            { id: 'customer_service', label: 'Customer Service', icon: Star },
+            { id: 'compliance', label: 'Compliance', icon: ShieldCheck },
+          ] as const).map((tab) => ({
+            ...tab,
+            label: (
+              <div className="flex items-center gap-2">
+                <span>{tab.label}</span>
+                {pendingCounts[tab.id] > 0 && (
+                  <span className="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary-600 px-1 text-[9px] font-bold text-white">
+                    {pendingCounts[tab.id]}
+                  </span>
+                )}
+              </div>
+            ),
+          }))}
+          activeId={category}
+          onChange={(id) => {
+            setCategory(id);
+            setPage(1);
+            setSelectedAuditId(null);
+          }}
+          layoutId="store-audit-category-tabs"
+        />
 
-        {/* Status tabs */}
-        <div className="flex w-full gap-1 border-b border-gray-200">
-          {STATUS_TABS.map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => {
-                setStatus(tab.key);
-                setPage(1);
-                setSelectedAuditId(null);
-              }}
-              className={`flex flex-1 items-center justify-center gap-1.5 border-b-2 px-3 py-1.5 text-xs font-medium transition-colors sm:flex-none ${
-                status === tab.key
-                  ? 'border-primary-600 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <tab.Icon className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">{tab.label}</span>
-            </button>
-          ))}
-        </div>
+        <ViewToggle
+          options={STATUS_TABS}
+          activeId={status}
+          onChange={(id) => {
+            setStatus(id);
+            setPage(1);
+            setSelectedAuditId(null);
+          }}
+          layoutId="store-audit-status-tabs"
+        />
 
         {/* Content */}
         <div className="space-y-4">
