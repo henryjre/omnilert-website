@@ -948,12 +948,38 @@ async function applyCheckInRoleScopeAndAttendanceGuard(input: {
     return;
   }
 
+  logger.info(
+    {
+      userId,
+      checkInRoleType,
+      checkInRoleId: checkInRole.roleId,
+      oppositeRoleType: oppositeRole ? oppositeRoleType : null,
+      oppositeRoleId: oppositeRole?.roleId ?? null,
+      odooCompanyId: payload.x_company_id,
+    },
+    '[DIAG] applyCheckInRoleScopeAndAttendanceGuard: enabling check-in role, disabling opposite',
+  );
+
   await deps.enableUserRole(userId, checkInRole.roleId);
   if (oppositeRole) {
     await deps.disableUserRole(userId, oppositeRole.roleId);
+    logger.info(
+      { userId, disabledRoleId: oppositeRole.roleId, disabledRoleName: oppositeRoleType },
+      '[DIAG] applyCheckInRoleScopeAndAttendanceGuard: opposite role disabled in user_role_disables',
+    );
   }
 
   const activeAttendances = await deps.listActiveAttendancesByWebsiteUserKey(websiteUserKey);
+  logger.info(
+    {
+      userId,
+      websiteUserKey,
+      activeAttendanceCount: activeAttendances.length,
+      activeAttendanceIds: activeAttendances.map((a) => ({ id: a.id, company_id: a.company_id })),
+    },
+    '[DIAG] applyCheckInRoleScopeAndAttendanceGuard: active attendances after role disable',
+  );
+
   const attendanceIdsToCheckOut = checkInRoleType === SYSTEM_ROLES.MANAGEMENT
     ? activeAttendances
       .filter((attendance) => attendance.id !== payload.id)
@@ -963,9 +989,17 @@ async function applyCheckInRoleScopeAndAttendanceGuard(input: {
       .map((attendance) => attendance.id);
 
   if (attendanceIdsToCheckOut.length > 0) {
+    logger.info(
+      { userId, attendanceIdsToCheckOut },
+      '[DIAG] applyCheckInRoleScopeAndAttendanceGuard: checking out conflicting attendances',
+    );
     await deps.checkOutAttendancesByIds(attendanceIdsToCheckOut, checkInTime);
   }
 
+  logger.info(
+    { userId, namespace: '/user-events', room: `user:${userId}`, event: 'user:auth-scope-updated' },
+    '[DIAG] applyCheckInRoleScopeAndAttendanceGuard: emitting user:auth-scope-updated',
+  );
   deps.emitSocketEvent('user:auth-scope-updated', { userId });
 }
 
@@ -1003,6 +1037,17 @@ export function createAttendanceProcessor(
     });
 
     const resolvedIdentity = await deps.resolveAttendanceIdentity(payload);
+    logger.info(
+      {
+        attendanceId: payload.id,
+        x_company_id: payload.x_company_id,
+        x_website_key: payload.x_website_key,
+        isCheckOut,
+        resolvedUserId: resolvedIdentity.userId,
+        resolvedWebsiteUserKey: resolvedIdentity.websiteUserKey,
+      },
+      '[DIAG] processAttendance: resolved identity',
+    );
 
     let updatedTotalWorkedHours: number | null = null;
     let createdInterimShift = false;

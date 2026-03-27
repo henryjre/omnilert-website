@@ -101,18 +101,41 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
       navigate('/login', { replace: true });
     });
 
-    userEventsSocket.on('user:auth-scope-updated', async () => {
+    const handleAuthScopeUpdated = async () => {
+      // Always read the latest tokens directly from the store — the closure over
+      // `setTokens` is stable but `refreshToken` must be read at call-time to avoid
+      // using a stale value from a previous render.
       const refreshToken = useAuthStore.getState().refreshToken;
+      const permsBefore = useAuthStore.getState().user?.permissions ?? [];
+      console.debug('[DIAG] TopBar user:auth-scope-updated received. permsBefore:', permsBefore);
       if (!refreshToken) return;
 
       try {
         const res = await axios.post('/api/v1/auth/refresh', { refreshToken });
         const { accessToken, refreshToken: newRefreshToken } = res.data.data;
+        console.debug('[DIAG] TopBar /auth/refresh succeeded. Calling setTokens.');
         setTokens(accessToken, newRefreshToken);
-      } catch {
-        // Ignore: client can still recover on next auth refresh cycle.
+        const permsAfter = useAuthStore.getState().user?.permissions ?? [];
+        console.debug('[DIAG] TopBar setTokens done. permsAfter:', permsAfter);
+      } catch (err) {
+        console.error('[DIAG] TopBar /auth/refresh FAILED:', err);
+        // Retry once after a short delay to handle transient token rotation races.
+        setTimeout(() => {
+          const retryRefreshToken = useAuthStore.getState().refreshToken;
+          if (!retryRefreshToken) return;
+          axios.post('/api/v1/auth/refresh', { refreshToken: retryRefreshToken })
+            .then((res) => {
+              const { accessToken, refreshToken: newRefreshToken } = res.data.data;
+              setTokens(accessToken, newRefreshToken);
+            })
+            .catch(() => {
+              // Both attempts failed; the user's next API call will trigger a 401 → auto-refresh.
+            });
+        }, 1500);
       }
-    });
+    };
+
+    userEventsSocket.on('user:auth-scope-updated', handleAuthScopeUpdated);
 
     userEventsSocket.on('user:branch-assignments-updated', async (data: any) => {
       const nextBranchIds: string[] = Array.isArray(data?.branchIds) ? data.branchIds : [];

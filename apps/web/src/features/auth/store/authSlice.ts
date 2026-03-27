@@ -74,6 +74,11 @@ export const useAuthStore = create<AuthState>()(
               }
             : state.user;
 
+          console.debug(
+            '[DIAG] setTokens: permissions before:', state.user?.permissions,
+            '| permissions after:', nextUser?.permissions,
+          );
+
           return {
             accessToken,
             refreshToken,

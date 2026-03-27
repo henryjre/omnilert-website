@@ -585,6 +585,16 @@ export async function refreshTokens(refreshTokenStr: string) {
     : rolePermissions;
   const branchIds = await loadUserAssignedBranchIds(user.id as string, isSuperAdmin);
 
+  logger.info(
+    {
+      userId: user.id,
+      effectiveRoleNames: roles.map((r) => r.name),
+      permissionCount: permissions.length,
+      permissions,
+    },
+    '[DIAG] refreshTokens: issuing new access token with effective roles/permissions',
+  );
+
   const newAccessToken = signAccessToken({
     sub: user.id,
     companyId: company.id,

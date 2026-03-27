@@ -909,3 +909,116 @@ test('emitAttendanceSocketEvent routes shift events to /employee-shifts namespac
     payload: eventPayload,
   });
 });
+
+// ---------------------------------------------------------------------------
+// Regression: dual-role user check-in permission gating
+// Verifies the exact socket event and room that the frontend relies on to
+// trigger a JWT refresh after role-scope changes.
+// ---------------------------------------------------------------------------
+
+test('service crew check-in emits user:auth-scope-updated to /user-events/user:<id> with correct userId', async () => {
+  // This is the exact event the frontend TopBar listens to in order to refresh
+  // the JWT. If the namespace, room, or userId payload is wrong, the token
+  // refresh never fires and Management permissions remain active.
+  const harness = createAttendanceHarness({
+    websiteUserKey: 'wk-dual',
+    resolvedUserId: 'user-dual',
+    userRolesByUserId: {
+      'user-dual': [
+        { id: 'role-management', name: 'Management' },
+        { id: 'role-service-crew', name: 'Service Crew' },
+      ],
+    },
+    activeAttendancesByWebsiteKey: {
+      'wk-dual': [
+        { id: 7001, company_id: 2, check_in: '2026-03-20 09:00:00' },
+      ],
+    },
+  });
+
+  // Override emitSocketEvent to record the actual namespace/room/event as
+  // emitAttendanceSocketEvent would route them.
+  const socketHarness = createSocketEmitHarness();
+  const deps = {
+    ...harness.deps,
+    emitSocketEvent: (event: string, payload: Record<string, unknown>) => {
+      emitAttendanceSocketEvent(socketHarness.io, event, payload);
+      harness.deps.emitSocketEvent(event, payload);
+    },
+  };
+
+  const processAttendance = createAttendanceProcessor(deps as any);
+
+  await processAttendance({
+    id: 7001,
+    check_in: '2026-03-20 09:00:00',
+    x_company_id: 2, // Service Crew company
+    x_cumulative_minutes: 0,
+    x_employee_contact_name: '002 - Bob Crew',
+    x_planning_slot_id: false,
+    x_website_key: 'wk-dual',
+  });
+
+  // Management role must be disabled
+  const disabled = harness.disabledRoleIdsByUserId.get('user-dual');
+  assert.ok(disabled?.has('role-management'), 'Management role must be in user_role_disables');
+  assert.equal(disabled?.has('role-service-crew'), false, 'Service Crew role must NOT be disabled');
+
+  // user:auth-scope-updated must be emitted to the correct namespace and room
+  const authScopeEmit = socketHarness.emits.find((e) => e.event === 'user:auth-scope-updated');
+  assert.ok(authScopeEmit, 'user:auth-scope-updated must be emitted');
+  assert.equal(authScopeEmit?.namespace, '/user-events', 'must target /user-events namespace');
+  assert.equal(authScopeEmit?.room, 'user:user-dual', 'must target user:<id> room');
+  assert.deepEqual(authScopeEmit?.payload, { userId: 'user-dual' }, 'payload must contain userId');
+});
+
+test('management check-in emits user:auth-scope-updated to /user-events/user:<id> with correct userId', async () => {
+  const harness = createAttendanceHarness({
+    websiteUserKey: 'wk-dual-mgmt',
+    resolvedUserId: 'user-dual-mgmt',
+    userRolesByUserId: {
+      'user-dual-mgmt': [
+        { id: 'role-management', name: 'Management' },
+        { id: 'role-service-crew', name: 'Service Crew' },
+      ],
+    },
+    activeAttendancesByWebsiteKey: {
+      'wk-dual-mgmt': [
+        { id: 8001, company_id: 1, check_in: '2026-03-20 09:00:00' },
+      ],
+    },
+  });
+
+  const socketHarness = createSocketEmitHarness();
+  const deps = {
+    ...harness.deps,
+    emitSocketEvent: (event: string, payload: Record<string, unknown>) => {
+      emitAttendanceSocketEvent(socketHarness.io, event, payload);
+      harness.deps.emitSocketEvent(event, payload);
+    },
+  };
+
+  const processAttendance = createAttendanceProcessor(deps as any);
+
+  await processAttendance({
+    id: 8001,
+    check_in: '2026-03-20 09:00:00',
+    x_company_id: 1, // Management company
+    x_cumulative_minutes: 0,
+    x_employee_contact_name: '001 - Alice Manager',
+    x_planning_slot_id: false,
+    x_website_key: 'wk-dual-mgmt',
+  });
+
+  // Service Crew role must be disabled
+  const disabled = harness.disabledRoleIdsByUserId.get('user-dual-mgmt');
+  assert.ok(disabled?.has('role-service-crew'), 'Service Crew role must be in user_role_disables');
+  assert.equal(disabled?.has('role-management'), false, 'Management role must NOT be disabled');
+
+  // user:auth-scope-updated must be emitted to the correct namespace and room
+  const authScopeEmit = socketHarness.emits.find((e) => e.event === 'user:auth-scope-updated');
+  assert.ok(authScopeEmit, 'user:auth-scope-updated must be emitted');
+  assert.equal(authScopeEmit?.namespace, '/user-events', 'must target /user-events namespace');
+  assert.equal(authScopeEmit?.room, 'user:user-dual-mgmt', 'must target user:<id> room');
+  assert.deepEqual(authScopeEmit?.payload, { userId: 'user-dual-mgmt' }, 'payload must contain userId');
+});
