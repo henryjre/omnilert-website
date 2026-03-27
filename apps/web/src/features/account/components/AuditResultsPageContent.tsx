@@ -66,7 +66,9 @@ export function AuditResultsPageContent({
   onSelectAudit: (auditId: string) => void;
   onPageChange: (page: number) => void;
 }) {
-  const activeCategoryLabel = CATEGORY_TABS.find((t) => t.id === category)?.label ?? '';
+  const activeCategoryLabel = CATEGORY_TABS.find((t) => t.id === category)?.label ?? "";
+  const activeCategoryLabelLowercase =
+    typeof activeCategoryLabel === "string" ? activeCategoryLabel.toLowerCase() : "category";
 
   return (
     <div className="space-y-5">
@@ -106,7 +108,7 @@ export function AuditResultsPageContent({
           <p className="text-sm text-gray-400">
             {category === 'all'
               ? 'No completed audit results found.'
-              : `No completed ${activeCategoryLabel.toLowerCase()} results found.`}
+              : `No completed ${activeCategoryLabelLowercase} results found.`}
           </p>
         </div>
       ) : (
