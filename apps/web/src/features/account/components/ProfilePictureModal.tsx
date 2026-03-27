@@ -1,7 +1,10 @@
 import { useState, useCallback } from "react";
+import { AnimatePresence } from "framer-motion";
 import Cropper from "react-easy-crop";
 import { X, Upload } from "lucide-react";
 import { api } from "@/shared/services/api.client";
+import { normalizeFileForUpload } from "@/shared/utils/fileUpload";
+import { AnimatedModal } from "@/shared/components/ui/AnimatedModal";
 
 interface ProfilePictureModalProps {
   isOpen: boolean;
@@ -11,31 +14,37 @@ interface ProfilePictureModalProps {
 
 /**
  * Modal for cropping and uploading profile pictures.
- * Enforces 1:1 aspect ratio.
+ * Enforces 1:1 aspect ratio crop before upload.
  */
 export function ProfilePictureModal({ isOpen, onClose, onUploadComplete }: ProfilePictureModalProps) {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
-  const [croppedAreaPixels, setCroppedAreaPixels] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
   const [uploading, setUploading] = useState(false);
 
-  const onCropComplete = useCallback((_: unknown, croppedAreaPixels: { x: number; y: number; width: number; height: number }) => {
-    setCroppedAreaPixels(croppedAreaPixels);
-  }, []);
+  const onCropComplete = useCallback(
+    (_: unknown, pixels: { x: number; y: number; width: number; height: number }) => {
+      setCroppedAreaPixels(pixels);
+    },
+    [],
+  );
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setImageSrc(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    let file = e.target.files?.[0];
+    if (!file) return;
+    file = await normalizeFileForUpload(file);
+    const reader = new FileReader();
+    reader.onload = () => setImageSrc(reader.result as string);
+    reader.readAsDataURL(file);
   };
 
-  const createCroppedImage = async () => {
+  const createCroppedImage = async (): Promise<Blob | null> => {
     if (!imageSrc || !croppedAreaPixels) return null;
 
     const canvas = document.createElement("canvas");
@@ -44,17 +53,12 @@ export function ProfilePictureModal({ isOpen, onClose, onUploadComplete }: Profi
 
     const image = new Image();
     image.src = imageSrc;
+    await new Promise((resolve) => { image.onload = resolve; });
 
-    await new Promise((resolve) => {
-      image.onload = resolve;
-    });
-
-    // Set canvas size to the cropped area size (square)
     const size = Math.min(croppedAreaPixels.width, croppedAreaPixels.height);
     canvas.width = size;
     canvas.height = size;
 
-    // Draw the cropped portion
     ctx.drawImage(
       image,
       croppedAreaPixels.x,
@@ -64,14 +68,11 @@ export function ProfilePictureModal({ isOpen, onClose, onUploadComplete }: Profi
       0,
       0,
       size,
-      size
+      size,
     );
 
-    // Convert to blob
     return new Promise<Blob | null>((resolve) => {
-      canvas.toBlob((blob) => {
-        resolve(blob);
-      }, "image/jpeg", 0.9);
+      canvas.toBlob((blob) => resolve(blob), "image/jpeg", 0.9);
     });
   };
 
@@ -79,9 +80,7 @@ export function ProfilePictureModal({ isOpen, onClose, onUploadComplete }: Profi
     setUploading(true);
     try {
       const blob = await createCroppedImage();
-      if (!blob) {
-        throw new Error("Failed to create cropped image");
-      }
+      if (!blob) throw new Error("Failed to create cropped image");
 
       const formData = new FormData();
       formData.append("avatar", blob, "avatar.jpg");
@@ -90,8 +89,7 @@ export function ProfilePictureModal({ isOpen, onClose, onUploadComplete }: Profi
         headers: { "Content-Type": "multipart/form-data" },
       });
 
-      const avatarUrl = res.data.data.avatar_url;
-      onUploadComplete(avatarUrl);
+      onUploadComplete(res.data.data.avatar_url);
       handleClose();
     } catch (err) {
       console.error("Failed to upload avatar:", err);
@@ -108,92 +106,96 @@ export function ProfilePictureModal({ isOpen, onClose, onUploadComplete }: Profi
     onClose();
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-[99999] flex items-center justify-center">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/80" onClick={handleClose} />
-
-      {/* Modal */}
-      <div className="relative w-full max-w-md rounded-xl bg-white p-4 shadow-xl">
-        {/* Header */}
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-gray-900">Add Profile Picture</h3>
-          <button onClick={handleClose} className="rounded-full p-1 hover:bg-gray-100">
-            <X className="h-5 w-5 text-gray-500" />
-          </button>
-        </div>
-
-        {!imageSrc ? (
-          /* Upload area */
-          <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 p-8">
-            <Upload className="mb-2 h-10 w-10 text-gray-400" />
-            <p className="mb-4 text-sm text-gray-500">Click to select an image</p>
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              onChange={handleFileSelect}
-              className="hidden"
-              id="avatar-upload"
-            />
-            <label
-              htmlFor="avatar-upload"
-              className="cursor-pointer rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
-            >
-              Choose Image
-            </label>
-          </div>
-        ) : (
-          /* Crop area */
-          <div className="space-y-4">
-            <div className="relative h-72 w-full overflow-hidden rounded-lg">
-              <Cropper
-                image={imageSrc}
-                crop={crop}
-                zoom={zoom}
-                aspect={1}
-                cropShape="round"
-                showGrid={false}
-                onCropChange={setCrop}
-                onCropComplete={onCropComplete}
-                onZoomChange={setZoom}
-              />
-            </div>
-
-            {/* Zoom slider */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-500">Zoom</span>
-              <input
-                type="range"
-                min={1}
-                max={3}
-                step={0.1}
-                value={zoom}
-                onChange={(e) => setZoom(Number(e.target.value))}
-                className="h-2 w-full cursor-pointer appearance-none rounded-full bg-gray-200"
-              />
-            </div>
-
-            {/* Actions */}
-            <div className="flex gap-2">
+    <AnimatePresence>
+      {isOpen && (
+        <AnimatedModal onBackdropClick={handleClose} maxWidth="max-w-md">
+          <div className="p-5">
+            {/* Header */}
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">Change Profile Picture</h3>
               <button
-                onClick={() => setImageSrc(null)}
-                className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                type="button"
+                onClick={handleClose}
+                className="rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
               >
-                Choose Different
-              </button>
-              <button
-                onClick={handleUpload}
-                disabled={uploading}
-                className="flex-1 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
-              >
-                {uploading ? "Uploading..." : "Upload"}
+                <X className="h-5 w-5" />
               </button>
             </div>
+
+            {!imageSrc ? (
+              /* Upload area */
+              <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 p-8">
+                <Upload className="mb-2 h-10 w-10 text-gray-400" />
+                <p className="mb-4 text-sm text-gray-500">Click to select an image</p>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                  id="avatar-upload"
+                />
+                <label
+                  htmlFor="avatar-upload"
+                  className="cursor-pointer rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
+                >
+                  Choose Image
+                </label>
+              </div>
+            ) : (
+              /* Crop area */
+              <div className="space-y-4">
+                <div className="relative h-72 w-full overflow-hidden rounded-lg">
+                  <Cropper
+                    image={imageSrc}
+                    crop={crop}
+                    zoom={zoom}
+                    aspect={1}
+                    cropShape="round"
+                    showGrid={false}
+                    onCropChange={setCrop}
+                    onCropComplete={onCropComplete}
+                    onZoomChange={setZoom}
+                  />
+                </div>
+
+                {/* Zoom slider */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500">Zoom</span>
+                  <input
+                    type="range"
+                    min={1}
+                    max={3}
+                    step={0.1}
+                    value={zoom}
+                    onChange={(e) => setZoom(Number(e.target.value))}
+                    className="h-2 w-full cursor-pointer appearance-none rounded-full bg-gray-200"
+                  />
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setImageSrc(null)}
+                    className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Choose Different
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleUpload}
+                    disabled={uploading}
+                    className="flex-1 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+                  >
+                    {uploading ? "Uploading..." : "Upload"}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
-        )}
-      </div>
-    </div>
+        </AnimatedModal>
+      )}
+    </AnimatePresence>
   );
 }

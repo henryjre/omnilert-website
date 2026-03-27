@@ -99,10 +99,10 @@ router.delete(
   requirePermission(PERMISSIONS.STORE_AUDIT_VIEW),
   storeAuditController.deleteMessage,
 );
-router.post('/:id/process', requirePermission(PERMISSIONS.STORE_AUDIT_PROCESS), storeAuditController.processAudit);
+router.post('/:id/process', requirePermission(PERMISSIONS.STORE_AUDIT_MANAGE), storeAuditController.processAudit);
 router.post(
   '/:id/complete',
-  requirePermission(PERMISSIONS.STORE_AUDIT_PROCESS),
+  requirePermission(PERMISSIONS.STORE_AUDIT_MANAGE),
   validateBody(completeAuditSchema),
   storeAuditController.completeAudit,
 );

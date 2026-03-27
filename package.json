@@ -2,8 +2,8 @@
   "name": "omnilert-website",
   "private": true,
   "scripts": {
-    "up:dev": "pnpm -C apps/api migrate:master && pnpm -C apps/api migrate:tenant && turbo dev",
-    "up:prod": "pnpm -C apps/api migrate:master && pnpm -C apps/api migrate:tenant && turbo build && concurrently \"pnpm -C apps/api start\" \"pnpm -C apps/web preview -- --host\"",
+    "up:dev": "pnpm -C apps/api migrate && turbo dev --filter=@omnilert/web --filter=@omnilert/api -- --host",
+    "up:prod": "pnpm -C apps/api migrate && turbo build && concurrently \"pnpm -C apps/api start\" \"pnpm -C apps/web preview -- --host\"",
     "dev": "turbo dev",
     "build": "turbo build",
     "lint": "turbo lint",

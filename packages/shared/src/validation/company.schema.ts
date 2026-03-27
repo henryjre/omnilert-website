@@ -45,7 +45,17 @@ export const deleteCurrentCompanySchema = z.object({
   superAdminPassword: z.string().min(1, 'Super admin password is required'),
 });
 
+export const deleteCompanyByIdSchema = z.object({
+  companyName: z
+    .string()
+    .min(2, 'Company name confirmation is required')
+    .max(255, 'Company name confirmation must not exceed 255 characters'),
+  superAdminEmail: z.string().email('Invalid super admin email address'),
+  superAdminPassword: z.string().min(1, 'Super admin password is required'),
+});
+
 export type CreateCompanyInput = z.infer<typeof createCompanySchema>;
 export type CreateCompanyBySuperAdminInput = z.infer<typeof createCompanyBySuperAdminSchema>;
 export type UpdateCompanyInput = z.infer<typeof updateCompanySchema>;
 export type DeleteCurrentCompanyInput = z.infer<typeof deleteCurrentCompanySchema>;
+export type DeleteCompanyByIdInput = z.infer<typeof deleteCompanyByIdSchema>;

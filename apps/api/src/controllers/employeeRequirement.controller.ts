@@ -3,9 +3,9 @@ import * as employeeRequirementService from '../services/employeeRequirement.ser
 
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     const data = await employeeRequirementService.listServiceCrewRequirements(
-      req.tenantDb!,
-      req.user!.companyId,
+      companyId,
     );
     res.json({ success: true, data });
   } catch (error) {
@@ -15,10 +15,10 @@ export async function list(req: Request, res: Response, next: NextFunction) {
 
 export async function getDetail(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     const data = await employeeRequirementService.getServiceCrewRequirementDetail(
-      req.tenantDb!,
       req.params.userId as string,
-      req.user!.companyId,
+      companyId,
     );
     res.json({ success: true, data });
   } catch (error) {

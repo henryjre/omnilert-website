@@ -4,7 +4,7 @@ import * as employeeVerificationService from '../services/employeeVerification.s
 
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
-    const data = await employeeVerificationService.listEmployeeVerifications(req.tenantDb!);
+    const data = await employeeVerificationService.listEmployeeVerifications();
     res.json({ success: true, data });
   } catch (error) {
     next(error);
@@ -60,9 +60,9 @@ export async function rejectRegistration(req: Request, res: Response, next: Next
 
 export async function approvePersonalInformation(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     await employeeVerificationService.approvePersonalInformationVerification({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
+      companyId,
       verificationId: req.params.id as string,
       reviewerId: req.user!.sub,
       edits: req.body,
@@ -75,9 +75,9 @@ export async function approvePersonalInformation(req: Request, res: Response, ne
 
 export async function rejectPersonalInformation(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     await employeeVerificationService.rejectPersonalInformationVerification({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
+      companyId,
       verificationId: req.params.id as string,
       reviewerId: req.user!.sub,
       reason: req.body.reason,
@@ -90,9 +90,9 @@ export async function rejectPersonalInformation(req: Request, res: Response, nex
 
 export async function approveEmploymentRequirement(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     await employeeVerificationService.approveEmploymentRequirementSubmission({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
+      companyId,
       submissionId: req.params.id as string,
       reviewerId: req.user!.sub,
     });
@@ -104,9 +104,9 @@ export async function approveEmploymentRequirement(req: Request, res: Response, 
 
 export async function rejectEmploymentRequirement(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     await employeeVerificationService.rejectEmploymentRequirementSubmission({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
+      companyId,
       submissionId: req.params.id as string,
       reviewerId: req.user!.sub,
       reason: req.body.reason,
@@ -119,9 +119,9 @@ export async function rejectEmploymentRequirement(req: Request, res: Response, n
 
 export async function approveBankInformation(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     await employeeVerificationService.approveBankInformationVerification({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
+      companyId,
       verificationId: req.params.id as string,
       reviewerId: req.user!.sub,
     });
@@ -133,9 +133,9 @@ export async function approveBankInformation(req: Request, res: Response, next: 
 
 export async function rejectBankInformation(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     await employeeVerificationService.rejectBankInformationVerification({
-      tenantDb: req.tenantDb!,
-      companyId: req.user!.companyId,
+      companyId,
       verificationId: req.params.id as string,
       reviewerId: req.user!.sub,
       reason: req.body.reason,

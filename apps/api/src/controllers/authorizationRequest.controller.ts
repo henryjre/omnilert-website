@@ -12,9 +12,10 @@ import { listShiftExchangeRequestsForAuthorization } from '../services/shiftExch
  */
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const userPermissions = new Set(req.user!.permissions);
-    const currentCompanyId = req.user!.companyId;
+    const currentCompanyId = companyId;
     const { branchIds, status } = req.query as Record<string, string>;
 
     const branchIdList: string[] = branchIds ? branchIds.split(',').filter(Boolean) : [];
@@ -25,60 +26,86 @@ export async function list(req: Request, res: Response, next: NextFunction) {
     if (allBranchIds.length === 0) {
       return res.json({ success: true, data: { managementRequests: [], serviceCrewRequests: [] } });
     }
+    const canViewManagementRequests =
+      userPermissions.has(PERMISSIONS.AUTH_REQUEST_VIEW_PRIVATE)
+      || userPermissions.has(PERMISSIONS.AUTH_REQUEST_MANAGE_PRIVATE);
+    const canViewServiceCrewRequests =
+      userPermissions.has(PERMISSIONS.AUTH_REQUEST_VIEW_PUBLIC)
+      || userPermissions.has(PERMISSIONS.AUTH_REQUEST_MANAGE_PUBLIC);
 
     // Management-level requests
+    let managementRows: any[] = [];
     let managementRequests: any[] = [];
-    if (userPermissions.has(PERMISSIONS.AUTH_REQUEST_APPROVE_MANAGEMENT)) {
-      let q = tenantDb('authorization_requests')
-        .whereIn('branch_id', allBranchIds)
-        .where('level', 'management');
-      if (status) q = q.where('status', status);
-      managementRequests = await q.orderBy('created_at', 'desc');
+    if (canViewManagementRequests) {
+      let q = tenantDb('authorization_requests as ar')
+        .whereIn('ar.branch_id', allBranchIds)
+        .where('ar.level', 'management')
+        .leftJoin('branches as b', 'b.id', 'ar.branch_id')
+        .leftJoin('companies as co', 'co.id', 'ar.company_id')
+        .select(
+          'ar.*',
+          'b.name as branch_name',
+          'co.name as company_name',
+        );
+      if (status) q = q.where('ar.status', status);
+      managementRows = await q.orderBy('ar.created_at', 'desc');
     }
 
     // Service-crew requests (shift_authorizations)
+    let authRows: any[] = [];
     let serviceCrewRequests: any[] = [];
-    if (
-      userPermissions.has(PERMISSIONS.AUTH_REQUEST_VIEW_ALL) ||
-      userPermissions.has(PERMISSIONS.AUTH_REQUEST_APPROVE_SERVICE_CREW)
-    ) {
+    if (canViewServiceCrewRequests) {
       let q = tenantDb('shift_authorizations')
         .whereIn('shift_authorizations.branch_id', allBranchIds)
         .leftJoin('employee_shifts', 'shift_authorizations.shift_id', 'employee_shifts.id')
         .leftJoin('branches', 'shift_authorizations.branch_id', 'branches.id')
+        .leftJoin('companies', 'branches.company_id', 'companies.id')
         .select(
           'shift_authorizations.*',
           'employee_shifts.duty_type',
           'employee_shifts.shift_start',
           'employee_shifts.employee_name as shift_employee_name',
           'branches.name as branch_name',
+          'companies.name as company_name',
         );
       if (status) q = q.where('shift_authorizations.status', status);
-      const authRows = await q.orderBy('shift_authorizations.created_at', 'desc');
+      authRows = await q.orderBy('shift_authorizations.created_at', 'desc');
+    }
 
-      const userIds = Array.from(
-        new Set(
-          authRows
-            .map((row: any) => String(row.user_id ?? '').trim())
-            .filter((value: string) => value.length > 0),
-        ),
+    const userIds = Array.from(
+      new Set(
+        [
+          ...managementRows.flatMap((row: any) => [row.user_id, row.reviewed_by]),
+          ...authRows.flatMap((row: any) => [row.user_id, row.resolved_by]),
+        ]
+          .map((value) => String(value ?? '').trim())
+          .filter((value) => value.length > 0),
+      ),
+    );
+    let namesById: Record<string, string> = {};
+    if (userIds.length > 0) {
+      const users = await db.getDb()('users')
+        .whereIn('id', userIds)
+        .select('id', 'first_name', 'last_name');
+      namesById = Object.fromEntries(
+        users.map((row: any) => [
+          row.id,
+          `${String(row.first_name ?? '').trim()} ${String(row.last_name ?? '').trim()}`.trim() || 'Unknown User',
+        ]),
       );
-      let namesById: Record<string, string> = {};
-      if (userIds.length > 0) {
-        const users = await db.getMasterDb()('users')
-          .whereIn('id', userIds)
-          .select('id', 'first_name', 'last_name');
-        namesById = Object.fromEntries(
-          users.map((row: any) => [
-            row.id,
-            `${String(row.first_name ?? '').trim()} ${String(row.last_name ?? '').trim()}`.trim() || 'Unknown User',
-          ]),
-        );
-      }
+    }
 
+    managementRequests = managementRows.map((row: any) => ({
+      ...row,
+      created_by_name: namesById[row.user_id] ?? null,
+      reviewed_by_name: row.reviewed_by ? (namesById[row.reviewed_by] ?? null) : null,
+    }));
+
+    if (canViewServiceCrewRequests) {
       const mappedAuthRows = authRows.map((row: any) => ({
         ...row,
         employee_name: namesById[row.user_id] || row.shift_employee_name || null,
+        resolved_by_name: row.resolved_by ? (namesById[row.resolved_by] ?? null) : null,
       }));
 
       const shiftExchangeRows = await listShiftExchangeRequestsForAuthorization({
@@ -106,7 +133,8 @@ export async function list(req: Request, res: Response, next: NextFunction) {
  */
 export async function approve(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const reviewerId = req.user!.sub;
     const id = req.params.id as string;
 
@@ -119,21 +147,27 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
       .where({ id })
       .update({ status: 'approved', reviewed_by: reviewerId, reviewed_at: reviewedAt, updated_at: reviewedAt })
       .returning('*');
+    const reviewer = await db.getDb()('users')
+      .where({ id: reviewerId })
+      .select('first_name', 'last_name')
+      .first();
+    const reviewedByName = reviewer
+      ? `${String(reviewer.first_name ?? '').trim()} ${String(reviewer.last_name ?? '').trim()}`.trim()
+      : reviewerId;
 
     // Notify creator
     if (authReq.user_id) {
       const label = requestTypeLabel(authReq.request_type);
       await createAndDispatchNotification({
-        tenantDb,
         userId: authReq.user_id,
         title: `${label} Approved`,
         message: `Your ${label.toLowerCase()} has been approved.`,
         type: 'success',
-        linkUrl: '/account/authorization-requests',
+        linkUrl: `/account/authorization-requests?requestId=${id}`,
       });
     }
 
-    res.json({ success: true, data: updated });
+    res.json({ success: true, data: { ...updated, reviewed_by_name: reviewedByName } });
   } catch (err) {
     next(err);
   }
@@ -145,7 +179,8 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
  */
 export async function reject(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const reviewerId = req.user!.sub;
     const id = req.params.id as string;
     const { reason } = req.body as { reason: string };
@@ -167,21 +202,27 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
         updated_at: reviewedAt,
       })
       .returning('*');
+    const reviewer = await db.getDb()('users')
+      .where({ id: reviewerId })
+      .select('first_name', 'last_name')
+      .first();
+    const reviewedByName = reviewer
+      ? `${String(reviewer.first_name ?? '').trim()} ${String(reviewer.last_name ?? '').trim()}`.trim()
+      : reviewerId;
 
     // Notify creator
     if (authReq.user_id) {
       const label = requestTypeLabel(authReq.request_type);
       await createAndDispatchNotification({
-        tenantDb,
         userId: authReq.user_id,
         title: `${label} Rejected`,
         message: `Your ${label.toLowerCase()} has been rejected: ${reason.trim()}`,
         type: 'danger',
-        linkUrl: '/account/authorization-requests',
+        linkUrl: `/account/authorization-requests?requestId=${id}`,
       });
     }
 
-    res.json({ success: true, data: updated });
+    res.json({ success: true, data: { ...updated, reviewed_by_name: reviewedByName } });
   } catch (err) {
     next(err);
   }

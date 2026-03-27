@@ -2,7 +2,8 @@ import type { Request, Response, NextFunction } from 'express';
 import { db } from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
-import { getEmployeeByWebsiteUserKey, getEmployeePayslipData, createViewOnlyPayslip, getEmployeeEPIData, getEmployeeAuditRatings, getAllEmployeesWithEPI } from '../services/odoo.service.js';
+import { getEmployeeByWebsiteUserKey, getEmployeePayslipData, createViewOnlyPayslip, getEmployeeEPIData, getEmployeeAuditRatings, getAllEmployeesWithEPI, getAllPayslipsForUser, calculatePendingPayslipStubs, getPayslipDetailById, getOrCreatePendingPayslipDetail, getEmployeesForWebsiteUserKey, getLatestActiveAttendanceForWebsiteUserKey } from '../services/odoo.service.js';
+import type { PayslipListItem, PayslipDetailResponse, PayslipStatus } from '@omnilert/shared';
 import { getEpiDashboard, getEpiLeaderboard, getEpiLeaderboardDetail } from '../services/epiDashboard.service.js';
 
 function parseMonthKey(monthKeyParam: string | undefined): string {
@@ -25,7 +26,7 @@ function parseMonthKey(monthKeyParam: string | undefined): string {
 
 export async function getPerformanceIndex(req: Request, res: Response, next: NextFunction) {
   try {
-    const masterDb = db.getMasterDb();
+    const masterDb = db.getDb();
     const userId = req.user!.sub;
     const currentUser = await masterDb('users').where({ id: userId }).select('user_key').first();
     const userKey = currentUser?.user_key as string | undefined;
@@ -71,7 +72,7 @@ export async function getPerformanceIndex(req: Request, res: Response, next: Nex
 
 export async function getPayslip(req: Request, res: Response, next: NextFunction) {
   try {
-    const masterDb = db.getMasterDb();
+    const masterDb = db.getDb();
     // Get companyId (Odoo company ID) from query params
     const companyIdParam = req.query.companyId as string | undefined;
     
@@ -281,10 +282,59 @@ export async function getEPILeaderboard(req: Request, res: Response, next: NextF
   }
 }
 
+function buildCheckedOutStatus() {
+  return {
+    checkedIn: false,
+    roleType: null,
+    companyName: null,
+    branchName: null,
+    checkInTimeUtc: null,
+  };
+}
+
+export async function getCheckInStatus(req: Request, res: Response, next: NextFunction) {
+  try {
+    const userId = req.user!.sub;
+    const user = await db.getDb()('users')
+      .where({ id: userId })
+      .first('user_key');
+
+    const userKey = String(user?.user_key ?? '').trim();
+    if (!userKey) {
+      res.json({ success: true, data: buildCheckedOutStatus() });
+      return;
+    }
+
+    const activeAttendance = await getLatestActiveAttendanceForWebsiteUserKey(userKey);
+    if (!activeAttendance) {
+      res.json({ success: true, data: buildCheckedOutStatus() });
+      return;
+    }
+
+    const branch = await db.getDb()('branches as b')
+      .leftJoin('companies as c', 'b.company_id', 'c.id')
+      .where('b.odoo_branch_id', String(activeAttendance.company_id))
+      .first('b.name as branch_name', 'c.name as company_name');
+
+    res.json({
+      success: true,
+      data: {
+        checkedIn: true,
+        roleType: activeAttendance.company_id === 1 ? 'Management' : 'Service Crew',
+        companyName: (branch?.company_name as string | null) ?? null,
+        branchName: (branch?.branch_name as string | null) ?? null,
+        checkInTimeUtc: activeAttendance.check_in,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function getPayslipBranches(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
-    const branches = await tenantDb('branches')
+    const { companyId } = req.companyContext!;
+    const branches = await db.getDb()('branches')
       .select('id', 'name', 'odoo_branch_id', 'is_active')
       .orderBy('name');
 
@@ -321,6 +371,242 @@ export async function getEpiLeaderboardDetailData(req: Request, res: Response, n
     const monthKey = parseMonthKey(req.query.monthKey as string | undefined);
     const data = await getEpiLeaderboardDetail(userId, monthKey);
     res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Payslip list + detail handlers (redesigned PayslipPage)
+// ---------------------------------------------------------------------------
+
+/**
+ * Shared helper that transforms a raw Odoo payslip (with lines and worked_days)
+ * into the PayslipDetailResponse shape consumed by the frontend.
+ */
+function transformPayslipToDetailResponse(
+  payslip: {
+    id: number;
+    name: string;
+    state: string;
+    employee_id: [number, string];
+    date_from: string;
+    date_to: string;
+    lines: Array<{
+      id: number;
+      name: string;
+      code: string;
+      category_id: [number, string];
+      total: number;
+      amount: number;
+      quantity: number;
+      rate: number;
+      sequence: number;
+    }>;
+    worked_days: Array<{
+      id: number;
+      name: string;
+      code: string;
+      number_of_days: number;
+      number_of_hours: number;
+      amount: number;
+    }>;
+  },
+  overrideStatus?: PayslipStatus,
+): PayslipDetailResponse {
+  /** Format a date string to "Mar 01, 2026" */
+  const formatDate = (dateStr: string): string => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" });
+  };
+
+  const period = `${formatDate(payslip.date_from)} to ${formatDate(payslip.date_to)}`;
+
+  // Attendance (worked_days)
+  const attendanceItems: PayslipDetailResponse["attendance"]["items"] = [];
+  let totalDays = 0;
+  let totalHours = 0;
+  let totalAmount = 0;
+
+  for (const wd of payslip.worked_days) {
+    const days = wd.number_of_days || 0;
+    const hours = wd.number_of_hours || 0;
+    const amount = wd.amount || 0;
+    attendanceItems.push({ name: wd.name, days, hours, amount });
+    totalDays += days;
+    totalHours += hours;
+    totalAmount += amount;
+  }
+
+  // Salary lines
+  const taxable: PayslipDetailResponse["salary"]["taxable"] = [];
+  const nonTaxable: PayslipDetailResponse["salary"]["nonTaxable"] = [];
+  const deductions: PayslipDetailResponse["salary"]["deductions"] = [];
+
+  let inTaxableSection = false;
+  let inNonTaxableSection = false;
+  let inDeductionsSection = false;
+  let otherIncomeTotal = 0;
+  let netPay = 0;
+
+  for (const line of payslip.lines) {
+    const name = line.name?.trim() || "";
+    const amount = line.total || 0;
+    const code = line.code;
+
+    if (code === "NET") { netPay = amount; continue; }
+    if (!name) continue;
+    if (name.startsWith("TAXABLE SALARY")) { inTaxableSection = true; inNonTaxableSection = false; inDeductionsSection = false; continue; }
+    if (name.startsWith("NON-TAXABLE SALARY")) { inTaxableSection = false; inNonTaxableSection = true; inDeductionsSection = false; continue; }
+    if (name.startsWith("DEDUCTIONS")) { inTaxableSection = false; inNonTaxableSection = false; inDeductionsSection = true; continue; }
+    if (name.startsWith("Total ")) { inTaxableSection = false; inNonTaxableSection = false; inDeductionsSection = false; continue; }
+    if (code?.startsWith("TITLE")) continue;
+    if (code === "OTHERINC") { otherIncomeTotal += amount; continue; }
+
+    if (inTaxableSection && amount !== 0) { taxable.push({ description: name, amount }); }
+    else if (inNonTaxableSection && amount !== 0) { nonTaxable.push({ description: name, amount }); }
+    else if (inDeductionsSection && amount !== 0) { deductions.push({ description: name, amount }); }
+  }
+
+  if (otherIncomeTotal !== 0) {
+    nonTaxable.push({ description: "Other Income", amount: otherIncomeTotal });
+  }
+
+  const resolvedStatus: PayslipStatus = overrideStatus ?? (
+    payslip.state === "draft" ? "draft" : "completed"
+  );
+
+  return {
+    period,
+    employee: { name: payslip.employee_id[1] },
+    attendance: { items: attendanceItems, totalDays, totalHours, totalAmount },
+    salary: { taxable, nonTaxable, deductions },
+    netPay,
+    status: resolvedStatus,
+    is_pending: resolvedStatus === "pending",
+  };
+}
+
+/**
+ * GET /dashboard/payslips
+ * Returns all payslips for the authenticated user including pending stubs for
+ * the current month's cutoff periods that have not yet been generated.
+ */
+export async function getPayslipList(req: Request, res: Response, next: NextFunction) {
+  try {
+    const masterDb = db.getDb();
+    const userId = req.user!.sub;
+    const currentUser = await masterDb("users").where({ id: userId }).select("user_key").first();
+    const userKey = currentUser?.user_key as string | undefined;
+
+    if (!userKey) {
+      res.json({ success: true, data: { items: [] } });
+      return;
+    }
+
+    const [realPayslips, employees] = await Promise.all([
+      getAllPayslipsForUser(userKey, userId),
+      getEmployeesForWebsiteUserKey(userKey, userId),
+    ]);
+
+    // Only include real Odoo payslips that have computed salary data.
+    // Payslips that exist in Odoo but have net_pay = 0 are uncomputed shells
+    // with nothing useful to show. Pending stubs are kept regardless — they
+    // represent ungenerated periods and are expected to have no data yet.
+    const payslipsWithData = realPayslips.filter((p) => p.net_pay > 0);
+
+    // Pass the full realPayslips list to the stub calculator so it knows which
+    // periods are already covered (including zero-pay ones), preventing
+    // duplicate pending stubs for those periods.
+    const pendingStubs = calculatePendingPayslipStubs(
+      employees,
+      realPayslips.map((p) => ({
+        employee_id: p.employee_id,
+        company_id: p.company_id,
+        date_from: p.date_from,
+        date_to: p.date_to,
+      })),
+    );
+
+    // Pending stubs first (latest ungenerated period), then real payslips newest-first
+    const items: PayslipListItem[] = [
+      ...pendingStubs,
+      ...payslipsWithData,
+    ];
+
+    res.json({ success: true, data: { items } });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * GET /dashboard/payslips/:id
+ * Returns the full payslip detail for a given ID.
+ * If the id begins with "pending-", resolves and generates a view-only slip.
+ */
+export async function getPayslipDetail(req: Request, res: Response, next: NextFunction) {
+  try {
+    const masterDb = db.getDb();
+    const userId = req.user!.sub;
+    const payslipId = req.params.id as string;
+
+    if (!payslipId) {
+      throw new AppError(400, "id is required");
+    }
+
+    if (payslipId.startsWith("pending-")) {
+      // Format: "pending-{companyId}-{cutoff}"
+      const parts = payslipId.split("-");
+      if (parts.length !== 3) {
+        throw new AppError(400, "Invalid pending payslip id format");
+      }
+
+      const companyId = parseInt(parts[1], 10);
+      const cutoff = parseInt(parts[2], 10) as 1 | 2;
+
+      if (isNaN(companyId) || (cutoff !== 1 && cutoff !== 2)) {
+        throw new AppError(400, "Invalid pending payslip id");
+      }
+
+      const currentUser = await masterDb("users").where({ id: userId }).select("user_key").first();
+      const userKey = currentUser?.user_key as string | undefined;
+
+      if (!userKey) {
+        res.json({ success: true, data: null });
+        return;
+      }
+
+      const employee = await getEmployeeByWebsiteUserKey(userKey, companyId);
+
+      if (!employee) {
+        res.json({ success: false, error: "Employee not found for this branch" });
+        return;
+      }
+
+      let payslip;
+      try {
+        payslip = await getOrCreatePendingPayslipDetail(employee.id, companyId, employee.name, cutoff);
+      } catch (createErr) {
+        logger.error(`Failed to get/create pending payslip: ${createErr}`);
+        res.json({ success: false, error: "Unable to generate payslip preview. The employee may not have an active contract." });
+        return;
+      }
+
+      const detail = transformPayslipToDetailResponse(payslip, "pending");
+      res.json({ success: true, data: detail });
+      return;
+    }
+
+    // Real Odoo payslip
+    const odooId = parseInt(payslipId, 10);
+    if (isNaN(odooId)) {
+      throw new AppError(400, "Invalid payslip id");
+    }
+
+    const payslip = await getPayslipDetailById(odooId);
+    const detail = transformPayslipToDetailResponse(payslip);
+    res.json({ success: true, data: detail });
   } catch (err) {
     next(err);
   }

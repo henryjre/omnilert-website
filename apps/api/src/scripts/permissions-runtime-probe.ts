@@ -19,7 +19,6 @@ type ProbeResult = {
 type CompanyContext = {
   id: string;
   slug: string;
-  dbName: string;
 };
 
 type HttpProbe = {
@@ -41,7 +40,7 @@ type DbSettings = {
   port: number;
   user: string;
   password: string;
-  masterDatabase: string;
+  database: string;
 };
 
 const __filename = fileURLToPath(import.meta.url);
@@ -70,11 +69,11 @@ function toQueryString(query: Record<string, string> | undefined): string {
 
 function readDbSettings(): DbSettings {
   return {
-    host: process.env.MASTER_DB_HOST ?? 'localhost',
-    port: Number(process.env.MASTER_DB_PORT ?? 5432),
-    user: process.env.MASTER_DB_USER ?? 'postgres',
-    password: process.env.MASTER_DB_PASSWORD ?? 'postgres',
-    masterDatabase: process.env.MASTER_DB_NAME ?? 'omnilert_master',
+    host: process.env.DB_HOST ?? 'localhost',
+    port: Number(process.env.DB_PORT ?? 5432),
+    user: process.env.DB_USER ?? 'postgres',
+    password: process.env.DB_PASSWORD ?? 'postgres',
+    database: process.env.DB_NAME ?? 'omnilert',
   };
 }
 
@@ -103,7 +102,6 @@ function createTokenFactory(
       sub: randomUUID(),
       companyId: company.id,
       companySlug: company.slug,
-      companyDbName: company.dbName,
       roles: [] as string[],
       permissions,
       branchIds,
@@ -202,7 +200,7 @@ async function runBranchScopeProbe(
     },
   };
 
-  const scopedToken = tokenFactory([PERMISSIONS.SHIFT_VIEW_ALL], [assignedBranchId]);
+  const scopedToken = tokenFactory([PERMISSIONS.SCHEDULE_VIEW], [assignedBranchId]);
   const scopedResponse = await fetch(`${apiBaseUrl}/employee-shifts?branchIds=${encodeURIComponent(otherBranchId)}`, {
     headers: { Authorization: `Bearer ${scopedToken}` },
   });
@@ -220,7 +218,7 @@ async function runBranchScopeProbe(
       method: 'GET',
       path: '/employee-shifts',
       query: { branchIds: otherBranchId },
-      permissions: [PERMISSIONS.SHIFT_VIEW_ALL],
+      permissions: [PERMISSIONS.SCHEDULE_VIEW],
       branchIds: [assignedBranchId],
     },
   };
@@ -315,41 +313,38 @@ function renderMarkdown(results: ProbeResult[]): string {
 
 async function resolveCompanyAndBranches(
   settings: DbSettings,
-): Promise<{ company: CompanyContext; branchIds: string[]; tenantDb: Knex }> {
-  const masterDb = createDbConnection(settings, settings.masterDatabase);
+): Promise<{ company: CompanyContext; branchIds: string[]; singleDb: Knex }> {
+  const singleDb = createDbConnection(settings, settings.database);
 
-  const companyRow = await masterDb('companies')
+  const companyRow = await singleDb('companies')
     .where({ is_active: true })
     .orderBy('created_at', 'asc')
-    .first('id', 'slug', 'db_name');
+    .first('id', 'slug');
 
-  await masterDb.destroy();
-
-  if (!companyRow?.id || !companyRow?.slug || !companyRow?.db_name) {
-    throw new Error('No active company found in master database.');
+  if (!companyRow?.id || !companyRow?.slug) {
+    await singleDb.destroy();
+    throw new Error('No active company found in database.');
   }
 
-  const tenantDb = createDbConnection(settings, String(companyRow.db_name));
-  const branchRows = await tenantDb('branches')
+  const branchRows = await singleDb('branches')
     .select('id')
-    .where({ is_active: true })
+    .where({ is_active: true, company_id: companyRow.id })
     .orderBy('created_at', 'asc')
     .limit(10);
 
   const branchIds = branchRows.map((branch) => String(branch.id)).filter(Boolean);
   if (branchIds.length === 0) {
-    await tenantDb.destroy();
-    throw new Error(`No active branches found in tenant database "${String(companyRow.db_name)}".`);
+    await singleDb.destroy();
+    throw new Error(`No active branches found for company "${String(companyRow.id)}".`);
   }
 
   return {
     company: {
       id: String(companyRow.id),
       slug: String(companyRow.slug),
-      dbName: String(companyRow.db_name),
     },
     branchIds,
-    tenantDb,
+    singleDb,
   };
 }
 
@@ -364,10 +359,10 @@ async function main(): Promise<void> {
   const socketOrigin = apiBaseUrl.replace(/\/api$/, '');
   const jwtExpiresIn = process.env.JWT_EXPIRES_IN ?? '15m';
 
-  let tenantDb: Knex | null = null;
+  let singleDb: Knex | null = null;
   try {
     const companyData = await resolveCompanyAndBranches(settings);
-    tenantDb = companyData.tenantDb;
+    singleDb = companyData.singleDb;
 
     const assignedBranchId = companyData.branchIds[0];
     const otherBranchId = companyData.branchIds[1] ?? companyData.branchIds[0];
@@ -378,37 +373,37 @@ async function main(): Promise<void> {
         id: 'http.peer-evaluations.pending-mine',
         method: 'GET',
         path: '/peer-evaluations/pending-mine',
-        requiredAny: [PERMISSIONS.PEER_EVALUATION_VIEW, PERMISSIONS.PEER_EVALUATION_MANAGE],
+        requiredAny: [PERMISSIONS.WORKPLACE_RELATIONS_VIEW],
       },
       {
         id: 'http.employee-shifts.list',
         method: 'GET',
         path: '/employee-shifts',
-        requiredAny: [PERMISSIONS.SHIFT_VIEW_ALL],
+        requiredAny: [PERMISSIONS.SCHEDULE_VIEW],
       },
       {
         id: 'http.pos-sessions.list',
         method: 'GET',
         path: '/pos-sessions',
-        requiredAny: [PERMISSIONS.POS_SESSION_VIEW],
+        requiredAny: [PERMISSIONS.POS_VIEW],
       },
       {
         id: 'http.pos-verifications.list',
         method: 'GET',
         path: '/pos-verifications',
-        requiredAny: [PERMISSIONS.POS_VERIFICATION_VIEW],
+        requiredAny: [PERMISSIONS.POS_VIEW],
       },
       {
         id: 'http.account.profile',
         method: 'GET',
         path: '/account/profile',
-        requiredAny: [PERMISSIONS.EMPLOYEE_VIEW_OWN_PROFILE],
+        requiredAny: [PERMISSIONS.ACCOUNT_VIEW_SCHEDULE],
       },
       {
         id: 'http.account.notifications.count',
         method: 'GET',
         path: '/account/notifications/count',
-        requiredAny: [PERMISSIONS.ACCOUNT_VIEW_NOTIFICATIONS],
+        requiredAny: [PERMISSIONS.ACCOUNT_VIEW_SCHEDULE],
       },
       {
         id: 'http.account.schedule',
@@ -419,15 +414,19 @@ async function main(): Promise<void> {
     ];
 
     const socketProbes: SocketProbe[] = [
-      { id: 'socket.pos-verification', namespace: '/pos-verification', requiredAny: [PERMISSIONS.POS_VERIFICATION_VIEW] },
-      { id: 'socket.pos-session', namespace: '/pos-session', requiredAny: [PERMISSIONS.POS_SESSION_VIEW] },
-      { id: 'socket.employee-shifts', namespace: '/employee-shifts', requiredAny: [PERMISSIONS.SHIFT_VIEW_ALL, PERMISSIONS.ACCOUNT_VIEW_SCHEDULE] },
-      { id: 'socket.employee-verifications', namespace: '/employee-verifications', requiredAny: [PERMISSIONS.EMPLOYEE_VERIFICATION_VIEW] },
+      { id: 'socket.pos-verification', namespace: '/pos-verification', requiredAny: [PERMISSIONS.POS_VIEW] },
+      { id: 'socket.pos-session', namespace: '/pos-session', requiredAny: [PERMISSIONS.POS_VIEW] },
+      { id: 'socket.employee-shifts', namespace: '/employee-shifts', requiredAny: [PERMISSIONS.SCHEDULE_VIEW, PERMISSIONS.ACCOUNT_VIEW_SCHEDULE] },
+      { id: 'socket.employee-verifications', namespace: '/employee-verifications', requiredAny: [PERMISSIONS.EMPLOYEE_VERIFICATION_VIEW_PAGE] },
       { id: 'socket.store-audits', namespace: '/store-audits', requiredAny: [PERMISSIONS.STORE_AUDIT_VIEW] },
       { id: 'socket.case-reports', namespace: '/case-reports', requiredAny: [PERMISSIONS.CASE_REPORT_VIEW] },
       { id: 'socket.violation-notices', namespace: '/violation-notices', requiredAny: [PERMISSIONS.VIOLATION_NOTICE_VIEW] },
-      { id: 'socket.employee-requirements', namespace: '/employee-requirements', requiredAny: [PERMISSIONS.SHIFT_VIEW_ALL] },
-      { id: 'socket.peer-evaluations', namespace: '/peer-evaluations', requiredAny: [PERMISSIONS.PEER_EVALUATION_VIEW, PERMISSIONS.PEER_EVALUATION_MANAGE] },
+      {
+        id: 'socket.employee-requirements',
+        namespace: '/employee-requirements',
+        requiredAny: [PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_REQUIREMENTS, PERMISSIONS.SCHEDULE_VIEW],
+      },
+      { id: 'socket.peer-evaluations', namespace: '/peer-evaluations', requiredAny: [PERMISSIONS.WORKPLACE_RELATIONS_VIEW] },
     ];
 
     const results: ProbeResult[] = [];
@@ -520,8 +519,8 @@ async function main(): Promise<void> {
       process.exitCode = 1;
     }
   } finally {
-    if (tenantDb) {
-      await tenantDb.destroy();
+    if (singleDb) {
+      await singleDb.destroy();
     }
   }
 }

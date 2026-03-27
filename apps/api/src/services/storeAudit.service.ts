@@ -1,4 +1,3 @@
-import type { Knex } from 'knex';
 import type {
   CssCriteriaScores,
   StoreAudit,
@@ -98,7 +97,7 @@ function normalizeRow(row: any): StoreAuditRow {
   };
 }
 
-async function enrichAuditRows(tenantDb: Knex, rows: any[]): Promise<StoreAuditRow[]> {
+async function enrichAuditRows(rows: any[]): Promise<StoreAuditRow[]> {
   if (rows.length === 0) return [];
 
   const branchIds = [...new Set(rows.map((row) => row.branch_id).filter(Boolean))] as string[];
@@ -109,12 +108,12 @@ async function enrichAuditRows(tenantDb: Knex, rows: any[]): Promise<StoreAuditR
 
   const [branches, auditors, linkedVns] = await Promise.all([
     branchIds.length > 0
-      ? tenantDb('branches').whereIn('id', branchIds).select('id', 'name')
+      ? db.getDb()('branches').whereIn('id', branchIds).select('id', 'name')
       : Promise.resolve([]),
     auditorIds.length > 0
-      ? db.getMasterDb()('users').whereIn('id', auditorIds).select('id', 'first_name', 'last_name')
+      ? db.getDb()('users').whereIn('id', auditorIds).select('id', 'first_name', 'last_name')
       : Promise.resolve([]),
-    tenantDb('violation_notices')
+    db.getDb()('violation_notices')
       .whereIn('source_store_audit_id', auditIds)
       .whereNotNull('source_store_audit_id')
       .select('id', 'source_store_audit_id'),
@@ -359,61 +358,9 @@ function formatAuditReportSections(sections: AuditReportSections): string {
     .trim();
 }
 
-async function appendCssAuditResult(
-  userKey: string,
-  payload: {
-    audit_id: string;
-    star_rating: number;
-    criteria_scores: CssCriteriaScores;
-    audited_at: string;
-  },
-): Promise<void> {
-  const masterDb = db.getMasterDb();
-  const targetUser = await masterDb('users').where({ user_key: userKey }).first('id');
-  if (!targetUser) return;
-
-  await masterDb('users')
-    .where({ id: targetUser.id })
-    .update({
-      css_audits: masterDb.raw(`COALESCE(css_audits, '[]'::jsonb) || ?::jsonb`, [
-        JSON.stringify([payload]),
-      ]),
-      updated_at: new Date(),
-    });
-}
-
-async function updateComplianceAuditResult(
-  odooEmployeeId: number,
-  payload: {
-    audit_id: string;
-    answers: {
-      productivity_rate: boolean;
-      uniform: boolean;
-      hygiene: boolean;
-      sop: boolean;
-    };
-    audited_at: string;
-  },
-): Promise<void> {
-  const websiteKey = await getEmployeeWebsiteKeyByEmployeeId(odooEmployeeId);
-  if (!websiteKey) return;
-
-  const masterDb = db.getMasterDb();
-  const targetUser = await masterDb('users').where({ user_key: websiteKey }).first('id');
-  if (!targetUser) return;
-
-  await masterDb('users')
-    .where({ id: targetUser.id })
-    .update({
-      compliance_audit: masterDb.raw(`COALESCE(compliance_audit, '[]'::jsonb) || ?::jsonb`, [
-        JSON.stringify([payload]),
-      ]),
-      updated_at: new Date(),
-    });
-}
 
 async function getWebsiteKeyByUserId(userId: string): Promise<string | null> {
-  const row = await db.getMasterDb()('users').where({ id: userId }).first('user_key');
+  const row = await db.getDb()('users').where({ id: userId }).first('user_key');
 
   const key = String(row?.user_key ?? '').trim();
   return key || null;
@@ -423,8 +370,8 @@ function isAllowedStoreAuditMessageAttachment(contentType: string): boolean {
   return contentType.startsWith('image/') || contentType.startsWith('video/');
 }
 
-async function getStoreAuditOrThrow(tenantDb: Knex, auditId: string): Promise<any> {
-  const audit = await tenantDb('store_audits').where({ id: auditId }).first();
+async function getStoreAuditOrThrow(auditId: string): Promise<any> {
+  const audit = await db.getDb()('store_audits').where({ id: auditId }).first();
   if (!audit) throw new AppError(404, 'Store audit not found');
   return audit;
 }
@@ -436,11 +383,10 @@ function assertStoreAuditMessagesSupported(audit: any): void {
 }
 
 async function getMutableStoreAuditForMessages(input: {
-  tenantDb: Knex;
   auditId: string;
   userId: string;
 }): Promise<any> {
-  const audit = await getStoreAuditOrThrow(input.tenantDb, input.auditId);
+  const audit = await getStoreAuditOrThrow(input.auditId);
   assertStoreAuditMessagesSupported(audit);
   if (audit.status !== 'processing') {
     throw new AppError(409, 'Store audit must be in processing status');
@@ -452,10 +398,9 @@ async function getMutableStoreAuditForMessages(input: {
 }
 
 async function buildStoreAuditMessageList(
-  tenantDb: Knex,
   auditId: string,
 ): Promise<StoreAuditMessage[]> {
-  const messageRows = (await tenantDb('store_audit_messages')
+  const messageRows = (await db.getDb()('store_audit_messages')
     .where({ store_audit_id: auditId })
     .orderBy('created_at', 'asc')
     .select('*')) as StoreAuditMessageRow[];
@@ -464,7 +409,7 @@ async function buildStoreAuditMessageList(
 
   const messageIds = messageRows.map((row) => row.id);
   const [attachmentRows, userMap] = await Promise.all([
-    tenantDb('store_audit_attachments')
+    db.getDb()('store_audit_attachments')
       .whereIn('message_id', messageIds)
       .orderBy('created_at', 'asc')
       .select('*') as Promise<StoreAuditAttachmentRow[]>,
@@ -522,7 +467,6 @@ function buildAuditMessageTranscript(messages: StoreAuditMessage[]): string {
 }
 
 export async function listStoreAudits(input: {
-  tenantDb: Knex;
   userId: string;
   type?: StoreAuditType | 'all';
   status?: StoreAuditStatus;
@@ -532,7 +476,7 @@ export async function listStoreAudits(input: {
   const page = Math.max(1, Number(input.page ?? 1));
   const pageSize = Math.min(100, Math.max(1, Number(input.pageSize ?? 20)));
 
-  const query = input.tenantDb('store_audits');
+  const query = db.getDb()('store_audits');
   if (input.type && input.type !== 'all') {
     query.where({ type: input.type });
   }
@@ -567,13 +511,12 @@ export async function listStoreAudits(input: {
       )
       .limit(pageSize)
       .offset((page - 1) * pageSize),
-    input
-      .tenantDb('store_audits')
+    db.getDb()('store_audits')
       .where({ status: 'processing', auditor_user_id: input.userId })
       .first('id'),
   ]);
 
-  const items = await enrichAuditRows(input.tenantDb, rows);
+  const items = await enrichAuditRows(rows);
 
   return {
     items,
@@ -585,26 +528,23 @@ export async function listStoreAudits(input: {
 }
 
 export async function getStoreAuditById(input: {
-  tenantDb: Knex;
   id: string;
 }): Promise<StoreAuditRow> {
-  const row = await input.tenantDb('store_audits').where({ id: input.id }).first();
+  const row = await db.getDb()('store_audits').where({ id: input.id }).first();
   if (!row) throw new AppError(404, 'Store audit not found');
-  const [enriched] = await enrichAuditRows(input.tenantDb, [row]);
+  const [enriched] = await enrichAuditRows([row]);
   return enriched;
 }
 
 export async function listStoreAuditMessages(input: {
-  tenantDb: Knex;
   auditId: string;
 }): Promise<StoreAuditMessage[]> {
-  const audit = await getStoreAuditOrThrow(input.tenantDb, input.auditId);
+  const audit = await getStoreAuditOrThrow(input.auditId);
   assertStoreAuditMessagesSupported(audit);
-  return buildStoreAuditMessageList(input.tenantDb, input.auditId);
+  return buildStoreAuditMessageList(input.auditId);
 }
 
 export async function sendStoreAuditMessage(input: {
-  tenantDb: Knex;
   companyId: string;
   companyStorageRoot: string;
   auditId: string;
@@ -613,7 +553,6 @@ export async function sendStoreAuditMessage(input: {
   files: Array<{ buffer: Buffer; originalname: string; mimetype: string; size: number }>;
 }): Promise<StoreAuditMessage> {
   await getMutableStoreAuditForMessages({
-    tenantDb: input.tenantDb,
     auditId: input.auditId,
     userId: input.userId,
   });
@@ -633,7 +572,7 @@ export async function sendStoreAuditMessage(input: {
   }
 
   let messageId = '';
-  await input.tenantDb.transaction(async (trx) => {
+  await db.getDb().transaction(async (trx) => {
     const [created] = await trx('store_audit_messages')
       .insert({
         store_audit_id: input.auditId,
@@ -667,7 +606,7 @@ export async function sendStoreAuditMessage(input: {
     }
   });
 
-  const messages = await buildStoreAuditMessageList(input.tenantDb, input.auditId);
+  const messages = await buildStoreAuditMessageList(input.auditId);
   const found = messages.find((message) => message.id === messageId);
   if (!found) throw new AppError(500, 'Failed to load saved audit message');
 
@@ -676,7 +615,6 @@ export async function sendStoreAuditMessage(input: {
 }
 
 export async function editStoreAuditMessage(input: {
-  tenantDb: Knex;
   companyId: string;
   auditId: string;
   messageId: string;
@@ -684,7 +622,6 @@ export async function editStoreAuditMessage(input: {
   content: string;
 }): Promise<StoreAuditMessage> {
   await getMutableStoreAuditForMessages({
-    tenantDb: input.tenantDb,
     auditId: input.auditId,
     userId: input.userId,
   });
@@ -692,8 +629,7 @@ export async function editStoreAuditMessage(input: {
   const nextContent = input.content.trim();
   if (!nextContent) throw new AppError(400, 'Message content is required');
 
-  const message = (await input
-    .tenantDb('store_audit_messages')
+  const message = (await db.getDb()('store_audit_messages')
     .where({ id: input.messageId, store_audit_id: input.auditId })
     .first()) as StoreAuditMessageRow | undefined;
   if (!message) throw new AppError(404, 'Audit message not found');
@@ -704,12 +640,12 @@ export async function editStoreAuditMessage(input: {
     throw new AppError(409, 'Deleted messages cannot be edited');
   }
 
-  await input.tenantDb('store_audit_messages').where({ id: input.messageId }).update({
+  await db.getDb()('store_audit_messages').where({ id: input.messageId }).update({
     content: nextContent,
     updated_at: new Date(),
   });
 
-  const messages = await buildStoreAuditMessageList(input.tenantDb, input.auditId);
+  const messages = await buildStoreAuditMessageList(input.auditId);
   const updated = messages.find((item) => item.id === input.messageId);
   if (!updated) throw new AppError(500, 'Failed to load updated audit message');
 
@@ -718,20 +654,17 @@ export async function editStoreAuditMessage(input: {
 }
 
 export async function deleteStoreAuditMessage(input: {
-  tenantDb: Knex;
   companyId: string;
   auditId: string;
   messageId: string;
   userId: string;
 }): Promise<void> {
   await getMutableStoreAuditForMessages({
-    tenantDb: input.tenantDb,
     auditId: input.auditId,
     userId: input.userId,
   });
 
-  const message = (await input
-    .tenantDb('store_audit_messages')
+  const message = (await db.getDb()('store_audit_messages')
     .where({ id: input.messageId, store_audit_id: input.auditId })
     .first()) as StoreAuditMessageRow | undefined;
   if (!message) throw new AppError(404, 'Audit message not found');
@@ -742,8 +675,7 @@ export async function deleteStoreAuditMessage(input: {
     throw new AppError(409, 'Message is already deleted');
   }
 
-  const attachments = (await input
-    .tenantDb('store_audit_attachments')
+  const attachments = (await db.getDb()('store_audit_attachments')
     .where({ message_id: input.messageId })
     .select('file_url')) as Array<{ file_url: string }>;
 
@@ -752,7 +684,7 @@ export async function deleteStoreAuditMessage(input: {
   const deleterName =
     `${deleter?.first_name ?? ''} ${deleter?.last_name ?? ''}`.trim() || 'Someone';
 
-  await input.tenantDb.transaction(async (trx) => {
+  await db.getDb().transaction(async (trx) => {
     await trx('store_audit_messages')
       .where({ id: input.messageId })
       .update({
@@ -772,18 +704,16 @@ export async function deleteStoreAuditMessage(input: {
 }
 
 export async function processStoreAudit(input: {
-  tenantDb: Knex;
   auditId: string;
   userId: string;
   companyId: string;
 }): Promise<StoreAuditRow> {
-  const existing = await input.tenantDb('store_audits').where({ id: input.auditId }).first();
+  const existing = await db.getDb()('store_audits').where({ id: input.auditId }).first();
   if (!existing || existing.status !== 'pending') {
     throw new AppError(404, 'Store audit not found');
   }
 
-  const activeAudit = await input
-    .tenantDb('store_audits')
+  const activeAudit = await db.getDb()('store_audits')
     .where({ status: 'processing', auditor_user_id: input.userId })
     .first('id');
   if (activeAudit) {
@@ -795,8 +725,7 @@ export async function processStoreAudit(input: {
     const claimUpdate = buildProcessStoreAuditClaimUpdate({
       userId: input.userId,
     });
-    [updated] = await input
-      .tenantDb('store_audits')
+    [updated] = await db.getDb()('store_audits')
       .where({ id: input.auditId, status: 'pending' })
       .update(claimUpdate)
       .returning('*');
@@ -811,7 +740,7 @@ export async function processStoreAudit(input: {
     throw new AppError(409, 'Audit was already claimed');
   }
 
-  const [enriched] = await enrichAuditRows(input.tenantDb, [updated]);
+  const [enriched] = await enrichAuditRows([updated]);
   emitStoreAuditEvent(input.companyId, 'store-audit:claimed', {
     id: enriched.id,
     auditor_user_id: input.userId,
@@ -821,7 +750,6 @@ export async function processStoreAudit(input: {
 }
 
 export async function completeStoreAudit(input: {
-  tenantDb: Knex;
   auditId: string;
   userId: string;
   companyId: string;
@@ -836,7 +764,7 @@ export async function completeStoreAudit(input: {
         sop: boolean;
       };
 }): Promise<StoreAuditRow> {
-  const audit = await input.tenantDb('store_audits').where({ id: input.auditId }).first();
+  const audit = await db.getDb()('store_audits').where({ id: input.auditId }).first();
   if (!audit) throw new AppError(404, 'Store audit not found');
   if (audit.status !== 'processing' || audit.auditor_user_id !== input.userId) {
     throw new AppError(403, 'You can only complete your own processing audit');
@@ -871,7 +799,7 @@ export async function completeStoreAudit(input: {
   if (audit.type === 'customer_service') {
     const cssPayload = input.payload as { criteria_scores: CssCriteriaScores };
     const { criteria_scores } = cssPayload;
-    const messages = await buildStoreAuditMessageList(input.tenantDb, input.auditId);
+    const messages = await buildStoreAuditMessageList(input.auditId);
     const visibleMessages = messages.filter((message) => !message.is_deleted);
     if (visibleMessages.length === 0) {
       throw new AppError(
@@ -891,8 +819,7 @@ export async function completeStoreAudit(input: {
           100,
       ) / 100;
     const aiReport = await analyzeCssAudit(generatedAuditLog, criteria_scores);
-    [updated] = await input
-      .tenantDb('store_audits')
+    [updated] = await db.getDb()('store_audits')
       .where({ id: input.auditId })
       .update({
         status: 'completed',
@@ -905,13 +832,6 @@ export async function completeStoreAudit(input: {
       .returning('*');
 
     if (audit.css_cashier_user_key) {
-      await appendCssAuditResult(String(audit.css_cashier_user_key), {
-        audit_id: input.auditId,
-        star_rating: starRating,
-        criteria_scores,
-        audited_at: completedAt.toISOString(),
-      });
-
       const monetaryReward = Number(audit.monetary_reward ?? 0);
       if (monetaryReward > 0) {
         const description = `CSS Audit ${input.auditId} - ${formatDescriptionTimestamp(completedAt)}`;
@@ -925,7 +845,7 @@ export async function completeStoreAudit(input: {
       hygiene: boolean;
       sop: boolean;
     };
-    const messages = await buildStoreAuditMessageList(input.tenantDb, input.auditId);
+    const messages = await buildStoreAuditMessageList(input.auditId);
     const visibleMessages = messages.filter((message) => !message.is_deleted);
     if (visibleMessages.length === 0) {
       throw new AppError(
@@ -935,8 +855,7 @@ export async function completeStoreAudit(input: {
     }
     const generatedAuditLog = buildAuditMessageTranscript(visibleMessages);
     const aiReport = await analyzeComplianceAudit(generatedAuditLog, compPayload);
-    [updated] = await input
-      .tenantDb('store_audits')
+    [updated] = await db.getDb()('store_audits')
       .where({ id: input.auditId })
       .update({
         status: 'completed',
@@ -950,17 +869,6 @@ export async function completeStoreAudit(input: {
       .returning('*');
 
     if (audit.comp_odoo_employee_id) {
-      await updateComplianceAuditResult(Number(audit.comp_odoo_employee_id), {
-        audit_id: input.auditId,
-        answers: {
-          productivity_rate: compPayload.productivity_rate,
-          uniform: compPayload.uniform,
-          hygiene: compPayload.hygiene,
-          sop: compPayload.sop,
-        },
-        audited_at: completedAt.toISOString(),
-      });
-
       const monetaryReward = Number(audit.monetary_reward ?? 0);
       if (monetaryReward > 0) {
         const description = `Compliance Audit ${input.auditId} - ${formatDescriptionTimestamp(completedAt)}`;
@@ -969,7 +877,7 @@ export async function completeStoreAudit(input: {
     }
   }
 
-  const [enriched] = await enrichAuditRows(input.tenantDb, [updated]);
+  const [enriched] = await enrichAuditRows([updated]);
   await notifyCompletedStoreAudit({
     companyId: input.companyId,
     audit: enriched,

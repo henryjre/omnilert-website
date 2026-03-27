@@ -8,7 +8,8 @@ import { logger } from '../utils/logger.js';
 
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const user = req.user!;
     const branchIdsParam = req.query.branchIds as string | undefined;
     const branchId = req.query.branchId as string | undefined;
@@ -20,38 +21,43 @@ export async function list(req: Request, res: Response, next: NextFunction) {
       requestedIds = [branchId];
     }
 
-    let query = tenantDb('employee_shifts');
+    let query = tenantDb('employee_shifts')
+      .leftJoin('users', 'employee_shifts.user_id', 'users.id')
+      .select(
+        'employee_shifts.*',
+        'users.avatar_url as user_avatar_url',
+      );
 
     if (requestedIds && requestedIds.length > 0) {
       const allowed = user.permissions.includes(PERMISSIONS.ADMIN_VIEW_ALL_BRANCHES)
         ? requestedIds
         : requestedIds.filter((id) => user.branchIds.includes(id));
-      query = query.whereIn('branch_id', allowed);
+      query = query.whereIn('employee_shifts.branch_id', allowed);
     } else if (!user.permissions.includes(PERMISSIONS.ADMIN_VIEW_ALL_BRANCHES)) {
-      query = query.whereIn('branch_id', user.branchIds);
+      query = query.whereIn('employee_shifts.branch_id', user.branchIds);
     }
 
     // Filtering
     const status = req.query.status as string | undefined;
-    if (status) query = query.where('status', status);
+    if (status) query = query.where('employee_shifts.status', status);
 
     const employeeName = req.query.employeeName as string | undefined;
-    if (employeeName) query = query.where('employee_name', 'ilike', `%${employeeName}%`);
+    if (employeeName) query = query.where('employee_shifts.employee_name', 'ilike', `%${employeeName}%`);
 
     const shiftStartFrom = req.query.shiftStartFrom as string | undefined;
-    if (shiftStartFrom) query = query.where('shift_start', '>=', new Date(shiftStartFrom));
+    if (shiftStartFrom) query = query.where('employee_shifts.shift_start', '>=', new Date(shiftStartFrom));
 
     const shiftStartTo = req.query.shiftStartTo as string | undefined;
-    if (shiftStartTo) query = query.where('shift_start', '<=', new Date(shiftStartTo));
+    if (shiftStartTo) query = query.where('employee_shifts.shift_start', '<=', new Date(shiftStartTo));
 
     const shiftEndFrom = req.query.shiftEndFrom as string | undefined;
-    if (shiftEndFrom) query = query.where('shift_end', '>=', new Date(shiftEndFrom));
+    if (shiftEndFrom) query = query.where('employee_shifts.shift_end', '>=', new Date(shiftEndFrom));
 
     const shiftEndTo = req.query.shiftEndTo as string | undefined;
-    if (shiftEndTo) query = query.where('shift_end', '<=', new Date(shiftEndTo));
+    if (shiftEndTo) query = query.where('employee_shifts.shift_end', '<=', new Date(shiftEndTo));
 
     const hasPendingApprovals = req.query.hasPendingApprovals as string | undefined;
-    if (hasPendingApprovals === 'true') query = query.where('pending_approvals', '>', 0);
+    if (hasPendingApprovals === 'true') query = query.where('employee_shifts.pending_approvals', '>', 0);
 
     // Sorting
     const allowedSortFields = ['shift_start', 'allocated_hours', 'pending_approvals'];
@@ -59,7 +65,7 @@ export async function list(req: Request, res: Response, next: NextFunction) {
       ? (req.query.sortBy as string)
       : 'shift_start';
     const sortOrder = req.query.sortOrder === 'asc' ? 'asc' : 'desc';
-    query = query.orderBy(sortBy, sortOrder);
+    query = query.orderBy(`employee_shifts.${sortBy}`, sortOrder);
 
     const shifts = await query;
     res.json({ success: true, data: shifts });
@@ -70,10 +76,18 @@ export async function list(req: Request, res: Response, next: NextFunction) {
 
 export async function get(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const id = req.params.id as string;
 
-    const shift = await tenantDb('employee_shifts').where({ id }).first();
+    const shift = await tenantDb('employee_shifts')
+      .leftJoin('users', 'employee_shifts.user_id', 'users.id')
+      .where('employee_shifts.id', id)
+      .select(
+        'employee_shifts.*',
+        'users.avatar_url as user_avatar_url',
+      )
+      .first();
     if (!shift) throw new AppError(404, 'Shift not found');
 
     const logs = await tenantDb('shift_logs')
@@ -90,7 +104,7 @@ export async function get(req: Request, res: Response, next: NextFunction) {
       .filter(Boolean) as string[];
     const resolvers: Record<string, string> = {};
     if (resolvedByIds.length > 0) {
-      const users = await db.getMasterDb()('users').whereIn('id', resolvedByIds).select('id', 'first_name', 'last_name');
+      const users = await db.getDb()('users').whereIn('id', resolvedByIds).select('id', 'first_name', 'last_name');
       for (const u of users) resolvers[u.id] = `${u.first_name} ${u.last_name}`;
     }
     const authorizationsWithResolver = authorizations.map((a: Record<string, unknown>) => ({
@@ -107,14 +121,24 @@ export async function get(req: Request, res: Response, next: NextFunction) {
 
 export async function endShift(req: Request, res: Response, next: NextFunction) {
   try {
-    const tenantDb = req.tenantDb!;
+    const { companyId } = req.companyContext!;
+    const tenantDb = db.getDb();
     const managerId = req.user!.sub;
+    const userPermissions = new Set(req.user!.permissions);
+    const canEndAnyShift = userPermissions.has(PERMISSIONS.SCHEDULE_MANAGE_SHIFT)
+      || userPermissions.has(PERMISSIONS.SCHEDULE_END_SHIFT)
+      || userPermissions.has(PERMISSIONS.AUTH_REQUEST_MANAGE_PUBLIC);
+    const canEndOwnShift = req.user!.permissions.includes(PERMISSIONS.ACCOUNT_MANAGE_SCHEDULE);
+    if (!canEndAnyShift && !canEndOwnShift) throw new AppError(403, 'Forbidden');
     const id = req.params.id as string;
 
     const shift = await tenantDb('employee_shifts').where({ id }).first();
     if (!shift) throw new AppError(404, 'Shift not found');
     if (shift.status === 'ended') throw new AppError(400, 'Shift is already ended');
     if (shift.status === 'open') throw new AppError(400, 'Cannot end a shift that has not started');
+    if (!canEndAnyShift && shift.user_id !== managerId) {
+      throw new AppError(403, 'You can only end your own shift');
+    }
 
     // Update shift status to ended
     const [updated] = await tenantDb('employee_shifts')
@@ -123,8 +147,11 @@ export async function endShift(req: Request, res: Response, next: NextFunction) 
       .returning('*');
 
     // Insert shift_ended log
+    const resolvedCompanyId = (shift.company_id as string | null | undefined) ?? companyId;
+    if (!resolvedCompanyId) throw new AppError(400, 'Company context is required');
     const [endLog] = await tenantDb('shift_logs')
       .insert({
+        company_id: resolvedCompanyId,
         shift_id: id,
         branch_id: shift.branch_id,
         log_type: 'shift_ended',
@@ -138,13 +165,12 @@ export async function endShift(req: Request, res: Response, next: NextFunction) 
     const shiftBranch = await tenantDb('branches').where({ id: shift.branch_id }).first('odoo_branch_id');
     if (shiftBranch?.odoo_branch_id && shift.user_id) {
       enqueuePeerEvaluationJob({
-        companyDbName: req.user!.companyDbName,
-        companyId: req.companyContext!.companyId,
+        companyId,
         shiftId: id,
         branchId: shift.branch_id,
         shiftUserId: shift.user_id,
-        shiftStart: String(shift.shift_start),
-        shiftEnd: new Date().toISOString(),
+        shiftStart: new Date(shift.shift_start as string | Date).toISOString(),
+        shiftEnd: new Date(shift.shift_end as string | Date).toISOString(),
         branchOdooId: String(shiftBranch.odoo_branch_id),
       }).catch((err) => logger.error({ err }, 'Failed to enqueue peer evaluation job'));
     }
@@ -158,6 +184,7 @@ export async function endShift(req: Request, res: Response, next: NextFunction) 
 
       const [auth] = await tenantDb('shift_authorizations')
         .insert({
+          company_id: resolvedCompanyId,
           shift_id: id,
           shift_log_id: endLog.id,
           branch_id: shift.branch_id,

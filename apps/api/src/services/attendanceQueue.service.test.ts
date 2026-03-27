@@ -48,7 +48,7 @@ test('createEarlyCheckInJobProcessor skips creating an authorization when the ch
   await processJob({
     id: 'job-1',
     data: {
-      companyDbName: 'tenant_a',
+      companyId: 'company-a',
       branchId: 'branch-main',
       shiftId: 'shift-scheduled',
       shiftLogId: 'log-check-in',

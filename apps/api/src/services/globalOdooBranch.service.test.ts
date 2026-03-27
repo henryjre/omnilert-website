@@ -17,7 +17,7 @@ const {
   createGlobalActiveOdooBranchIdResolver,
 } = await import('./globalOdooBranch.service.js');
 
-test('createGlobalActiveOdooBranchIdResolver returns deduped active numeric branch ids across active tenant databases', async () => {
+test('createGlobalActiveOdooBranchIdResolver returns deduped active numeric branch ids across active companies', async () => {
   let companyLookups = 0;
   const tenantLookups: string[] = [];
 
@@ -27,13 +27,13 @@ test('createGlobalActiveOdooBranchIdResolver returns deduped active numeric bran
     listActiveCompanies: async () => {
       companyLookups += 1;
       return [
-        { id: 'company-a', dbName: 'tenant_a' },
-        { id: 'company-b', dbName: 'tenant_b' },
+        { id: 'company-a' },
+        { id: 'company-b' },
       ];
     },
-    listTenantBranches: async (companyDbName) => {
-      tenantLookups.push(companyDbName);
-      if (companyDbName === 'tenant_a') {
+    listTenantBranches: async (companyId) => {
+      tenantLookups.push(companyId);
+      if (companyId === 'company-a') {
         return [
           { isActive: true, odooBranchId: '5' },
           { isActive: false, odooBranchId: '8' },
@@ -56,7 +56,7 @@ test('createGlobalActiveOdooBranchIdResolver returns deduped active numeric bran
   const branchIds = await resolveBranchIds();
 
   assert.equal(companyLookups, 1);
-  assert.deepEqual(tenantLookups, ['tenant_a', 'tenant_b']);
+  assert.deepEqual(tenantLookups.sort(), ['company-a', 'company-b']);
   assert.deepEqual(branchIds, [5, 10, 12]);
 });
 
@@ -70,7 +70,7 @@ test('createGlobalActiveOdooBranchIdResolver caches successful lookups inside th
     now: () => now,
     listActiveCompanies: async () => {
       companyLookups += 1;
-      return [{ id: 'company-a', dbName: 'tenant_a' }];
+      return [{ id: 'company-a' }];
     },
     listTenantBranches: async () => {
       tenantLookups += 1;
@@ -89,19 +89,19 @@ test('createGlobalActiveOdooBranchIdResolver caches successful lookups inside th
   assert.equal(tenantLookups, 1);
 });
 
-test('createGlobalActiveOdooBranchIdResolver logs tenant failures and continues with healthy tenants', async () => {
+test('createGlobalActiveOdooBranchIdResolver logs company failures and continues with healthy companies', async () => {
   const warnings: Array<{ context: Record<string, unknown>; message: string }> = [];
 
   const resolveBranchIds = createGlobalActiveOdooBranchIdResolver({
     ttlMs: 60_000,
     now: () => 1_000,
     listActiveCompanies: async () => [
-      { id: 'company-a', dbName: 'tenant_a' },
-      { id: 'company-b', dbName: 'tenant_b' },
+      { id: 'company-a' },
+      { id: 'company-b' },
     ],
-    listTenantBranches: async (companyDbName) => {
-      if (companyDbName === 'tenant_a') {
-        throw new Error('tenant read failed');
+    listTenantBranches: async (companyId) => {
+      if (companyId === 'company-a') {
+        throw new Error('company read failed');
       }
 
       return [{ isActive: true, odooBranchId: '14' }];
@@ -118,5 +118,5 @@ test('createGlobalActiveOdooBranchIdResolver logs tenant failures and continues 
   assert.deepEqual(branchIds, [14]);
   assert.equal(warnings.length, 1);
   assert.equal(warnings[0]?.message, 'Failed to load tenant Odoo branch ids for global EPI benchmark');
-  assert.equal(warnings[0]?.context.companyDbName, 'tenant_a');
+  assert.equal(warnings[0]?.context.companyId, 'company-a');
 });

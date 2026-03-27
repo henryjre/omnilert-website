@@ -6,12 +6,35 @@ import type {
   ViolationNoticeStatus,
   ViolationNoticeCategory,
 } from '@omnilert/shared';
-import { CheckCircle2, ChevronDown, ExternalLink, FileCheck, FileX, TrendingDown, TriangleAlert, UserCheck, X } from 'lucide-react';
+import {
+  Bell,
+  BellOff,
+  Building2,
+  CalendarDays,
+  CheckCircle2,
+  ChevronDown,
+  ExternalLink,
+  File,
+  FileCheck,
+  FileText,
+  FileX,
+  GitBranch,
+  LogOut,
+  MoreHorizontal,
+  TrendingDown,
+  TriangleAlert,
+  UserCheck,
+  Users,
+  X,
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { Badge } from '@/shared/components/ui/Badge';
 import { Button } from '@/shared/components/ui/Button';
+import { useAppToast } from '@/shared/hooks/useAppToast';
 import type { MentionableRole, MentionableUser } from '../../case-reports/services/caseReport.api';
 import { ChatSection } from '../../case-reports/components/ChatSection';
 import { ImagePreviewModal } from '../../case-reports/components/ImagePreviewModal';
+import { normalizeFileForUpload } from '@/shared/utils/fileUpload';
 import {
   confirmVN,
   rejectVN,
@@ -36,7 +59,8 @@ interface ViolationNoticeDetailPanelProps {
   onClose: () => void;
   onUpdate: (vn: ViolationNoticeDetail) => void;
   onSilentRefetch: () => void;
-  // Chat handlers
+  onLeave?: () => Promise<void>;
+  onToggleMute?: () => Promise<void>;
   onSendMessage: (payload: SendMessagePayload) => Promise<void>;
   onEditMessage: (messageId: string, content: string) => Promise<void>;
   onDeleteMessage: (messageId: string) => Promise<void>;
@@ -44,59 +68,79 @@ interface ViolationNoticeDetailPanelProps {
   mentionables: { users: MentionableUser[]; roles: MentionableRole[] };
   initialFlashMessageId?: string | null;
   onFlashMessageConsumed?: () => void;
-  // Permissions
   canConfirm: boolean;
   canReject: boolean;
   canIssue: boolean;
   canComplete: boolean;
   canManage: boolean;
-  // Current user context
   currentUserId: string;
   currentUserRoleIds?: string[];
 }
 
 function formatDate(value: string | null) {
   if (!value) return 'N/A';
-  return new Date(value).toLocaleString();
+  return new Date(value).toLocaleString('en-PH', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function getStatusVariant(status: ViolationNoticeStatus): 'success' | 'danger' | 'warning' | 'default' {
+  switch (status) {
+    case 'queued': return 'warning';
+    case 'discussion': return 'default';
+    case 'issuance': return 'warning';
+    case 'disciplinary_meeting': return 'default';
+    case 'completed': return 'success';
+    case 'rejected': return 'danger';
+    default: return 'default';
+  }
 }
 
 function formatStatus(status: ViolationNoticeStatus): string {
-  return status
-    .split('_')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-}
-
-function getStatusClasses(status: ViolationNoticeStatus): string {
-  switch (status) {
-    case 'queued':
-      return 'bg-yellow-100 text-yellow-800';
-    case 'discussion':
-      return 'bg-blue-100 text-blue-800';
-    case 'issuance':
-      return 'bg-orange-100 text-orange-800';
-    case 'disciplinary_meeting':
-      return 'bg-purple-100 text-purple-800';
-    case 'completed':
-      return 'bg-green-100 text-green-800';
-    case 'rejected':
-      return 'bg-red-100 text-red-800';
-    default:
-      return 'bg-gray-100 text-gray-800';
-  }
+  return status.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
 function formatCategory(category: ViolationNoticeCategory): string {
   switch (category) {
-    case 'manual':
-      return 'Manual';
-    case 'case_reports':
-      return 'Case Report';
-    case 'store_audits':
-      return 'Store Audit';
-    default:
-      return category;
+    case 'manual': return 'Manual';
+    case 'case_reports': return 'Case Report';
+    case 'store_audits': return 'Store Audit';
+    default: return category;
   }
+}
+
+function isImageFile(name: string) {
+  return /\.(jpe?g|png|gif|webp|svg|bmp|heic|heif)$/i.test(name);
+}
+
+function isVideoFile(name: string) {
+  return /\.(mp4|webm|ogg|mov)$/i.test(name);
+}
+
+function isMediaFile(name: string) {
+  return isImageFile(name) || isVideoFile(name);
+}
+
+function getApiErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error) return err.message || fallback;
+  if (typeof err !== 'object' || err === null) return fallback;
+
+  const maybeResponse = (err as { response?: { data?: { error?: string; message?: string } } }).response;
+  const maybeData = maybeResponse?.data;
+  if (typeof maybeData?.error === 'string' && maybeData.error.trim()) return maybeData.error;
+  if (typeof maybeData?.message === 'string' && maybeData.message.trim()) return maybeData.message;
+  return fallback;
+}
+
+interface PendingFile {
+  tempId: string;
+  fileName: string;
+  previewUrl: string | null;
+  isVideo: boolean;
 }
 
 export function ViolationNoticeDetailPanel({
@@ -105,6 +149,8 @@ export function ViolationNoticeDetailPanel({
   onClose,
   onUpdate,
   onSilentRefetch,
+  onLeave,
+  onToggleMute,
   onSendMessage,
   onEditMessage,
   onDeleteMessage,
@@ -121,6 +167,7 @@ export function ViolationNoticeDetailPanel({
   currentUserRoleIds,
 }: ViolationNoticeDetailPanelProps) {
   const navigate = useNavigate();
+  const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const issuanceFileRef = useRef<HTMLInputElement | null>(null);
   const disciplinaryFileRef = useRef<HTMLInputElement | null>(null);
 
@@ -128,8 +175,13 @@ export function ViolationNoticeDetailPanel({
   const [rejectMode, setRejectMode] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
-  const [disciplinaryPreviewOpen, setDisciplinaryPreviewOpen] = useState(false);
   const [epiDecrease, setEpiDecrease] = useState<number>(0);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+
+  // Disciplinary proof preview
+  const [pendingDisciplinaryFiles, setPendingDisciplinaryFiles] = useState<PendingFile[]>([]);
+  const [disciplinaryPreviewItems, setDisciplinaryPreviewItems] = useState<{ url: string; fileName: string }[] | null>(null);
+  const [disciplinaryPreviewIndex, setDisciplinaryPreviewIndex] = useState(0);
 
   // Adapt VN messages to CaseMessage shape expected by ChatSection
   const adaptedMessages = messages.map((msg) => ({
@@ -144,6 +196,9 @@ export function ViolationNoticeDetailPanel({
       const updated = await confirmVN(vn.id);
       onUpdate({ ...vn, ...updated });
       onSilentRefetch();
+      showSuccessToast("Violation notice confirmed.");
+    } catch (err: unknown) {
+      showErrorToast(getApiErrorMessage(err, "Failed to confirm violation notice."));
     } finally {
       setActionLoading(false);
     }
@@ -169,6 +224,9 @@ export function ViolationNoticeDetailPanel({
       const updated = await issueVN(vn.id);
       onUpdate({ ...vn, ...updated });
       onSilentRefetch();
+      showSuccessToast("Violation notice issued.");
+    } catch (err: unknown) {
+      showErrorToast(getApiErrorMessage(err, "Failed to issue violation notice."));
     } finally {
       setActionLoading(false);
     }
@@ -180,6 +238,9 @@ export function ViolationNoticeDetailPanel({
       const updated = await confirmIssuance(vn.id);
       onUpdate({ ...vn, ...updated });
       onSilentRefetch();
+      showSuccessToast("Advanced to disciplinary meeting.");
+    } catch (err: unknown) {
+      showErrorToast(getApiErrorMessage(err, "Failed to advance to disciplinary meeting."));
     } finally {
       setActionLoading(false);
     }
@@ -191,6 +252,9 @@ export function ViolationNoticeDetailPanel({
       const updated = await completeVN(vn.id, epiDecrease);
       onUpdate({ ...vn, ...updated });
       onSilentRefetch();
+      showSuccessToast("Violation notice completed.");
+    } catch (err: unknown) {
+      showErrorToast(getApiErrorMessage(err, "Failed to complete violation notice."));
     } finally {
       setActionLoading(false);
     }
@@ -199,11 +263,7 @@ export function ViolationNoticeDetailPanel({
   async function handleIssuanceFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    // Skip upload if same file name and size as the already stored file
-    if (
-      vn.issuance_file_name === file.name &&
-      vn.issuance_file_url
-    ) {
+    if (vn.issuance_file_name === file.name && vn.issuance_file_url) {
       if (issuanceFileRef.current) issuanceFileRef.current.value = '';
       return;
     }
@@ -212,6 +272,9 @@ export function ViolationNoticeDetailPanel({
       const updated = await uploadIssuanceFile(vn.id, file);
       onUpdate({ ...vn, ...updated });
       onSilentRefetch();
+      showSuccessToast("Issuance document uploaded.");
+    } catch (err: unknown) {
+      showErrorToast(getApiErrorMessage(err, "Failed to upload issuance document."));
     } finally {
       setActionLoading(false);
       if (issuanceFileRef.current) issuanceFileRef.current.value = '';
@@ -219,67 +282,117 @@ export function ViolationNoticeDetailPanel({
   }
 
   async function handleDisciplinaryFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+    let file = e.target.files?.[0];
     if (!file) return;
-    // Skip upload if same file name as the already stored file
-    if (
-      vn.disciplinary_file_name === file.name &&
-      vn.disciplinary_file_url
-    ) {
+    file = await normalizeFileForUpload(file);
+    if (vn.disciplinary_file_name === file.name && vn.disciplinary_file_url) {
       if (disciplinaryFileRef.current) disciplinaryFileRef.current.value = '';
       return;
     }
+
+    const isVid = isVideoFile(file.name);
+    const isImg = isImageFile(file.name);
+    const previewUrl = (isVid || isImg) ? URL.createObjectURL(file) : null;
+    const tempId = `pending-${Date.now()}`;
+    setPendingDisciplinaryFiles((prev) => [...prev, { tempId, fileName: file!.name, previewUrl, isVideo: isVid }]);
+
     setActionLoading(true);
     try {
       const updated = await uploadDisciplinaryFile(vn.id, file);
       onUpdate({ ...vn, ...updated });
       onSilentRefetch();
+      showSuccessToast("Disciplinary proof uploaded.");
+    } catch (err: unknown) {
+      showErrorToast(getApiErrorMessage(err, "Failed to upload disciplinary proof."));
     } finally {
       setActionLoading(false);
+      setPendingDisciplinaryFiles((prev) => prev.filter((p) => p.tempId !== tempId));
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
       if (disciplinaryFileRef.current) disciplinaryFileRef.current.value = '';
     }
   }
 
   return (
     <div className="flex h-full flex-col bg-white">
-      {/* Fixed header */}
-      <div className="flex items-start justify-between border-b border-gray-200 px-4 py-3 sm:px-6 sm:py-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <TriangleAlert className="h-5 w-5 text-primary-600" />
-            <h2 className="text-xl font-semibold text-gray-900">
+
+      {/* ── Header ──────────────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 sm:px-6 sm:py-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <TriangleAlert className="h-5 w-5 shrink-0 text-amber-500" />
+          <div className="min-w-0">
+            <h2 className="truncate text-base font-semibold text-gray-900">
               VN-{String(vn.vn_number).padStart(4, '0')}
             </h2>
-            <span
-              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${getStatusClasses(vn.status)}`}
-            >
-              {formatStatus(vn.status)}
-            </span>
+            <p className="text-xs text-gray-500">{formatCategory(vn.category)}</p>
           </div>
-          {/* Metadata row */}
-          <p className="mt-1 text-sm text-gray-500">
-            <span className="hidden sm:inline">Created by </span>
-            <span>{vn.created_by_name ?? 'Unknown'}</span>
-            <span className="mx-1 text-gray-300 sm:hidden"> · </span>
-            <span className="hidden sm:inline"> on {formatDate(vn.created_at)}</span>
-            <span className="block text-xs text-gray-400 sm:hidden">{formatDate(vn.created_at)}</span>
-            <span className="mx-1 text-gray-300">·</span>
-            <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
-              {formatCategory(vn.category)}
-            </span>
-          </p>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-        >
-          <X className="h-5 w-5" />
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Badge variant={getStatusVariant(vn.status)}>{formatStatus(vn.status)}</Badge>
+
+          {/* ⋯ more menu */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setMoreMenuOpen((v) => !v)}
+              className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              title="More options"
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+            <AnimatePresence>
+              {moreMenuOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-[59]"
+                    onClick={() => setMoreMenuOpen(false)}
+                  />
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95, y: -4 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95, y: -4 }}
+                    transition={{ duration: 0.12 }}
+                    className="absolute right-0 top-8 z-[60] w-52 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl"
+                  >
+                    {onToggleMute && (
+                      <button
+                        type="button"
+                        onClick={() => { setMoreMenuOpen(false); void onToggleMute(); }}
+                        className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+                      >
+                        {vn.is_muted
+                          ? <><Bell className="h-4 w-4 text-gray-400" /> Unmute Discussion</>
+                          : <><BellOff className="h-4 w-4 text-gray-400" /> Mute Discussion</>
+                        }
+                      </button>
+                    )}
+                    {onLeave && vn.is_joined && (
+                      <button
+                        type="button"
+                        onClick={() => { setMoreMenuOpen(false); void onLeave(); }}
+                        className="flex w-full items-center gap-2 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50"
+                      >
+                        <LogOut className="h-4 w-4" /> Leave Discussion
+                      </button>
+                    )}
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col">
-        {/* Collapsible details section */}
+
+        {/* ── Collapsible details ──────────────────────────────────────────── */}
         <AnimatePresence initial={false}>
           {detailsVisible && (
             <motion.div
@@ -289,87 +402,156 @@ export function ViolationNoticeDetailPanel({
               exit={{ height: 0, opacity: 0 }}
               transition={{ duration: 0.25, ease: 'easeInOut' }}
               style={{ overflow: 'hidden' }}
-              className="space-y-4 px-4 py-3 sm:px-6 sm:py-5"
             >
-              {/* Description */}
-              <section>
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Description</p>
-                <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-700">{vn.description}</p>
-              </section>
+              <div className="max-h-[50vh] space-y-5 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
 
-              {/* Target employees */}
-              {vn.targets.length > 0 && (
+                {/* ── Info ──────────────────────────────────────────────── */}
                 <section>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Target Employees</p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {vn.targets.map((target) => (
-                      <span
-                        key={target.id}
-                        className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-sm font-medium text-gray-700"
-                      >
-                        {target.user_name ?? 'Unknown'}
-                      </span>
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              {/* Linked source */}
-              {vn.source_case_report_id && (
-                <section>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Linked Source</p>
-                  <button
-                    type="button"
-                    onClick={() => navigate(`/case-reports?caseId=${vn.source_case_report_id}`)}
-                    className="mt-2 inline-flex items-center gap-1 text-sm text-primary-700 hover:underline"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    View Case Report
-                  </button>
-                </section>
-              )}
-              {vn.source_store_audit_id && (
-                <section>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Linked Source</p>
-                  <button
-                    type="button"
-                    onClick={() => navigate(`/store-audits?auditId=${vn.source_store_audit_id}`)}
-                    className="mt-2 inline-flex items-center gap-1 text-sm text-primary-700 hover:underline"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    View Store Audit
-                  </button>
-                </section>
-              )}
-
-              {/* Issuance PDF section */}
-              {(vn.status === 'issuance' || vn.issuance_file_url) && (
-                <section>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Issuance PDF</p>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    {vn.issuance_file_url ? (
-                      <a
-                        href={vn.issuance_file_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-sm text-primary-700 hover:underline"
-                      >
-                        <ExternalLink className="h-3.5 w-3.5" />
-                        {vn.issuance_file_name ?? 'Issuance File'}
-                      </a>
-                    ) : (
-                      <span className="text-sm text-gray-400 italic">No file uploaded yet</span>
+                  <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Info</h3>
+                  <dl className="space-y-2.5">
+                    <div className="flex items-start gap-2">
+                      <Users className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                      <div>
+                        <dt className="text-xs text-gray-500">Target Employees</dt>
+                        <dd className="mt-1 flex flex-wrap gap-1.5">
+                          {vn.targets.length === 0 ? (
+                            <span className="text-sm text-gray-400">No targets assigned</span>
+                          ) : (
+                            vn.targets.map((target) => (
+                              <span
+                                key={target.id}
+                                className="inline-flex items-center rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800 ring-1 ring-amber-200"
+                              >
+                                {target.user_name ?? 'Unknown'}
+                              </span>
+                            ))
+                          )}
+                        </dd>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <UserCheck className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                      <div>
+                        <dt className="text-xs text-gray-500">Created by</dt>
+                        <dd className="text-sm font-medium text-gray-900">{vn.created_by_name ?? 'Unknown'}</dd>
+                      </div>
+                    </div>
+                    {vn.company_name && (
+                      <div className="flex items-start gap-2">
+                        <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                        <div>
+                          <dt className="text-xs text-gray-500">Company</dt>
+                          <dd className="text-sm font-medium text-gray-900">{vn.company_name}</dd>
+                        </div>
+                      </div>
                     )}
-                    {canIssue && vn.status === 'issuance' && (
+                    {vn.branch_name && (
+                      <div className="flex items-start gap-2">
+                        <GitBranch className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                        <div>
+                          <dt className="text-xs text-gray-500">Branch</dt>
+                          <dd className="text-sm font-medium text-gray-900">{vn.branch_name}</dd>
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex items-start gap-2">
+                      <CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                      <div>
+                        <dt className="text-xs text-gray-500">Filed</dt>
+                        <dd className="text-sm font-medium text-gray-900">{formatDate(vn.created_at)}</dd>
+                      </div>
+                    </div>
+                  </dl>
+                </section>
+
+                {/* ── Description ──────────────────────────────────────── */}
+                <section>
+                  <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Description</h3>
+                  <p className="whitespace-pre-wrap text-sm leading-6 text-gray-700">{vn.description}</p>
+                </section>
+
+                {/* ── Linked source ────────────────────────────────────── */}
+                {(vn.source_case_report_id || vn.source_store_audit_id) && (
+                  <section>
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Linked Source</h3>
+                    {vn.source_case_report_id && (
                       <button
                         type="button"
-                        onClick={() => issuanceFileRef.current?.click()}
-                        disabled={actionLoading}
-                        className="text-xs text-gray-400 hover:text-gray-600 underline disabled:opacity-50"
+                        onClick={() => navigate(`/case-reports?caseId=${vn.source_case_report_id}`)}
+                        className="inline-flex items-center gap-1.5 text-sm text-primary-700 hover:underline"
                       >
-                        {vn.issuance_file_url ? 'Replace' : 'Upload PDF'}
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        View Case Report
                       </button>
                     )}
+                    {vn.source_store_audit_id && (
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/store-audits?auditId=${vn.source_store_audit_id}`)}
+                        className="inline-flex items-center gap-1.5 text-sm text-primary-700 hover:underline"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        View Store Audit
+                      </button>
+                    )}
+                  </section>
+                )}
+
+                {/* ── Issuance PDF ─────────────────────────────────────── */}
+                {(vn.status === 'issuance' || vn.issuance_file_url) && (
+                  <section>
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                      Issuance Document
+                    </h3>
+                    <div className="rounded-xl border border-dashed border-amber-200 bg-amber-50 p-3">
+                      {vn.issuance_file_url ? (
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-gray-200">
+                            <FileText className="h-5 w-5 text-amber-500" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <a
+                              href={vn.issuance_file_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="block truncate text-sm font-medium text-primary-700 hover:underline"
+                            >
+                              {vn.issuance_file_name ?? 'Issuance File'}
+                            </a>
+                            <p className="text-xs text-gray-400">PDF Document</p>
+                          </div>
+                          {canIssue && vn.status === 'issuance' && (
+                            <button
+                              type="button"
+                              onClick={() => issuanceFileRef.current?.click()}
+                              disabled={actionLoading}
+                              className="shrink-0 text-xs text-gray-400 hover:text-gray-600 underline disabled:opacity-50"
+                            >
+                              Replace
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-gray-200">
+                            <FileText className="h-5 w-5 text-gray-300" />
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-sm text-gray-400 italic">No issuance document yet</p>
+                          </div>
+                          {canIssue && vn.status === 'issuance' && (
+                            <button
+                              type="button"
+                              onClick={() => issuanceFileRef.current?.click()}
+                              disabled={actionLoading}
+                              className="shrink-0 text-xs text-amber-600 hover:text-amber-700 underline font-medium disabled:opacity-50"
+                            >
+                              Upload PDF
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
                     <input
                       ref={issuanceFileRef}
                       type="file"
@@ -377,64 +559,94 @@ export function ViolationNoticeDetailPanel({
                       style={{ display: 'none' }}
                       onChange={(e) => void handleIssuanceFileChange(e)}
                     />
-                  </div>
-                  {canIssue && vn.status === 'issuance' && vn.issuance_file_url && (
-                    <div className="mt-2">
-                      <Button
-                        onClick={() => void handleAdvanceToDisciplinary()}
-                        disabled={actionLoading}
-                      >
-                        Advance to Disciplinary Meeting
-                      </Button>
-                    </div>
-                  )}
-                </section>
-              )}
+                    {canIssue && vn.status === 'issuance' && vn.issuance_file_url && (
+                      <div className="mt-3">
+                        <Button onClick={() => void handleAdvanceToDisciplinary()} disabled={actionLoading}>
+                          Advance to Disciplinary Meeting
+                        </Button>
+                      </div>
+                    )}
+                  </section>
+                )}
 
-              {/* Disciplinary Proof section */}
-              {(vn.status === 'disciplinary_meeting' || vn.disciplinary_file_url) && (
-                <section>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Disciplinary Meeting</p>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    {vn.disciplinary_file_url ? (
-                      <button
-                        type="button"
-                        onClick={() => setDisciplinaryPreviewOpen(true)}
-                        className="group relative overflow-hidden rounded-lg border border-gray-200 bg-gray-50 hover:border-primary-300"
-                      >
-                        {/\.(mp4|webm|ogg|mov)$/i.test(vn.disciplinary_file_name ?? '') ? (
-                          <video
-                            src={vn.disciplinary_file_url}
-                            className="h-24 w-40 object-cover"
-                            muted
-                          />
-                        ) : /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(vn.disciplinary_file_name ?? '') ? (
-                          <img
-                            src={vn.disciplinary_file_url}
-                            alt={vn.disciplinary_file_name ?? 'Disciplinary Proof'}
-                            className="h-24 w-40 object-cover"
-                          />
-                        ) : (
-                          <div className="flex h-24 w-40 flex-col items-center justify-center gap-1 text-gray-500">
-                            <ExternalLink className="h-5 w-5" />
-                            <span className="max-w-[9rem] truncate px-2 text-xs">{vn.disciplinary_file_name ?? 'View File'}</span>
-                          </div>
-                        )}
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/20" />
-                      </button>
-                    ) : (
-                      <span className="text-sm text-gray-400 italic">No file uploaded yet</span>
-                    )}
-                    {vn.status === 'disciplinary_meeting' && (
-                      <button
-                        type="button"
-                        onClick={() => disciplinaryFileRef.current?.click()}
-                        disabled={actionLoading}
-                        className="text-xs text-gray-400 hover:text-gray-600 underline disabled:opacity-50"
-                      >
-                        {vn.disciplinary_file_url ? 'Replace' : 'Upload Proof'}
-                      </button>
-                    )}
+                {/* ── Disciplinary Meeting ─────────────────────────────── */}
+                {(vn.status === 'disciplinary_meeting' || vn.disciplinary_file_url) && (
+                  <section>
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                      Disciplinary Meeting Proof
+                    </h3>
+
+                    {/* Media thumbnails gallery */}
+                    {(() => {
+                      const confirmedItems = vn.disciplinary_file_url
+                        ? [{ url: vn.disciplinary_file_url, fileName: vn.disciplinary_file_name ?? 'Proof' }]
+                        : [];
+                      const hasMedia = confirmedItems.length > 0 || pendingDisciplinaryFiles.length > 0;
+
+                      return (
+                        <div className="space-y-3">
+                          {hasMedia ? (
+                            <div className="flex flex-wrap gap-2">
+                              {/* Confirmed media */}
+                              {confirmedItems.map((item, idx) => (
+                                <div key={item.url} className="group relative">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setDisciplinaryPreviewItems(confirmedItems);
+                                      setDisciplinaryPreviewIndex(idx);
+                                    }}
+                                    className="relative h-20 w-20 overflow-hidden rounded-xl border border-gray-200 bg-gray-100 hover:border-amber-300"
+                                  >
+                                    {isVideoFile(item.fileName) ? (
+                                      <video src={item.url} className="h-full w-full object-cover" muted />
+                                    ) : isImageFile(item.fileName) ? (
+                                      <img src={item.url} alt={item.fileName} className="h-full w-full object-cover" />
+                                    ) : (
+                                      <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-gray-50 text-gray-400">
+                                        <File className="h-5 w-5" />
+                                        <span className="max-w-[4.5rem] truncate px-1 text-[10px]">{item.fileName}</span>
+                                      </div>
+                                    )}
+                                    <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover:bg-black/15 rounded-xl" />
+                                  </button>
+                                </div>
+                              ))}
+
+                              {/* Pending uploading */}
+                              {pendingDisciplinaryFiles.map((p) => (
+                                <div key={p.tempId} className="relative h-20 w-20 overflow-hidden rounded-xl border border-gray-200 bg-gray-100">
+                                  {p.previewUrl && (
+                                    p.isVideo
+                                      ? <video src={p.previewUrl} className="h-full w-full object-cover opacity-50" muted />
+                                      : <img src={p.previewUrl} alt={p.fileName} className="h-full w-full object-cover opacity-50" />
+                                  )}
+                                  <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 p-3">
+                              <p className="text-sm text-gray-400 italic">No proof uploaded yet</p>
+                            </div>
+                          )}
+
+                          {vn.status === 'disciplinary_meeting' && (
+                            <button
+                              type="button"
+                              onClick={() => disciplinaryFileRef.current?.click()}
+                              disabled={actionLoading}
+                              className="text-xs text-amber-600 hover:text-amber-700 underline font-medium disabled:opacity-50"
+                            >
+                              {vn.disciplinary_file_url ? 'Replace Proof' : 'Upload Proof'}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()}
+
                     <input
                       ref={disciplinaryFileRef}
                       type="file"
@@ -442,158 +654,154 @@ export function ViolationNoticeDetailPanel({
                       style={{ display: 'none' }}
                       onChange={(e) => void handleDisciplinaryFileChange(e)}
                     />
-                  </div>
-                  {canComplete && vn.status === 'disciplinary_meeting' && vn.disciplinary_file_url && (
-                    <div className="mt-2">
-                      <div className="mt-3">
-                        <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
-                          EPI Decrease (0–5)
-                        </label>
-                        <input
-                          type="number"
-                          min={0}
-                          max={5}
-                          step={0.5}
-                          value={epiDecrease}
-                          onChange={(e) => setEpiDecrease(Math.min(5, Math.max(0, Number(e.target.value))))}
-                          className="w-24 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-                        />
-                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Amount to deduct from employee's EPI score upon completion.</p>
+
+                    {/* Complete VN */}
+                    {canComplete && vn.status === 'disciplinary_meeting' && vn.disciplinary_file_url && (
+                      <div className="mt-3 space-y-3">
+                        <div>
+                          <label className="mb-1 block text-sm font-medium text-gray-700">EPI Decrease (0–5)</label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={5}
+                            step={0.5}
+                            value={epiDecrease}
+                            onChange={(e) => setEpiDecrease(Math.min(5, Math.max(0, Number(e.target.value))))}
+                            className="w-24 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-900 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                          />
+                          <p className="mt-1 text-xs text-gray-500">Amount to deduct from employee's EPI score.</p>
+                        </div>
+                        <Button onClick={() => void handleComplete()} disabled={actionLoading}>
+                          Complete VN
+                        </Button>
                       </div>
-                      <Button onClick={() => void handleComplete()} disabled={actionLoading}>
-                        Complete VN
-                      </Button>
+                    )}
+                  </section>
+                )}
+
+                {/* ── Status action area ──────────────────────────────── */}
+                <section>
+                  {vn.status === 'queued' && (
+                    <div className="flex flex-wrap gap-2">
+                      {canConfirm && (
+                        <Button onClick={() => void handleConfirm()} disabled={actionLoading}>
+                          Confirm VN
+                        </Button>
+                      )}
+                      {canReject && !rejectMode && (
+                        <Button variant="danger" onClick={() => setRejectMode(true)} disabled={actionLoading}>
+                          Reject
+                        </Button>
+                      )}
+                    </div>
+                  )}
+
+                  {vn.status === 'discussion' && (
+                    <div className="flex flex-wrap gap-2">
+                      {canIssue && (
+                        <Button onClick={() => void handleIssue()} disabled={actionLoading}>
+                          Issue VN
+                        </Button>
+                      )}
+                      {canReject && !rejectMode && (
+                        <Button variant="danger" onClick={() => setRejectMode(true)} disabled={actionLoading}>
+                          Reject VN
+                        </Button>
+                      )}
+                    </div>
+                  )}
+
+                  {vn.status === 'completed' && (
+                    <div className="rounded-2xl bg-green-50 px-4 py-3 text-sm text-gray-700 space-y-2">
+                      {vn.confirmed_by_name && (
+                        <div className="flex items-center gap-2">
+                          <UserCheck className="h-4 w-4 shrink-0 text-green-500" />
+                          <span>Confirmed by <span className="font-medium">{vn.confirmed_by_name}</span></span>
+                        </div>
+                      )}
+                      {vn.issued_by_name && (
+                        <div className="flex items-center gap-2">
+                          <FileCheck className="h-4 w-4 shrink-0 text-green-500" />
+                          <span>Issued by <span className="font-medium">{vn.issued_by_name}</span></span>
+                        </div>
+                      )}
+                      {vn.completed_by_name && (
+                        <div className="flex items-center gap-2">
+                          <CheckCircle2 className="h-4 w-4 shrink-0 text-green-500" />
+                          <span>Completed by <span className="font-medium">{vn.completed_by_name}</span></span>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2 mt-1 pt-2 border-t border-green-100">
+                        <TrendingDown className={`h-4 w-4 shrink-0 ${vn.epi_decrease != null && vn.epi_decrease > 0 ? 'text-red-400' : 'text-gray-400'}`} />
+                        <span>EPI Decrease:</span>
+                        {vn.epi_decrease != null && vn.epi_decrease > 0
+                          ? <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">-{vn.epi_decrease} pts</span>
+                          : <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">None</span>
+                        }
+                      </div>
+                    </div>
+                  )}
+
+                  {vn.status === 'rejected' && (
+                    <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-gray-700 space-y-2">
+                      {vn.rejection_reason && (
+                        <div className="flex items-start gap-2">
+                          <FileX className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+                          <span><span className="font-medium">Reason: </span>{vn.rejection_reason}</span>
+                        </div>
+                      )}
+                      {vn.rejected_by_name && (
+                        <div className="flex items-center gap-2">
+                          <UserCheck className="h-4 w-4 shrink-0 text-red-400" />
+                          <span>Rejected by <span className="font-medium">{vn.rejected_by_name}</span></span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Inline reject form */}
+                  {rejectMode && (
+                    <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-4 space-y-3">
+                      <p className="text-sm font-medium text-red-700">Provide a rejection reason:</p>
+                      <textarea
+                        value={rejectionReason}
+                        onChange={(e) => setRejectionReason(e.target.value)}
+                        rows={3}
+                        className="w-full rounded-xl border border-red-300 bg-white px-3 py-2 text-sm outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
+                        placeholder="Enter reason for rejection..."
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          variant="danger"
+                          onClick={() => void handleRejectConfirm()}
+                          disabled={actionLoading || !rejectionReason.trim()}
+                        >
+                          Confirm Rejection
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          onClick={() => { setRejectMode(false); setRejectionReason(''); }}
+                          disabled={actionLoading}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </section>
-              )}
-
-              {/* Status-specific action area */}
-              <section>
-                {vn.status === 'queued' && (
-                  <div className="flex flex-wrap gap-2">
-                    {canConfirm && (
-                      <Button onClick={() => void handleConfirm()} disabled={actionLoading}>
-                        Confirm VN
-                      </Button>
-                    )}
-                    {canReject && !rejectMode && (
-                      <Button variant="danger" onClick={() => setRejectMode(true)} disabled={actionLoading}>
-                        Reject
-                      </Button>
-                    )}
-                  </div>
-                )}
-
-                {vn.status === 'discussion' && (
-                  <div className="flex flex-wrap gap-2">
-                    {canIssue && (
-                      <Button onClick={() => void handleIssue()} disabled={actionLoading}>
-                        Issue VN
-                      </Button>
-                    )}
-                    {canReject && !rejectMode && (
-                      <Button variant="danger" onClick={() => setRejectMode(true)} disabled={actionLoading}>
-                        Reject VN
-                      </Button>
-                    )}
-                  </div>
-                )}
-
-                {vn.status === 'completed' && (
-                  <div className="rounded-2xl bg-green-50 px-4 py-3 text-sm text-gray-700 space-y-2">
-                    {vn.confirmed_by_name && (
-                      <div className="flex items-center gap-2">
-                        <UserCheck className="h-4 w-4 shrink-0 text-green-500" />
-                        <span>Confirmed by <span className="font-medium">{vn.confirmed_by_name}</span></span>
-                      </div>
-                    )}
-                    {vn.issued_by_name && (
-                      <div className="flex items-center gap-2">
-                        <FileCheck className="h-4 w-4 shrink-0 text-green-500" />
-                        <span>Issued by <span className="font-medium">{vn.issued_by_name}</span></span>
-                      </div>
-                    )}
-                    {vn.completed_by_name && (
-                      <div className="flex items-center gap-2">
-                        <CheckCircle2 className="h-4 w-4 shrink-0 text-green-500" />
-                        <span>Completed by <span className="font-medium">{vn.completed_by_name}</span></span>
-                      </div>
-                    )}
-                    <div className="flex items-center gap-2 mt-1 pt-2 border-t border-green-100">
-                      <TrendingDown className={`h-4 w-4 shrink-0 ${vn.epi_decrease != null && vn.epi_decrease > 0 ? 'text-red-400' : 'text-gray-400'}`} />
-                      <span>EPI Decrease:</span>
-                      {vn.epi_decrease != null && vn.epi_decrease > 0
-                        ? <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">-{vn.epi_decrease} pts</span>
-                        : <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">None</span>
-                      }
-                    </div>
-                  </div>
-                )}
-
-                {vn.status === 'rejected' && (
-                  <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-gray-700 space-y-2">
-                    {vn.rejection_reason && (
-                      <div className="flex items-start gap-2">
-                        <FileX className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
-                        <span><span className="font-medium">Reason: </span>{vn.rejection_reason}</span>
-                      </div>
-                    )}
-                    {vn.rejected_by_name && (
-                      <div className="flex items-center gap-2">
-                        <UserCheck className="h-4 w-4 shrink-0 text-red-400" />
-                        <span>Rejected by <span className="font-medium">{vn.rejected_by_name}</span></span>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Inline reject prompt */}
-                {rejectMode && (
-                  <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-4 space-y-3">
-                    <p className="text-sm font-medium text-red-700">Provide a rejection reason:</p>
-                    <textarea
-                      value={rejectionReason}
-                      onChange={(e) => setRejectionReason(e.target.value)}
-                      rows={3}
-                      className="w-full rounded-xl border border-red-300 bg-white px-3 py-2 text-sm outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
-                      placeholder="Enter reason for rejection..."
-                    />
-                    <div className="flex gap-2">
-                      <Button
-                        variant="danger"
-                        onClick={() => void handleRejectConfirm()}
-                        disabled={actionLoading || !rejectionReason.trim()}
-                      >
-                        Confirm Rejection
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        onClick={() => {
-                          setRejectMode(false);
-                          setRejectionReason('');
-                        }}
-                        disabled={actionLoading}
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </section>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Chat section */}
-        <div className="flex min-h-0 flex-1 flex-col border-t border-gray-200 px-4 py-3 sm:px-6 sm:py-5">
+        {/* ── Chat area ─────────────────────────────────────────────────────── */}
+        <div className="flex min-h-0 flex-1 flex-col border-t border-gray-200 px-4 py-3 sm:px-6 sm:py-4">
           {/* Toggle bar */}
           <div className="mb-2 flex justify-center">
             <button
               type="button"
               onClick={() => setDetailsVisible((v) => !v)}
               className="flex items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-0.5 text-xs text-gray-400 shadow-sm hover:bg-gray-50 hover:text-gray-600"
-              title={detailsVisible ? 'Hide details' : 'Show details'}
             >
               <motion.span
                 animate={{ rotate: detailsVisible ? 180 : 0 }}
@@ -606,7 +814,7 @@ export function ViolationNoticeDetailPanel({
             </button>
           </div>
           <ChatSection
-            className="flex-1 min-h-0"
+            className="min-h-0 flex-1"
             messages={adaptedMessages as unknown as Parameters<typeof ChatSection>[0]['messages']}
             currentUserId={currentUserId}
             currentUserRoleIds={currentUserRoleIds}
@@ -626,14 +834,14 @@ export function ViolationNoticeDetailPanel({
         </div>
       </div>
 
-      {vn.disciplinary_file_url && (
-        <ImagePreviewModal
-          items={disciplinaryPreviewOpen ? [{ url: vn.disciplinary_file_url, fileName: vn.disciplinary_file_name ?? 'Disciplinary Proof' }] : null}
-          index={0}
-          onIndexChange={() => {}}
-          onClose={() => setDisciplinaryPreviewOpen(false)}
-        />
-      )}
+      {/* Disciplinary proof lightbox */}
+      <ImagePreviewModal
+        items={disciplinaryPreviewItems}
+        index={disciplinaryPreviewIndex}
+        onIndexChange={setDisciplinaryPreviewIndex}
+        onClose={() => setDisciplinaryPreviewItems(null)}
+      />
     </div>
   );
 }
+

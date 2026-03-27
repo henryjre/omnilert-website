@@ -12,7 +12,11 @@ interface BackendHistoricalMonthEntry {
   monthKey: string;
   monthLabel: string;
   year: number;
-  epiScore: number;
+  /**
+   * Backend may return null when a month has no computed score yet.
+   * We normalize this to a safe numeric fallback on the client.
+   */
+  epiScore: number | null;
   criteria: EpiCriteria;
 }
 
@@ -21,7 +25,11 @@ interface BackendCurrentLiveSnapshot {
   monthLabel: string;
   year: number;
   asOfDateTime: string;
-  projectedEpiScore: number;
+  /**
+   * Backend may return null when projection is unavailable.
+   * We normalize this to a safe numeric fallback on the client.
+   */
+  projectedEpiScore: number | null;
   delta: number;
   rawDelta: number;
   capped: boolean;
@@ -30,10 +38,15 @@ interface BackendCurrentLiveSnapshot {
 }
 
 interface BackendEpiDashboardResponse {
-  officialEpiScore: number;
+  /**
+   * Backend may return null during initial setup or when data is missing.
+   * We normalize this to a safe numeric fallback on the client.
+   */
+  officialEpiScore: number | null;
   currentMonthKey: string;
   currentLive: BackendCurrentLiveSnapshot | null;
   monthlyHistory: BackendHistoricalMonthEntry[];
+  globalAverageByMonth: Record<string, number> | null;
 }
 
 interface BackendLeaderboardEntry {
@@ -62,7 +75,40 @@ interface BackendLeaderboardDetailResponse {
   criteriaSource: 'live' | 'historical';
 }
 
+export interface DashboardCheckInStatus {
+  checkedIn: boolean;
+  roleType: 'Management' | 'Service Crew' | null;
+  companyName: string | null;
+  branchName: string | null;
+  checkInTimeUtc: string | null;
+}
+
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * Coerces an API-provided score into a finite number.
+ *
+ * This prevents UI hard-crashes (e.g. `.toFixed()` on null) when the backend
+ * returns `null` for months without a computed score yet.
+ */
+function coerceEpiScore(value: number | null | undefined, fallback: number): number {
+  if (typeof value !== "number") return fallback;
+  if (!Number.isFinite(value)) return fallback;
+  return value;
+}
+
+function coerceGlobalAverageByMonth(value: Record<string, number> | null | undefined): Record<string, number> {
+  if (!value || typeof value !== 'object') return {};
+
+  const normalized: Record<string, number> = {};
+  for (const [monthKey, average] of Object.entries(value)) {
+    if (typeof average !== 'number') continue;
+    if (!Number.isFinite(average)) continue;
+    normalized[monthKey] = average;
+  }
+
+  return normalized;
+}
 
 function getEmptyCriteria(): EpiCriteria {
   return {
@@ -104,24 +150,24 @@ export function getCurrentManilaMonthKey(): string {
   return getCurrentMonthMeta().monthKey;
 }
 
-function toHistoricalMonthEntry(entry: BackendHistoricalMonthEntry): EpiMonthEntry {
+function toHistoricalMonthEntry(entry: BackendHistoricalMonthEntry, scoreFallback: number): EpiMonthEntry {
   return {
     monthKey: entry.monthKey,
     month: entry.monthLabel,
     year: entry.year,
-    score: entry.epiScore,
+    score: coerceEpiScore(entry.epiScore, scoreFallback),
     criteria: entry.criteria ?? getEmptyCriteria(),
     source: 'historical',
     wrsStatus: null,
   };
 }
 
-function toLiveMonthEntry(entry: BackendCurrentLiveSnapshot): EpiMonthEntry {
+function toLiveMonthEntry(entry: BackendCurrentLiveSnapshot, scoreFallback: number): EpiMonthEntry {
   return {
     monthKey: entry.monthKey,
     month: entry.monthLabel,
     year: entry.year,
-    score: entry.projectedEpiScore,
+    score: coerceEpiScore(entry.projectedEpiScore, scoreFallback),
     criteria: entry.criteria ?? getEmptyCriteria(),
     source: 'live',
     wrsStatus: entry.wrsStatus ?? null,
@@ -131,15 +177,16 @@ function toLiveMonthEntry(entry: BackendCurrentLiveSnapshot): EpiMonthEntry {
 function combineMonthHistory(
   monthlyHistory: BackendHistoricalMonthEntry[],
   currentLive: BackendCurrentLiveSnapshot | null,
+  scoreFallback: number,
 ): EpiMonthEntry[] {
   const byMonth = new Map<string, EpiMonthEntry>();
 
   for (const entry of monthlyHistory ?? []) {
-    byMonth.set(entry.monthKey, toHistoricalMonthEntry(entry));
+    byMonth.set(entry.monthKey, toHistoricalMonthEntry(entry, scoreFallback));
   }
 
   if (currentLive) {
-    byMonth.set(currentLive.monthKey, toLiveMonthEntry(currentLive));
+    byMonth.set(currentLive.monthKey, toLiveMonthEntry(currentLive, scoreFallback));
   }
 
   return Array.from(byMonth.values()).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
@@ -152,6 +199,7 @@ function buildEmptyDashboard(officialEpiScore: number): EpiDashboardData {
     officialEpiScore,
     goalTarget: 105,
     currentMonthKey: current.monthKey,
+    globalAverageByMonth: {},
     history: [
       {
         monthKey: current.monthKey,
@@ -202,8 +250,8 @@ export async function fetchEpiDashboard(): Promise<EpiDashboardData> {
     return buildEmptyDashboard(100);
   }
 
-  const officialEpiScore = backend.officialEpiScore ?? 100;
-  const combinedHistory = combineMonthHistory(backend.monthlyHistory ?? [], backend.currentLive);
+  const officialEpiScore = coerceEpiScore(backend.officialEpiScore, 100);
+  const combinedHistory = combineMonthHistory(backend.monthlyHistory ?? [], backend.currentLive, officialEpiScore);
   const history = ensureCurrentMonthEntry(combinedHistory, officialEpiScore, backend.currentMonthKey);
 
   if (history.length === 0) {
@@ -215,6 +263,7 @@ export async function fetchEpiDashboard(): Promise<EpiDashboardData> {
     goalTarget: 105,
     currentMonthKey: backend.currentMonthKey,
     history,
+    globalAverageByMonth: coerceGlobalAverageByMonth(backend.globalAverageByMonth),
   };
 }
 
@@ -268,4 +317,15 @@ export async function fetchEpiLeaderboardDetail(userId: string, monthKey: string
     scoreSource: entry.scoreSource,
     criteriaSource: entry.criteriaSource,
   } satisfies LeaderboardDetailEntry;
+}
+
+export async function fetchDashboardCheckInStatus(): Promise<DashboardCheckInStatus> {
+  const res = await api.get<{ success: boolean; data: DashboardCheckInStatus | null }>('/dashboard/check-in-status');
+  return res.data.data ?? {
+    checkedIn: false,
+    roleType: null,
+    companyName: null,
+    branchName: null,
+    checkInTimeUtc: null,
+  };
 }

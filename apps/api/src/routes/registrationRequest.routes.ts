@@ -16,26 +16,26 @@ router.use(authenticate, resolveCompany);
 
 router.get(
   '/',
-  requirePermission(PERMISSIONS.EMPLOYEE_VERIFICATION_VIEW),
+  requirePermission(PERMISSIONS.EMPLOYEE_VERIFICATION_VIEW_PAGE),
   registrationRequestController.list,
 );
 
 router.get(
   '/assignment-options',
-  requirePermission(PERMISSIONS.REGISTRATION_APPROVE),
+  requirePermission(PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_REGISTRATION),
   registrationRequestController.listAssignmentOptions,
 );
 
 router.post(
   '/:id/approve',
-  requirePermission(PERMISSIONS.REGISTRATION_APPROVE),
+  requirePermission(PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_REGISTRATION),
   validateBody(approveRegistrationRequestSchema),
   registrationRequestController.approve,
 );
 
 router.post(
   '/:id/reject',
-  requirePermission(PERMISSIONS.REGISTRATION_APPROVE),
+  requirePermission(PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_REGISTRATION),
   validateBody(rejectVerificationSchema),
   registrationRequestController.reject,
 );

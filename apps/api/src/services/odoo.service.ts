@@ -1,3 +1,4 @@
+import { db } from "../config/database.js";
 import { env } from "../config/env.js";
 import { logger } from "../utils/logger.js";
 
@@ -52,10 +53,39 @@ type OdooEmployeeIdentityRow = {
   name?: string;
   pin?: string | null;
   company_id?: [number, string] | false;
-  bank_account_id?: [number, string] | false;
+  /** Many2many to res.partner.bank (replaces legacy single `bank_account_id` on some Odoo builds). */
+  bank_account_ids?: number[] | Array<[number, string]> | false;
   work_contact_id?: [number, string] | false;
   x_website_key?: string | null;
 };
+
+/** First linked res.partner.bank id from hr.employee.bank_account_ids, if any. */
+function firstPartnerBankIdFromEmployee(employee: OdooEmployeeIdentityRow): number | null {
+  const raw = employee.bank_account_ids;
+  if (raw === false || raw === undefined || !Array.isArray(raw) || raw.length === 0) {
+    return null;
+  }
+  const first = raw[0];
+  if (typeof first === 'number' && Number.isFinite(first) && first > 0) {
+    return first;
+  }
+  if (Array.isArray(first)) {
+    const id = Number(first[0]);
+    if (Number.isFinite(id) && id > 0) {
+      return id;
+    }
+  }
+  return null;
+}
+
+type OdooM2MReplaceCommand = [6, 0, number[]];
+
+/** Odoo m2m write: replace employee bank links with exactly this partner bank record. */
+function hrEmployeeBankAccountIdsWritePayload(partnerBankId: number): {
+  bank_account_ids: OdooM2MReplaceCommand[];
+} {
+  return { bank_account_ids: [[6, 0, [partnerBankId]]] };
+}
 
 async function resolveCanonicalPartnerByIdentity(input: {
   websiteUserKey?: string | null;
@@ -113,7 +143,7 @@ async function listEmployeesLinkedToPartner(
     [],
     {
       domain,
-      fields: ["id", "name", "pin", "company_id", "bank_account_id", "work_contact_id", "x_website_key"],
+      fields: ["id", "name", "pin", "company_id", "bank_account_ids", "work_contact_id", "x_website_key"],
       order: "id asc",
       limit: 1000,
     },
@@ -135,7 +165,7 @@ async function listLegacyEmployeesByWebsiteKey(
     [],
     {
       domain,
-      fields: ["id", "name", "pin", "company_id", "bank_account_id", "work_contact_id", "x_website_key"],
+      fields: ["id", "name", "pin", "company_id", "bank_account_ids", "work_contact_id", "x_website_key"],
       order: "id asc",
       limit: 1000,
     },
@@ -1077,6 +1107,50 @@ export async function updateAttendanceCheckOut(
 }
 
 /**
+ * Deletes an Odoo attendance record.
+ * @param attendanceId - The Odoo attendance ID
+ * @returns True if successful
+ */
+export async function deleteAttendanceById(
+  attendanceId: number,
+): Promise<boolean> {
+  try {
+    const result = await callOdooKw(
+      "hr.attendance",
+      "unlink",
+      [[attendanceId]],
+    );
+    logger.info(`Deleted Odoo attendance ${attendanceId}`);
+    return result === true;
+  } catch (err) {
+    logger.error(`Failed to delete Odoo attendance ${attendanceId}: ${err}`);
+    throw err;
+  }
+}
+
+/**
+ * Deletes an Odoo planning slot.
+ * @param planningSlotId - The Odoo planning.slot ID
+ * @returns True if successful
+ */
+export async function deletePlanningSlotById(
+  planningSlotId: number,
+): Promise<boolean> {
+  try {
+    const result = await callOdooKw(
+      "planning.slot",
+      "unlink",
+      [[planningSlotId]],
+    );
+    logger.info(`Deleted Odoo planning.slot ${planningSlotId}`);
+    return result === true;
+  } catch (err) {
+    logger.error(`Failed to delete Odoo planning.slot ${planningSlotId}: ${err}`);
+    throw err;
+  }
+}
+
+/**
  * Updates the opening PCF for a POS session
  * @param posSessionName - The POS session name (e.g., "POS/01858")
  * @param openingPcf - The opening PCF amount
@@ -1802,12 +1876,45 @@ export async function createPartnerBankAndAssignEmployees(input: {
   }
 
   const partnerId = partner.id;
-  const partnerBankId = (await callOdooKw('res.partner.bank', 'create', [{
-    bank_id: input.bankId,
-    acc_number: input.accountNumber,
-    partner_id: partnerId,
-    allow_out_payment: true,
-  }])) as number;
+  const accNumber = String(input.accountNumber).trim();
+
+  /** Odoo enforces unique (partner, account number); reuse and update when already present. */
+  const existingPartnerBanks = (await callOdooKw(
+    'res.partner.bank',
+    'search_read',
+    [],
+    {
+      domain: [
+        ['partner_id', '=', partnerId],
+        ['acc_number', '=', accNumber],
+      ],
+      fields: ['id'],
+      limit: 1,
+    },
+  )) as Array<{ id: number }>;
+
+  let partnerBankId: number;
+  if (existingPartnerBanks.length > 0 && Number.isFinite(Number(existingPartnerBanks[0].id))) {
+    partnerBankId = Number(existingPartnerBanks[0].id);
+    await callOdooKw('res.partner.bank', 'write', [
+      [partnerBankId],
+      {
+        bank_id: input.bankId,
+        allow_out_payment: true,
+      },
+    ]);
+    logger.info(
+      { partnerId, partnerBankId, bankId: input.bankId },
+      'Updated existing res.partner.bank for same partner and account number',
+    );
+  } else {
+    partnerBankId = (await callOdooKw('res.partner.bank', 'create', [{
+      bank_id: input.bankId,
+      acc_number: accNumber,
+      partner_id: partnerId,
+      allow_out_payment: true,
+    }])) as number;
+  }
 
   const partnerEmployees = await listEmployeesLinkedToPartner(partnerId);
   const legacyEmployees = input.websiteUserKey
@@ -1817,7 +1924,11 @@ export async function createPartnerBankAndAssignEmployees(input: {
 
   const employeeIds = employeeRows.map((row) => row.id);
   if (employeeIds.length > 0) {
-    await callOdooKw('hr.employee', 'write', [employeeIds, { bank_account_id: partnerBankId }]);
+    await callOdooKw(
+      'hr.employee',
+      'write',
+      [employeeIds, hrEmployeeBankAccountIdsWritePayload(partnerBankId)],
+    );
   }
 
   return { partnerId, partnerBankId, employeeIds };
@@ -1866,10 +1977,11 @@ export async function getEmployeeLinkedBankInfoByWebsiteUserKey(
 
   let selectedBank: { id: number; bankId: number; accountNumber: string } | null = null;
   for (const employee of employees) {
-    if (!Array.isArray(employee.bank_account_id) || Number(employee.bank_account_id[0]) <= 0) {
+    const linkedBankId = firstPartnerBankIdFromEmployee(employee);
+    if (linkedBankId === null) {
       continue;
     }
-    const resolved = await readPartnerBankRecord(Number(employee.bank_account_id[0]));
+    const resolved = await readPartnerBankRecord(linkedBankId);
     if (resolved) {
       selectedBank = resolved;
       break;
@@ -1912,14 +2024,16 @@ export async function getEmployeeLinkedBankInfoByWebsiteUserKey(
   }
 
   const employeesMissingBank = employees
-    .filter((employee) =>
-      !Array.isArray(employee.bank_account_id) || Number(employee.bank_account_id[0]) <= 0,
-    )
+    .filter((employee) => firstPartnerBankIdFromEmployee(employee) === null)
     .map((employee) => employee.id);
 
   if (employeesMissingBank.length > 0) {
     try {
-      await callOdooKw('hr.employee', 'write', [employeesMissingBank, { bank_account_id: selectedBank.id }]);
+      await callOdooKw(
+        'hr.employee',
+        'write',
+        [employeesMissingBank, hrEmployeeBankAccountIdsWritePayload(selectedBank.id)],
+      );
     } catch (error) {
       logger.warn(
         {
@@ -1930,7 +2044,7 @@ export async function getEmployeeLinkedBankInfoByWebsiteUserKey(
           employeeIds: employeesMissingBank,
           error: error instanceof Error ? error.message : String(error),
         },
-        'Resolved bank record but failed to attach bank_account_id to some linked employees',
+        'Resolved bank record but failed to attach bank_account_ids to some linked employees',
       );
     }
   }
@@ -1957,6 +2071,44 @@ export interface ActiveAttendanceRecord {
   company_id: number;
   check_in: string;
   raw: Record<string, unknown>;
+}
+
+export interface IdentityActiveAttendanceRecord {
+  id: number;
+  employee_id: number;
+  employee_name: string;
+  company_id: number;
+  check_in: string;
+  raw: Record<string, unknown>;
+}
+
+type OdooActiveAttendanceSearchRow = {
+  id: number;
+  employee_id?: [number, string] | false;
+  x_company_id?: [number, string] | false;
+  check_in?: string;
+  [key: string]: unknown;
+};
+
+function normalizeActiveAttendanceRows(
+  rows: OdooActiveAttendanceSearchRow[],
+): IdentityActiveAttendanceRecord[] {
+  const result: IdentityActiveAttendanceRecord[] = [];
+  for (const row of rows) {
+    if (!Array.isArray(row.employee_id) || !Array.isArray(row.x_company_id) || !row.check_in) {
+      continue;
+    }
+
+    result.push({
+      id: Number(row.id),
+      employee_id: Number(row.employee_id[0]),
+      employee_name: String(row.employee_id[1] ?? ''),
+      company_id: Number(row.x_company_id[0]),
+      check_in: String(row.check_in),
+      raw: row,
+    });
+  }
+  return result;
 }
 
 export async function getActiveAttendances(): Promise<ActiveAttendanceRecord[]> {
@@ -1998,6 +2150,72 @@ export async function getActiveAttendances(): Promise<ActiveAttendanceRecord[]> 
   }
 
   return result;
+}
+
+export async function getActiveAttendancesForWebsiteUserKey(
+  websiteUserKey: string,
+): Promise<IdentityActiveAttendanceRecord[]> {
+  const employeeIds = await listEmployeeIdsByWebsiteUserKey(websiteUserKey);
+  if (employeeIds.length === 0) {
+    return [];
+  }
+
+  const rows = (await callOdooKw(
+    'hr.attendance',
+    'search_read',
+    [],
+    {
+      domain: [
+        ['employee_id', 'in', employeeIds],
+        ['check_out', '=', false],
+      ],
+      fields: ['id', 'employee_id', 'x_company_id', 'check_in'],
+      order: 'check_in desc',
+      limit: 5000,
+    },
+  )) as OdooActiveAttendanceSearchRow[];
+
+  return normalizeActiveAttendanceRows(rows);
+}
+
+export async function getLatestActiveAttendanceForWebsiteUserKey(
+  websiteUserKey: string,
+): Promise<IdentityActiveAttendanceRecord | null> {
+  const activeAttendances = await getActiveAttendancesForWebsiteUserKey(websiteUserKey);
+  return activeAttendances[0] ?? null;
+}
+
+export async function batchCheckOutAttendances(
+  attendanceIds: number[],
+  checkOutTime: Date | string,
+): Promise<number> {
+  const uniqueAttendanceIds = Array.from(
+    new Set(
+      attendanceIds
+        .map((attendanceId) => Number(attendanceId))
+        .filter((attendanceId) => Number.isFinite(attendanceId) && attendanceId > 0),
+    ),
+  );
+
+  if (uniqueAttendanceIds.length === 0) {
+    return 0;
+  }
+
+  const parsedDate = parseUtcTimestamp(checkOutTime);
+  const odooDatetime = toOdooDatetime(parsedDate);
+
+  await callOdooKw(
+    'hr.attendance',
+    'write',
+    [uniqueAttendanceIds, { check_out: odooDatetime }],
+  );
+
+  logger.info(
+    { attendanceIds: uniqueAttendanceIds, checkOut: odooDatetime },
+    'Batch checked out Odoo attendance records',
+  );
+
+  return uniqueAttendanceIds.length;
 }
 
 export async function getEmployeeWebsiteKeyByEmployeeId(employeeId: number): Promise<string | null> {
@@ -2243,4 +2461,466 @@ export async function createAuditSalaryAttachment(input: {
     logger.error({ err, websiteUserKey: input.websiteUserKey }, 'createAuditSalaryAttachment: failed, skipping');
     return false;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Payslip list + detail helpers (used by the redesigned PayslipPage)
+// ---------------------------------------------------------------------------
+
+/**
+ * Loads the set of Odoo company IDs (hr.payslip company_id integers) that a
+ * given website user is authorised to see, and maps each one to the website
+ * branch name stored in our own `branches` table.
+ *
+ * Only branches that have a non-null `odoo_branch_id` are included.
+ */
+async function loadUserAllowedOdooBranchMap(userId: string): Promise<Map<number, string>> {
+  const rows = (await db.getDb()("user_company_branches as ucb")
+    .join("branches as b", "ucb.branch_id", "b.id")
+    .where("ucb.user_id", userId)
+    .whereNotNull("b.odoo_branch_id")
+    .select("b.odoo_branch_id", "b.name")) as Array<{
+    odoo_branch_id: string;
+    name: string;
+  }>;
+
+  const map = new Map<number, string>();
+  for (const row of rows) {
+    const odooId = parseInt(row.odoo_branch_id, 10);
+    if (!isNaN(odooId)) {
+      map.set(odooId, row.name);
+    }
+  }
+  return map;
+}
+
+/**
+ * Returns the list of Odoo employees linked to the given website user key,
+ * filtered to only the branches the user is assigned to on the website.
+ * The `company_id[1]` name in each employee is replaced with the website
+ * branch name so downstream callers show consistent naming.
+ */
+export async function getEmployeesForWebsiteUserKey(
+  websiteUserKey: string,
+  userId: string,
+): Promise<Array<{ id: number; name?: string | null; company_id?: [number, string] | false }>> {
+  const [{ employees }, allowedBranchMap] = await Promise.all([
+    listEmployeesForIdentity({ websiteUserKey }),
+    loadUserAllowedOdooBranchMap(userId),
+  ]);
+
+  return employees
+    .filter((emp) => {
+      if (!emp.company_id || !Array.isArray(emp.company_id)) return false;
+      return allowedBranchMap.has(emp.company_id[0]);
+    })
+    .map((emp) => {
+      if (!emp.company_id || !Array.isArray(emp.company_id)) return emp;
+      const websiteName = allowedBranchMap.get(emp.company_id[0]);
+      if (!websiteName) return emp;
+      return { ...emp, company_id: [emp.company_id[0], websiteName] as [number, string] };
+    });
+}
+
+/**
+ * Raw Odoo payslip row returned by search_read for the list view.
+ */
+interface OdooPayslipRow {
+  id: number;
+  name: string;
+  state: string;
+  employee_id: [number, string];
+  date_from: string;
+  date_to: string;
+  company_id: [number, string];
+  /** Computed net wage; 0 means the payslip has no data (no lines computed). */
+  net_wage: number;
+}
+
+/**
+ * Determines the cutoff number (1 or 2) from the date_from string.
+ * 1st cutoff starts on the 1st, 2nd cutoff starts on the 16th.
+ */
+function resolveCutoffFromDateFrom(dateFrom: string): 1 | 2 {
+  const day = Number(dateFrom.split("-")[2]);
+  return day <= 15 ? 1 : 2;
+}
+
+/**
+ * Derives a PayslipStatus from a raw Odoo state string.
+ */
+function derivePayslipStatus(state: string): "draft" | "completed" {
+  if (state === "draft") return "draft";
+  return "completed";
+}
+
+/**
+ * Fetches all non-cancelled, non-view-only payslips for every employee
+ * linked to the given website user key across all companies, restricted to
+ * the branches the user is assigned to on the website.
+ *
+ * `company_name` on every returned item uses the website branch name (not the
+ * Odoo company name) so the UI always shows consistent branch labels.
+ *
+ * Returns items sorted by date_to descending (newest first).
+ */
+export async function getAllPayslipsForUser(
+  websiteUserKey: string,
+  userId: string,
+): Promise<Array<{
+  id: string;
+  name: string;
+  date_from: string;
+  date_to: string;
+  odoo_state: string;
+  status: "draft" | "completed";
+  company_id: number;
+  company_name: string;
+  employee_id: number;
+  employee_name: string;
+  cutoff: 1 | 2;
+  is_pending: false;
+  /** Odoo computed net pay; 0 means the payslip has no salary data yet. */
+  net_pay: number;
+}>> {
+  try {
+    const [{ employees }, allowedBranchMap] = await Promise.all([
+      listEmployeesForIdentity({ websiteUserKey }),
+      loadUserAllowedOdooBranchMap(userId),
+    ]);
+
+    // Restrict to the branches this user is assigned to on the website
+    const allowedEmployees = employees.filter((emp) => {
+      if (!emp.company_id || !Array.isArray(emp.company_id)) return false;
+      return allowedBranchMap.has(emp.company_id[0]);
+    });
+
+    if (allowedEmployees.length === 0) {
+      return [];
+    }
+
+    const allRows: OdooPayslipRow[] = [];
+
+    // Query payslips for each employee in parallel
+    await Promise.all(
+      allowedEmployees.map(async (employee) => {
+        const rows = (await callOdooKw(
+          "hr.payslip",
+          "search_read",
+          [],
+          {
+            domain: [
+              ["employee_id", "=", employee.id],
+              ["state", "!=", "cancel"],
+              ["x_view_only", "!=", true],
+            ],
+            fields: ["id", "name", "state", "employee_id", "date_from", "date_to", "company_id", "net_wage"],
+            order: "date_to desc, id desc",
+            limit: 1000,
+          },
+        )) as OdooPayslipRow[];
+
+        allRows.push(...rows);
+      }),
+    );
+
+    // Deduplicate by Odoo payslip id
+    const seen = new Set<number>();
+    const deduped = allRows.filter((row) => {
+      if (seen.has(row.id)) return false;
+      seen.add(row.id);
+      return true;
+    });
+
+    // Sort combined list: newest date_to first, then by id descending
+    deduped.sort((a, b) => {
+      const dateDiff = b.date_to.localeCompare(a.date_to);
+      if (dateDiff !== 0) return dateDiff;
+      return b.id - a.id;
+    });
+
+    return deduped.map((row) => {
+      const odooCompanyId = Array.isArray(row.company_id)
+        ? row.company_id[0]
+        : (row.company_id as unknown as number);
+      // Prefer the website branch name; fall back to the Odoo company name if
+      // (for any reason) the branch is no longer in the allowed map.
+      const websiteBranchName = allowedBranchMap.get(odooCompanyId);
+      const companyName = websiteBranchName ?? (Array.isArray(row.company_id) ? row.company_id[1] : "");
+
+      return {
+        id: String(row.id),
+        name: row.name,
+        date_from: row.date_from,
+        date_to: row.date_to,
+        odoo_state: row.state,
+        status: derivePayslipStatus(row.state),
+        company_id: odooCompanyId,
+        company_name: companyName,
+        employee_id: Array.isArray(row.employee_id) ? row.employee_id[0] : (row.employee_id as unknown as number),
+        employee_name: Array.isArray(row.employee_id) ? row.employee_id[1] : "",
+        cutoff: resolveCutoffFromDateFrom(row.date_from),
+        is_pending: false as const,
+        net_pay: row.net_wage ?? 0,
+      };
+    });
+  } catch (err) {
+    logger.error(`Failed to get all payslips for user ${websiteUserKey}: ${err}`);
+    throw err;
+  }
+}
+
+/**
+ * Calculates synthetic "pending" payslip stubs for the current month's
+ * cutoff periods that do not yet exist in the provided existingPayslips list.
+ *
+ * Both the 1st and 2nd cutoff stubs are generated if missing; the 2nd cutoff
+ * stub is placed first (it represents the latest period).
+ */
+export function calculatePendingPayslipStubs(
+  employees: Array<{ id: number; name?: string | null; company_id?: [number, string] | false }>,
+  existingPayslips: Array<{ employee_id: number; company_id: number; date_from: string; date_to: string }>,
+): Array<{
+  id: string;
+  name: string;
+  date_from: string;
+  date_to: string;
+  odoo_state: string;
+  status: "pending";
+  company_id: number;
+  company_name: string;
+  employee_id: number;
+  employee_name: string;
+  cutoff: 1 | 2;
+  is_pending: true;
+}> {
+  const range1 = getCurrentSemiMonthRange(1);
+  const range2 = getCurrentSemiMonthRange(2);
+
+  const stubs: Array<{
+    id: string;
+    name: string;
+    date_from: string;
+    date_to: string;
+    odoo_state: string;
+    status: "pending";
+    company_id: number;
+    company_name: string;
+    employee_id: number;
+    employee_name: string;
+    cutoff: 1 | 2;
+    is_pending: true;
+  }> = [];
+
+  for (const employee of employees) {
+    const companyField = employee.company_id;
+    if (!companyField || !Array.isArray(companyField)) continue;
+
+    const companyId = companyField[0];
+    const companyName = companyField[1];
+    const employeeName = employee.name ?? "";
+
+    const hasCutoff = (dateFrom: string, dateTo: string): boolean =>
+      existingPayslips.some(
+        (p) =>
+          p.employee_id === employee.id &&
+          p.company_id === companyId &&
+          p.date_from === dateFrom &&
+          p.date_to === dateTo,
+      );
+
+    // 2nd cutoff stub (placed first — represents the latest period)
+    if (!hasCutoff(range2.date_from, range2.date_to)) {
+      stubs.push({
+        id: `pending-${companyId}-2`,
+        name: `${employeeName} | 2nd Cutoff Payslip`,
+        date_from: range2.date_from,
+        date_to: range2.date_to,
+        odoo_state: "",
+        status: "pending",
+        company_id: companyId,
+        company_name: companyName,
+        employee_id: employee.id,
+        employee_name: employeeName,
+        cutoff: 2,
+        is_pending: true,
+      });
+    }
+
+    // 1st cutoff stub
+    if (!hasCutoff(range1.date_from, range1.date_to)) {
+      stubs.push({
+        id: `pending-${companyId}-1`,
+        name: `${employeeName} | 1st Cutoff Payslip`,
+        date_from: range1.date_from,
+        date_to: range1.date_to,
+        odoo_state: "",
+        status: "pending",
+        company_id: companyId,
+        company_name: companyName,
+        employee_id: employee.id,
+        employee_name: employeeName,
+        cutoff: 1,
+        is_pending: true,
+      });
+    }
+  }
+
+  return stubs;
+}
+
+/**
+ * Fetches a single Odoo payslip by its ID, refreshes it from work entries,
+ * recomputes, and returns the full data including lines and worked_days.
+ */
+export async function getPayslipDetailById(payslipId: number): Promise<{
+  id: number;
+  name: string;
+  state: string;
+  employee_id: [number, string];
+  date_from: string;
+  date_to: string;
+  lines: Array<{
+    id: number;
+    name: string;
+    code: string;
+    category_id: [number, string];
+    total: number;
+    amount: number;
+    quantity: number;
+    rate: number;
+    sequence: number;
+  }>;
+  worked_days: Array<{
+    id: number;
+    name: string;
+    code: string;
+    number_of_days: number;
+    number_of_hours: number;
+    amount: number;
+  }>;
+}> {
+  try {
+    // Read the payslip header first so we know its current state before
+    // attempting any mutation.
+    const slips = (await callOdooKw(
+      "hr.payslip",
+      "read",
+      [[payslipId]],
+      {
+        fields: ["id", "name", "state", "employee_id", "date_from", "date_to"],
+      },
+    )) as Array<{
+      id: number;
+      name: string;
+      state: string;
+      employee_id: [number, string];
+      date_from: string;
+      date_to: string;
+    }>;
+
+    if (!slips || slips.length === 0) {
+      throw new Error(`Payslip ${payslipId} not found in Odoo`);
+    }
+
+    const slip = slips[0];
+
+    // Odoo only allows refresh + recompute on Draft ("draft") or Waiting
+    // ("verify") payslips. Calling these methods on a Done/Paid ("done")
+    // payslip throws "The payslips should be in Draft or Waiting state."
+    if (slip.state === "draft" || slip.state === "verify") {
+      await callOdooKw("hr.payslip", "action_refresh_from_work_entries", [[payslipId]]);
+      await callOdooKw("hr.payslip", "compute_sheet", [[payslipId]]);
+    }
+
+    const lines = (await callOdooKw(
+      "hr.payslip.line",
+      "search_read",
+      [],
+      {
+        domain: [["slip_id", "=", payslipId]],
+        fields: ["id", "name", "code", "category_id", "total", "amount", "quantity", "rate", "sequence"],
+        order: "sequence asc, id asc",
+        limit: 1000,
+      },
+    )) as Array<{
+      id: number;
+      name: string;
+      code: string;
+      category_id: [number, string];
+      total: number;
+      amount: number;
+      quantity: number;
+      rate: number;
+      sequence: number;
+    }>;
+
+    const workedDays = (await callOdooKw(
+      "hr.payslip.worked_days",
+      "search_read",
+      [],
+      {
+        domain: [["payslip_id", "=", payslipId]],
+        fields: ["id", "name", "code", "number_of_days", "number_of_hours", "amount"],
+        order: "id asc",
+        limit: 1000,
+      },
+    )) as Array<{
+      id: number;
+      name: string;
+      code: string;
+      number_of_days: number;
+      number_of_hours: number;
+      amount: number;
+    }>;
+
+    return { ...slip, lines, worked_days: workedDays };
+  } catch (err) {
+    logger.error(`Failed to get payslip detail for id ${payslipId}: ${err}`);
+    throw err;
+  }
+}
+
+/**
+ * Gets or creates a view-only payslip for a pending period,
+ * reusing the existing getEmployeePayslipData / createViewOnlyPayslip logic.
+ * Used when the user clicks a "pending" payslip card.
+ */
+export async function getOrCreatePendingPayslipDetail(
+  employeeId: number,
+  companyId: number,
+  employeeName: string,
+  cutoff: 1 | 2,
+): Promise<{
+  id: number;
+  name: string;
+  state: string;
+  employee_id: [number, string];
+  date_from: string;
+  date_to: string;
+  lines: Array<{
+    id: number;
+    name: string;
+    code: string;
+    category_id: [number, string];
+    total: number;
+    amount: number;
+    quantity: number;
+    rate: number;
+    sequence: number;
+  }>;
+  worked_days: Array<{
+    id: number;
+    name: string;
+    code: string;
+    number_of_days: number;
+    number_of_hours: number;
+    amount: number;
+  }>;
+}> {
+  const existing = await getEmployeePayslipData(employeeId, companyId, cutoff);
+  if (existing) {
+    return existing;
+  }
+  return createViewOnlyPayslip(employeeId, companyId, employeeName, cutoff);
 }

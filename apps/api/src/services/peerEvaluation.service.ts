@@ -1,7 +1,6 @@
-import { randomInt } from 'node:crypto';
-import type { Knex } from 'knex';
 import { AppError } from '../middleware/errorHandler.js';
 import { hydrateUsersByIds } from './globalUser.service.js';
+import type { GlobalUser } from './globalUser.service.js';
 import { db } from '../config/database.js';
 
 // ─── Internal Row Types ───────────────────────────────────────────────────────
@@ -19,8 +18,11 @@ type PeerEvaluationRow = {
   overlap_minutes: number;
   expires_at: Date | string;
   submitted_at: Date | string | null;
+  wrs_effective_at: Date | string | null;
   created_at: Date | string;
   updated_at: Date | string;
+  branch_id?: string | null;
+  shift_date?: Date | string | null;
 };
 
 // ─── Public Types ─────────────────────────────────────────────────────────────
@@ -49,6 +51,7 @@ export interface ListPeerEvaluationsFilters {
   userId?: string;
   page?: number;
   pageSize?: number;
+  companyId: string;
   requesterUserId: string;
   canManage: boolean;
 }
@@ -60,6 +63,19 @@ export interface SubmitEvaluationBody {
   additional_message?: string;
 }
 
+const TEN_DAYS_IN_MS = 10 * 24 * 60 * 60 * 1000;
+
+export function createRandomWrsDelayMs(randomValue: number = Math.random()): number {
+  const normalized = Number.isFinite(randomValue)
+    ? Math.min(1, Math.max(0, randomValue))
+    : 0;
+  return Math.floor(normalized * TEN_DAYS_IN_MS);
+}
+
+export function buildWrsEffectiveAt(submittedAt: Date, randomValue: number = Math.random()): Date {
+  return new Date(submittedAt.getTime() + createRandomWrsDelayMs(randomValue));
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 async function hydrateRows(rows: PeerEvaluationRow[]): Promise<PeerEvaluationWithUsers[]> {
@@ -68,19 +84,36 @@ async function hydrateRows(rows: PeerEvaluationRow[]): Promise<PeerEvaluationWit
   const allUserIds = rows.flatMap((r) => [r.evaluator_user_id, r.evaluated_user_id]);
   const userMap = await hydrateUsersByIds(allUserIds, ['id', 'first_name', 'last_name', 'avatar_url']);
 
+  const toHydratedUser = (
+    candidate: Partial<GlobalUser> | undefined,
+  ): { id: string; first_name: string; last_name: string; avatar_url: string | null } | null => {
+    if (!candidate) return null;
+    if (typeof candidate.id !== 'string') return null;
+    if (typeof candidate.first_name !== 'string') return null;
+    if (typeof candidate.last_name !== 'string') return null;
+    const avatarUrl = candidate.avatar_url === null || typeof candidate.avatar_url === 'string'
+      ? candidate.avatar_url
+      : null;
+    return {
+      id: candidate.id,
+      first_name: candidate.first_name,
+      last_name: candidate.last_name,
+      avatar_url: avatarUrl,
+    };
+  };
+
   return rows.map((row) => ({
     ...row,
-    evaluator: (userMap[row.evaluator_user_id] as any) ?? null,
-    evaluated: (userMap[row.evaluated_user_id] as any) ?? null,
+    evaluator: toHydratedUser(userMap[row.evaluator_user_id]),
+    evaluated: toHydratedUser(userMap[row.evaluated_user_id]),
   }));
 }
 
 // ─── Service Functions ────────────────────────────────────────────────────────
 
 export async function listPeerEvaluations(
-  tenantDb: Knex,
   filters: ListPeerEvaluationsFilters,
-): Promise<{ data: PeerEvaluationWithUsers[]; total: number; page: number; pageSize: number }> {
+): Promise<{ items: PeerEvaluationWithUsers[]; total: number; page: number; pageSize: number }> {
   const {
     status,
     dateFrom,
@@ -90,34 +123,48 @@ export async function listPeerEvaluations(
     userId,
     page = 1,
     pageSize: rawPageSize = 20,
+    companyId,
     requesterUserId,
     canManage,
   } = filters;
 
   // 'score' sorts by average of q1+q2+q3
   const ALLOWED_SORT_FIELDS = ['created_at', 'submitted_at', 'status', 'overlap_minutes'];
-  const safeSortBy = sortBy === 'score' ? null : (ALLOWED_SORT_FIELDS.includes(sortBy ?? '') ? sortBy! : 'created_at');
+  const safeSortBy =
+    sortBy === 'score'
+      ? null
+      : sortBy && ALLOWED_SORT_FIELDS.includes(sortBy)
+        ? sortBy
+        : 'created_at';
 
   const pageSize = Math.min(rawPageSize, 100);
   const offset = (page - 1) * pageSize;
 
   const buildQuery = () => {
-    let q = tenantDb('peer_evaluations');
+    let q = db.getDb()('peer_evaluations as pe')
+      .join('employee_shifts as s', 'pe.shift_id', 's.id')
+      .where('pe.company_id', companyId);
+
     if (!canManage) {
       q = q.where((builder) => {
         builder
-          .where('evaluator_user_id', requesterUserId)
-          .orWhere('evaluated_user_id', requesterUserId);
+          .where('pe.evaluator_user_id', requesterUserId)
+          .orWhere('pe.evaluated_user_id', requesterUserId);
       });
     }
-    if (status) q = q.where('status', status);
-    if (dateFrom) q = q.where('created_at', '>=', dateFrom);
-    if (dateTo) q = q.where('created_at', '<=', dateTo);
-    if (userId) q = q.where('evaluated_user_id', userId);
+
+    if (status) q = q.where('pe.status', status);
+    if (dateFrom) q = q.where('pe.created_at', '>=', dateFrom);
+    if (dateTo) q = q.where('pe.created_at', '<=', dateTo);
+    if (userId) q = q.where('pe.evaluated_user_id', userId);
+
     return q;
   };
 
-  const rowsQuery = buildQuery().limit(pageSize).offset(offset).select('*');
+  const rowsQuery = buildQuery()
+    .limit(pageSize)
+    .offset(offset)
+    .select('pe.*', 's.branch_id', 's.shift_start as shift_date');
   if (safeSortBy === null) {
     // sort by average score
     rowsQuery.orderByRaw(`(q1_score + q2_score + q3_score) / 3.0 ${sortOrder}`);
@@ -126,22 +173,25 @@ export async function listPeerEvaluations(
   }
 
   const [countResult, rows] = await Promise.all([
-    buildQuery().count('id as count').first(),
+    buildQuery().count('pe.id as count').first(),
     rowsQuery,
   ]);
 
-  const total = Number((countResult as any)?.count ?? 0);
-  const data = await hydrateRows(rows as PeerEvaluationRow[]);
+  const total = Number(((countResult as { count?: number | string } | undefined)?.count ?? 0));
+  const items = await hydrateRows(rows as PeerEvaluationRow[]);
 
-  return { data, total, page, pageSize };
+  return { items, total, page, pageSize };
 }
 
 export async function getPeerEvaluationById(
-  tenantDb: Knex,
   id: string,
   access: { requesterUserId: string; canManage: boolean },
 ): Promise<PeerEvaluationWithUsers | null> {
-  const row = await tenantDb('peer_evaluations').where({ id }).first();
+  const row = await db.getDb()('peer_evaluations as pe')
+    .join('employee_shifts as s', 'pe.shift_id', 's.id')
+    .where('pe.id', id)
+    .select('pe.*', 's.branch_id', 's.shift_start as shift_date')
+    .first();
   if (!row) return null;
   if (!access.canManage) {
     const requesterUserId = access.requesterUserId;
@@ -156,10 +206,9 @@ export async function getPeerEvaluationById(
 }
 
 export async function getPendingForUser(
-  tenantDb: Knex,
   userId: string,
 ): Promise<PeerEvaluationWithUsers[]> {
-  const rows = await tenantDb('peer_evaluations')
+  const rows = await db.getDb()('peer_evaluations')
     .where('evaluator_user_id', userId)
     .where('status', 'pending')
     .whereRaw('expires_at > now()')
@@ -170,13 +219,11 @@ export async function getPendingForUser(
 }
 
 export async function submitEvaluation(
-  tenantDb: Knex,
   id: string,
   userId: string,
   body: SubmitEvaluationBody,
-  companyId: string,
 ): Promise<PeerEvaluationRow> {
-  const evaluation = await tenantDb('peer_evaluations').where({ id }).first() as PeerEvaluationRow | undefined;
+  const evaluation = await db.getDb()('peer_evaluations').where({ id }).first() as PeerEvaluationRow | undefined;
 
   if (!evaluation) {
     throw new AppError(404, 'Peer evaluation not found');
@@ -195,7 +242,8 @@ export async function submitEvaluation(
   }
 
   const now = new Date();
-  const [updated] = await tenantDb('peer_evaluations')
+  const wrsEffectiveAt = buildWrsEffectiveAt(now);
+  const [updated] = await db.getDb()('peer_evaluations')
     .where({ id })
     .update({
       q1_score: body.q1_score,
@@ -204,42 +252,10 @@ export async function submitEvaluation(
       additional_message: body.additional_message ?? null,
       status: 'completed',
       submitted_at: now,
+      wrs_effective_at: wrsEffectiveAt,
       updated_at: now,
     })
     .returning('*');
 
-  const completed = updated as PeerEvaluationRow;
-
-  // Append snapshot to master users.peer_evaluations for the evaluated user
-  const masterDb = db.getMasterDb();
-  const averageScore = (completed.q1_score + completed.q2_score + completed.q3_score) / 3;
-  const wrsDelayDays = randomInt(0, 11); // 0..10 inclusive
-  const submittedAt = completed.submitted_at ? new Date(completed.submitted_at) : now;
-  const submittedAtTime = Number.isNaN(submittedAt.getTime()) ? now : submittedAt;
-  const wrsEffectiveAt = new Date(submittedAtTime.getTime() + wrsDelayDays * 24 * 60 * 60 * 1000);
-  const entry = {
-    id: completed.id,
-    company_id: companyId,
-    evaluator_user_id: completed.evaluator_user_id,
-    shift_id: completed.shift_id,
-    q1_score: completed.q1_score,
-    q2_score: completed.q2_score,
-    q3_score: completed.q3_score,
-    average_score: Math.round(averageScore * 100) / 100,
-    additional_message: completed.additional_message,
-    submitted_at: submittedAtTime.toISOString(),
-    wrs_delay_days: wrsDelayDays,
-    wrs_effective_at: wrsEffectiveAt.toISOString(),
-  };
-
-  await masterDb('users')
-    .where({ id: completed.evaluated_user_id })
-    .update({
-      peer_evaluations: masterDb.raw(
-        `coalesce(peer_evaluations, '[]'::jsonb) || ?::jsonb`,
-        [JSON.stringify([entry])],
-      ),
-    });
-
-  return completed;
+  return updated as PeerEvaluationRow;
 }

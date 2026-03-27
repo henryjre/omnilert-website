@@ -42,7 +42,7 @@ export function initializeSocket(
     if (!token) return next(new Error('Authentication required'));
     try {
       const payload = verifyAccessToken(token);
-      if (!payload.permissions.includes(PERMISSIONS.POS_VERIFICATION_VIEW)) {
+      if (!payload.permissions.includes(PERMISSIONS.POS_VIEW)) {
         return next(new Error('Insufficient permissions'));
       }
       socket.data.user = payload;
@@ -75,7 +75,7 @@ export function initializeSocket(
     if (!token) return next(new Error('Authentication required'));
     try {
       const payload = verifyAccessToken(token);
-      if (!payload.permissions.includes(PERMISSIONS.POS_SESSION_VIEW)) {
+      if (!payload.permissions.includes(PERMISSIONS.POS_VIEW)) {
         return next(new Error('Insufficient permissions'));
       }
       socket.data.user = payload;
@@ -109,7 +109,7 @@ export function initializeSocket(
     try {
       const payload = verifyAccessToken(token);
       if (
-        !payload.permissions.includes(PERMISSIONS.SHIFT_VIEW_ALL)
+        !payload.permissions.includes(PERMISSIONS.SCHEDULE_VIEW)
         && !payload.permissions.includes(PERMISSIONS.ACCOUNT_VIEW_SCHEDULE)
       ) {
         return next(new Error('Insufficient permissions'));
@@ -128,7 +128,7 @@ export function initializeSocket(
     if (!token) return next(new Error('Authentication required'));
     try {
       const payload = verifyAccessToken(token);
-      if (!payload.permissions.includes(PERMISSIONS.EMPLOYEE_VERIFICATION_VIEW)) {
+      if (!payload.permissions.includes(PERMISSIONS.EMPLOYEE_VERIFICATION_VIEW_PAGE)) {
         return next(new Error('Insufficient permissions'));
       }
       socket.data.user = payload;
@@ -229,7 +229,9 @@ export function initializeSocket(
     if (!token) return next(new Error('Authentication required'));
     try {
       const payload = verifyAccessToken(token);
-      if (!payload.permissions.includes(PERMISSIONS.SHIFT_VIEW_ALL)) {
+      const canAccessEmployeeRequirements = payload.permissions.includes(PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_REQUIREMENTS)
+        || payload.permissions.includes(PERMISSIONS.SCHEDULE_VIEW);
+      if (!canAccessEmployeeRequirements) {
         return next(new Error('Insufficient permissions'));
       }
       socket.data.user = payload;
@@ -251,7 +253,7 @@ export function initializeSocket(
     logger.debug(`Employee Shifts: ${socket.data.user?.sub} connected`);
 
     socket.on('join-branch', (branchId: string) => {
-      const canViewAll = socket.data.user?.permissions.includes(PERMISSIONS.SHIFT_VIEW_ALL)
+      const canViewAll = socket.data.user?.permissions.includes(PERMISSIONS.SCHEDULE_VIEW)
         || socket.data.user?.permissions.includes(PERMISSIONS.ADMIN_VIEW_ALL_BRANCHES);
       if (canViewAll || socket.data.user?.branchIds.includes(branchId)) {
         socket.join(`branch:${branchId}`);
@@ -273,8 +275,7 @@ export function initializeSocket(
     if (!token) return next(new Error('Authentication required'));
     try {
       const payload = verifyAccessToken(token);
-      const canAccessPeerEvaluations = payload.permissions.includes(PERMISSIONS.PEER_EVALUATION_VIEW)
-        || payload.permissions.includes(PERMISSIONS.PEER_EVALUATION_MANAGE);
+      const canAccessPeerEvaluations = payload.permissions.includes(PERMISSIONS.WORKPLACE_RELATIONS_VIEW);
       if (!canAccessPeerEvaluations) {
         return next(new Error('Insufficient permissions'));
       }

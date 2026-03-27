@@ -1,7 +1,5 @@
 import { db } from '../config/database.js';
-import { provisionTenantDatabase } from './databaseProvisioner.js';
 import { AppError } from '../middleware/errorHandler.js';
-import { getTenantMigrationStatus, updateCompanyMigrationState } from './tenantMigration.service.js';
 import { deleteFile, deleteFolder, deletePrefixRecursive, getCompanyStorageRoot } from './storage.service.js';
 import * as superAdminService from './superAdmin.service.js';
 import { getIO } from '../config/socket.js';
@@ -19,19 +17,6 @@ function slugify(name: string): string {
     .replace(/^-|-$/g, '');
 }
 
-function dbNameFromSlug(slug: string): string {
-  return `omnilert_${slug.replace(/-/g, '_')}`;
-}
-
-function splitName(name: string): { firstName: string; lastName: string } {
-  const trimmed = name.trim();
-  const [first, ...rest] = trimmed.split(/\s+/);
-  return {
-    firstName: first || 'Super',
-    lastName: rest.length > 0 ? rest.join(' ') : 'Admin',
-  };
-}
-
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
@@ -45,26 +30,36 @@ function quoteIdentifier(value: string): string {
 }
 
 async function collectDistinctUrls(
-  tenantDb: any,
   tableName: string,
   columnName: string,
+  companyId?: string,
 ): Promise<string[]> {
-  const hasTable = await tenantDb.schema.hasTable(tableName);
+  const knex = db.getDb();
+  const hasTable = await knex.schema.hasTable(tableName);
   if (!hasTable) return [];
-  const hasColumn = await tenantDb.schema.hasColumn(tableName, columnName);
+  const hasColumn = await knex.schema.hasColumn(tableName, columnName);
   if (!hasColumn) return [];
 
-  const rows = await tenantDb(tableName)
+  const query = knex(tableName)
     .whereNotNull(columnName)
     .select(columnName)
     .distinct();
+
+  if (companyId) {
+    const hasCompanyCol = await knex.schema.hasColumn(tableName, 'company_id');
+    if (hasCompanyCol) {
+      query.where('company_id', companyId);
+    }
+  }
+
+  const rows = await query;
 
   return rows
     .map((row: Record<string, unknown>) => String(row[columnName] ?? '').trim())
     .filter((value: string) => value.length > 0);
 }
 
-async function collectTenantManagedFileUrls(tenantDb: any): Promise<string[]> {
+async function collectManagedFileUrls(companyId: string): Promise<string[]> {
   const urlSet = new Set<string>();
   const tableColumnPairs = [
     ['users', 'avatar_url'],
@@ -76,7 +71,7 @@ async function collectTenantManagedFileUrls(tenantDb: any): Promise<string[]> {
   ] as const;
 
   for (const [tableName, columnName] of tableColumnPairs) {
-    const urls = await collectDistinctUrls(tenantDb, tableName, columnName);
+    const urls = await collectDistinctUrls(tableName, columnName, companyId);
     for (const url of urls) {
       urlSet.add(url);
     }
@@ -85,40 +80,40 @@ async function collectTenantManagedFileUrls(tenantDb: any): Promise<string[]> {
   return Array.from(urlSet);
 }
 
-async function cleanupQueueRecordsForCompanyDb(companyDbName: string): Promise<{ warning: string | null }> {
+async function cleanupQueueRecordsForCompanyId(companyId: string): Promise<{ warning: string | null }> {
   const schema = env.QUEUE_SCHEMA;
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(schema)) {
     return { warning: `Skipping queue cleanup: invalid queue schema "${schema}"` };
   }
 
-  const masterDb = db.getMasterDb();
+  const knex = db.getDb();
   const quotedSchema = quoteIdentifier(schema);
   const jobTableRef = `${schema}.job`;
   const archiveTableRef = `${schema}.archive`;
 
   try {
-    const jobReg = await masterDb.raw('SELECT to_regclass(?) as reg', [jobTableRef]);
-    const archiveReg = await masterDb.raw('SELECT to_regclass(?) as reg', [archiveTableRef]);
+    const jobReg = await knex.raw('SELECT to_regclass(?) as reg', [jobTableRef]);
+    const archiveReg = await knex.raw('SELECT to_regclass(?) as reg', [archiveTableRef]);
     const hasJobTable = Boolean(jobReg?.rows?.[0]?.reg);
     const hasArchiveTable = Boolean(archiveReg?.rows?.[0]?.reg);
 
     if (hasJobTable) {
-      await masterDb.raw(
-        `DELETE FROM ${quotedSchema}.job WHERE data->>'companyDbName' = ?`,
-        [companyDbName],
+      await knex.raw(
+        `DELETE FROM ${quotedSchema}.job WHERE data->>'companyId' = ?`,
+        [companyId],
       );
     }
     if (hasArchiveTable) {
-      await masterDb.raw(
-        `DELETE FROM ${quotedSchema}.archive WHERE data->>'companyDbName' = ?`,
-        [companyDbName],
+      await knex.raw(
+        `DELETE FROM ${quotedSchema}.archive WHERE data->>'companyId' = ?`,
+        [companyId],
       );
     }
 
     return { warning: null };
   } catch (error) {
     logger.warn(
-      { err: error, companyDbName, queueSchema: schema },
+      { err: error, companyId, queueSchema: schema },
       'Queue cleanup failed during company delete',
     );
     return { warning: 'Queue cleanup failed. Pending background jobs may still reference deleted company data.' };
@@ -196,12 +191,11 @@ export async function createCompany(
   odooApiKey?: string,
   companyCode?: string,
 ) {
-  const masterDb = db.getMasterDb();
+  const knex = db.getDb();
   const slug = slugify(name);
-  const dbName = dbNameFromSlug(slug);
 
   // Check uniqueness
-  const existing = await masterDb('companies').where({ slug }).first();
+  const existing = await knex('companies').where({ slug }).first();
   if (existing) {
     throw new AppError(409, 'A company with this name already exists');
   }
@@ -212,24 +206,21 @@ export async function createCompany(
   }
 
   // Create company record
-  const [company] = await masterDb('companies')
+  const [company] = await knex('companies')
     .insert({
       name,
       slug,
-      db_name: dbName,
       odoo_api_key: odooApiKey || null,
       theme_color: DEFAULT_THEME_COLOR,
       company_code: normalizedCompanyCode,
     })
     .returning('*');
 
-  // Provision tenant database with initial admin user
-  await provisionTenantDatabase(dbName, admin);
-
-  // Track current tenant migration version in master metadata
-  const tenantDb = await db.getTenantDb(dbName);
-  const status = await getTenantMigrationStatus(tenantDb);
-  await updateCompanyMigrationState(company.id as string, dbName, status.currentVersion);
+  // Seed company sequences
+  await knex('company_sequences').insert([
+    { company_id: company.id, sequence_name: 'case_number', current_value: 0 },
+    { company_id: company.id, sequence_name: 'vn_number', current_value: 0 },
+  ]);
 
   return company;
 }
@@ -241,16 +232,15 @@ export async function createCompanyForSuperAdmin(
   companyCode?: string,
   themeColor?: string,
 ) {
-  const masterDb = db.getMasterDb();
+  const knex = db.getDb();
   const slug = slugify(name);
-  const dbName = dbNameFromSlug(slug);
 
-  const existing = await masterDb('companies').where({ slug }).first();
+  const existing = await knex('companies').where({ slug }).first();
   if (existing) {
     throw new AppError(409, 'A company with this name already exists');
   }
 
-  const superAdmin = await masterDb('super_admins')
+  const superAdmin = await knex('super_admins')
     .where({ id: superAdminId })
     .select('id', 'email', 'name', 'password_hash')
     .first();
@@ -268,48 +258,38 @@ export async function createCompanyForSuperAdmin(
     throw new AppError(400, 'Theme color must be a valid 6-digit hex color (e.g. #2563EB)');
   }
 
-  const [company] = await masterDb('companies')
+  const [company] = await knex('companies')
     .insert({
       name,
       slug,
-      db_name: dbName,
       odoo_api_key: odooApiKey || null,
       theme_color: normalizedThemeColor ?? DEFAULT_THEME_COLOR,
       company_code: normalizedCompanyCode,
     })
     .returning('*');
 
-  const { firstName, lastName } = splitName(superAdmin.name as string);
-  await provisionTenantDatabase(dbName, {
-    email: superAdmin.email as string,
-    firstName,
-    lastName,
-    passwordHash: superAdmin.password_hash as string,
-  });
-
-  const tenantDb = await db.getTenantDb(dbName);
-  const status = await getTenantMigrationStatus(tenantDb);
-  await updateCompanyMigrationState(company.id as string, dbName, status.currentVersion);
+  // Seed company sequences
+  await knex('company_sequences').insert([
+    { company_id: company.id, sequence_name: 'case_number', current_value: 0 },
+    { company_id: company.id, sequence_name: 'vn_number', current_value: 0 },
+  ]);
 
   return company;
 }
 
 export async function listCompanies() {
-  const masterDb = db.getMasterDb();
-  return masterDb('companies').orderBy('created_at', 'desc');
+  return db.getDb()('companies').orderBy('created_at', 'desc');
 }
 
 export async function listCompaniesPublic() {
-  const masterDb = db.getMasterDb();
-  return masterDb('companies')
+  return db.getDb()('companies')
     .where({ is_active: true })
     .select('id', 'name', 'slug', 'theme_color')
     .orderBy('name', 'asc');
 }
 
 export async function getCompany(id: string) {
-  const masterDb = db.getMasterDb();
-  const company = await masterDb('companies').where({ id }).first();
+  const company = await db.getDb()('companies').where({ id }).first();
   if (!company) {
     throw new AppError(404, 'Company not found');
   }
@@ -320,7 +300,7 @@ export async function updateCompany(
   id: string,
   data: { name?: string; isActive?: boolean; odooApiKey?: string; themeColor?: string; companyCode?: string },
 ) {
-  const masterDb = db.getMasterDb();
+  const knex = db.getDb();
   const updates: Record<string, unknown> = { updated_at: new Date() };
   if (data.name !== undefined) updates.name = data.name;
   if (data.isActive !== undefined) updates.is_active = data.isActive;
@@ -339,7 +319,7 @@ export async function updateCompany(
     updates.company_code = normalized;
   }
 
-  const [company] = await masterDb('companies').where({ id }).update(updates).returning('*');
+  const [company] = await knex('companies').where({ id }).update(updates).returning('*');
   if (!company) {
     throw new AppError(404, 'Company not found');
   }
@@ -347,8 +327,7 @@ export async function updateCompany(
 }
 
 export async function getCurrentCompany(companyId: string) {
-  const masterDb = db.getMasterDb();
-  const company = await masterDb('companies').where({ id: companyId }).first();
+  const company = await db.getDb()('companies').where({ id: companyId }).first();
   if (!company) throw new AppError(404, 'Company not found');
   return company;
 }
@@ -357,7 +336,7 @@ export async function updateCurrentCompany(
   companyId: string,
   data: { name?: string; themeColor?: string; odooApiKey?: string; companyCode?: string },
 ) {
-  const masterDb = db.getMasterDb();
+  const knex = db.getDb();
   const updates: Record<string, unknown> = { updated_at: new Date() };
 
   if (data.name !== undefined) updates.name = data.name;
@@ -378,7 +357,7 @@ export async function updateCurrentCompany(
     updates.company_code = normalized;
   }
 
-  const [company] = await masterDb('companies')
+  const [company] = await knex('companies')
     .where({ id: companyId })
     .update(updates)
     .returning('*');
@@ -391,21 +370,21 @@ export async function canUserDeleteCompany(
   companyId: string,
   userId: string,
 ): Promise<boolean> {
-  const masterDb = db.getMasterDb();
-  const company = await masterDb('companies')
+  const knex = db.getDb();
+  const company = await knex('companies')
     .where({ id: companyId, is_active: true })
-    .select('db_name')
+    .select('id')
     .first();
   if (!company) return false;
 
   try {
-    const user = await masterDb('users')
+    const user = await knex('users')
       .where({ id: userId, is_active: true })
       .select('email')
       .first();
     if (!user?.email) return false;
 
-    const superAdmin = await masterDb('super_admins')
+    const superAdmin = await knex('super_admins')
       .whereRaw('LOWER(email) = ?', [normalizeEmail(user.email as string)])
       .select('id')
       .first();
@@ -427,15 +406,14 @@ interface DeleteCurrentCompanyInput {
 interface DeleteCurrentCompanyResult {
   companyId: string;
   companyName: string;
-  dbName: string;
   warnings: string[];
 }
 
 export async function deleteCurrentCompany(
   input: DeleteCurrentCompanyInput,
 ): Promise<DeleteCurrentCompanyResult> {
-  const masterDb = db.getMasterDb();
-  const company = await masterDb('companies').where({ id: input.companyId }).first();
+  const knex = db.getDb();
+  const company = await knex('companies').where({ id: input.companyId }).first();
   if (!company) {
     throw new AppError(404, 'Company not found');
   }
@@ -444,8 +422,11 @@ export async function deleteCurrentCompany(
     throw new AppError(409, 'Company is already inactive');
   }
 
-  const tenantDb = await db.getTenantDb(company.db_name as string);
-  const currentUser = await masterDb('users')
+  if (company.is_root) {
+    throw new AppError(403, 'The root company cannot be deleted');
+  }
+
+  const currentUser = await knex('users')
     .where({ id: input.userId, is_active: true })
     .select('email')
     .first();
@@ -454,7 +435,7 @@ export async function deleteCurrentCompany(
   }
 
   const normalizedCurrentUserEmail = normalizeEmail(currentUser.email as string);
-  const currentUserSuperAdmin = await masterDb('super_admins')
+  const currentUserSuperAdmin = await knex('super_admins')
     .whereRaw('LOWER(email) = ?', [normalizedCurrentUserEmail])
     .select('id', 'email')
     .first();
@@ -479,20 +460,16 @@ export async function deleteCurrentCompany(
     throw new AppError(400, 'Company name confirmation does not match');
   }
 
-  await masterDb('companies')
+  await knex('companies')
     .where({ id: input.companyId })
     .update({ is_active: false, updated_at: new Date() });
 
-  const tenantUserIds = await masterDb('user_company_access')
+  const tenantUserIds = await knex('user_company_access')
     .where({ company_id: input.companyId, is_active: true })
     .pluck('user_id') as string[];
 
-  await masterDb('refresh_tokens')
+  await knex('refresh_tokens')
     .where({ company_id: input.companyId, is_revoked: false })
-    .update({ is_revoked: true });
-  await masterDb('refresh_tokens')
-    .where({ company_db_name: company.db_name as string, is_revoked: false })
-    .whereNull('company_id')
     .update({ is_revoked: true });
 
   emitForceLogoutToUsers(tenantUserIds, input.companyId, input.userId);
@@ -513,7 +490,7 @@ export async function deleteCurrentCompany(
     'Company storage prefix cleanup completed',
   );
 
-  const managedFileUrls = await collectTenantManagedFileUrls(tenantDb);
+  const managedFileUrls = await collectManagedFileUrls(input.companyId);
   const failedFileDeletes = await deleteManagedFiles(managedFileUrls);
   logger.info(
     {
@@ -534,27 +511,10 @@ export async function deleteCurrentCompany(
     'Company legacy folder cleanup completed',
   );
 
-  const queueCleanup = await cleanupQueueRecordsForCompanyDb(company.db_name as string);
+  const queueCleanup = await cleanupQueueRecordsForCompanyId(input.companyId);
 
-  await db.closeTenantDb(company.db_name as string);
-
-  try {
-    await db.terminateDatabaseConnections(company.db_name as string);
-    if (await db.databaseExists(company.db_name as string)) {
-      await db.dropDatabase(company.db_name as string);
-    }
-  } catch (error) {
-    logger.error(
-      { err: error, companyId: input.companyId, dbName: company.db_name },
-      'Tenant database drop failed during company delete',
-    );
-    throw new AppError(
-      500,
-      'Company was deactivated but tenant database deletion failed. Please retry deletion or contact support.',
-    );
-  }
-
-  await masterDb('companies').where({ id: input.companyId }).delete();
+  // Delete company-scoped data and then the company record
+  await knex('companies').where({ id: input.companyId }).delete();
 
   const warnings: string[] = [];
   if (prefixDeleteResult.error) {
@@ -581,7 +541,121 @@ export async function deleteCurrentCompany(
   return {
     companyId: input.companyId,
     companyName: company.name as string,
-    dbName: company.db_name as string,
+    warnings,
+  };
+}
+
+interface DeleteCompanyByIdInput {
+  companyId: string;
+  typedCompanyName: string;
+  superAdminEmail: string;
+  superAdminPassword: string;
+}
+
+export async function deleteCompanyById(
+  input: DeleteCompanyByIdInput,
+): Promise<DeleteCurrentCompanyResult> {
+  const knex = db.getDb();
+  const company = await knex('companies').where({ id: input.companyId }).first();
+  if (!company) {
+    throw new AppError(404, 'Company not found');
+  }
+
+  if (!company.is_active) {
+    throw new AppError(409, 'Company is already inactive');
+  }
+
+  if (company.is_root) {
+    throw new AppError(403, 'The root company cannot be deleted');
+  }
+
+  // Verify super admin credentials
+  await superAdminService.loginSuperAdmin(input.superAdminEmail, input.superAdminPassword);
+
+  if (normalizeComparable(input.typedCompanyName) !== normalizeComparable(company.name as string)) {
+    throw new AppError(400, 'Company name confirmation does not match');
+  }
+
+  await knex('companies')
+    .where({ id: input.companyId })
+    .update({ is_active: false, updated_at: new Date() });
+
+  const tenantUserIds = await knex('user_company_access')
+    .where({ company_id: input.companyId, is_active: true })
+    .pluck('user_id') as string[];
+
+  await knex('refresh_tokens')
+    .where({ company_id: input.companyId, is_revoked: false })
+    .update({ is_revoked: true });
+
+  emitForceLogoutToUsers(tenantUserIds, input.companyId, input.companyId);
+
+  const companyStorageRoot = getCompanyStorageRoot(String(company.slug));
+  const prefixDeleteResult = await deletePrefixRecursive(`${companyStorageRoot}/`);
+  logger.info(
+    {
+      companyId: input.companyId,
+      companySlug: company.slug,
+      companyStorageRoot,
+      prefix: prefixDeleteResult.prefix,
+      attemptedCount: prefixDeleteResult.attemptedCount,
+      deletedCount: prefixDeleteResult.deletedCount,
+      failedCount: prefixDeleteResult.failedKeys.length,
+      error: prefixDeleteResult.error ?? null,
+    },
+    'Company storage prefix cleanup completed',
+  );
+
+  const managedFileUrls = await collectManagedFileUrls(input.companyId);
+  const failedFileDeletes = await deleteManagedFiles(managedFileUrls);
+  logger.info(
+    {
+      companyId: input.companyId,
+      attemptedCount: managedFileUrls.length,
+      failedCount: failedFileDeletes.length,
+    },
+    'Company legacy URL cleanup completed',
+  );
+
+  const legacyFolderCleanup = await cleanupLegacyUserFolders(tenantUserIds);
+  logger.info(
+    {
+      companyId: input.companyId,
+      attemptedCount: legacyFolderCleanup.attemptedCount,
+      failedCount: legacyFolderCleanup.failedFolders.length,
+    },
+    'Company legacy folder cleanup completed',
+  );
+
+  const queueCleanup = await cleanupQueueRecordsForCompanyId(input.companyId);
+
+  await knex('companies').where({ id: input.companyId }).delete();
+
+  const warnings: string[] = [];
+  if (prefixDeleteResult.error) {
+    warnings.push(`Tenant storage prefix cleanup failed: ${prefixDeleteResult.error}.`);
+  } else if (prefixDeleteResult.failedKeys.length > 0) {
+    warnings.push(
+      `Some tenant storage objects could not be deleted by prefix cleanup (${prefixDeleteResult.failedKeys.length}).`,
+    );
+  }
+  if (failedFileDeletes.length > 0) {
+    warnings.push(
+      `Some legacy URL-referenced files could not be deleted (${failedFileDeletes.length}).`,
+    );
+  }
+  if (legacyFolderCleanup.failedFolders.length > 0) {
+    warnings.push(
+      `Some legacy user folders could not be deleted (${legacyFolderCleanup.failedFolders.length}).`,
+    );
+  }
+  if (queueCleanup.warning) {
+    warnings.push(queueCleanup.warning);
+  }
+
+  return {
+    companyId: input.companyId,
+    companyName: company.name as string,
     warnings,
   };
 }

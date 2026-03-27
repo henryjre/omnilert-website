@@ -1,4 +1,3 @@
-import type { Knex } from 'knex';
 import type {
   ViolationNotice,
   ViolationNoticeDetail,
@@ -8,6 +7,7 @@ import type {
   ViolationNoticeMention,
   GroupedUsersResponse,
 } from '@omnilert/shared';
+import type { Knex } from 'knex';
 import { PERMISSIONS, SYSTEM_ROLES } from '@omnilert/shared';
 import { db } from '../config/database.js';
 import { getIO } from '../config/socket.js';
@@ -25,12 +25,14 @@ type VNRow = {
   status: string;
   category: string;
   description: string;
+  company_id: string;
   created_by: string;
   confirmed_by: string | null;
   issued_by: string | null;
   completed_by: string | null;
   rejected_by: string | null;
   rejection_reason: string | null;
+  branch_id: string | null;
   source_case_report_id: string | null;
   source_store_audit_id: string | null;
   issuance_file_url: string | null;
@@ -122,19 +124,20 @@ function emitVNEvent(companyId: string, event: string, data: unknown): void {
   }
 }
 
-async function getVNOrThrow(tenantDb: Knex, vnId: string): Promise<VNRow> {
-  const row = await tenantDb('violation_notices').where({ id: vnId }).first();
+async function getVNOrThrow(vnId: string): Promise<VNRow> {
+  const row = await db.getDb()('violation_notices').where({ id: vnId }).first();
   if (!row) throw new AppError(404, 'Violation notice not found');
   return row as VNRow;
 }
 
 async function upsertParticipant(
-  tenantDb: Knex,
   vnId: string,
   userId: string,
   patch: Partial<Pick<VNParticipantRow, 'is_joined' | 'is_muted' | 'last_read_at'>>,
+  trx?: Knex.Transaction,
 ): Promise<void> {
-  const existing = await tenantDb('violation_notice_participants')
+  const knex = trx ?? db.getDb();
+  const existing = await knex('violation_notice_participants')
     .where({ violation_notice_id: vnId, user_id: userId })
     .first();
   const next = {
@@ -145,13 +148,13 @@ async function upsertParticipant(
   };
 
   if (existing) {
-    await tenantDb('violation_notice_participants')
+    await knex('violation_notice_participants')
       .where({ violation_notice_id: vnId, user_id: userId })
       .update(next);
     return;
   }
 
-  await tenantDb('violation_notice_participants').insert({
+  await knex('violation_notice_participants').insert({
     violation_notice_id: vnId,
     user_id: userId,
     ...next,
@@ -160,12 +163,13 @@ async function upsertParticipant(
 }
 
 async function createSystemMessage(
-  tenantDb: Knex,
   vnId: string,
   userId: string,
   content: string,
+  trx?: Knex.Transaction,
 ): Promise<VNMessageRow> {
-  const [message] = await tenantDb('violation_notice_messages')
+  const knex = trx ?? db.getDb();
+  const [message] = await knex('violation_notice_messages')
     .insert({
       violation_notice_id: vnId,
       user_id: userId,
@@ -174,6 +178,43 @@ async function createSystemMessage(
     })
     .returning('*');
   return message as VNMessageRow;
+}
+
+async function getNextCompanySequence(
+  trx: Knex.Transaction,
+  companyId: string,
+  sequenceName: 'case_number' | 'vn_number',
+): Promise<number> {
+  await trx('company_sequences')
+    .insert({
+      company_id: companyId,
+      sequence_name: sequenceName,
+      current_value: 0,
+    })
+    .onConflict(['company_id', 'sequence_name'])
+    .ignore();
+
+  const sequenceRow = await trx('company_sequences')
+    .where({
+      company_id: companyId,
+      sequence_name: sequenceName,
+    })
+    .forUpdate()
+    .first('id', 'current_value') as { id: string; current_value: number } | undefined;
+
+  if (!sequenceRow) {
+    throw new AppError(500, `Failed to allocate ${sequenceName}`);
+  }
+
+  const nextValue = Number(sequenceRow.current_value) + 1;
+  await trx('company_sequences')
+    .where({ id: sequenceRow.id })
+    .update({
+      current_value: nextValue,
+      updated_at: new Date(),
+    });
+
+  return nextValue;
 }
 
 async function resolveUserNames(userIds: string[]): Promise<Record<string, string>> {
@@ -186,7 +227,6 @@ async function resolveUserNames(userIds: string[]): Promise<Record<string, strin
 }
 
 async function resolveMessageDecorations(
-  tenantDb: Knex,
   messageIds: string[],
 ): Promise<{
   reactionsByMessage: Map<string, ViolationNoticeReaction[]>;
@@ -195,13 +235,13 @@ async function resolveMessageDecorations(
 }> {
   const [reactionRows, attachmentRows, mentionRows] = await Promise.all([
     messageIds.length > 0
-      ? tenantDb('violation_notice_reactions').whereIn('message_id', messageIds).select('*')
+      ? db.getDb()('violation_notice_reactions').whereIn('message_id', messageIds).select('*')
       : Promise.resolve([]),
     messageIds.length > 0
-      ? tenantDb('violation_notice_attachments').whereIn('message_id', messageIds).select('*')
+      ? db.getDb()('violation_notice_attachments').whereIn('message_id', messageIds).select('*')
       : Promise.resolve([]),
     messageIds.length > 0
-      ? tenantDb('violation_notice_mentions').whereIn('message_id', messageIds).select('*')
+      ? db.getDb()('violation_notice_mentions').whereIn('message_id', messageIds).select('*')
       : Promise.resolve([]),
   ]);
 
@@ -262,7 +302,6 @@ async function resolveMessageDecorations(
 }
 
 async function enrichViolationNotices(
-  tenantDb: Knex,
   userId: string,
   vnRows: VNRow[],
 ): Promise<ViolationNotice[]> {
@@ -279,29 +318,34 @@ async function enrichViolationNotices(
     ),
   ];
 
-  const [participants, messageCounts, unreadCounts, unreadReplyCounts, userNames, targetRows] =
+  const branchIds = [...new Set(vnRows.map((r) => r.branch_id).filter(Boolean) as string[])];
+  const companyIds = [...new Set(vnRows.map((r) => r.company_id).filter(Boolean) as string[])];
+
+  const [participants, messageCounts, unreadCounts, unreadReplyCounts, userNames, targetRows, branchRows, companyRows] =
     await Promise.all([
-      tenantDb('violation_notice_participants')
+      db.getDb()('violation_notice_participants')
         .whereIn('violation_notice_id', vnIds)
         .andWhere({ user_id: userId })
         .select('violation_notice_id', 'is_joined', 'is_muted', 'last_read_at'),
-      tenantDb('violation_notice_messages')
+      db.getDb()('violation_notice_messages')
         .whereIn('violation_notice_id', vnIds)
+        .andWhere({ type: 'message' })
         .groupBy('violation_notice_id')
         .select('violation_notice_id')
         .count<{ count: string }[]>({ count: '*' }),
-      tenantDb('violation_notice_participants as vp')
+      db.getDb()('violation_notice_participants as vp')
         .leftJoin('violation_notice_messages as vm', 'vp.violation_notice_id', 'vm.violation_notice_id')
         .where('vp.user_id', userId)
         .whereIn('vp.violation_notice_id', vnIds)
         .andWhere('vm.user_id', '!=', userId)
+        .andWhere('vm.type', 'message')
         .andWhere((builder) => {
           builder.whereNull('vp.last_read_at').orWhereRaw('vm.created_at > vp.last_read_at');
         })
         .groupBy('vp.violation_notice_id')
         .select('vp.violation_notice_id')
         .count<{ count: string }[]>({ count: 'vm.id' }),
-      tenantDb('violation_notice_messages as reply')
+      db.getDb()('violation_notice_messages as reply')
         .join('violation_notice_messages as parent', 'reply.parent_message_id', 'parent.id')
         .join('violation_notice_participants as vp', (join) => {
           join.on('vp.violation_notice_id', 'reply.violation_notice_id').andOnVal('vp.user_id', userId);
@@ -309,6 +353,7 @@ async function enrichViolationNotices(
         .whereIn('reply.violation_notice_id', vnIds)
         .where('parent.user_id', userId)
         .where('reply.user_id', '!=', userId)
+        .andWhere('reply.type', 'message')
         .andWhere((builder) => {
           builder.whereNull('vp.last_read_at').orWhereRaw('reply.created_at > vp.last_read_at');
         })
@@ -316,7 +361,13 @@ async function enrichViolationNotices(
         .select('reply.violation_notice_id')
         .count<{ count: string }[]>({ count: 'reply.id' }),
       resolveUserNames(userIdSet),
-      tenantDb('violation_notice_targets').whereIn('violation_notice_id', vnIds).select('*'),
+      db.getDb()('violation_notice_targets').whereIn('violation_notice_id', vnIds).select('*'),
+      branchIds.length > 0
+        ? db.getDb()('branches').whereIn('id', branchIds).select('id', 'name')
+        : Promise.resolve([]),
+      companyIds.length > 0
+        ? db.getDb()('companies').whereIn('id', companyIds).select('id', 'name')
+        : Promise.resolve([]),
     ]);
 
   // Hydrate target user names
@@ -335,6 +386,13 @@ async function enrichViolationNotices(
   const unreadReplyCountMap = new Map(
     unreadReplyCounts.map((row: any) => [String(row.violation_notice_id), Number(row.count ?? 0)]),
   );
+  const branchMap = new Map<string, string>(
+    (branchRows as any[]).map((b: any) => [String(b.id), String(b.name)]),
+  );
+  const companyMap = new Map<string, string>(
+    (companyRows as any[]).map((c: any) => [String(c.id), String(c.name)]),
+  );
+
   const targetsByVN = new Map<string, typeof targetRows>();
   for (const row of targetRows as any[]) {
     const vnId = String(row.violation_notice_id);
@@ -374,6 +432,9 @@ async function enrichViolationNotices(
       rejected_by: row.rejected_by,
       rejected_by_name: row.rejected_by ? (userNames[row.rejected_by] ?? undefined) : null,
       rejection_reason: row.rejection_reason,
+      branch_id: row.branch_id ?? null,
+      branch_name: row.branch_id ? (branchMap.get(row.branch_id) ?? null) : null,
+      company_name: companyMap.get(row.company_id) ?? null,
       source_case_report_id: row.source_case_report_id,
       source_store_audit_id: row.source_store_audit_id,
       issuance_file_url: row.issuance_file_url,
@@ -393,8 +454,8 @@ async function enrichViolationNotices(
   });
 }
 
-async function buildVNMessageList(tenantDb: Knex, vnId: string): Promise<ViolationNoticeMessage[]> {
-  const rows = await tenantDb('violation_notice_messages')
+async function buildVNMessageList(vnId: string): Promise<ViolationNoticeMessage[]> {
+  const rows = await db.getDb()('violation_notice_messages')
     .where({ violation_notice_id: vnId })
     .orderBy('created_at', 'asc')
     .select('*');
@@ -407,7 +468,7 @@ async function buildVNMessageList(tenantDb: Knex, vnId: string): Promise<Violati
   );
 
   const { reactionsByMessage, attachmentsByMessage, mentionsByMessage } =
-    await resolveMessageDecorations(tenantDb, messageIds);
+    await resolveMessageDecorations(messageIds);
 
   return messageRows.map((row) => {
     const user = userMap[row.user_id];
@@ -436,7 +497,6 @@ async function buildVNMessageList(tenantDb: Knex, vnId: string): Promise<Violati
 }
 
 async function maybeNotifyMentionedUsers(input: {
-  tenantDb: Knex;
   companyId: string;
   vnId: string;
   messageId: string;
@@ -444,7 +504,7 @@ async function maybeNotifyMentionedUsers(input: {
   mentionedUserIds: string[];
   mentionedRoleIds: string[];
 }): Promise<void> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
   const roleMentionUsers =
     input.mentionedRoleIds.length > 0
       ? await masterDb('user_roles as ur')
@@ -468,7 +528,7 @@ async function maybeNotifyMentionedUsers(input: {
 
   const senderNames = await resolveUserNames([input.senderId]);
   const senderName = senderNames[input.senderId] ?? 'Someone';
-  const participantRows = await input.tenantDb('violation_notice_participants')
+  const participantRows = await db.getDb()('violation_notice_participants')
     .whereIn('user_id', targets)
     .andWhere({ violation_notice_id: input.vnId })
     .select('user_id', 'is_muted');
@@ -476,10 +536,9 @@ async function maybeNotifyMentionedUsers(input: {
 
   await Promise.all(
     targets.map(async (targetUserId) => {
-      await upsertParticipant(input.tenantDb, input.vnId, targetUserId, { is_joined: true });
+      await upsertParticipant(input.vnId, targetUserId, { is_joined: true });
       if (participantMap.get(targetUserId)?.is_muted) return;
       await createAndDispatchNotification({
-        tenantDb: input.tenantDb,
         userId: targetUserId,
         title: 'Violation notice mention',
         message: `${senderName} mentioned you in a violation notice`,
@@ -492,7 +551,7 @@ async function maybeNotifyMentionedUsers(input: {
 
 async function resolveCompanyUsers(companyId: string): Promise<MentionableUser[]> {
   const rows = await db
-    .getMasterDb()('user_company_access as uca')
+    .getDb()('user_company_access as uca')
     .join('users', 'uca.user_id', 'users.id')
     .where('uca.company_id', companyId)
     .andWhere('uca.is_active', true)
@@ -511,7 +570,6 @@ async function resolveCompanyUsers(companyId: string): Promise<MentionableUser[]
 // ─── Exported Functions ───────────────────────────────────────────────────────
 
 export async function listViolationNotices(input: {
-  tenantDb: Knex;
   userId: string;
   companyId: string;
   filters?: {
@@ -525,7 +583,7 @@ export async function listViolationNotices(input: {
   };
 }): Promise<ViolationNotice[]> {
   const { filters = {} } = input;
-  let query = input.tenantDb('violation_notices as vn').select('vn.*');
+  let query = db.getDb()('violation_notices as vn').select('vn.*');
 
   if (filters.targetUserId) {
     query = query
@@ -556,25 +614,24 @@ export async function listViolationNotices(input: {
   query.orderBy('vn.vn_number', normalizeSortOrder(filters.sortOrder));
 
   const rows = await query;
-  return enrichViolationNotices(input.tenantDb, input.userId, rows as VNRow[]);
+  return enrichViolationNotices(input.userId, rows as VNRow[]);
 }
 
 export async function getViolationNotice(input: {
-  tenantDb: Knex;
   userId: string;
   vnId: string;
 }): Promise<ViolationNoticeDetail> {
-  const record = await getVNOrThrow(input.tenantDb, input.vnId);
+  const record = await getVNOrThrow(input.vnId);
 
   // Auto-mark read on fetch
-  await upsertParticipant(input.tenantDb, input.vnId, input.userId, {
+  await upsertParticipant(input.vnId, input.userId, {
     is_joined: true,
     last_read_at: new Date(),
   });
 
-  const [enriched] = await enrichViolationNotices(input.tenantDb, input.userId, [record]);
+  const [enriched] = await enrichViolationNotices(input.userId, [record]);
 
-  const attachmentRows = await input.tenantDb('violation_notice_attachments')
+  const attachmentRows = await db.getDb()('violation_notice_attachments')
     .where({ violation_notice_id: input.vnId })
     .whereNull('message_id')
     .orderBy('created_at', 'desc')
@@ -596,11 +653,11 @@ export async function getViolationNotice(input: {
 }
 
 export async function createViolationNotice(input: {
-  tenantDb: Knex;
   companyId: string;
   userId: string;
   description: string;
   targetUserIds: string[];
+  branchId?: string | null;
   category?: string;
   sourceCaseReportId?: string;
   sourceStoreAuditId?: string;
@@ -612,13 +669,17 @@ export async function createViolationNotice(input: {
 
   const userNames = await resolveUserNames([input.userId]);
 
-  const vn = await input.tenantDb.transaction(async (trx) => {
+  const vn = await db.getDb().transaction(async (trx) => {
+    const vnNumber = await getNextCompanySequence(trx, input.companyId, 'vn_number');
     const [created] = await trx('violation_notices')
       .insert({
+        company_id: input.companyId,
+        vn_number: vnNumber,
         status: 'queued',
         category: input.category ?? 'manual',
         description,
         created_by: input.userId,
+        branch_id: input.branchId ?? null,
         source_case_report_id: input.sourceCaseReportId ?? null,
         source_store_audit_id: input.sourceStoreAuditId ?? null,
       })
@@ -631,16 +692,16 @@ export async function createViolationNotice(input: {
       })),
     );
 
-    await upsertParticipant(trx, created.id, input.userId, {
+    await upsertParticipant(created.id, input.userId, {
       is_joined: true,
       last_read_at: new Date(),
-    });
+    }, trx);
 
     await createSystemMessage(
-      trx,
       created.id,
       input.userId,
       `${userNames[input.userId] ?? 'Someone'} created this violation notice`,
+      trx,
     );
 
     return created as VNRow;
@@ -653,31 +714,29 @@ export async function createViolationNotice(input: {
     createdBy: vn.created_by,
   });
 
-  const [enriched] = await enrichViolationNotices(input.tenantDb, input.userId, [vn]);
+  const [enriched] = await enrichViolationNotices(input.userId, [vn]);
   return enriched;
 }
 
 export async function confirmViolationNotice(input: {
-  tenantDb: Knex;
   companyId: string;
   userId: string;
   vnId: string;
 }): Promise<ViolationNotice> {
-  const record = await getVNOrThrow(input.tenantDb, input.vnId);
+  const record = await getVNOrThrow(input.vnId);
   if (record.status !== 'queued') {
     throw new AppError(409, 'Violation notice must be in queued status to confirm');
   }
 
   const userNames = await resolveUserNames([input.userId]);
 
-  await input.tenantDb.transaction(async (trx) => {
+  await db.getDb().transaction(async (trx) => {
     await trx('violation_notices').where({ id: input.vnId }).update({
       status: 'discussion',
       confirmed_by: input.userId,
       updated_at: new Date(),
     });
     await createSystemMessage(
-      trx,
       input.vnId,
       input.userId,
       `${userNames[input.userId] ?? 'Someone'} confirmed this violation notice`,
@@ -689,19 +748,18 @@ export async function confirmViolationNotice(input: {
     status: 'discussion',
   });
 
-  const updated = await getVNOrThrow(input.tenantDb, input.vnId);
-  const [enriched] = await enrichViolationNotices(input.tenantDb, input.userId, [updated]);
+  const updated = await getVNOrThrow(input.vnId);
+  const [enriched] = await enrichViolationNotices(input.userId, [updated]);
   return enriched;
 }
 
 export async function rejectViolationNotice(input: {
-  tenantDb: Knex;
   companyId: string;
   userId: string;
   vnId: string;
   rejectionReason: string;
 }): Promise<ViolationNotice> {
-  const record = await getVNOrThrow(input.tenantDb, input.vnId);
+  const record = await getVNOrThrow(input.vnId);
   if (record.status !== 'queued' && record.status !== 'discussion') {
     throw new AppError(409, 'Violation notice must be in queued or discussion status to reject');
   }
@@ -709,7 +767,7 @@ export async function rejectViolationNotice(input: {
   const rejectionReason = ensureNonEmpty(input.rejectionReason, 'Rejection reason');
   const userNames = await resolveUserNames([input.userId]);
 
-  await input.tenantDb.transaction(async (trx) => {
+  await db.getDb().transaction(async (trx) => {
     await trx('violation_notices').where({ id: input.vnId }).update({
       status: 'rejected',
       rejected_by: input.userId,
@@ -717,7 +775,6 @@ export async function rejectViolationNotice(input: {
       updated_at: new Date(),
     });
     await createSystemMessage(
-      trx,
       input.vnId,
       input.userId,
       `${userNames[input.userId] ?? 'Someone'} rejected this violation notice: ${rejectionReason}`,
@@ -729,32 +786,30 @@ export async function rejectViolationNotice(input: {
     status: 'rejected',
   });
 
-  const updated = await getVNOrThrow(input.tenantDb, input.vnId);
-  const [enriched] = await enrichViolationNotices(input.tenantDb, input.userId, [updated]);
+  const updated = await getVNOrThrow(input.vnId);
+  const [enriched] = await enrichViolationNotices(input.userId, [updated]);
   return enriched;
 }
 
 export async function issueViolationNotice(input: {
-  tenantDb: Knex;
   companyId: string;
   userId: string;
   vnId: string;
 }): Promise<ViolationNotice> {
-  const record = await getVNOrThrow(input.tenantDb, input.vnId);
+  const record = await getVNOrThrow(input.vnId);
   if (record.status !== 'discussion') {
     throw new AppError(409, 'Violation notice must be in discussion status to issue');
   }
 
   const userNames = await resolveUserNames([input.userId]);
 
-  await input.tenantDb.transaction(async (trx) => {
+  await db.getDb().transaction(async (trx) => {
     await trx('violation_notices').where({ id: input.vnId }).update({
       status: 'issuance',
       issued_by: input.userId,
       updated_at: new Date(),
     });
     await createSystemMessage(
-      trx,
       input.vnId,
       input.userId,
       `${userNames[input.userId] ?? 'Someone'} issued this violation notice`,
@@ -766,20 +821,57 @@ export async function issueViolationNotice(input: {
     status: 'issuance',
   });
 
-  const updated = await getVNOrThrow(input.tenantDb, input.vnId);
-  const [enriched] = await enrichViolationNotices(input.tenantDb, input.userId, [updated]);
+  try {
+    await notifyViolationNoticeIssuanceTargets({
+      companyId: input.companyId,
+      vnId: input.vnId,
+      vnNumber: record.vn_number,
+    });
+  } catch (err) {
+    logger.error({ err, vnId: input.vnId }, "Failed to notify VN issuance to target users");
+  }
+
+  const updated = await getVNOrThrow(input.vnId);
+  const [enriched] = await enrichViolationNotices(input.userId, [updated]);
   return enriched;
 }
 
+async function notifyViolationNoticeIssuanceTargets(input: {
+  companyId: string;
+  vnId: string;
+  vnNumber: number;
+}): Promise<void> {
+  const targets = await db.getDb()("violation_notice_targets")
+    .where({ violation_notice_id: input.vnId })
+    .select("user_id");
+  if (targets.length === 0) return;
+
+  const vnLabel = `VN-${String(input.vnNumber).padStart(4, "0")}`;
+  const message =
+    `A Violation Notice (${vnLabel}) has been issued. Please review the details and wait for further instructions from HR regarding the disciplinary meeting.`;
+
+  await Promise.all(
+    targets.map(async (target: { user_id: unknown }) => {
+      await createAndDispatchNotification({
+        userId: String(target.user_id),
+        companyId: input.companyId,
+        title: "Official Violation Notice",
+        message,
+        type: "danger",
+        linkUrl: `/violation-notices?vnId=${input.vnId}`,
+      });
+    }),
+  );
+}
+
 export async function uploadIssuanceFile(input: {
-  tenantDb: Knex;
   companyId: string;
   userId: string;
   vnId: string;
   file: { buffer: Buffer; originalname: string; mimetype: string };
   companyStorageRoot: string;
 }): Promise<ViolationNotice> {
-  const record = await getVNOrThrow(input.tenantDb, input.vnId);
+  const record = await getVNOrThrow(input.vnId);
   if (record.status !== 'issuance') {
     throw new AppError(409, 'Violation notice must be in issuance status to upload an issuance file');
   }
@@ -801,14 +893,13 @@ export async function uploadIssuanceFile(input: {
 
   const userNames = await resolveUserNames([input.userId]);
 
-  await input.tenantDb.transaction(async (trx) => {
+  await db.getDb().transaction(async (trx) => {
     await trx('violation_notices').where({ id: input.vnId }).update({
       issuance_file_url: fileUrl,
       issuance_file_name: input.file.originalname,
       updated_at: new Date(),
     });
     await createSystemMessage(
-      trx,
       input.vnId,
       input.userId,
       `${userNames[input.userId] ?? 'Someone'} uploaded the issuance document`,
@@ -820,31 +911,29 @@ export async function uploadIssuanceFile(input: {
     field: 'issuance_file',
   });
 
-  const updated = await getVNOrThrow(input.tenantDb, input.vnId);
-  const [enriched] = await enrichViolationNotices(input.tenantDb, input.userId, [updated]);
+  const updated = await getVNOrThrow(input.vnId);
+  const [enriched] = await enrichViolationNotices(input.userId, [updated]);
   return enriched;
 }
 
 export async function confirmIssuance(input: {
-  tenantDb: Knex;
   companyId: string;
   userId: string;
   vnId: string;
 }): Promise<ViolationNotice> {
-  const record = await getVNOrThrow(input.tenantDb, input.vnId);
+  const record = await getVNOrThrow(input.vnId);
   if (record.status !== 'issuance') {
     throw new AppError(409, 'Violation notice must be in issuance status to confirm issuance');
   }
 
   const userNames = await resolveUserNames([input.userId]);
 
-  await input.tenantDb.transaction(async (trx) => {
+  await db.getDb().transaction(async (trx) => {
     await trx('violation_notices').where({ id: input.vnId }).update({
       status: 'disciplinary_meeting',
       updated_at: new Date(),
     });
     await createSystemMessage(
-      trx,
       input.vnId,
       input.userId,
       `${userNames[input.userId] ?? 'Someone'} confirmed issuance, starting disciplinary meeting`,
@@ -856,20 +945,19 @@ export async function confirmIssuance(input: {
     status: 'disciplinary_meeting',
   });
 
-  const updated = await getVNOrThrow(input.tenantDb, input.vnId);
-  const [enriched] = await enrichViolationNotices(input.tenantDb, input.userId, [updated]);
+  const updated = await getVNOrThrow(input.vnId);
+  const [enriched] = await enrichViolationNotices(input.userId, [updated]);
   return enriched;
 }
 
 export async function uploadDisciplinaryFile(input: {
-  tenantDb: Knex;
   companyId: string;
   userId: string;
   vnId: string;
   file: { buffer: Buffer; originalname: string; mimetype: string };
   companyStorageRoot: string;
 }): Promise<ViolationNotice> {
-  const record = await getVNOrThrow(input.tenantDb, input.vnId);
+  const record = await getVNOrThrow(input.vnId);
   if (record.status !== 'disciplinary_meeting') {
     throw new AppError(409, 'Violation notice must be in disciplinary_meeting status to upload a disciplinary file');
   }
@@ -891,14 +979,13 @@ export async function uploadDisciplinaryFile(input: {
 
   const userNames = await resolveUserNames([input.userId]);
 
-  await input.tenantDb.transaction(async (trx) => {
+  await db.getDb().transaction(async (trx) => {
     await trx('violation_notices').where({ id: input.vnId }).update({
       disciplinary_file_url: fileUrl,
       disciplinary_file_name: input.file.originalname,
       updated_at: new Date(),
     });
     await createSystemMessage(
-      trx,
       input.vnId,
       input.userId,
       `${userNames[input.userId] ?? 'Someone'} uploaded the disciplinary meeting proof`,
@@ -910,56 +997,49 @@ export async function uploadDisciplinaryFile(input: {
     field: 'disciplinary_file',
   });
 
-  const updated = await getVNOrThrow(input.tenantDb, input.vnId);
-  const [enriched] = await enrichViolationNotices(input.tenantDb, input.userId, [updated]);
+  const updated = await getVNOrThrow(input.vnId);
+  const [enriched] = await enrichViolationNotices(input.userId, [updated]);
   return enriched;
 }
 
-async function appendViolationNoticeToTargetUsers(input: {
-  tenantDb: Knex;
+async function notifyViolationNoticeCompletionTargets(input: {
   companyId: string;
   vnId: string;
   vnNumber: number;
-  description: string;
-  completedAt: Date;
   epiDecrease: number;
 }): Promise<void> {
-  const targets = await input.tenantDb('violation_notice_targets')
+  const targets = await db.getDb()('violation_notice_targets')
     .where({ violation_notice_id: input.vnId })
     .select('user_id');
   if (targets.length === 0) return;
 
-  const masterDb = db.getMasterDb();
-  const entry = JSON.stringify([{
-    vn_id: input.vnId,
-    vn_number: input.vnNumber,
-    company_id: input.companyId,
-    description: input.description,
-    completed_at: input.completedAt.toISOString(),
-    epi_decrease: input.epiDecrease,
-  }]);
+  const vnLabel = `VN-${String(input.vnNumber).padStart(4, '0')}`;
+  const epiMessage =
+    input.epiDecrease > 0
+      ? ` EPI decrease: ${input.epiDecrease.toFixed(1)} will be applied at the next EPI calculation.`
+      : "";
 
-  for (const target of targets) {
-    await masterDb('users')
-      .where({ id: target.user_id })
-      .update({
-        violation_notices: masterDb.raw(
-          `COALESCE(violation_notices, '[]'::jsonb) || ?::jsonb`,
-          [entry],
-        ),
-        updated_at: new Date(),
+  await Promise.all(
+    targets.map(async (target: { user_id: unknown }) => {
+      await createAndDispatchNotification({
+        userId: String(target.user_id),
+        companyId: input.companyId,
+        title: "Violation Notice Completed",
+        message: `Violation Notice ${vnLabel} has been completed.${epiMessage ? ` ${epiMessage}` : ""}`,
+        type: input.epiDecrease > 0 ? 'warning' : 'info',
+        linkUrl: `/violation-notices?vnId=${input.vnId}`,
       });
-  }
+    }),
+  );
 }
 
 export async function completeViolationNotice(input: {
-  tenantDb: Knex;
   companyId: string;
   userId: string;
   vnId: string;
   epiDecrease: number;
 }): Promise<ViolationNotice> {
-  const record = await getVNOrThrow(input.tenantDb, input.vnId);
+  const record = await getVNOrThrow(input.vnId);
   if (record.status !== 'disciplinary_meeting') {
     throw new AppError(409, 'Violation notice must be in disciplinary_meeting status to complete');
   }
@@ -967,7 +1047,7 @@ export async function completeViolationNotice(input: {
   const userNames = await resolveUserNames([input.userId]);
   const completedAt = new Date();
 
-  await input.tenantDb.transaction(async (trx) => {
+  await db.getDb().transaction(async (trx) => {
     await trx('violation_notices').where({ id: input.vnId }).update({
       status: 'completed',
       completed_by: input.userId,
@@ -975,7 +1055,6 @@ export async function completeViolationNotice(input: {
       updated_at: completedAt,
     });
     await createSystemMessage(
-      trx,
       input.vnId,
       input.userId,
       `${userNames[input.userId] ?? 'Someone'} completed this violation notice`,
@@ -988,26 +1067,22 @@ export async function completeViolationNotice(input: {
   });
 
   try {
-    await appendViolationNoticeToTargetUsers({
-      tenantDb: input.tenantDb,
+    await notifyViolationNoticeCompletionTargets({
       companyId: input.companyId,
       vnId: input.vnId,
       vnNumber: record.vn_number,
-      description: record.description,
-      completedAt,
       epiDecrease: input.epiDecrease,
     });
   } catch (err) {
-    logger.error({ err, vnId: input.vnId }, 'Failed to append VN to target users in master DB');
+    logger.error({ err, vnId: input.vnId }, 'Failed to notify VN completion to target users');
   }
 
-  const updated = await getVNOrThrow(input.tenantDb, input.vnId);
-  const [enriched] = await enrichViolationNotices(input.tenantDb, input.userId, [updated]);
+  const updated = await getVNOrThrow(input.vnId);
+  const [enriched] = await enrichViolationNotices(input.userId, [updated]);
   return enriched;
 }
 
 export async function sendMessage(input: {
-  tenantDb: Knex;
   companyId: string;
   companyStorageRoot: string;
   userId: string;
@@ -1018,7 +1093,7 @@ export async function sendMessage(input: {
   mentionedRoleIds: string[];
   files: Array<{ buffer: Buffer; originalname: string; mimetype: string; size: number }>;
 }): Promise<ViolationNoticeMessage> {
-  await getVNOrThrow(input.tenantDb, input.vnId);
+  await getVNOrThrow(input.vnId);
 
   if (!input.content?.trim() && input.files.length === 0) {
     throw new AppError(400, 'Message must have content or at least one attachment');
@@ -1029,12 +1104,12 @@ export async function sendMessage(input: {
     throw new AppError(400, 'Unsupported attachment type');
   }
 
-  const vn = await getVNOrThrow(input.tenantDb, input.vnId);
+  const vn = await getVNOrThrow(input.vnId);
   const vnNumberPadded = String(vn.vn_number).padStart(4, '0');
 
   let messageId = '';
-  await input.tenantDb.transaction(async (trx) => {
-    await upsertParticipant(trx, input.vnId, input.userId, {
+  await db.getDb().transaction(async (trx) => {
+    await upsertParticipant(input.vnId, input.userId, {
       is_joined: true,
       last_read_at: new Date(),
     });
@@ -1090,7 +1165,6 @@ export async function sendMessage(input: {
   });
 
   await maybeNotifyMentionedUsers({
-    tenantDb: input.tenantDb,
     companyId: input.companyId,
     vnId: input.vnId,
     messageId,
@@ -1099,7 +1173,7 @@ export async function sendMessage(input: {
     mentionedRoleIds: input.mentionedRoleIds,
   });
 
-  const messages = await buildVNMessageList(input.tenantDb, input.vnId);
+  const messages = await buildVNMessageList(input.vnId);
   const found = messages.find((m) => m.id === messageId);
   if (!found) throw new AppError(500, 'Failed to load saved message');
 
@@ -1112,7 +1186,6 @@ export async function sendMessage(input: {
 }
 
 export async function editMessage(input: {
-  tenantDb: Knex;
   companyId: string;
   userId: string;
   vnId: string;
@@ -1120,18 +1193,18 @@ export async function editMessage(input: {
   content: string;
 }): Promise<ViolationNoticeMessage> {
   const content = ensureNonEmpty(input.content, 'Message content');
-  const message = await input.tenantDb('violation_notice_messages')
+  const message = await db.getDb()('violation_notice_messages')
     .where({ id: input.messageId, violation_notice_id: input.vnId })
     .first() as VNMessageRow | undefined;
   if (!message) throw new AppError(404, 'Message not found');
   if (message.type === 'system') throw new AppError(400, 'Cannot edit system messages');
   if (message.user_id !== input.userId) throw new AppError(403, 'You can only edit your own messages');
 
-  await input.tenantDb('violation_notice_messages')
+  await db.getDb()('violation_notice_messages')
     .where({ id: input.messageId })
     .update({ content, updated_at: new Date() });
 
-  const messages = await buildVNMessageList(input.tenantDb, input.vnId);
+  const messages = await buildVNMessageList(input.vnId);
   const updated = messages.find((m) => m.id === input.messageId);
   if (!updated) throw new AppError(500, 'Failed to retrieve updated message');
 
@@ -1144,14 +1217,13 @@ export async function editMessage(input: {
 }
 
 export async function deleteMessage(input: {
-  tenantDb: Knex;
   companyId: string;
   userId: string;
   vnId: string;
   messageId: string;
   permissions: string[];
 }): Promise<void> {
-  const message = await input.tenantDb('violation_notice_messages')
+  const message = await db.getDb()('violation_notice_messages')
     .where({ id: input.messageId, violation_notice_id: input.vnId })
     .first() as VNMessageRow | undefined;
   if (!message) throw new AppError(404, 'Message not found');
@@ -1161,14 +1233,14 @@ export async function deleteMessage(input: {
   const canManage = input.permissions.includes(PERMISSIONS.VIOLATION_NOTICE_MANAGE);
   if (!isOwn && !canManage) throw new AppError(403, 'Permission denied');
 
-  const attachments = await input.tenantDb('violation_notice_attachments')
+  const attachments = await db.getDb()('violation_notice_attachments')
     .where({ message_id: input.messageId })
     .select('file_url') as { file_url: string }[];
 
   const userNames = await resolveUserNames([input.userId]);
   const deleterName = userNames[input.userId] ?? 'Someone';
 
-  await input.tenantDb.transaction(async (trx) => {
+  await db.getDb().transaction(async (trx) => {
     await trx('violation_notice_messages').where({ id: input.messageId }).update({
       content: `${deleterName} deleted this message`,
       is_deleted: true,
@@ -1187,7 +1259,6 @@ export async function deleteMessage(input: {
 }
 
 export async function toggleReaction(input: {
-  tenantDb: Knex;
   companyId: string;
   userId: string;
   vnId: string;
@@ -1195,26 +1266,26 @@ export async function toggleReaction(input: {
   emoji: string;
 }): Promise<{ messageId: string; reactions: ViolationNoticeReaction[] }> {
   ensureNonEmpty(input.emoji, 'Emoji');
-  const message = await input.tenantDb('violation_notice_messages')
+  const message = await db.getDb()('violation_notice_messages')
     .where({ id: input.messageId, violation_notice_id: input.vnId })
     .first();
   if (!message) throw new AppError(404, 'Message not found');
 
-  const existing = await input.tenantDb('violation_notice_reactions')
+  const existing = await db.getDb()('violation_notice_reactions')
     .where({ message_id: input.messageId, user_id: input.userId, emoji: input.emoji })
     .first();
 
   if (existing) {
-    await input.tenantDb('violation_notice_reactions').where({ id: existing.id }).delete();
+    await db.getDb()('violation_notice_reactions').where({ id: existing.id }).delete();
   } else {
-    await input.tenantDb('violation_notice_reactions').insert({
+    await db.getDb()('violation_notice_reactions').insert({
       message_id: input.messageId,
       user_id: input.userId,
       emoji: input.emoji,
     });
   }
 
-  const { reactionsByMessage } = await resolveMessageDecorations(input.tenantDb, [input.messageId]);
+  const { reactionsByMessage } = await resolveMessageDecorations([input.messageId]);
   const reactions = reactionsByMessage.get(input.messageId) ?? [];
 
   emitVNEvent(input.companyId, 'violation-notice:reaction', {
@@ -1227,12 +1298,11 @@ export async function toggleReaction(input: {
 }
 
 export async function leaveDiscussion(input: {
-  tenantDb: Knex;
   userId: string;
   vnId: string;
 }): Promise<{ is_joined: boolean }> {
-  await getVNOrThrow(input.tenantDb, input.vnId);
-  await upsertParticipant(input.tenantDb, input.vnId, input.userId, {
+  await getVNOrThrow(input.vnId);
+  await upsertParticipant(input.vnId, input.userId, {
     is_joined: false,
     last_read_at: new Date(),
   });
@@ -1240,17 +1310,16 @@ export async function leaveDiscussion(input: {
 }
 
 export async function toggleMute(input: {
-  tenantDb: Knex;
   userId: string;
   vnId: string;
 }): Promise<{ is_muted: boolean }> {
-  await getVNOrThrow(input.tenantDb, input.vnId);
-  const existing = await input.tenantDb('violation_notice_participants')
+  await getVNOrThrow(input.vnId);
+  const existing = await db.getDb()('violation_notice_participants')
     .where({ violation_notice_id: input.vnId, user_id: input.userId })
     .first();
   const nextMuted = !(existing?.is_muted ?? false);
 
-  await upsertParticipant(input.tenantDb, input.vnId, input.userId, {
+  await upsertParticipant(input.vnId, input.userId, {
     is_joined: existing?.is_joined ?? true,
     is_muted: nextMuted,
   });
@@ -1259,13 +1328,12 @@ export async function toggleMute(input: {
 }
 
 export async function markVNRead(input: {
-  tenantDb: Knex;
   userId: string;
   vnId: string;
 }): Promise<{ last_read_at: string }> {
-  await getVNOrThrow(input.tenantDb, input.vnId);
+  await getVNOrThrow(input.vnId);
   const now = new Date();
-  await upsertParticipant(input.tenantDb, input.vnId, input.userId, {
+  await upsertParticipant(input.vnId, input.userId, {
     is_joined: true,
     last_read_at: now,
   });
@@ -1273,11 +1341,10 @@ export async function markVNRead(input: {
 }
 
 export async function listVNMessages(input: {
-  tenantDb: Knex;
   vnId: string;
 }): Promise<ViolationNoticeMessage[]> {
-  await getVNOrThrow(input.tenantDb, input.vnId);
-  return buildVNMessageList(input.tenantDb, input.vnId);
+  await getVNOrThrow(input.vnId);
+  return buildVNMessageList(input.vnId);
 }
 
 export async function getMentionables(input: {
@@ -1288,7 +1355,7 @@ export async function getMentionables(input: {
 }> {
   const [users, roles] = await Promise.all([
     resolveCompanyUsers(input.companyId),
-    db.getMasterDb()('roles').select('id', 'name', 'color').orderBy('priority', 'desc').orderBy('name', 'asc'),
+    db.getDb()('roles').select('id', 'name', 'color').orderBy('priority', 'desc').orderBy('name', 'asc'),
   ]);
 
   return {
@@ -1302,46 +1369,74 @@ export async function getMentionables(input: {
 }
 
 export async function getGroupedUsersForVN(input: {
-  companyId: string;
+  companyId?: string;
+  includeAllCompanies?: boolean;
 }): Promise<GroupedUsersResponse> {
-  const masterDb = db.getMasterDb();
+  const masterDb = db.getDb();
 
-  const [userRows, superAdminRows] = await Promise.all([
-    masterDb('user_company_access as uca')
-      .join('users', 'uca.user_id', 'users.id')
-      .where('uca.company_id', input.companyId)
-      .andWhere('uca.is_active', true)
-      .andWhere('users.is_active', true)
-      .select('users.id', 'users.email', 'users.first_name', 'users.last_name', 'users.avatar_url'),
-    masterDb('super_admins').select('email'),
-  ]);
+  type UserRow = {
+    id: string;
+    email: string;
+    first_name: string | null;
+    last_name: string | null;
+    avatar_url: string | null;
+  };
 
-  const superAdminEmails = new Set(superAdminRows.map((row: any) => String(row.email).toLowerCase()));
+  type SuperAdminRow = {
+    email: string;
+  };
 
-  const filteredUsers = (userRows as any[]).filter(
-    (row) => !superAdminEmails.has(String(row.email).toLowerCase()),
-  );
+  type UserRoleRow = {
+    user_id: string;
+    name: string;
+    priority: number;
+  };
+
+  if (!input.includeAllCompanies && !input.companyId) {
+    throw new AppError(400, 'companyId is required unless includeAllCompanies is enabled');
+  }
+
+  const [userRows, superAdminRows] = input.includeAllCompanies
+    ? await Promise.all([
+      masterDb('users')
+        .where('users.is_active', true)
+        .select('users.id', 'users.email', 'users.first_name', 'users.last_name', 'users.avatar_url'),
+      masterDb('super_admins').select('email'),
+    ])
+    : await Promise.all([
+      masterDb('user_company_access as uca')
+        .join('users', 'uca.user_id', 'users.id')
+        .where('uca.company_id', input.companyId)
+        .andWhere('uca.is_active', true)
+        .andWhere('users.is_active', true)
+        .select('users.id', 'users.email', 'users.first_name', 'users.last_name', 'users.avatar_url'),
+      masterDb('super_admins').select('email'),
+    ]);
+
+  const typedUserRows = userRows as UserRow[];
+  const typedSuperAdmins = superAdminRows as SuperAdminRow[];
+  const superAdminEmails = new Set(typedSuperAdmins.map((row) => String(row.email).toLowerCase()));
+
+  const filteredUsers = typedUserRows.filter((row) => !superAdminEmails.has(String(row.email).toLowerCase()));
 
   if (filteredUsers.length === 0) {
     return { management: [], service_crew: [], other: [] };
   }
 
-  const userIds = filteredUsers.map((row: any) => String(row.id));
+  const userIds = filteredUsers.map((row) => String(row.id));
 
   // Fetch highest-priority role for each user
-  const userRoleRows = await masterDb('user_roles as ur')
+  const userRoleRows = (await masterDb('user_roles as ur')
     .join('roles as r', 'ur.role_id', 'r.id')
     .whereIn('ur.user_id', userIds)
     .select('ur.user_id', 'r.name', 'r.priority')
-    .orderBy('r.priority', 'desc');
+    .orderBy('r.priority', 'desc')) as UserRoleRow[];
 
   // Build a map of userId → highest-priority role name
   const userTopRoleMap = new Map<string, string>();
-  for (const row of userRoleRows as any[]) {
+  for (const row of userRoleRows) {
     const userId = String(row.user_id);
-    if (!userTopRoleMap.has(userId)) {
-      userTopRoleMap.set(userId, String(row.name));
-    }
+    if (!userTopRoleMap.has(userId)) userTopRoleMap.set(userId, String(row.name));
   }
 
   const management: GroupedUsersResponse['management'] = [];

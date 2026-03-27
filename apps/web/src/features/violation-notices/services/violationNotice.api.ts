@@ -29,6 +29,7 @@ export async function getViolationNotice(vnId: string): Promise<ViolationNoticeD
 export async function createViolationNotice(payload: {
   description: string;
   targetUserIds: string[];
+  branchId: string | null;
 }): Promise<ViolationNotice> {
   const response = await api.post('/violation-notices', payload);
   return response.data.data as ViolationNotice;
@@ -153,9 +154,14 @@ export async function getVNMentionables(): Promise<{
   };
 }
 
-export async function getGroupedUsers(auditId?: string): Promise<GroupedUsersResponse> {
+export async function getGroupedUsers(params?: {
+  auditId?: string;
+  companyId?: string;
+  caseId?: string;
+  allCompanies?: boolean;
+}): Promise<GroupedUsersResponse> {
   const response = await api.get('/violation-notices/grouped-users', {
-    params: auditId ? { auditId } : undefined,
+    params: params ?? undefined,
   });
   return response.data.data as GroupedUsersResponse;
 }

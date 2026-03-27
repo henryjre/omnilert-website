@@ -7,45 +7,88 @@ import type {
   StoreAuditType,
   GroupedUsersResponse,
   ListStoreAuditsResponse,
-  ViolationNotice,
 } from '@omnilert/shared';
 import { PERMISSIONS } from '@omnilert/shared';
-import { ClipboardList, LayoutGrid, ShieldCheck, Star, X } from 'lucide-react';
-import { Badge } from '@/shared/components/ui/Badge';
-import { Card, CardBody } from '@/shared/components/ui/Card';
-import { Spinner } from '@/shared/components/ui/Spinner';
+import { CheckCircle, ClipboardList, Clock, LayoutGrid, Loader2, ShieldCheck, Star, X } from 'lucide-react';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useSocket } from '@/shared/hooks/useSocket';
 import { useAppToast } from '@/shared/hooks/useAppToast';
 import { api } from '@/shared/services/api.client';
 import { useAuthStore } from '@/features/auth/store/authSlice';
+import { useBranchStore } from '@/shared/store/branchStore';
 import { getGroupedUsers } from '@/features/violation-notices/services/violationNotice.api';
 import { RequestVNModal } from '@/features/violation-notices/components/RequestVNModal';
 import { CssAuditCard } from '../components/CssAuditCard';
 import { ComplianceAuditCard } from '../components/ComplianceAuditCard';
 import { CssAuditDetailPanel } from '../components/CssAuditDetailPanel';
 import { ComplianceAuditDetailPanel } from '../components/ComplianceAuditDetailPanel';
-import { StoreAuditPaginationFooter } from '../components/StoreAuditPaginationFooter';
+import { Pagination } from '../../../shared/components/ui/Pagination';
 import { resolveStoreAuditPaginationState } from './storeAuditPagination';
 
 type CategoryTab = 'all' | StoreAuditType;
 const PAGE_SIZE = 10;
 
-function statusBadge(status: StoreAuditStatus) {
-  if (status === 'completed') return 'success' as const;
-  if (status === 'processing') return 'info' as const;
-  return 'warning' as const;
+const STATUS_TABS: { key: StoreAuditStatus; label: string; Icon: React.ElementType }[] = [
+  { key: 'pending', label: 'Pending', Icon: Clock },
+  { key: 'processing', label: 'Processing', Icon: Loader2 },
+  { key: 'completed', label: 'Completed', Icon: CheckCircle },
+];
+
+function StoreAuditsSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="animate-pulse space-y-2">
+        <div className="flex items-center gap-3">
+          <div className="h-6 w-6 rounded-full bg-gray-200" />
+          <div className="h-7 w-48 rounded bg-gray-200" />
+        </div>
+      </div>
+      <div className="flex gap-1 border-b border-gray-200 pb-px">
+        {[80, 120, 112].map((w, i) => (
+          <div key={i} style={{ width: w }} className="h-8 animate-pulse rounded-t bg-gray-100" />
+        ))}
+      </div>
+      <div className="flex gap-1 border-b border-gray-200 pb-px">
+        {[72, 96, 96].map((w, i) => (
+          <div key={i} style={{ width: w }} className="h-6 animate-pulse rounded-t bg-gray-100" />
+        ))}
+      </div>
+      <div className="flex flex-col gap-2">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="animate-pulse rounded-xl border border-gray-200 bg-white p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 space-y-1.5">
+                <div className="h-4 w-24 rounded bg-gray-200" />
+                <div className="h-3.5 w-36 rounded bg-gray-200" />
+              </div>
+              <div className="h-5 w-16 rounded-full bg-gray-200" />
+            </div>
+            <div className="mt-2 space-y-1">
+              <div className="h-3 w-28 rounded bg-gray-100" />
+              <div className="h-3 w-20 rounded bg-gray-100" />
+            </div>
+            <div className="mt-6 flex items-center justify-between border-t border-gray-100 pt-2.5">
+              <div className="h-3 w-24 rounded bg-gray-200" />
+              <div className="h-4 w-4 rounded bg-gray-200" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export function StoreAuditsPage() {
   const socket = useSocket('/store-audits');
-  const { hasPermission } = usePermission();
+  const { hasAnyPermission, hasPermission } = usePermission();
   const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const currentUserId = useAuthStore((state) => state.user?.id ?? null);
-  const canProcessAudit = hasPermission(PERMISSIONS.STORE_AUDIT_PROCESS);
-  const canRequestVN = hasPermission(PERMISSIONS.VIOLATION_NOTICE_CREATE);
+  const selectedBranchIds = useBranchStore((s) => s.selectedBranchIds);
+  const canProcessAudit = hasPermission(PERMISSIONS.STORE_AUDIT_MANAGE);
+  const canRequestVN = hasAnyPermission(PERMISSIONS.STORE_AUDIT_MANAGE, PERMISSIONS.VIOLATION_NOTICE_MANAGE);
   const [searchParams, setSearchParams] = useSearchParams();
   const initialAuditIdRef = useRef<string | null>(searchParams.get('auditId'));
+  const groupedUsersReqIdRef = useRef(0);
 
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -65,6 +108,7 @@ export function StoreAuditsPage() {
   const [showRequestVNModal, setShowRequestVNModal] = useState(false);
   const [groupedUsers, setGroupedUsers] = useState<GroupedUsersResponse | null>(null);
   const [loadingGroupedUsers, setLoadingGroupedUsers] = useState(false);
+  const [pendingCounts, setPendingCounts] = useState<{ all: number; customer_service: number; compliance: number }>({ all: 0, customer_service: 0, compliance: 0 });
 
   const paginationState = useMemo(
     () => resolveStoreAuditPaginationState({ page, pageSize, total }),
@@ -120,6 +164,32 @@ export function StoreAuditsPage() {
     void fetchAudits();
   }, [fetchAudits]);
 
+  const fetchPendingCounts = useCallback(async () => {
+    try {
+      const res = await api.get('/store-audits', { params: { status: 'pending', page: 1, pageSize: 1000 } });
+      const items: StoreAudit[] = (res.data.data as ListStoreAuditsResponse).items ?? [];
+      const branchIdSet = new Set(selectedBranchIds);
+      const visible = branchIdSet.size === 0 ? items : items.filter((a) => branchIdSet.has(a.branch_id));
+      setPendingCounts({
+        all: visible.length,
+        customer_service: visible.filter((a) => a.type === 'customer_service').length,
+        compliance: visible.filter((a) => a.type === 'compliance').length,
+      });
+    } catch {
+      // silently ignore — counts are supplementary
+    }
+  }, [selectedBranchIds]);
+
+  useEffect(() => {
+    void fetchPendingCounts();
+  }, [fetchPendingCounts]);
+
+  // Reset page and close detail panel when branch selection changes
+  useEffect(() => {
+    setPage(1);
+    setSelectedAuditId(null);
+  }, [selectedBranchIds]);
+
   useEffect(() => {
     if (!selectedAuditId) {
       setSelectedAuditFallback(null);
@@ -171,10 +241,19 @@ export function StoreAuditsPage() {
     if (!canRequestVN || !showRequestVNModal || !selectedAudit) return;
     setGroupedUsers(null);
     setLoadingGroupedUsers(true);
-    getGroupedUsers(selectedAudit.id)
-      .then(setGroupedUsers)
+    const requestId = groupedUsersReqIdRef.current + 1;
+    groupedUsersReqIdRef.current = requestId;
+
+    void getGroupedUsers({ auditId: selectedAudit.id })
+      .then((data) => {
+        if (groupedUsersReqIdRef.current !== requestId) return;
+        setGroupedUsers(data);
+      })
       .catch(() => undefined)
-      .finally(() => setLoadingGroupedUsers(false));
+      .finally(() => {
+        if (groupedUsersReqIdRef.current !== requestId) return;
+        setLoadingGroupedUsers(false);
+      });
   }, [canRequestVN, selectedAudit, showRequestVNModal]);
 
   useEffect(() => {
@@ -182,9 +261,11 @@ export function StoreAuditsPage() {
 
     const refresh = () => {
       void fetchAudits({ silent: true });
+      void fetchPendingCounts();
     };
     const refreshUpdated = (payload: { id?: string }) => {
       void fetchAudits({ silent: true });
+      void fetchPendingCounts();
       if (payload.id && payload.id === selectedAuditId) {
         setAudits((prev) =>
           prev.map((a) => (a.id === payload.id ? { ...a, vn_requested: true } : a)),
@@ -206,7 +287,7 @@ export function StoreAuditsPage() {
       socket.off('store-audit:completed', refresh);
       socket.off('store-audit:updated', refreshUpdated);
     };
-  }, [socket, fetchAudits]);
+  }, [socket, fetchAudits, fetchPendingCounts]);
 
   const handleProcess = async (auditId: string) => {
     setActionLoading(true);
@@ -214,6 +295,7 @@ export function StoreAuditsPage() {
       await api.post(`/store-audits/${auditId}/process`);
       showSuccessToast('Audit moved to processing.');
       await fetchAudits({ silent: true });
+      void fetchPendingCounts();
     } catch (err: any) {
       showErrorToast(err.response?.data?.error || 'Failed to process audit');
     } finally {
@@ -232,6 +314,7 @@ export function StoreAuditsPage() {
       await api.post(`/store-audits/${auditId}/complete`, payload);
       showSuccessToast('Audit completed successfully.');
       await fetchAudits({ silent: true });
+      void fetchPendingCounts();
     } catch (err: any) {
       showErrorToast(err.response?.data?.error || 'Failed to complete audit');
     } finally {
@@ -241,7 +324,7 @@ export function StoreAuditsPage() {
 
   const canClaimAudit = canProcessAudit && processingAuditId === null;
 
-  const handleVNCreated = (_vn: ViolationNotice) => {
+  const handleVNCreated = () => {
     setShowRequestVNModal(false);
     if (selectedAuditId) {
       setAudits((prev) =>
@@ -257,27 +340,44 @@ export function StoreAuditsPage() {
   const currentPage = paginationState.page;
   const totalPages = paginationState.totalPages;
 
+  const categoryLabel = category === 'all'
+    ? 'all audits'
+    : category === 'customer_service'
+      ? 'customer service audits'
+      : 'compliance audits';
+  const activeCategoryLabel = category === 'all'
+    ? 'All Categories'
+    : category === 'customer_service'
+      ? 'Customer Service'
+      : 'Compliance';
+
+  /** Client-side branch filter — mirrors the CashRequestsTab pattern */
+  const selectedBranchIdSet = useMemo(() => new Set(selectedBranchIds), [selectedBranchIds]);
+  const filteredAudits = useMemo(
+    () => selectedBranchIdSet.size === 0
+      ? audits
+      : audits.filter((a) => selectedBranchIdSet.has(a.branch_id)),
+    [audits, selectedBranchIdSet],
+  );
+
   return (
     <>
       <div className="space-y-5">
+        {/* Header */}
         <div>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <ClipboardList className="h-6 w-6 text-primary-600" />
-              <h1 className="text-2xl font-bold text-gray-900">Store Audits</h1>
-            </div>
-            <Badge variant={statusBadge(status)}>{total} {status}</Badge>
+          <div className="flex items-center gap-2">
+            <ClipboardList className="h-6 w-6 text-primary-600" />
+            <h1 className="text-2xl font-bold text-gray-900">Store Audits</h1>
           </div>
-          <p className="mt-1 text-sm font-medium text-gray-600 sm:hidden">
-            {category === 'all' ? 'All Categories' : category === 'customer_service' ? 'Customer Service Audit' : 'Compliance Audit'}
-          </p>
+          <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">{activeCategoryLabel}</p>
         </div>
 
+        {/* Category tabs */}
         <div className="flex justify-center gap-1 border-b border-gray-200 sm:justify-start">
           {([
             { key: 'all', label: 'All Categories', icon: LayoutGrid },
-            { key: 'customer_service', label: 'Customer Service Audit', icon: Star },
-            { key: 'compliance', label: 'Compliance Audit', icon: ShieldCheck },
+            { key: 'customer_service', label: 'Customer Service', icon: Star },
+            { key: 'compliance', label: 'Compliance', icon: ShieldCheck },
           ] as const).map((tab) => (
             <button
               key={tab.key}
@@ -295,83 +395,90 @@ export function StoreAuditsPage() {
             >
               <tab.icon className="h-4 w-4" />
               <span className="hidden sm:inline">{tab.label}</span>
+              {pendingCounts[tab.key] > 0 && (
+                <span className="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary-600 px-1 text-[9px] font-bold text-white">
+                  {pendingCounts[tab.key]}
+                </span>
+              )}
             </button>
           ))}
         </div>
 
-        <div className="mx-auto flex w-full items-center justify-center gap-1 rounded-lg bg-gray-100 p-1 sm:mx-0 sm:w-fit sm:justify-start">
-          {(['pending', 'processing', 'completed'] as const).map((tab) => (
+        {/* Status tabs */}
+        <div className="flex w-full gap-1 border-b border-gray-200">
+          {STATUS_TABS.map((tab) => (
             <button
-              key={tab}
+              key={tab.key}
               type="button"
               onClick={() => {
-                setStatus(tab);
+                setStatus(tab.key);
                 setPage(1);
                 setSelectedAuditId(null);
               }}
-              className={`flex-1 rounded-md px-4 py-1.5 text-center text-sm font-medium capitalize transition-colors sm:flex-none ${
-                status === tab
-                  ? 'bg-primary-600 text-white shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
+              className={`flex flex-1 items-center justify-center gap-1.5 border-b-2 px-3 py-1.5 text-xs font-medium transition-colors sm:flex-none ${
+                status === tab.key
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
               }`}
             >
-              {tab}
+              <tab.Icon className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{tab.label}</span>
             </button>
           ))}
         </div>
 
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <Spinner size="lg" />
-          </div>
-        ) : total === 0 ? (
-          <Card>
-            <CardBody className="py-12 text-center">
-              <p className="text-sm text-gray-500">No audits found for the selected filters.</p>
-            </CardBody>
-          </Card>
-        ) : (
-          <div className="space-y-3">
-            {audits.map((audit) => (
-              audit.type === 'customer_service' ? (
-                <CssAuditCard
-                  key={audit.id}
-                  audit={audit}
-                  selected={audit.id === selectedAuditId}
-                  onSelect={() => {
-                    setSelectedAuditId(audit.id);
-                  }}
-                />
-              ) : (
-                <ComplianceAuditCard
-                  key={audit.id}
-                  audit={audit}
-                  selected={audit.id === selectedAuditId}
-                  onSelect={() => {
-                    setSelectedAuditId(audit.id);
-                  }}
-                />
-              )
-            ))}
+        {/* Content */}
+        <div className="space-y-4">
+          {loading ? (
+            <StoreAuditsSkeleton />
+          ) : total === 0 || filteredAudits.length === 0 ? (
+            <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3.5">
+              {category === 'customer_service'
+                ? <Star className="h-4 w-4 shrink-0 text-gray-300" />
+                : category === 'compliance'
+                  ? <ShieldCheck className="h-4 w-4 shrink-0 text-gray-300" />
+                  : <ClipboardList className="h-4 w-4 shrink-0 text-gray-300" />
+              }
+              <p className="text-sm text-gray-400">
+                No {status} {categoryLabel}.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-col gap-2">
+                {filteredAudits.map((audit) => (
+                  audit.type === 'customer_service' ? (
+                    <CssAuditCard
+                      key={audit.id}
+                      audit={audit}
+                      selected={audit.id === selectedAuditId}
+                      onSelect={() => setSelectedAuditId(audit.id)}
+                    />
+                  ) : (
+                    <ComplianceAuditCard
+                      key={audit.id}
+                      audit={audit}
+                      selected={audit.id === selectedAuditId}
+                      onSelect={() => setSelectedAuditId(audit.id)}
+                    />
+                  )
+                ))}
+              </div>
 
-            {totalPages > 1 && (
-              <StoreAuditPaginationFooter
+              <Pagination
                 currentPage={currentPage}
                 totalPages={totalPages}
-                onPrevious={() => {
-                  setPage(Math.max(1, currentPage - 1));
-                  setSelectedAuditId(null);
-                }}
-                onNext={() => {
-                  setPage(Math.min(totalPages, currentPage + 1));
+                onPageChange={(p) => {
+                  setPage(p);
                   setSelectedAuditId(null);
                 }}
               />
-            )}
-          </div>
-        )}
+            </>
+          )}
+        </div>
       </div>
 
+      {/* Backdrop */}
       {(selectedAudit || actionLoading) && (
         <div
           className="fixed inset-0 z-40 bg-black/30"
@@ -379,8 +486,9 @@ export function StoreAuditsPage() {
         />
       )}
 
+      {/* Detail panel */}
       <div
-        className={`fixed inset-y-0 right-0 z-50 w-full max-w-[680px] transform overflow-y-auto bg-white shadow-2xl transition-transform duration-300 ${
+        className={`fixed inset-y-0 right-0 z-50 w-full max-w-[680px] transform overflow-hidden bg-white shadow-2xl transition-transform duration-300 ${
           selectedAudit ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
@@ -391,7 +499,9 @@ export function StoreAuditsPage() {
                 <p className="text-lg font-semibold text-gray-900">
                   {selectedAudit.type === 'customer_service' ? 'Customer Service Audit' : 'Compliance Audit'}
                 </p>
-                <p className="text-xs text-gray-500">Audit ID: {selectedAudit.id}</p>
+                <p className="text-xs text-gray-400">
+                  {selectedAudit.branch_name || selectedAudit.company?.name || selectedAudit.id}
+                </p>
               </div>
               <button
                 type="button"
@@ -402,41 +512,43 @@ export function StoreAuditsPage() {
               </button>
             </div>
 
-            {selectedAudit.type === 'customer_service' ? (
-              <CssAuditDetailPanel
-                audit={selectedAudit}
-                currentUserId={currentUserId}
-                canProcess={canClaimAudit && selectedAudit.status === 'pending'}
-                canComplete={
-                  canProcessAudit
-                  && selectedAudit.status === 'processing'
-                  && selectedAudit.auditor_user_id === currentUserId
-                }
-                canRequestVN={canRequestVN && selectedAudit.status === 'completed' && !selectedAudit.vn_requested}
-                actionLoading={actionLoading}
-                panelError=""
-                onProcess={() => void handleProcess(selectedAudit.id)}
-                onComplete={(payload) => void handleComplete(selectedAudit.id, payload)}
-                onRequestVN={() => setShowRequestVNModal(true)}
-              />
-            ) : (
-              <ComplianceAuditDetailPanel
-                audit={selectedAudit}
-                currentUserId={currentUserId}
-                canProcess={canClaimAudit && selectedAudit.status === 'pending'}
-                canComplete={
-                  canProcessAudit
-                  && selectedAudit.status === 'processing'
-                  && selectedAudit.auditor_user_id === currentUserId
-                }
-                canRequestVN={canRequestVN && selectedAudit.status === 'completed' && !selectedAudit.vn_requested}
-                actionLoading={actionLoading}
-                panelError=""
-                onProcess={() => void handleProcess(selectedAudit.id)}
-                onComplete={(payload) => void handleComplete(selectedAudit.id, payload)}
-                onRequestVN={() => setShowRequestVNModal(true)}
-              />
-            )}
+            <div className="flex flex-col flex-1 min-h-0">
+              {selectedAudit.type === 'customer_service' ? (
+                <CssAuditDetailPanel
+                  audit={selectedAudit}
+                  currentUserId={currentUserId}
+                  canProcess={canClaimAudit && selectedAudit.status === 'pending'}
+                  canComplete={
+                    canProcessAudit
+                    && selectedAudit.status === 'processing'
+                    && selectedAudit.auditor_user_id === currentUserId
+                  }
+                  canRequestVN={canRequestVN && selectedAudit.status === 'completed' && !selectedAudit.vn_requested}
+                  actionLoading={actionLoading}
+                  panelError=""
+                  onProcess={() => void handleProcess(selectedAudit.id)}
+                  onComplete={(payload) => void handleComplete(selectedAudit.id, payload)}
+                  onRequestVN={() => setShowRequestVNModal(true)}
+                />
+              ) : (
+                <ComplianceAuditDetailPanel
+                  audit={selectedAudit}
+                  currentUserId={currentUserId}
+                  canProcess={canClaimAudit && selectedAudit.status === 'pending'}
+                  canComplete={
+                    canProcessAudit
+                    && selectedAudit.status === 'processing'
+                    && selectedAudit.auditor_user_id === currentUserId
+                  }
+                  canRequestVN={canRequestVN && selectedAudit.status === 'completed' && !selectedAudit.vn_requested}
+                  actionLoading={actionLoading}
+                  panelError=""
+                  onProcess={() => void handleProcess(selectedAudit.id)}
+                  onComplete={(payload) => void handleComplete(selectedAudit.id, payload)}
+                  onRequestVN={() => setShowRequestVNModal(true)}
+                />
+              )}
+            </div>
           </div>
         )}
       </div>

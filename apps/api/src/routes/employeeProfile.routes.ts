@@ -12,27 +12,27 @@ router.use(authenticate, resolveCompany);
 
 router.get(
   '/',
-  requirePermission(PERMISSIONS.EMPLOYEE_VIEW_ALL_PROFILES),
+  requirePermission(PERMISSIONS.EMPLOYEE_PROFILES_VIEW),
   employeeProfileController.list,
 );
 router.get(
   '/filter-options',
-  requirePermission(PERMISSIONS.EMPLOYEE_VIEW_ALL_PROFILES),
+  requirePermission(PERMISSIONS.EMPLOYEE_PROFILES_VIEW),
   employeeProfileController.filterOptions,
 );
 router.get(
   '/assignment-options',
-  requirePermission(PERMISSIONS.EMPLOYEE_EDIT_WORK_PROFILE),
+  requirePermission(PERMISSIONS.EMPLOYEE_PROFILES_MANAGE_WORK),
   employeeProfileController.assignmentOptions,
 );
 router.get(
   '/:userId',
-  requirePermission(PERMISSIONS.EMPLOYEE_VIEW_ALL_PROFILES),
+  requirePermission(PERMISSIONS.EMPLOYEE_PROFILES_VIEW),
   employeeProfileController.detail,
 );
 router.patch(
   '/:userId/work-information',
-  requirePermission(PERMISSIONS.EMPLOYEE_EDIT_WORK_PROFILE),
+  requirePermission(PERMISSIONS.EMPLOYEE_PROFILES_MANAGE_WORK),
   validateBody(updateEmployeeWorkInformationSchema),
   employeeProfileController.updateWorkInformation,
 );
