@@ -106,19 +106,13 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
       // `setTokens` is stable but `refreshToken` must be read at call-time to avoid
       // using a stale value from a previous render.
       const refreshToken = useAuthStore.getState().refreshToken;
-      const permsBefore = useAuthStore.getState().user?.permissions ?? [];
-      console.debug('[DIAG] TopBar user:auth-scope-updated received. permsBefore:', permsBefore);
       if (!refreshToken) return;
 
       try {
         const res = await axios.post('/api/v1/auth/refresh', { refreshToken });
         const { accessToken, refreshToken: newRefreshToken } = res.data.data;
-        console.debug('[DIAG] TopBar /auth/refresh succeeded. Calling setTokens.');
         setTokens(accessToken, newRefreshToken);
-        const permsAfter = useAuthStore.getState().user?.permissions ?? [];
-        console.debug('[DIAG] TopBar setTokens done. permsAfter:', permsAfter);
       } catch (err) {
-        console.error('[DIAG] TopBar /auth/refresh FAILED:', err);
         // Retry once after a short delay to handle transient token rotation races.
         setTimeout(() => {
           const retryRefreshToken = useAuthStore.getState().refreshToken;
