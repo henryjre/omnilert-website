@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ChevronDown, Clock, LogOut, MapPin, Building2 } from 'lucide-react';
+import { ChevronDown, Clock, LogOut, GitBranch, Building2 } from 'lucide-react';
 import type { DashboardCheckInStatus } from '../../services/epi.api';
 import {
   formatCheckInTimeInManila,
@@ -85,7 +85,7 @@ export function CheckInStatusCard({ status, loading = false }: CheckInStatusCard
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
-                          <MapPin className="h-4 w-4 shrink-0 text-primary-300/60" />
+                          <GitBranch className="h-4 w-4 shrink-0 text-primary-300/60" />
                           <p className="text-sm font-medium text-primary-100">
                             {branchLabel}
                           </p>
