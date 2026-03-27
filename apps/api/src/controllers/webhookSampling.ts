@@ -1,4 +1,4 @@
-export const CSS_AUDIT_SAMPLE_RATE = 0.25;
+export const CSS_AUDIT_SAMPLE_RATE = 0.1;
 
 export function shouldCreateCssAudit(randomValue: number = Math.random()): boolean {
   return randomValue <= CSS_AUDIT_SAMPLE_RATE;
