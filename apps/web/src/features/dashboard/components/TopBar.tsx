@@ -112,15 +112,17 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
         const res = await axios.post('/api/v1/auth/refresh', { refreshToken });
         const { accessToken, refreshToken: newRefreshToken } = res.data.data;
         setTokens(accessToken, newRefreshToken);
+        await fetchBranches();
       } catch (err) {
         // Retry once after a short delay to handle transient token rotation races.
         setTimeout(() => {
           const retryRefreshToken = useAuthStore.getState().refreshToken;
           if (!retryRefreshToken) return;
           axios.post('/api/v1/auth/refresh', { refreshToken: retryRefreshToken })
-            .then((res) => {
+            .then(async (res) => {
               const { accessToken, refreshToken: newRefreshToken } = res.data.data;
               setTokens(accessToken, newRefreshToken);
+              await fetchBranches();
             })
             .catch(() => {
               // Both attempts failed; the user's next API call will trigger a 401 → auto-refresh.
