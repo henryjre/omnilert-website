@@ -1272,6 +1272,12 @@ export function createAttendanceProcessor(
       });
     }
 
+    if (resolvedIdentity.userId) {
+      deps.emitSocketEvent('user:check-in-status-updated', {
+        userId: resolvedIdentity.userId,
+      });
+    }
+
     return log;
   };
 }
