@@ -380,6 +380,8 @@ export function EmployeeVerificationsPage() {
   const [approveBranchIdsByCompany, setApproveBranchIdsByCompany] = useState<Record<string, string[]>>({});
   const [approveResidentCompanyId, setApproveResidentCompanyId] = useState('');
   const [approveResidentBranchId, setApproveResidentBranchId] = useState('');
+  const [approveEmployeeNumber, setApproveEmployeeNumber] = useState('');
+  const [approveUserKey, setApproveUserKey] = useState('');
   const [personalInfoEdits, setPersonalInfoEdits] = useState({
     firstName: '',
     lastName: '',
@@ -583,6 +585,8 @@ export function EmployeeVerificationsPage() {
       setApproveBranchIdsByCompany({});
       setApproveResidentCompanyId('');
       setApproveResidentBranchId('');
+      setApproveEmployeeNumber('');
+      setApproveUserKey('');
     }
 
     if (type === 'personalInformation') {
@@ -616,6 +620,8 @@ export function EmployeeVerificationsPage() {
     setConfirmModal(null);
     setApprovalLogs([]);
     setApprovalInProgressId(null);
+    setApproveEmployeeNumber('');
+    setApproveUserKey('');
   };
 
   useEffect(() => {
@@ -770,6 +776,10 @@ export function EmployeeVerificationsPage() {
             companyId: approveResidentCompanyId,
             branchId: approveResidentBranchId,
           },
+          ...(approveEmployeeNumber.trim()
+            ? { employeeNumber: parseInt(approveEmployeeNumber, 10) }
+            : {}),
+          ...(approveUserKey.trim() ? { userKey: approveUserKey.trim() } : {}),
         });
       } else if (selectedItem.type === 'personalInformation') {
         const payload: Record<string, unknown> = {};
@@ -1114,7 +1124,8 @@ export function EmployeeVerificationsPage() {
                           </div>
                         </div>
                       )}
-                      {selectedItem.data.reviewed_by_name && (
+                      {(selectedItem.data.status === 'approved' || selectedItem.data.status === 'rejected')
+                        && selectedItem.data.reviewed_by_name && (
                         <div className="flex items-start gap-2">
                           <User className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
                           <div>
@@ -1235,6 +1246,37 @@ export function EmployeeVerificationsPage() {
                         </select>
                       </div>
 
+                      <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Employee Number{' '}
+                          <span className="font-normal text-gray-400">(optional — auto-assigned if blank)</span>
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={approveEmployeeNumber}
+                          onChange={(e) => setApproveEmployeeNumber(e.target.value)}
+                          placeholder="e.g. 4"
+                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                        />
+                      </div>
+
+                      <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                        <label className="block text-sm font-medium text-gray-700">
+                          User Key{' '}
+                          <span className="font-normal text-gray-400">(optional — UUID to bind an existing identity)</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={approveUserKey}
+                          onChange={(e) => setApproveUserKey(e.target.value)}
+                          placeholder="e.g. 7ceced51-2dc6-49fa-a38f-8798978f8763"
+                          autoComplete="off"
+                          spellCheck={false}
+                          className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                        />
+                      </div>
+
                       {(approvalLogs.length > 0 || approvalInProgressId === selectedItem.data.id) && (
                         <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
                           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-blue-700">
@@ -1281,7 +1323,8 @@ export function EmployeeVerificationsPage() {
                           </dd>
                         </div>
                       </div>
-                      {selectedItem.data.reviewed_by_name && (
+                      {(selectedItem.data.status === 'approved' || selectedItem.data.status === 'rejected')
+                        && selectedItem.data.reviewed_by_name && (
                         <div className="flex items-start gap-2">
                           <User className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
                           <div>
@@ -1565,7 +1608,8 @@ export function EmployeeVerificationsPage() {
                           </dd>
                         </div>
                       </div>
-                      {selectedItem.data.reviewed_by_name && (
+                      {(selectedItem.data.status === 'approved' || selectedItem.data.status === 'rejected')
+                        && selectedItem.data.reviewed_by_name && (
                         <div className="flex items-start gap-2">
                           <User className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
                           <div>
@@ -1702,7 +1746,8 @@ export function EmployeeVerificationsPage() {
                           </dd>
                         </div>
                       </div>
-                      {selectedItem.data.reviewed_by_name && (
+                      {(selectedItem.data.status === 'approved' || selectedItem.data.status === 'rejected')
+                        && selectedItem.data.reviewed_by_name && (
                         <div className="flex items-start gap-2">
                           <User className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
                           <div>

@@ -38,6 +38,8 @@ export async function approveRegistration(req: Request, res: Response, next: Nex
       roleIds: req.body.roleIds,
       companyAssignments: req.body.companyAssignments,
       residentBranch: req.body.residentBranch,
+      employeeNumber: req.body.employeeNumber,
+      userKey: req.body.userKey,
     });
     res.json({ success: true, data: result });
   } catch (error) {

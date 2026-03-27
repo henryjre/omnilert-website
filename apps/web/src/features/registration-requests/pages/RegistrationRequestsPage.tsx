@@ -57,6 +57,7 @@ export function RegistrationRequestsPage() {
   const [approveResidentCompanyId, setApproveResidentCompanyId] = useState('');
   const [approveResidentBranchId, setApproveResidentBranchId] = useState('');
   const [approveEmployeeNumber, setApproveEmployeeNumber] = useState('');
+  const [approveUserKey, setApproveUserKey] = useState('');
   const [rejectReason, setRejectReason] = useState('');
   const [mode, setMode] = useState<'approve' | 'reject' | null>(null);
 
@@ -112,6 +113,7 @@ export function RegistrationRequestsPage() {
     setApproveResidentCompanyId('');
     setApproveResidentBranchId('');
     setApproveEmployeeNumber('');
+    setApproveUserKey('');
     setMode('approve');
     setError('');
     setSuccess('');
@@ -134,6 +136,7 @@ export function RegistrationRequestsPage() {
     setApproveResidentCompanyId('');
     setApproveResidentBranchId('');
     setApproveEmployeeNumber('');
+    setApproveUserKey('');
     setRejectReason('');
   };
 
@@ -229,6 +232,7 @@ export function RegistrationRequestsPage() {
         ...(approveEmployeeNumber.trim()
           ? { employeeNumber: parseInt(approveEmployeeNumber, 10) }
           : {}),
+        ...(approveUserKey.trim() ? { userKey: approveUserKey.trim() } : {}),
       });
       setSuccess('Registration request approved.');
       closeModal();
@@ -465,6 +469,22 @@ export function RegistrationRequestsPage() {
                   onChange={(e) => setApproveEmployeeNumber(e.target.value)}
                   placeholder="e.g. 4"
                   className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">
+                  User Key{' '}
+                  <span className="text-gray-400">(optional — UUID to bind an existing identity)</span>
+                </label>
+                <input
+                  type="text"
+                  value={approveUserKey}
+                  onChange={(e) => setApproveUserKey(e.target.value)}
+                  placeholder="e.g. 7ceced51-2dc6-49fa-a38f-8798978f8763"
+                  autoComplete="off"
+                  spellCheck={false}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
                 />
               </div>
 
