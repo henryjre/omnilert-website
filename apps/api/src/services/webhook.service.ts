@@ -876,6 +876,15 @@ const defaultAttendanceProcessorDeps: AttendanceProcessorDeps = {
         return;
       }
 
+      if (event === 'user:check-in-status-updated') {
+        const userId = String(payload.userId ?? '').trim();
+        if (!userId) return;
+        io.of('/notifications').to(`user:${userId}`).emit(event as any, {
+          userId,
+        } as any);
+        return;
+      }
+
       const branchId = String(payload.branch_id ?? payload.branchId ?? '').trim();
       if (!branchId) return;
       io.of('/employee-shifts').to(`branch:${branchId}`).emit(event as any, payload as any);
@@ -1250,6 +1259,12 @@ export function createAttendanceProcessor(
       shift_id: log.shift_id ?? activeShift?.id ?? null,
       total_worked_hours: updatedTotalWorkedHours,
     });
+
+    if (resolvedIdentity.userId) {
+      deps.emitSocketEvent('user:check-in-status-updated', {
+        userId: resolvedIdentity.userId,
+      });
+    }
 
     return log;
   };
