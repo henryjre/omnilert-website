@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { Knex } from 'knex';
 import { db } from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
@@ -22,6 +23,7 @@ const REGISTRATION_STATUSES = {
   REJECTED: 'rejected',
 } as const;
 const DEFAULT_REGISTRATION_COMPANY_ID = 1;
+const UUID_V4_LIKE_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type CompanyAssignmentInput = {
   companyId: string;
@@ -40,6 +42,137 @@ type ResolvedCompanyAssignment = {
   companyCode: string;
   branches: Array<{ id: string; name: string; odooBranchId: number }>;
 };
+
+type ApprovalUserRow = {
+  id: string;
+  email: string;
+  user_key: string | null;
+  employee_number: number | null;
+};
+
+export function normalizeOptionalUserKey(input: string | undefined): string | undefined {
+  if (input === undefined) return undefined;
+  const trimmed = input.trim();
+  if (!trimmed) return undefined;
+  if (!UUID_V4_LIKE_PATTERN.test(trimmed)) {
+    throw new AppError(400, 'Invalid user key. Expected a UUID value.');
+  }
+  return trimmed;
+}
+
+export function selectApprovalCanonicalUsers(input: {
+  existingByEmail: ApprovalUserRow | null;
+  existingByUserKey: ApprovalUserRow | null;
+}): { canonicalUserId: string | null; duplicateUserId: string | null } {
+  if (input.existingByUserKey) {
+    return {
+      canonicalUserId: input.existingByUserKey.id,
+      duplicateUserId: input.existingByEmail && input.existingByEmail.id !== input.existingByUserKey.id
+        ? input.existingByEmail.id
+        : null,
+    };
+  }
+
+  if (input.existingByEmail) {
+    return {
+      canonicalUserId: input.existingByEmail.id,
+      duplicateUserId: null,
+    };
+  }
+
+  return {
+    canonicalUserId: null,
+    duplicateUserId: null,
+  };
+}
+
+async function mergeRegistrationDuplicateUser(input: {
+  trx: Knex.Transaction;
+  canonicalUserId: string;
+  duplicateUserId: string;
+  canonicalEmail: string;
+}): Promise<void> {
+  const { trx, canonicalUserId, duplicateUserId, canonicalEmail } = input;
+  const now = new Date();
+
+  await trx('user_roles')
+    .insert(
+      trx('user_roles')
+        .select(
+          trx.raw('gen_random_uuid() as id'),
+          trx.raw('? as user_id', [canonicalUserId]),
+          'role_id',
+          'assigned_by',
+          'created_at',
+        )
+        .where({ user_id: duplicateUserId }),
+    )
+    .onConflict(['user_id', 'role_id'])
+    .ignore();
+
+  await trx('user_company_access')
+    .insert(
+      trx('user_company_access')
+        .select(
+          trx.raw('gen_random_uuid() as id'),
+          trx.raw('? as user_id', [canonicalUserId]),
+          'company_id',
+          'position_title',
+          'date_started',
+          'is_active',
+          'created_at',
+          trx.raw('? as updated_at', [now]),
+        )
+        .where({ user_id: duplicateUserId }),
+    )
+    .onConflict(['user_id', 'company_id'])
+    .ignore();
+
+  await trx('user_company_branches')
+    .insert(
+      trx('user_company_branches')
+        .select(
+          trx.raw('gen_random_uuid() as id'),
+          trx.raw('? as user_id', [canonicalUserId]),
+          'company_id',
+          'branch_id',
+          'assignment_type',
+          'created_at',
+          trx.raw('? as updated_at', [now]),
+        )
+        .where({ user_id: duplicateUserId }),
+    )
+    .onConflict(['user_id', 'company_id', 'branch_id'])
+    .ignore();
+
+  await trx('user_branches')
+    .insert(
+      trx('user_branches')
+        .select(
+          trx.raw('gen_random_uuid() as id'),
+          'company_id',
+          trx.raw('? as user_id', [canonicalUserId]),
+          'branch_id',
+          'is_primary',
+          'created_at',
+        )
+        .where({ user_id: duplicateUserId }),
+    )
+    .onConflict(['user_id', 'branch_id'])
+    .ignore();
+
+  const archivedEmail = `${canonicalEmail}.merged.${duplicateUserId}@archived.local`;
+  await trx('users')
+    .where({ id: duplicateUserId })
+    .update({
+      email: archivedEmail,
+      user_key: null,
+      employee_number: null,
+      is_active: false,
+      employment_status: 'inactive',
+      updated_at: now,
+    });
+}
 
 function randomPin(): string {
   return String(Math.floor(1000 + Math.random() * 9000));
@@ -377,6 +510,7 @@ export async function approveRegistrationRequest(input: {
   companyAssignments: CompanyAssignmentInput[];
   residentBranch: ResidentBranchInput;
   employeeNumber?: number;
+  userKey?: string;
 }): Promise<{ requestId: string; userId: string }> {
   const masterDb = db.getDb();
 
@@ -418,9 +552,23 @@ export async function approveRegistrationRequest(input: {
   const residentAssignment = assignments.find((item) => item.companyId === resident.companyId)!;
 
   const normalizedEmail = normalizeEmail(String(request.email));
+  const requestedUserKey = normalizeOptionalUserKey(input.userKey);
   const identity = await resolveOrCreateEmployeeIdentity(normalizedEmail);
+  const websiteKey = requestedUserKey ?? identity.websiteKey;
+  if (requestedUserKey) {
+    const userByProvidedKey = await masterDb('users')
+      .where({ user_key: requestedUserKey })
+      .first('id', 'employee_number');
+    if (userByProvidedKey?.id) {
+      const providedEmployeeNumber = Number(userByProvidedKey.employee_number ?? 0);
+      if (providedEmployeeNumber > 0) {
+        identity.employeeNumber = providedEmployeeNumber;
+      }
+      identity.identityId = userByProvidedKey.id as string;
+      identity.wasExisting = true;
+    }
+  }
   let employeeNumber = identity.employeeNumber;
-  const websiteKey = identity.websiteKey;
 
   emitRegistrationApprovalProgress({
     companyId: input.reviewerCompanyId,
@@ -654,14 +802,30 @@ export async function approveRegistrationRequest(input: {
   const avgEpi = Math.round(Number(avgResult?.avg ?? 100) * 10) / 10;
 
   const result = await masterDb.transaction(async (trx) => {
-    const existingUser = await trx('users')
+    const existingByEmail = (await trx('users')
       .whereRaw('LOWER(email) = ?', [normalizedEmail])
-      .first();
+      .first('id', 'email', 'user_key', 'employee_number')) as ApprovalUserRow | null;
+    const existingByUserKey = (await trx('users')
+      .where({ user_key: websiteKey })
+      .first('id', 'email', 'user_key', 'employee_number')) as ApprovalUserRow | null;
+    const canonicalDecision = selectApprovalCanonicalUsers({
+      existingByEmail,
+      existingByUserKey,
+    });
+
+    if (canonicalDecision.canonicalUserId && canonicalDecision.duplicateUserId) {
+      await mergeRegistrationDuplicateUser({
+        trx,
+        canonicalUserId: canonicalDecision.canonicalUserId,
+        duplicateUserId: canonicalDecision.duplicateUserId,
+        canonicalEmail: normalizedEmail,
+      });
+    }
 
     let userId: string;
-    if (existingUser) {
+    if (canonicalDecision.canonicalUserId) {
       const [updated] = await trx('users')
-        .where({ id: existingUser.id })
+        .where({ id: canonicalDecision.canonicalUserId })
         .update({
           first_name: String(request.first_name ?? '').trim(),
           last_name: String(request.last_name ?? '').trim(),
