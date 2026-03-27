@@ -33,6 +33,7 @@ export function DashboardPage() {
   const userEventsSocket = useSocket('/user-events');
   const canViewPerformanceIndex = true;
   const pullRefreshFrameRef = useRef<number | null>(null);
+  const checkInSyncTimeoutRef = useRef<number | null>(null);
   const touchStartYRef = useRef<number | null>(null);
   const touchStartXRef = useRef<number | null>(null);
   const isPullTrackingRef = useRef(false);
@@ -137,17 +138,31 @@ export function DashboardPage() {
     if (!userEventsSocket || !canViewPerformanceIndex) return;
 
     const syncCheckInStatus = () => {
-      void queryClient.invalidateQueries({ queryKey: ['dashboard-check-in-status'] });
+      // Realtime updates can arrive slightly before the read model reflects checkout.
+      // Do an immediate refetch plus a short delayed refetch to converge quickly.
+      void checkInStatusQuery.refetch({ cancelRefetch: false });
+      if (checkInSyncTimeoutRef.current !== null) {
+        window.clearTimeout(checkInSyncTimeoutRef.current);
+      }
+      checkInSyncTimeoutRef.current = window.setTimeout(() => {
+        void checkInStatusQuery.refetch({ cancelRefetch: false });
+      }, 1200);
     };
 
     userEventsSocket.on('user:check-in-status-updated', syncCheckInStatus);
     userEventsSocket.on('user:auth-scope-updated', syncCheckInStatus);
+    userEventsSocket.on('connect', syncCheckInStatus);
 
     return () => {
       userEventsSocket.off('user:check-in-status-updated', syncCheckInStatus);
       userEventsSocket.off('user:auth-scope-updated', syncCheckInStatus);
+      userEventsSocket.off('connect', syncCheckInStatus);
+      if (checkInSyncTimeoutRef.current !== null) {
+        window.clearTimeout(checkInSyncTimeoutRef.current);
+        checkInSyncTimeoutRef.current = null;
+      }
     };
-  }, [canViewPerformanceIndex, userEventsSocket, queryClient]);
+  }, [canViewPerformanceIndex, userEventsSocket, checkInStatusQuery]);
 
   const handleRefresh = useCallback(async ({ showSkeleton = false }: { showSkeleton?: boolean } = {}) => {
     if (showSkeleton) {
