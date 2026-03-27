@@ -761,6 +761,7 @@ test('createAttendanceProcessor skips role gating and auto-checkout for administ
   const disabled = harness.disabledRoleIdsByUserId.get('admin-user');
   assert.equal(disabled?.size ?? 0, 0);
   assert.equal(harness.socketEvents.some((evt) => evt.event === 'user:auth-scope-updated'), false);
+  assert.ok(harness.socketEvents.some((evt) => evt.event === 'user:check-in-status-updated'));
 });
 
 test('createAttendanceProcessor skips role gating and auto-checkout when user lacks required role for the check-in type', async () => {
@@ -794,6 +795,7 @@ test('createAttendanceProcessor skips role gating and auto-checkout when user la
   assert.equal(harness.checkoutOps.length, 0);
   assert.equal(harness.disabledRoleIdsByUserId.get('user-no-management')?.size ?? 0, 0);
   assert.equal(harness.socketEvents.some((evt) => evt.event === 'user:auth-scope-updated'), false);
+  assert.ok(harness.socketEvents.some((evt) => evt.event === 'user:check-in-status-updated'));
 });
 
 test('createAttendanceProcessor checkout re-enables all temporarily disabled roles when no active attendance remains', async () => {

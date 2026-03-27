@@ -79,7 +79,7 @@ function CaseReportSkeleton() {
 
 export function CaseReportsPage() {
   const socket = useSocket('/case-reports');
-  const { hasPermission } = usePermission();
+  const { hasAnyPermission, hasPermission } = usePermission();
   const { error: showErrorToast } = useAppToast();
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -117,7 +117,7 @@ export function CaseReportsPage() {
   const canCreate = hasPermission(PERMISSIONS.CASE_REPORT_MANAGE);
   const canClose = hasPermission(PERMISSIONS.CASE_REPORT_MANAGE);
   const canManage = hasPermission(PERMISSIONS.CASE_REPORT_MANAGE);
-  const canRequestVN = hasPermission(PERMISSIONS.VIOLATION_NOTICE_MANAGE);
+  const canRequestVN = hasAnyPermission(PERMISSIONS.CASE_REPORT_MANAGE, PERMISSIONS.VIOLATION_NOTICE_MANAGE);
 
   const hasActiveFilters =
     Boolean(filters.search) ||

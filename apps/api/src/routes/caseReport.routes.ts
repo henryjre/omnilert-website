@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { PERMISSIONS } from '@omnilert/shared';
 import { authenticate } from '../middleware/auth.js';
 import { resolveCompany } from '../middleware/companyResolver.js';
-import { requirePermission } from '../middleware/rbac.js';
+import { requireAnyPermission, requirePermission } from '../middleware/rbac.js';
 import { validateBody } from '../middleware/validateRequest.js';
 import * as caseReportController from '../controllers/caseReport.controller.js';
 
@@ -79,7 +79,12 @@ router.patch(
   caseReportController.updateResolution,
 );
 router.post('/:id/close', requirePermission(PERMISSIONS.CASE_REPORT_MANAGE), caseReportController.close);
-router.post('/:id/request-vn', requirePermission(PERMISSIONS.VIOLATION_NOTICE_MANAGE), validateBody(requestVNSchema), caseReportController.requestViolationNotice);
+router.post(
+  '/:id/request-vn',
+  requireAnyPermission(PERMISSIONS.CASE_REPORT_MANAGE, PERMISSIONS.VIOLATION_NOTICE_MANAGE),
+  validateBody(requestVNSchema),
+  caseReportController.requestViolationNotice,
+);
 router.post(
   '/:id/attachments',
   requirePermission(PERMISSIONS.CASE_REPORT_VIEW),

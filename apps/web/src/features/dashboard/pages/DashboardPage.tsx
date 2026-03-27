@@ -4,6 +4,7 @@ import { RefreshCw } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '@/features/auth/store/authSlice';
 import { useAppToast } from '@/shared/hooks/useAppToast';
+import { useSocket } from '@/shared/hooks/useSocket';
 import { Button } from '@/shared/components/ui/Button';
 import { EpiDashboard } from '../components/epi/EpiDashboard';
 import { DashboardPageSkeleton } from '../components/epi/EpiSkeletons';
@@ -29,6 +30,7 @@ export function DashboardPage() {
   const user = useAuthStore((s) => s.user);
   const queryClient = useQueryClient();
   const { error: showErrorToast } = useAppToast();
+  const notificationSocket = useSocket('/notifications');
   const canViewPerformanceIndex = true;
   const pullRefreshFrameRef = useRef<number | null>(null);
   const touchStartYRef = useRef<number | null>(null);
@@ -130,6 +132,22 @@ export function DashboardPage() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!notificationSocket || !canViewPerformanceIndex) return;
+
+    const syncCheckInStatus = () => {
+      void queryClient.invalidateQueries({ queryKey: ['dashboard-check-in-status'] });
+    };
+
+    notificationSocket.on('user:check-in-status-updated', syncCheckInStatus);
+    notificationSocket.on('user:auth-scope-updated', syncCheckInStatus);
+
+    return () => {
+      notificationSocket.off('user:check-in-status-updated', syncCheckInStatus);
+      notificationSocket.off('user:auth-scope-updated', syncCheckInStatus);
+    };
+  }, [canViewPerformanceIndex, notificationSocket, queryClient]);
 
   const handleRefresh = useCallback(async ({ showSkeleton = false }: { showSkeleton?: boolean } = {}) => {
     if (showSkeleton) {
