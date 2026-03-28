@@ -1473,6 +1473,14 @@ export function formatEmployeeDisplayName(
   return `${formatBranchEmployeeCode(odooBranchId, employeeNumber)} - ${fullName}`;
 }
 
+function isResPartnerReadAccessError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  const normalized = message.toLowerCase();
+  return normalized.includes('res.partner')
+    && normalized.includes('read')
+    && normalized.includes('access');
+}
+
 export async function createOrUpdateEmployeeForRegistration(input: {
   companyId: number;
   name: string;
@@ -1529,7 +1537,29 @@ export async function createOrUpdateEmployeeForRegistration(input: {
       },
       'Updating existing Odoo employee',
     );
-    await withRetry(() => callOdooKw('hr.employee', 'write', [[existing[0].id], payload]).then(() => undefined));
+    try {
+      await withRetry(() => callOdooKw('hr.employee', 'write', [[existing[0].id], payload]).then(() => undefined));
+    } catch (error) {
+      if (!partner || !isResPartnerReadAccessError(error)) {
+        throw error;
+      }
+
+      const fallbackPayload = { ...payload };
+      delete fallbackPayload.work_contact_id;
+      logger.warn(
+        {
+          phase: 'registration-approve',
+          employeeId: existing[0].id,
+          companyId: input.companyId,
+          barcode: input.barcode,
+          websiteKey: input.websiteKey,
+          partnerId: partner.id,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Retrying employee update without work_contact_id due res.partner access restriction',
+      );
+      await withRetry(() => callOdooKw('hr.employee', 'write', [[existing[0].id], fallbackPayload]).then(() => undefined));
+    }
     return existing[0].id;
   }
 
@@ -1542,9 +1572,33 @@ export async function createOrUpdateEmployeeForRegistration(input: {
     },
     'Creating new Odoo employee',
   );
-  const employeeId = (await withRetry(() =>
-    callOdooKw('hr.employee', 'create', [payload]) as Promise<number>,
-  )) as number;
+  let employeeId: number;
+  try {
+    employeeId = (await withRetry(() =>
+      callOdooKw('hr.employee', 'create', [payload]) as Promise<number>,
+    )) as number;
+  } catch (error) {
+    if (!partner || !isResPartnerReadAccessError(error)) {
+      throw error;
+    }
+
+    const fallbackPayload = { ...payload };
+    delete fallbackPayload.work_contact_id;
+    logger.warn(
+      {
+        phase: 'registration-approve',
+        companyId: input.companyId,
+        barcode: input.barcode,
+        websiteKey: input.websiteKey,
+        partnerId: partner.id,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      'Retrying employee create without work_contact_id due res.partner access restriction',
+    );
+    employeeId = (await withRetry(() =>
+      callOdooKw('hr.employee', 'create', [fallbackPayload]) as Promise<number>,
+    )) as number;
+  }
   return employeeId;
 }
 
