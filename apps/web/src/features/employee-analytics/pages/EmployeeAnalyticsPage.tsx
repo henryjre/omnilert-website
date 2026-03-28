@@ -28,6 +28,8 @@ import { useNavigate } from 'react-router-dom';
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { ViewToggle, type ViewOption } from '@/shared/components/ui/ViewToggle';
 import { SingleUserSelect, type UserEntry } from '../components/SingleUserSelect';
+import { AnalyticsRangePicker, getSummaryForSelection } from '../components/AnalyticsRangePicker';
+import { createDefaultRangeForGranularity, type AnalyticsRangeSelection } from '../utils/analyticsRangeBuckets';
 import { isStickyHeaderStuck } from '../stickyHeader';
 
 // ─── Skeleton Primitives ─────────────────────────────────────────────────────
@@ -3638,7 +3640,7 @@ function MetricSelect({
 
 // ─── Individual Metrics View Container ──────────────────────────────────────
 
-function MetricsViewContent() {
+function MetricsViewContent({ periodLabel }: { periodLabel: string }) {
   const [selectedMetric, setSelectedMetric] = useState(METRICS[0].id);
   const { stickyRef: metricsHeaderRef, isStuck: isMetricsHeaderStuck } = useStickyHeaderState();
 
@@ -3673,7 +3675,7 @@ function MetricsViewContent() {
             {[
               { label: "Category", value: getMetricCategory(selectedMetric) },
               { label: "Type", value: selectedMetric.includes("compliance") ? "Pass/Fail" : selectedMetric === "average-order-value" ? "Currency" : "Score-based" },
-              { label: "Period", value: "Last 30 Days" },
+              { label: "Period", value: periodLabel },
             ].map((info) => (
               <div key={info.label} className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{info.label}</span>
@@ -3729,6 +3731,9 @@ interface EmployeeAnalyticsPageProps {
 export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPageProps) {
   const [activeView, setActiveView] = useState<AnalyticsView>('general');
   const [selectedUser, setSelectedUser] = useState<UserEntry | null>(null);
+  const [analyticsRange, setAnalyticsRange] = useState<AnalyticsRangeSelection>(() =>
+    createDefaultRangeForGranularity("day"),
+  );
   const { stickyRef: employeeHeaderRef, isStuck: isEmployeeHeaderStuck } = useStickyHeaderState(
     activeView,
     activeView === "employee",
@@ -3738,6 +3743,11 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
     if (!selectedUser) return null;
     return getPersonalizedStats(selectedUser.name);
   }, [selectedUser]);
+
+  const analyticsPeriodLabel = useMemo(
+    () => getSummaryForSelection(analyticsRange),
+    [analyticsRange],
+  );
 
   if (isLoading) {
     return <EmployeeAnalyticsSkeleton />;
@@ -3751,9 +3761,9 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
           <div className="flex items-center gap-2">
             <BarChart2 className="h-6 w-6 text-primary-600" />
             <h1 className="text-2xl font-bold text-gray-900">
-              {activeView === 'general' && 'Employee Analytics'}
-              {activeView === 'employee' && 'Individual Employee Analytics'}
-              {activeView === 'metrics' && 'Individual Metrics Analysis'}
+              {activeView === 'general' && 'Global Analytics'}
+              {activeView === 'employee' && 'Employee Analysis'}
+              {activeView === 'metrics' && 'Metrics Analysis'}
             </h1>
           </div>
           <p className="mt-1 hidden text-sm text-gray-500 sm:block">
@@ -3763,10 +3773,11 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
           </p>
         </div>
 
-        <div className="hidden lg:flex items-center gap-1.5 rounded-lg border border-gray-100 bg-gray-50 px-3 py-1.5">
-          <Calendar className="h-3.5 w-3.5 text-gray-400" />
-          <span className="text-xs font-semibold text-gray-400">Last 30 Days</span>
-        </div>
+        <AnalyticsRangePicker
+          value={analyticsRange}
+          onChange={setAnalyticsRange}
+          className="shrink-0 self-center"
+        />
       </div>
 
       {/* View Toggle - Separated like AuditResultsPage */}
@@ -3922,7 +3933,7 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
           )}
 
           {activeView === 'metrics' && (
-            <MetricsViewContent />
+            <MetricsViewContent periodLabel={analyticsPeriodLabel} />
           )}
         </motion.div>
       </AnimatePresence>
