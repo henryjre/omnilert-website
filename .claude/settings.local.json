@@ -10,22 +10,10 @@
       "Bash(pnpm --filter @omnilert/web build)",
       "Bash(pnpm --filter @omnilert/shared build)",
       "Bash(pnpm --filter @omnilert/api build)",
-<<<<<<< HEAD
-      "Bash(find e:Githubomnilert-websiteappsapisrcmigrationsmaster -name *.ts -type f)",
-      "Bash(grep -v \"//\")",
-      "Bash(grep -r \"getMasterDb\\\\|getTenantDb\\\\|tenantDb\" e:/Github/omnilert-website/.worktrees/feature/single-db-redesign/apps/api/src/services/ --include=*.ts -l)",
-      "Bash(sed -i '/^    masterDb,$/d' shiftExchange.service.ts)",
-      "Bash(sed -i '/^      masterDb,$/d' shiftExchange.service.ts)",
-      "Bash(sed -i '/masterDb: input\\\\.masterDb,/d' shiftExchange.service.ts)",
-      "Bash(sed -i 's/input\\\\.masterDb,//g' shiftExchange.service.ts)",
-      "Bash(grep -n 'input\\\\.$' storeAudit.service.ts)",
-      "Bash(for f:*)",
-      "Bash(do sed:*)",
-      "Bash(done)"
-=======
       "Bash(git:*)",
-      "Bash(node -e \":*)"
->>>>>>> 95b4b9a20873710ae73d237b532bc345c90a2917
+      "Bash(node -e \":*)",
+      "Bash(rtk tsc:*)",
+      "Bash(rtk git:*)"
     ]
   }
 }
