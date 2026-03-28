@@ -13,13 +13,22 @@ import {
   Target,
   Users,
   TrendingDown,
+  ArrowUpRight,
+  ArrowDownRight,
+  Minus,
+  Hash,
+  Percent,
+  Eye,
+  Search,
+  ChevronDown,
+  Check,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Select } from '@/shared/components/ui/Select';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { ViewToggle, type ViewOption } from '@/shared/components/ui/ViewToggle';
 import { SingleUserSelect, type UserEntry } from '../components/SingleUserSelect';
+import { isStickyHeaderStuck } from '../stickyHeader';
 
 // ─── Skeleton Primitives ─────────────────────────────────────────────────────
 
@@ -458,6 +467,121 @@ const generateDistributionData = () => [
 const CHART_COLORS = ['#2563eb', '#059669', '#d97706', '#7c3aed', '#db2777', '#ea580c'];
 
 // ─── Shared Card Primitives ───────────────────────────────────────────────────
+
+/** Max rAF iterations to wait for the sticky node (e.g. after `AnimatePresence mode="wait"`). */
+const STICKY_HEADER_REF_WAIT_MAX_FRAMES = 120;
+
+/**
+ * Tracks whether a sticky header is stuck against the dashboard scroll container.
+ * @param refreshKey - When this changes, scroll listeners rebind.
+ * @param enabled - When false, clears stuck state and skips work (no ref polling when the bar is unmounted).
+ */
+function useStickyHeaderState(refreshKey?: unknown, enabled = true) {
+  const stickyRef = useRef<HTMLDivElement | null>(null);
+  const [isStuck, setIsStuck] = useState(false);
+
+  useEffect(() => {
+    if (!enabled) {
+      setIsStuck(false);
+      return;
+    }
+
+    let cancelled = false;
+    let scrollFrameId = 0;
+    let settleFrameId = 0;
+    let waitRefRaf = 0;
+    let refWaitAttempts = 0;
+
+    const runWithStickyEl = (stickyEl: HTMLDivElement) => {
+      const scrollContainer =
+        stickyEl.closest<HTMLElement>('[data-dashboard-scroll-container="true"]')
+        ?? (() => {
+          let parent = stickyEl.parentElement;
+          while (parent) {
+            const styles = window.getComputedStyle(parent);
+            const overflow = `${styles.overflow} ${styles.overflowX} ${styles.overflowY}`;
+            if (/(auto|scroll|overlay)/.test(overflow)) {
+              return parent;
+            }
+            parent = parent.parentElement;
+          }
+          return null;
+        })();
+
+      const updateIsStuck = () => {
+        const computedTop = Number.parseFloat(window.getComputedStyle(stickyEl).top || "0");
+        const stickyTop = Number.isNaN(computedTop) ? 0 : computedTop;
+        const containerTop = scrollContainer?.getBoundingClientRect().top ?? 0;
+        const elementTop = stickyEl.getBoundingClientRect().top;
+        const nextIsStuck = isStickyHeaderStuck({
+          containerTop,
+          elementTop,
+          stickyTop,
+        });
+        setIsStuck(prev => (prev === nextIsStuck ? prev : nextIsStuck));
+      };
+
+      const handleViewportChange = () => {
+        cancelAnimationFrame(scrollFrameId);
+        scrollFrameId = window.requestAnimationFrame(updateIsStuck);
+      };
+
+      const runSettleChecks = () => {
+        let checks = 0;
+        const maxChecks = 24;
+
+        const tick = () => {
+          updateIsStuck();
+          checks += 1;
+          if (checks < maxChecks) {
+            settleFrameId = window.requestAnimationFrame(tick);
+          }
+        };
+
+        settleFrameId = window.requestAnimationFrame(tick);
+      };
+
+      updateIsStuck();
+      runSettleChecks();
+      const scrollTarget = scrollContainer ?? window;
+      scrollTarget.addEventListener("scroll", handleViewportChange as EventListener, { passive: true });
+      window.addEventListener("resize", handleViewportChange);
+
+      return () => {
+        cancelAnimationFrame(scrollFrameId);
+        cancelAnimationFrame(settleFrameId);
+        scrollTarget.removeEventListener("scroll", handleViewportChange as EventListener);
+        window.removeEventListener("resize", handleViewportChange);
+      };
+    };
+
+    let detachListeners: (() => void) | undefined;
+
+    const tryAttach = () => {
+      if (cancelled) return;
+      const stickyEl = stickyRef.current;
+      if (!stickyEl) {
+        refWaitAttempts += 1;
+        if (refWaitAttempts > STICKY_HEADER_REF_WAIT_MAX_FRAMES) {
+          return;
+        }
+        waitRefRaf = window.requestAnimationFrame(tryAttach);
+        return;
+      }
+      detachListeners = runWithStickyEl(stickyEl);
+    };
+
+    tryAttach();
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(waitRefRaf);
+      detachListeners?.();
+    };
+  }, [enabled, refreshKey]);
+
+  return { stickyRef, isStuck };
+}
 
 interface AnalyticsCardProps {
   icon: React.ReactNode;
@@ -977,21 +1101,19 @@ function PersonalTrendCard({ userName, stats }: { userName: string; stats: Retur
       >
         {/* Controls */}
         <div className="flex flex-col sm:flex-row sm:items-end gap-3 px-4 sm:px-5 pt-4 pb-3 border-b border-gray-50">
-          <div className="flex-1">
+          <div className="w-full sm:w-64">
             <p className={controlLabel}>
               <Activity className="h-3 w-3" />
               Metric
             </p>
-            <Select
-              value={selectedMetric}
-              onChange={e => setSelectedMetric(e.target.value)}
-              options={METRICS.map(m => ({ value: m.id, label: m.label }))}
-              className="!text-xs !py-1.5 !bg-white !border-gray-200 w-full sm:w-52"
+            <CompactMetricSelect
+              selectedMetricId={selectedMetric}
+              onSelect={setSelectedMetric}
             />
           </div>
 
           {/* Legend pills */}
-          <div className="flex flex-wrap gap-1.5 min-h-[28px]">
+          <div className="flex flex-wrap justify-center sm:justify-end gap-1.5 min-h-[28px] sm:ml-auto">
             <div
               className="flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-200"
               style={{ borderLeft: '3px solid #2563eb' }}
@@ -1738,8 +1860,12 @@ function TrendAnalyticsCard() {
     [selectedUsers, selectedMetric]
   );
 
-  const handleAddUser = (userName: string) => {
-    if (!selectedUsers.includes(userName) && selectedUsers.length < 5) {
+  const handleToggleUser = (userName: string) => {
+    if (selectedUsers.includes(userName)) {
+      if (selectedUsers.length > 1) {
+        setSelectedUsers(selectedUsers.filter(u => u !== userName));
+      }
+    } else if (selectedUsers.length < 5) {
       setSelectedUsers([...selectedUsers, userName]);
     }
   };
@@ -1767,37 +1893,28 @@ function TrendAnalyticsCard() {
       >
         {/* Controls — stacked on mobile, inline on desktop */}
         <div className="flex flex-col sm:flex-row sm:items-end gap-3 px-4 sm:px-5 pt-4 pb-3 border-b border-gray-50">
-          <div className="grid grid-cols-2 sm:flex sm:items-end gap-3 flex-1">
+          <div className="flex flex-col sm:flex-row sm:items-end gap-3 flex-1">
             {/* Add Employee */}
-            <div className="flex-shrink-0">
+            <div className="w-full sm:w-56">
               <p className={controlLabel}>
-                <Plus className="h-3 w-3" />
-                Add Employee
+                <Users className="h-3 w-3" />
+                Employees
               </p>
-              <Select
-                value=""
-                onChange={e => handleAddUser(e.target.value)}
-                options={[
-                  { value: '', label: 'Select employee…' },
-                  ...ANALYTICS_USERS.filter(u => !selectedUsers.includes(u)).map(u => ({
-                    value: u,
-                    label: u,
-                  })),
-                ]}
-                className="!text-xs !py-1.5 !bg-white !border-gray-200 w-full sm:w-44"
+              <EmployeePickerDropdown
+                allUsers={ANALYTICS_USERS}
+                selectedUsers={selectedUsers}
+                onToggle={handleToggleUser}
               />
             </div>
             {/* Metric */}
-            <div className="flex-1 sm:flex-initial">
+            <div className="w-full sm:w-64">
               <p className={controlLabel}>
                 <Activity className="h-3 w-3" />
                 Metric
               </p>
-              <Select
-                value={selectedMetric}
-                onChange={e => setSelectedMetric(e.target.value)}
-                options={METRICS.map(m => ({ value: m.id, label: m.label }))}
-                className="!text-xs !py-1.5 !bg-white !border-gray-200 w-full sm:w-52"
+              <CompactMetricSelect
+                selectedMetricId={selectedMetric}
+                onSelect={setSelectedMetric}
               />
             </div>
           </div>
@@ -1964,17 +2081,11 @@ function PerformanceRadarCard() {
         title="Performance Radar"
         subtitle="Multi-metric overview"
         headerRight={
-          <select
-            value={selectedUser}
-            onChange={e => setSelectedUser(e.target.value)}
-            className="text-xs font-semibold border border-gray-200 bg-white rounded-lg px-2.5 py-1.5 text-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-200 cursor-pointer hover:border-primary-300 transition-colors"
-          >
-            {ANALYTICS_USERS.map(u => (
-              <option key={u} value={u}>
-                {u}
-              </option>
-            ))}
-          </select>
+          <CompactUserSelect
+            users={ANALYTICS_USERS}
+            selectedUser={selectedUser}
+            onSelect={setSelectedUser}
+          />
         }
       >
         <div className="flex-1 p-4 flex items-center justify-center min-h-[280px] sm:min-h-[320px]">
@@ -2086,6 +2197,1249 @@ function MetricsDistributionCard() {
   );
 }
 
+// ─── Compact Dropdowns (SingleUserSelect-style, for inline card controls) ───
+
+/** Hook: computes fixed position for a dropdown panel relative to a trigger ref */
+function useDropdownPosition(triggerRef: React.RefObject<HTMLElement | null>, isOpen: boolean, align: 'left' | 'right' = 'left') {
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
+
+  useEffect(() => {
+    if (!isOpen || !triggerRef.current) return;
+    const update = () => {
+      const rect = triggerRef.current!.getBoundingClientRect();
+      setPos({ top: rect.bottom + 8, left: align === 'right' ? rect.right : rect.left, width: rect.width });
+    };
+    update();
+    window.addEventListener('scroll', update, true);
+    window.addEventListener('resize', update);
+    return () => {
+      window.removeEventListener('scroll', update, true);
+      window.removeEventListener('resize', update);
+    };
+  }, [isOpen, triggerRef, align]);
+
+  return pos;
+}
+
+/** Multi-select employee picker — stays open, toggles checkmarks, max 5 */
+function EmployeePickerDropdown({
+  allUsers,
+  selectedUsers,
+  onToggle,
+  max = 5,
+}: {
+  allUsers: string[];
+  selectedUsers: string[];
+  onToggle: (name: string) => void;
+  max?: number;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const pos = useDropdownPosition(triggerRef, isOpen);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+        setSearch('');
+      }
+    }
+    if (isOpen) document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [isOpen]);
+
+  const filtered = allUsers.filter(u =>
+    u.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const count = selectedUsers.length;
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center gap-2.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-left transition-all hover:border-blue-400 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+      >
+        <div className="h-6 w-6 flex items-center justify-center rounded-full bg-gray-100 text-gray-400 flex-shrink-0">
+          <Users className="h-3 w-3" />
+        </div>
+        <span className="text-xs font-medium text-gray-700 flex-1 truncate">
+          {count === 0 ? <span className="text-gray-400">Select employees…</span> : `${count} selected`}
+        </span>
+        <ChevronDown className={`h-3.5 w-3.5 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: 8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.98 }}
+            transition={{ duration: 0.15, ease: 'easeOut' }}
+            className="fixed z-[9999] rounded-2xl border border-gray-100 bg-white p-2 shadow-xl ring-1 ring-black/5"
+            style={{ top: pos.top, left: pos.left, width: Math.max(pos.width, 240) }}
+          >
+            {/* Search */}
+            <div className="relative mb-2">
+              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+              <input
+                autoFocus
+                type="text"
+                placeholder="Search..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full rounded-xl border-none bg-gray-50 py-2 pl-8 pr-3 text-xs font-medium text-gray-700 placeholder:text-gray-400 focus:bg-white focus:ring-2 focus:ring-blue-500/10"
+              />
+            </div>
+
+            {/* Capacity indicator */}
+            <div className="flex items-center justify-between px-2.5 pb-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                {count}/{max} selected
+              </span>
+              {count >= max && (
+                <span className="text-[10px] font-bold text-amber-500">Max reached</span>
+              )}
+            </div>
+
+            {/* List */}
+            <div className="max-h-[260px] overflow-y-auto p-1 space-y-0.5">
+              {filtered.length === 0 ? (
+                <div className="py-6 text-center">
+                  <p className="text-xs font-medium text-gray-400">No employees found</p>
+                </div>
+              ) : (
+                filtered.map((user) => {
+                  const isSelected = selectedUsers.includes(user);
+                  const isDisabled = !isSelected && count >= max;
+                  const initials = user.split(' ').map(w => w[0]).join('').toUpperCase();
+                  const hue = user.split('').reduce((acc, c) => (acc * 31 + c.charCodeAt(0)) & 0xffffffff, 0) % 360;
+                  return (
+                    <button
+                      key={user}
+                      type="button"
+                      disabled={isDisabled}
+                      onClick={() => onToggle(user)}
+                      className={`group flex w-full items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-left transition-all ${
+                        isDisabled
+                          ? 'opacity-40 cursor-not-allowed'
+                          : isSelected
+                            ? 'bg-blue-50/80 hover:bg-blue-50'
+                            : 'hover:bg-blue-50/50'
+                      }`}
+                    >
+                      {/* Checkbox */}
+                      <div className={`h-4 w-4 flex flex-shrink-0 items-center justify-center rounded border transition-colors ${
+                        isSelected
+                          ? 'bg-blue-600 border-blue-600'
+                          : 'border-gray-300 bg-white'
+                      }`}>
+                        {isSelected && <Check className="h-3 w-3 text-white" />}
+                      </div>
+                      <div
+                        className="h-6 w-6 flex flex-shrink-0 items-center justify-center rounded-full text-white text-[9px] font-bold shadow-sm"
+                        style={{ backgroundColor: `hsl(${Math.abs(hue)}, 65%, 55%)` }}
+                      >
+                        {initials}
+                      </div>
+                      <span className={`text-xs font-semibold truncate ${isSelected ? 'text-blue-700' : 'text-gray-700'}`}>
+                        {user}
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/** Compact metric picker — used inside card control strips */
+function CompactMetricSelect({
+  selectedMetricId,
+  onSelect,
+}: {
+  selectedMetricId: string;
+  onSelect: (id: string) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const pos = useDropdownPosition(triggerRef, isOpen);
+
+  const selectedMetric = METRICS.find(m => m.id === selectedMetricId);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    if (isOpen) document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [isOpen]);
+
+  const filtered = METRICS.filter(m =>
+    m.label.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center gap-2.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-left transition-all hover:border-blue-400 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+      >
+        <div className="h-6 w-6 flex items-center justify-center rounded-full bg-primary-50 text-primary-600 flex-shrink-0">
+          <Activity className="h-3 w-3" />
+        </div>
+        <span className="text-xs font-semibold text-gray-700 flex-1 truncate">
+          {selectedMetric?.label ?? 'Select metric…'}
+        </span>
+        <ChevronDown className={`h-3.5 w-3.5 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: 8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.98 }}
+            transition={{ duration: 0.15, ease: 'easeOut' }}
+            className="fixed z-[9999] rounded-2xl border border-gray-100 bg-white p-2 shadow-xl ring-1 ring-black/5"
+            style={{ top: pos.top, left: pos.left, width: Math.max(pos.width, 260) }}
+          >
+            <div className="relative mb-2">
+              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+              <input
+                autoFocus
+                type="text"
+                placeholder="Search metrics..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full rounded-xl border-none bg-gray-50 py-2 pl-8 pr-3 text-xs font-medium text-gray-700 placeholder:text-gray-400 focus:bg-white focus:ring-2 focus:ring-blue-500/10"
+              />
+            </div>
+            <div className="max-h-[280px] overflow-y-auto p-1 space-y-0.5">
+              {filtered.length === 0 ? (
+                <div className="py-6 text-center">
+                  <p className="text-xs font-medium text-gray-400">No metrics found</p>
+                </div>
+              ) : (
+                filtered.map((metric) => (
+                  <button
+                    key={metric.id}
+                    type="button"
+                    onClick={() => {
+                      onSelect(metric.id);
+                      setIsOpen(false);
+                      setSearch('');
+                    }}
+                    className={`group flex w-full items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-left transition-all hover:bg-blue-50/50 ${
+                      selectedMetricId === metric.id ? 'bg-blue-50/80' : ''
+                    }`}
+                  >
+                    <div className={`h-6 w-6 flex flex-shrink-0 items-center justify-center rounded-full shadow-sm ${
+                      selectedMetricId === metric.id ? 'bg-primary-100 text-primary-600' : 'bg-gray-50 text-gray-500'
+                    }`}>
+                      {METRIC_ICONS[metric.id] ?? <Target className="h-3 w-3" />}
+                    </div>
+                    <span className={`text-xs font-semibold truncate ${selectedMetricId === metric.id ? 'text-blue-700' : 'text-gray-700'}`}>
+                      {metric.label}
+                    </span>
+                    {selectedMetricId === metric.id && (
+                      <Check className="h-3.5 w-3.5 text-blue-600 ml-auto flex-shrink-0" />
+                    )}
+                  </button>
+                ))
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/** Compact single-user picker — used in Performance Radar header */
+function CompactUserSelect({
+  users,
+  selectedUser,
+  onSelect,
+}: {
+  users: string[];
+  selectedUser: string;
+  onSelect: (name: string) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const pos = useDropdownPosition(triggerRef, isOpen, 'right');
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    if (isOpen) document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [isOpen]);
+
+  const filtered = users.filter(u =>
+    u.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const initials = selectedUser.split(' ').map(w => w[0]).join('').toUpperCase();
+  const hue = selectedUser.split('').reduce((acc, c) => (acc * 31 + c.charCodeAt(0)) & 0xffffffff, 0) % 360;
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-2.5 py-1.5 text-left transition-all hover:border-blue-400 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+      >
+        <div
+          className="h-5 w-5 flex items-center justify-center rounded-full text-white text-[8px] font-bold flex-shrink-0"
+          style={{ backgroundColor: `hsl(${Math.abs(hue)}, 65%, 55%)` }}
+        >
+          {initials}
+        </div>
+        <span className="text-xs font-semibold text-gray-700 truncate max-w-[100px]">{selectedUser}</span>
+        <ChevronDown className={`h-3 w-3 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: 8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.98 }}
+            transition={{ duration: 0.15, ease: 'easeOut' }}
+            className="fixed z-[9999] w-56 rounded-2xl border border-gray-100 bg-white p-2 shadow-xl ring-1 ring-black/5"
+            style={{ top: pos.top, left: Math.max(8, pos.left - 224) }}
+          >
+            <div className="relative mb-2">
+              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
+              <input
+                autoFocus
+                type="text"
+                placeholder="Search..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full rounded-xl border-none bg-gray-50 py-2 pl-8 pr-3 text-xs font-medium text-gray-700 placeholder:text-gray-400 focus:bg-white focus:ring-2 focus:ring-blue-500/10"
+              />
+            </div>
+            <div className="max-h-[240px] overflow-y-auto p-1 space-y-0.5">
+              {filtered.length === 0 ? (
+                <div className="py-6 text-center">
+                  <p className="text-xs font-medium text-gray-400">No employees found</p>
+                </div>
+              ) : (
+                filtered.map((user) => {
+                  const uInitials = user.split(' ').map(w => w[0]).join('').toUpperCase();
+                  const uHue = user.split('').reduce((acc, c) => (acc * 31 + c.charCodeAt(0)) & 0xffffffff, 0) % 360;
+                  const isSelected = selectedUser === user;
+                  return (
+                    <button
+                      key={user}
+                      type="button"
+                      onClick={() => {
+                        onSelect(user);
+                        setIsOpen(false);
+                        setSearch('');
+                      }}
+                      className={`group flex w-full items-center gap-2.5 rounded-xl px-2.5 py-1.5 text-left transition-all hover:bg-blue-50/50 ${
+                        isSelected ? 'bg-blue-50/80' : ''
+                      }`}
+                    >
+                      <div
+                        className="h-6 w-6 flex flex-shrink-0 items-center justify-center rounded-full text-white text-[9px] font-bold shadow-sm"
+                        style={{ backgroundColor: `hsl(${Math.abs(uHue)}, 65%, 55%)` }}
+                      >
+                        {uInitials}
+                      </div>
+                      <span className={`text-xs font-semibold truncate ${isSelected ? 'text-blue-700' : 'text-gray-700'}`}>
+                        {user}
+                      </span>
+                      {isSelected && (
+                        <Check className="h-3.5 w-3.5 text-blue-600 ml-auto flex-shrink-0" />
+                      )}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ─── Individual Metrics View Components ──────────────────────────────────────
+
+const METRIC_LABELS: Record<string, string> = {
+  'customer-service': 'Customer Service Score',
+  'workplace-relations': 'Workplace Relations Score',
+  'professional-conduct': 'Professional Conduct Score',
+  'attendance-rate': 'Attendance Rate',
+  'punctuality-rate': 'Punctuality Rate',
+  'productivity-rate': 'Productivity Rate',
+  'average-order-value': 'Average Order Value',
+  'uniform-compliance': 'Uniform Compliance',
+  'hygiene-compliance': 'Hygiene Compliance',
+  'sop-compliance': 'SOP Compliance',
+};
+
+const METRIC_UNITS: Record<string, string> = {
+  'average-order-value': '₱',
+};
+
+const METRIC_SUFFIX: Record<string, string> = {
+  'customer-service': '%',
+  'workplace-relations': '%',
+  'professional-conduct': '%',
+  'attendance-rate': '%',
+  'punctuality-rate': '%',
+  'productivity-rate': '%',
+  'uniform-compliance': '%',
+  'hygiene-compliance': '%',
+  'sop-compliance': '%',
+  'average-order-value': '',
+};
+
+const getMetricAllEmployeeData = (metricId: string) => {
+  const allEmployees = [...TOP_PERFORMERS, ...PRIORITY_REVIEW];
+  return allEmployees.map(emp => {
+    const stats = getPersonalizedStats(emp.name);
+    const val = metricId === 'average-order-value'
+      ? stats.metrics[metricId as keyof typeof stats.metrics] ?? 0
+      : stats.metrics[metricId as keyof typeof stats.metrics] ?? 0;
+    const seed = (emp.name + metricId).split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+    const weeklyChange = parseFloat(((seed % 80 - 40) / 10).toFixed(1));
+    return {
+      name: emp.name,
+      value: typeof val === 'number' ? val : 0,
+      weeklyChange,
+      role: TOP_PERFORMERS.some(t => t.name === emp.name) ? 'Senior Service Crew' : 'Service Crew',
+    };
+  }).sort((a, b) => b.value - a.value);
+};
+
+const getMetricTrend12W = (metricId: string) => {
+  const base = BRANCH_AVERAGES[metricId as keyof typeof BRANCH_AVERAGES] ?? 85;
+  return EPI_TREND_12W.map((w, i) => {
+    const seed = metricId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+    const drift = (i - 6) * 0.3;
+    const noise = Math.sin(seed + i * 2.7) * 2.5;
+    return {
+      week: w.week,
+      value: parseFloat((base + drift + noise).toFixed(1)),
+      target: base,
+    };
+  });
+};
+
+const getMetricDistribution = (metricId: string) => {
+  const employees = getMetricAllEmployeeData(metricId);
+  const isAOV = metricId === 'average-order-value';
+
+  if (isAOV) {
+    const ranges = [
+      { range: '₱0–200', min: 0, max: 200, fill: '#ef4444' },
+      { range: '₱201–300', min: 201, max: 300, fill: '#f59e0b' },
+      { range: '₱301–400', min: 301, max: 400, fill: '#3b82f6' },
+      { range: '₱401–500', min: 401, max: 500, fill: '#10b981' },
+      { range: '₱500+', min: 501, max: 9999, fill: '#059669' },
+    ];
+    return ranges.map(r => ({
+      ...r,
+      count: employees.filter(e => e.value >= r.min && e.value <= r.max).length,
+    }));
+  }
+
+  const ranges = [
+    { range: '0–50%', min: 0, max: 50, fill: '#ef4444' },
+    { range: '51–70%', min: 51, max: 70, fill: '#f59e0b' },
+    { range: '71–85%', min: 71, max: 85, fill: '#3b82f6' },
+    { range: '86–95%', min: 86, max: 95, fill: '#10b981' },
+    { range: '96–100%', min: 96, max: 100, fill: '#059669' },
+  ];
+  return ranges.map(r => ({
+    ...r,
+    count: employees.filter(e => e.value >= r.min && e.value <= r.max).length,
+  }));
+};
+
+const getMetricInsights = (metricId: string) => {
+  const employees = getMetricAllEmployeeData(metricId);
+  const avg = employees.reduce((s, e) => s + e.value, 0) / employees.length;
+  const insights: { type: 'success' | 'warning' | 'info'; title: string; message: string }[] = [];
+
+  const topImprovers = employees.filter(e => e.weeklyChange > 2).sort((a, b) => b.weeklyChange - a.weeklyChange);
+  if (topImprovers.length > 0) {
+    insights.push({
+      type: 'success',
+      title: 'Top Improver',
+      message: `${topImprovers[0].name} improved by +${topImprovers[0].weeklyChange}% this week — highest gain across the team.`,
+    });
+  }
+
+  const declining = employees.filter(e => e.weeklyChange < -2).sort((a, b) => a.weeklyChange - b.weeklyChange);
+  if (declining.length > 0) {
+    insights.push({
+      type: 'warning',
+      title: 'Declining Trend',
+      message: `${declining[0].name} dropped ${declining[0].weeklyChange}% — consider a check-in or coaching session.`,
+    });
+  }
+
+  const belowAvg = employees.filter(e => e.value < avg - 10);
+  if (belowAvg.length > 0) {
+    insights.push({
+      type: 'warning',
+      title: 'Below Threshold',
+      message: `${belowAvg.length} employee${belowAvg.length > 1 ? 's' : ''} score${belowAvg.length === 1 ? 's' : ''} 10+ points below the branch average.`,
+    });
+  }
+
+  const aboveTarget = employees.filter(e => e.value >= 95);
+  insights.push({
+    type: 'info',
+    title: 'Excellence Rate',
+    message: `${aboveTarget.length} of ${employees.length} employees (${Math.round((aboveTarget.length / employees.length) * 100)}%) are scoring 95%+ on this metric.`,
+  });
+
+  const spread = employees[0].value - employees[employees.length - 1].value;
+  insights.push({
+    type: spread > 30 ? 'warning' : 'info',
+    title: 'Score Spread',
+    message: `${spread.toFixed(1)} point gap between top and bottom performer${spread > 30 ? ' — high variance may indicate inconsistent training.' : '.'}`,
+  });
+
+  return insights;
+};
+
+function MetricSummaryCard({ metricId }: { metricId: string }) {
+  const employees = useMemo(() => getMetricAllEmployeeData(metricId), [metricId]);
+  const trendData = useMemo(() => getMetricTrend12W(metricId), [metricId]);
+  const avg = employees.reduce((s, e) => s + e.value, 0) / employees.length;
+  const isAOV = metricId === 'average-order-value';
+  const suffix = METRIC_SUFFIX[metricId] ?? '%';
+  const prefix = METRIC_UNITS[metricId] ?? '';
+  const weeklyAvgChange = employees.reduce((s, e) => s + e.weeklyChange, 0) / employees.length;
+
+  return (
+    <motion.div custom={0} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
+      <div
+        className="relative flex flex-col overflow-hidden rounded-xl shadow-sm h-full min-h-[160px]"
+        style={{
+          background:
+            'linear-gradient(150deg, rgb(var(--primary-600)) 0%, rgb(var(--primary-700)) 60%, rgb(var(--primary-800)) 100%)',
+        }}
+      >
+        <div
+          className="pointer-events-none absolute -right-8 -top-8 h-36 w-36 rounded-full opacity-[0.08]"
+          style={{ background: 'rgba(255,255,255,1)' }}
+        />
+
+        <div className="px-5 pt-5 pb-3 flex-shrink-0">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-white/55">
+            Branch Average
+          </p>
+          <div className="mt-2 flex items-end gap-3">
+            <span
+              className="text-[48px] font-bold leading-none text-white tabular-nums"
+              style={{ letterSpacing: '-2px' }}
+            >
+              {prefix}{isAOV ? avg.toFixed(0) : avg.toFixed(1)}{suffix}
+            </span>
+            <div className="mb-2 flex items-center gap-1.5">
+              <span className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ring-inset ${
+                weeklyAvgChange >= 0
+                  ? 'bg-emerald-400/20 text-emerald-300 ring-emerald-400/20'
+                  : 'bg-red-400/20 text-red-300 ring-red-400/20'
+              }`}>
+                {weeklyAvgChange >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                {weeklyAvgChange >= 0 ? '+' : ''}{weeklyAvgChange.toFixed(1)}
+              </span>
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-white/40">
+                avg weekly
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-1 min-h-[80px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={trendData} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="metric-summary-glow" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stopColor="rgba(255,255,255,0.3)" />
+                  <stop offset="100%" stopColor="rgba(255,255,255,0.9)" />
+                </linearGradient>
+              </defs>
+              <YAxis domain={['dataMin - 3', 'dataMax + 3']} hide />
+              <Tooltip
+                contentStyle={{
+                  background: 'rgba(15,23,42,0.85)',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '6px 10px',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                }}
+                labelStyle={{ color: 'rgba(255,255,255,0.5)', fontSize: '10px', fontWeight: 700, marginBottom: '2px' }}
+                itemStyle={{ color: '#fff', fontSize: '13px', fontWeight: 700 }}
+                formatter={(v) => [`${prefix}${v}${suffix}`, 'Score']}
+              />
+              <Line
+                type="monotone"
+                dataKey="value"
+                stroke="url(#metric-summary-glow)"
+                strokeWidth={2.5}
+                dot={false}
+                activeDot={{ r: 4, fill: '#fff', strokeWidth: 0 }}
+                animationDuration={1200}
+                animationEasing="ease-out"
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="flex items-center justify-between px-5 py-2.5 border-t border-white/10 flex-shrink-0">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">
+            {employees.length} employees
+          </span>
+          <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">
+            12-week trend
+          </span>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function MetricTopBottomCard({ metricId }: { metricId: string }) {
+  const employees = useMemo(() => getMetricAllEmployeeData(metricId), [metricId]);
+  const isAOV = metricId === 'average-order-value';
+  const prefix = METRIC_UNITS[metricId] ?? '';
+  const suffix = METRIC_SUFFIX[metricId] ?? '%';
+  const top3 = employees.slice(0, 3);
+  const bottom3 = employees.slice(-3).reverse();
+
+  return (
+    <motion.div custom={1} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
+      <AnalyticsCard icon={<Users className="h-4 w-4" />} title="Top & Bottom" subtitle="Performers for this metric">
+        <div className="grid grid-cols-1 sm:grid-cols-2 divide-y divide-gray-100 sm:divide-y-0 sm:divide-x p-4 sm:p-5 gap-0 flex-1">
+          <div className="pb-4 sm:pb-0 sm:pr-6">
+            <div className="flex items-center gap-1.5 mb-2.5">
+              <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
+              <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600">Top Performers</span>
+            </div>
+            <div className="space-y-0.5">
+              {top3.map((emp, idx) => (
+                <motion.div
+                  key={emp.name}
+                  variants={{
+                    hidden: { opacity: 0, x: -8 },
+                    visible: { opacity: 1, x: 0, transition: { delay: 0.1 + idx * 0.05, ease: 'easeOut', duration: 0.3 } },
+                  }}
+                  initial="hidden"
+                  animate="visible"
+                  className="flex items-center justify-between rounded-md px-2 py-2 transition-colors hover:bg-gray-50"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="w-4 text-[10px] font-bold text-gray-300 tabular-nums flex-shrink-0">
+                      {idx + 1}
+                    </span>
+                    <span className="text-sm font-medium text-gray-700 truncate">{emp.name}</span>
+                  </div>
+                  <span className="ml-2 text-sm font-bold text-emerald-600 tabular-nums flex-shrink-0">
+                    {prefix}{isAOV ? emp.value.toFixed(0) : emp.value.toFixed(1)}{suffix}
+                  </span>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+
+          <div className="pt-4 sm:pt-0 sm:pl-6">
+            <div className="flex items-center gap-1.5 mb-2.5">
+              <TrendingDown className="h-3.5 w-3.5 text-red-500" />
+              <span className="text-[10px] font-bold uppercase tracking-widest text-red-600">Needs Improvement</span>
+            </div>
+            <div className="space-y-0.5">
+              {bottom3.map((emp, idx) => (
+                <motion.div
+                  key={emp.name}
+                  variants={{
+                    hidden: { opacity: 0, x: -8 },
+                    visible: { opacity: 1, x: 0, transition: { delay: 0.1 + idx * 0.05, ease: 'easeOut', duration: 0.3 } },
+                  }}
+                  initial="hidden"
+                  animate="visible"
+                  className="flex items-center justify-between rounded-md px-2 py-2 transition-colors hover:bg-gray-50"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="w-4 text-[10px] font-bold text-gray-300 tabular-nums flex-shrink-0">
+                      {employees.length - 2 + idx}
+                    </span>
+                    <span className="text-sm font-medium text-gray-700 truncate">{emp.name}</span>
+                  </div>
+                  <span className="ml-2 text-sm font-bold text-red-500 tabular-nums flex-shrink-0">
+                    {prefix}{isAOV ? emp.value.toFixed(0) : emp.value.toFixed(1)}{suffix}
+                  </span>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </AnalyticsCard>
+    </motion.div>
+  );
+}
+
+function MetricBenchmarkCard({ metricId }: { metricId: string }) {
+  const employees = useMemo(() => getMetricAllEmployeeData(metricId), [metricId]);
+  const avg = employees.reduce((s, e) => s + e.value, 0) / employees.length;
+  const branchTarget = BRANCH_AVERAGES[metricId as keyof typeof BRANCH_AVERAGES] ?? 85;
+  const isAOV = metricId === 'average-order-value';
+  const prefix = METRIC_UNITS[metricId] ?? '';
+  const suffix = METRIC_SUFFIX[metricId] ?? '%';
+
+  const aboveTarget = employees.filter(e => e.value >= branchTarget).length;
+  const pctAbove = Math.round((aboveTarget / employees.length) * 100);
+  const median = employees[Math.floor(employees.length / 2)]?.value ?? 0;
+  const stdDev = Math.sqrt(employees.reduce((s, e) => s + Math.pow(e.value - avg, 2), 0) / employees.length);
+
+  return (
+    <motion.div custom={2} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
+      <AnalyticsCard icon={<Target className="h-4 w-4" />} title="Benchmarks" subtitle="Key statistical measures">
+        <div className="p-4 sm:p-5 flex flex-col gap-4 flex-1">
+          {/* Key metrics grid */}
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { label: 'Target', value: `${prefix}${isAOV ? branchTarget.toFixed(0) : branchTarget.toFixed(1)}${suffix}`, icon: Target, color: 'text-primary-600' },
+              { label: 'Median', value: `${prefix}${isAOV ? median.toFixed(0) : median.toFixed(1)}${suffix}`, icon: Hash, color: 'text-violet-600' },
+              { label: 'Std Dev', value: `±${stdDev.toFixed(1)}`, icon: Activity, color: 'text-amber-600' },
+              { label: 'Above Target', value: `${pctAbove}%`, icon: Percent, color: 'text-emerald-600' },
+            ].map((stat) => (
+              <div key={stat.label} className="rounded-lg bg-gray-50 p-3 ring-1 ring-inset ring-gray-100">
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <stat.icon className={`h-3 w-3 ${stat.color}`} />
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-gray-400">{stat.label}</span>
+                </div>
+                <p className={`text-lg font-bold tabular-nums ${stat.color}`}>{stat.value}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Target achievement bar */}
+          <div className="rounded-lg border border-blue-100 bg-blue-50/50 px-3.5 py-2.5">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Target Achievement</span>
+              <span className="text-xs font-bold text-blue-700">{aboveTarget}/{employees.length}</span>
+            </div>
+            <div className="relative h-2 w-full overflow-hidden rounded-full bg-blue-100">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${pctAbove}%` }}
+                transition={{ duration: 1, ease: 'easeOut' }}
+                className="h-full rounded-full bg-blue-500"
+              />
+            </div>
+          </div>
+        </div>
+      </AnalyticsCard>
+    </motion.div>
+  );
+}
+
+function MetricEmployeeRankingCard({ metricId }: { metricId: string }) {
+  const [sortBy, setSortBy] = useState<'rank' | 'change'>('rank');
+  const employees = useMemo(() => getMetricAllEmployeeData(metricId), [metricId]);
+  const isAOV = metricId === 'average-order-value';
+  const prefix = METRIC_UNITS[metricId] ?? '';
+  const suffix = METRIC_SUFFIX[metricId] ?? '%';
+  const avg = employees.reduce((s, e) => s + e.value, 0) / employees.length;
+  const maxVal = Math.max(...employees.map(e => e.value));
+
+  const sorted = useMemo(() => {
+    if (sortBy === 'change') {
+      return [...employees].sort((a, b) => b.weeklyChange - a.weeklyChange);
+    }
+    return employees;
+  }, [employees, sortBy]);
+
+  return (
+    <motion.div custom={3} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
+      <AnalyticsCard
+        icon={<BarChart2 className="h-4 w-4" />}
+        title="Employee Rankings"
+        subtitle={`All employees sorted by ${sortBy === 'rank' ? 'score' : 'weekly change'}`}
+        headerRight={
+          <div className="hidden sm:flex items-center gap-0 rounded-lg bg-gray-100 p-0.5">
+            {(['rank', 'change'] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setSortBy(tab)}
+                className={`relative rounded-md px-3 py-1 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                  sortBy === tab ? 'text-primary-600' : 'text-gray-400 hover:text-gray-600'
+                }`}
+              >
+                {sortBy === tab && (
+                  <motion.div
+                    layoutId="metric-sort-indicator"
+                    className="absolute inset-0 rounded-md bg-white shadow-sm ring-1 ring-inset ring-gray-200/60"
+                    transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                  />
+                )}
+                <span className="relative z-10">{tab === 'rank' ? 'By Score' : 'By Change'}</span>
+              </button>
+            ))}
+          </div>
+        }
+      >
+        {/* Mobile sort tabs — full-width strip */}
+        <div className="flex sm:hidden items-center justify-center gap-0 rounded-lg bg-gray-100 p-0.5 mx-4 mt-3">
+          {(['rank', 'change'] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setSortBy(tab)}
+              className={`relative flex-1 rounded-md px-3 py-1.5 text-xs font-bold uppercase tracking-wider transition-colors ${
+                sortBy === tab ? 'text-primary-600' : 'text-gray-400'
+              }`}
+            >
+              {sortBy === tab && (
+                <motion.div
+                  layoutId="metric-sort-indicator-mobile"
+                  className="absolute inset-0 rounded-md bg-white shadow-sm ring-1 ring-inset ring-gray-200/60"
+                  transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                />
+              )}
+              <span className="relative z-10">{tab === 'rank' ? 'By Score' : 'By Change'}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="flex-1 overflow-auto">
+          {/* Table header — desktop only */}
+          <div className="hidden sm:grid sticky top-0 z-10 grid-cols-12 gap-2 px-5 py-2.5 bg-gray-50/80 backdrop-blur-sm border-b border-gray-100 text-[10px] font-bold uppercase tracking-widest text-gray-400">
+            <div className="col-span-1 text-center">#</div>
+            <div className="col-span-3">Employee</div>
+            <div className="col-span-5">Score</div>
+            <div className="col-span-3 text-right">Change</div>
+          </div>
+
+          {/* Employee rows */}
+          <div className="divide-y divide-gray-50">
+            <AnimatePresence mode="popLayout">
+            {sorted.map((emp, idx) => {
+              const diff = emp.value - avg;
+              const isAboveAvg = diff >= 0;
+              const barWidth = isAOV ? (emp.value / maxVal) * 100 : emp.value;
+              const originalRank = employees.findIndex(e => e.name === emp.name) + 1;
+              const displayRank = sortBy === 'rank' ? idx + 1 : originalRank;
+
+              return (
+                <motion.div
+                  key={emp.name}
+                  layout
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.98 }}
+                  transition={{ layout: { type: 'spring', stiffness: 350, damping: 30 }, opacity: { duration: 0.2 } }}
+                  className="px-4 sm:px-5 py-3 transition-colors hover:bg-gray-50/60 group"
+                >
+                  {/* ── Desktop: single-row grid ── */}
+                  <div className="hidden sm:grid grid-cols-12 gap-2 items-center">
+                    {/* Rank */}
+                    <div className="col-span-1 text-center">
+                      <span className={`text-xs font-bold tabular-nums ${
+                        displayRank <= 3 ? 'text-primary-600' : 'text-gray-300'
+                      }`}>
+                        {displayRank}
+                      </span>
+                    </div>
+
+                    {/* Name */}
+                    <div className="col-span-3 min-w-0">
+                      <p className="text-sm font-semibold text-gray-700 truncate group-hover:text-primary-600 transition-colors">
+                        {emp.name}
+                      </p>
+                      <p className="text-[10px] text-gray-400 truncate">{emp.role}</p>
+                    </div>
+
+                    {/* Score bar */}
+                    <div className="col-span-5 flex items-center gap-2.5">
+                      <div className="flex-1 relative h-5 overflow-hidden rounded bg-gray-100">
+                        <motion.div
+                          key={`${emp.name}-${sortBy}`}
+                          initial={{ width: 0 }}
+                          animate={{ width: `${barWidth}%` }}
+                          transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1], delay: idx * 0.015 }}
+                          className={`h-full rounded ${
+                            isAboveAvg ? 'bg-emerald-400/70' : 'bg-amber-400/70'
+                          }`}
+                        />
+                        <div
+                          className="absolute top-0 h-full w-px bg-gray-400/50"
+                          style={{ left: `${isAOV ? (avg / maxVal) * 100 : avg}%` }}
+                        />
+                      </div>
+                      <span className="text-xs font-bold text-gray-700 tabular-nums w-14 text-right flex-shrink-0">
+                        {prefix}{isAOV ? emp.value.toFixed(0) : emp.value.toFixed(1)}{suffix}
+                      </span>
+                    </div>
+
+                    {/* Weekly change */}
+                    <div className="col-span-3 flex items-center justify-end">
+                      <span className={`flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ring-inset ${
+                        emp.weeklyChange > 0
+                          ? 'bg-emerald-50 text-emerald-600 ring-emerald-100'
+                          : emp.weeklyChange < 0
+                            ? 'bg-red-50 text-red-500 ring-red-100'
+                            : 'bg-gray-50 text-gray-500 ring-gray-100'
+                      }`}>
+                        {emp.weeklyChange > 0 ? (
+                          <ArrowUpRight className="h-3 w-3" />
+                        ) : emp.weeklyChange < 0 ? (
+                          <ArrowDownRight className="h-3 w-3" />
+                        ) : (
+                          <Minus className="h-3 w-3" />
+                        )}
+                        {emp.weeklyChange > 0 ? '+' : ''}{emp.weeklyChange}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* ── Mobile: stacked card layout ── */}
+                  <div className="flex flex-col gap-2.5 sm:hidden">
+                    {/* Top row: rank + name + change */}
+                    <div className="flex items-center gap-2.5">
+                      <span className={`text-sm font-bold tabular-nums w-6 text-center flex-shrink-0 ${
+                        displayRank <= 3 ? 'text-primary-600' : 'text-gray-300'
+                      }`}>
+                        {displayRank}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-700 truncate">
+                          {emp.name}
+                        </p>
+                        <p className="text-[10px] text-gray-400">{emp.role}</p>
+                      </div>
+                      <span className={`flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ring-inset flex-shrink-0 ${
+                        emp.weeklyChange > 0
+                          ? 'bg-emerald-50 text-emerald-600 ring-emerald-100'
+                          : emp.weeklyChange < 0
+                            ? 'bg-red-50 text-red-500 ring-red-100'
+                            : 'bg-gray-50 text-gray-500 ring-gray-100'
+                      }`}>
+                        {emp.weeklyChange > 0 ? (
+                          <ArrowUpRight className="h-3 w-3" />
+                        ) : emp.weeklyChange < 0 ? (
+                          <ArrowDownRight className="h-3 w-3" />
+                        ) : (
+                          <Minus className="h-3 w-3" />
+                        )}
+                        {emp.weeklyChange > 0 ? '+' : ''}{emp.weeklyChange}
+                      </span>
+                    </div>
+
+                    {/* Bottom row: full-width score bar */}
+                    <div className="flex items-center gap-2.5 pl-8">
+                      <div className="flex-1 relative h-4 overflow-hidden rounded bg-gray-100">
+                        <motion.div
+                          key={`${emp.name}-${sortBy}-m`}
+                          initial={{ width: 0 }}
+                          animate={{ width: `${barWidth}%` }}
+                          transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1], delay: idx * 0.015 }}
+                          className={`h-full rounded ${
+                            isAboveAvg ? 'bg-emerald-400/70' : 'bg-amber-400/70'
+                          }`}
+                        />
+                        <div
+                          className="absolute top-0 h-full w-px bg-gray-400/50"
+                          style={{ left: `${isAOV ? (avg / maxVal) * 100 : avg}%` }}
+                        />
+                      </div>
+                      <span className="text-xs font-bold text-gray-700 tabular-nums flex-shrink-0">
+                        {prefix}{isAOV ? emp.value.toFixed(0) : emp.value.toFixed(1)}{suffix}
+                      </span>
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })}
+            </AnimatePresence>
+          </div>
+
+          {/* Summary footer */}
+          <div className="sticky bottom-0 z-10 flex items-center justify-between px-5 py-3 bg-gray-50/90 backdrop-blur-sm border-t border-gray-100">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-1.5">
+                <div className="h-2 w-2 rounded-full bg-emerald-400" />
+                <span className="text-[10px] font-semibold text-gray-400">Above avg</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="h-2 w-2 rounded-full bg-amber-400" />
+                <span className="text-[10px] font-semibold text-gray-400">Below avg</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="h-px w-3 bg-gray-400/50" />
+                <span className="text-[10px] font-semibold text-gray-400">Branch avg</span>
+              </div>
+            </div>
+            <span className="text-[10px] font-bold text-gray-400">
+              {employees.filter(e => e.value >= avg).length}/{employees.length} above average
+            </span>
+          </div>
+        </div>
+      </AnalyticsCard>
+    </motion.div>
+  );
+}
+
+function MetricInsightsCard({ metricId }: { metricId: string }) {
+  const insights = useMemo(() => getMetricInsights(metricId), [metricId]);
+
+  return (
+    <motion.div custom={4} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
+      <AnalyticsCard
+        icon={<Eye className="h-4 w-4" />}
+        title="Metric Insights"
+        subtitle="Automated observations"
+      >
+        <div className="divide-y divide-gray-50 flex-1 overflow-auto">
+          {insights.map((insight, idx) => (
+            <div
+              key={idx}
+              className="flex flex-col gap-2 p-4 transition-colors hover:bg-gray-50/60"
+            >
+              <div className="flex items-start gap-3">
+                <div
+                  className={`mt-0.5 flex-shrink-0 h-8 w-8 rounded-lg flex items-center justify-center ${
+                    insight.type === 'warning'
+                      ? 'bg-amber-50 text-amber-500'
+                      : insight.type === 'success'
+                        ? 'bg-emerald-50 text-emerald-500'
+                        : 'bg-blue-50 text-blue-500'
+                  }`}
+                >
+                  {insight.type === 'warning' ? (
+                    <AlertTriangle className="h-4 w-4" />
+                  ) : insight.type === 'success' ? (
+                    <TrendingUp className="h-4 w-4" />
+                  ) : (
+                    <Activity className="h-4 w-4" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm font-semibold leading-none mb-1 ${
+                    insight.type === 'warning' ? 'text-amber-700' : insight.type === 'success' ? 'text-emerald-700' : 'text-blue-700'
+                  }`}>
+                    {insight.title}
+                  </p>
+                  <p className="text-xs text-gray-500 leading-relaxed">{insight.message}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </AnalyticsCard>
+    </motion.div>
+  );
+}
+
+function MetricDistributionCard({ metricId }: { metricId: string }) {
+  const distributionData = useMemo(() => getMetricDistribution(metricId), [metricId]);
+  const totalEmployees = distributionData.reduce((sum, d) => sum + d.count, 0);
+  const peakBucket = distributionData.reduce((max, d) => d.count > max.count ? d : max, distributionData[0]);
+
+  return (
+    <motion.div custom={5} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
+      <AnalyticsCard
+        icon={<Users className="h-4 w-4" />}
+        title="Score Distribution"
+        subtitle={`${totalEmployees} employees`}
+      >
+        <div className="p-5 flex flex-col flex-1 gap-4">
+          <div className="h-[200px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={distributionData} margin={{ top: 4, right: 0, left: -24, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                <XAxis
+                  dataKey="range"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: '#9ca3af', fontSize: 11, fontWeight: 600 }}
+                />
+                <YAxis
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: '#9ca3af', fontSize: 11, fontWeight: 600 }}
+                />
+                <Tooltip
+                  cursor={{ fill: '#f9fafb' }}
+                  contentStyle={{
+                    borderRadius: '8px',
+                    border: '1px solid #f0f0f0',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                    fontSize: '12px',
+                  }}
+                  formatter={(value) => [`${value ?? ''} employees`, 'Count']}
+                />
+                <Bar dataKey="count" radius={[4, 4, 0, 0]} maxBarSize={52}>
+                  {distributionData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.fill} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="grid grid-cols-5 gap-1">
+            {distributionData.map(d => {
+              const pct = totalEmployees > 0 ? Math.round((d.count / totalEmployees) * 100) : 0;
+              return (
+                <div key={d.range} className="flex flex-col items-center gap-1">
+                  <div className="h-1.5 w-full rounded-full" style={{ background: d.fill }} />
+                  <span className="text-[10px] font-bold text-gray-500 tabular-nums">{pct}%</span>
+                  <span className="text-[9px] text-gray-400 font-medium">{d.range}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="rounded-lg border border-emerald-100 bg-emerald-50/50 px-3.5 py-2.5">
+            <p className="text-xs text-gray-600 leading-relaxed">
+              <span className="font-bold text-emerald-700">
+                {peakBucket.count} employees ({totalEmployees > 0 ? Math.round((peakBucket.count / totalEmployees) * 100) : 0}%)
+              </span>{' '}
+              fall in the <span className="font-bold text-emerald-700">{peakBucket.range}</span> range — the highest concentration.
+            </p>
+          </div>
+        </div>
+      </AnalyticsCard>
+    </motion.div>
+  );
+}
+
+function MetricTrendCard({ metricId }: { metricId: string }) {
+  const trendData = useMemo(() => getMetricTrend12W(metricId), [metricId]);
+  const isAOV = metricId === 'average-order-value';
+  const prefix = METRIC_UNITS[metricId] ?? '';
+  const suffix = METRIC_SUFFIX[metricId] ?? '%';
+  const target = BRANCH_AVERAGES[metricId as keyof typeof BRANCH_AVERAGES] ?? 85;
+
+  return (
+    <motion.div custom={6} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
+      <AnalyticsCard
+        icon={<Activity className="h-4 w-4" />}
+        title="12-Week Trend"
+        subtitle="Branch-wide metric performance over time"
+      >
+        <div className="flex items-center gap-3 px-4 sm:px-5 pt-3 pb-2 border-b border-gray-50">
+          <div className="flex flex-wrap gap-1.5">
+            <div
+              className="flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-200"
+              style={{ borderLeft: '3px solid #2563eb' }}
+            >
+              Branch Average
+            </div>
+            <div
+              className="flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-gray-400 shadow-sm ring-1 ring-inset ring-gray-200"
+              style={{ borderLeft: '3px solid #d1d5db' }}
+            >
+              Target ({prefix}{isAOV ? target.toFixed(0) : target.toFixed(1)}{suffix})
+            </div>
+          </div>
+        </div>
+
+        <div className="p-3 sm:p-5 flex-1">
+          <div className="h-[240px] sm:h-[280px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={trendData} margin={{ top: 8, right: 4, left: -24, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="grad-metric-trend" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#2563eb" stopOpacity={0.18} />
+                    <stop offset="100%" stopColor="#2563eb" stopOpacity={0.01} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                <XAxis
+                  dataKey="week"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: '#9ca3af', fontSize: 10, fontWeight: 600 }}
+                  dy={8}
+                />
+                <YAxis
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: '#9ca3af', fontSize: 11, fontWeight: 600 }}
+                  domain={['dataMin - 5', 'dataMax + 5']}
+                  tickCount={6}
+                />
+                <Tooltip
+                  contentStyle={{
+                    borderRadius: '10px',
+                    border: '1px solid #f0f0f0',
+                    boxShadow: '0 8px 24px -4px rgba(0,0,0,0.10)',
+                    padding: '10px 14px',
+                  }}
+                  itemStyle={{ fontWeight: 700, fontSize: '12px' }}
+                  labelStyle={{ fontWeight: 600, color: '#6b7280', marginBottom: '6px', fontSize: '11px' }}
+                  formatter={(v: number, name: string) => [
+                    `${prefix}${isAOV ? v.toFixed(0) : v.toFixed(1)}${suffix}`,
+                    name === 'value' ? 'Score' : 'Target',
+                  ]}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="value"
+                  stroke="#2563eb"
+                  strokeWidth={2.5}
+                  fillOpacity={1}
+                  fill="url(#grad-metric-trend)"
+                  dot={false}
+                  activeDot={{ r: 4, strokeWidth: 0 }}
+                  animationDuration={800}
+                  animationEasing="ease-out"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="target"
+                  stroke="#d1d5db"
+                  strokeWidth={1.5}
+                  strokeDasharray="6 3"
+                  fillOpacity={0}
+                  dot={false}
+                  activeDot={{ r: 3, strokeWidth: 0, fill: '#9ca3af' }}
+                  animationDuration={800}
+                  animationEasing="ease-out"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </AnalyticsCard>
+    </motion.div>
+  );
+}
+
 // ─── View Toggle Options ──────────────────────────────────────────────────
 
 type AnalyticsView = 'general' | 'employee' | 'metrics';
@@ -2096,6 +3450,264 @@ const ANALYTICS_VIEW_OPTIONS: ViewOption<AnalyticsView>[] = [
   { id: 'metrics', label: 'Individual Metrics', icon: Target },
 ];
 
+// ─── Metric Select Dropdown (mirrors SingleUserSelect style) ────────────────
+
+const METRIC_ICONS: Record<string, React.ReactNode> = {
+  'customer-service': <Users className="h-3.5 w-3.5" />,
+  'workplace-relations': <Users className="h-3.5 w-3.5" />,
+  'professional-conduct': <Trophy className="h-3.5 w-3.5" />,
+  'attendance-rate': <Calendar className="h-3.5 w-3.5" />,
+  'punctuality-rate': <Activity className="h-3.5 w-3.5" />,
+  'productivity-rate': <TrendingUp className="h-3.5 w-3.5" />,
+  'average-order-value': <BarChart2 className="h-3.5 w-3.5" />,
+  'uniform-compliance': <Check className="h-3.5 w-3.5" />,
+  'hygiene-compliance': <Check className="h-3.5 w-3.5" />,
+  'sop-compliance': <Target className="h-3.5 w-3.5" />,
+};
+
+function getMetricCategory(id: string): string {
+  if (['customer-service', 'workplace-relations', 'professional-conduct'].includes(id)) return 'Core Performance';
+  if (['attendance-rate', 'punctuality-rate', 'productivity-rate', 'average-order-value'].includes(id)) return 'Operational';
+  return 'Compliance';
+}
+
+const METRIC_CATEGORY_COLORS: Record<string, string> = {
+  'Core Performance': 'bg-blue-500',
+  'Operational': 'bg-violet-500',
+  'Compliance': 'bg-emerald-500',
+};
+
+function MetricSelect({
+  selectedMetricId,
+  onSelect,
+}: {
+  selectedMetricId: string;
+  onSelect: (id: string) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const selectedMetric = METRICS.find(m => m.id === selectedMetricId);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClick);
+    }
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [isOpen]);
+
+  const filtered = METRICS.filter(m =>
+    m.label.toLowerCase().includes(search.toLowerCase()) ||
+    getMetricCategory(m.id).toLowerCase().includes(search.toLowerCase())
+  );
+
+  // Group by category
+  const grouped = filtered.reduce<Record<string, typeof METRICS>>((acc, m) => {
+    const cat = getMetricCategory(m.id);
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(m);
+    return acc;
+  }, {});
+
+  return (
+    <div ref={containerRef} className="relative">
+      {/* Trigger */}
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-left transition-all hover:border-blue-400 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+      >
+        <div className="flex-shrink-0">
+          {selectedMetric ? (
+            <div className="h-8 w-8 flex items-center justify-center rounded-full bg-primary-50 text-primary-600">
+              {METRIC_ICONS[selectedMetricId] ?? <Target className="h-3.5 w-3.5" />}
+            </div>
+          ) : (
+            <div className="h-8 w-8 flex items-center justify-center rounded-full bg-gray-100 text-gray-400">
+              <Target className="h-4 w-4" />
+            </div>
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          {selectedMetric ? (
+            <>
+              <p className="text-sm font-bold text-gray-800 truncate leading-tight">{selectedMetric.label}</p>
+              <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">{getMetricCategory(selectedMetricId)}</p>
+            </>
+          ) : (
+            <span className="text-sm font-medium text-gray-400">Select a metric...</span>
+          )}
+        </div>
+        <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {/* Dropdown */}
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: 8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.98 }}
+            transition={{ duration: 0.15, ease: 'easeOut' }}
+            className="absolute z-50 mt-2 w-full min-w-[320px] rounded-2xl border border-gray-100 bg-white p-2 shadow-xl ring-1 ring-black/5"
+          >
+            {/* Search */}
+            <div className="relative mb-2">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <input
+                autoFocus
+                type="text"
+                placeholder="Search metrics..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full rounded-xl border-none bg-gray-50 py-2.5 pl-9 pr-4 text-sm font-medium text-gray-700 placeholder:text-gray-400 focus:bg-white focus:ring-2 focus:ring-blue-500/10"
+              />
+            </div>
+
+            {/* Grouped list */}
+            <div className="max-h-[360px] overflow-y-auto overflow-x-hidden p-1 space-y-3">
+              {Object.keys(grouped).length === 0 ? (
+                <div className="py-8 text-center">
+                  <p className="text-sm font-medium text-gray-400">No metrics found</p>
+                </div>
+              ) : (
+                Object.entries(grouped).map(([category, metrics]) => (
+                  <div key={category}>
+                    <div className="flex items-center gap-2 px-3 py-1.5">
+                      <div className={`h-1.5 w-1.5 rounded-full ${METRIC_CATEGORY_COLORS[category] ?? 'bg-gray-400'}`} />
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{category}</span>
+                    </div>
+                    <div className="space-y-0.5">
+                      {metrics.map((metric) => (
+                        <button
+                          key={metric.id}
+                          type="button"
+                          onClick={() => {
+                            onSelect(metric.id);
+                            setIsOpen(false);
+                            setSearch('');
+                          }}
+                          className={`group flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-all hover:bg-blue-50/50 ${
+                            selectedMetricId === metric.id ? 'bg-blue-50/80' : ''
+                          }`}
+                        >
+                          <div className={`h-8 w-8 flex flex-shrink-0 items-center justify-center rounded-full shadow-sm ${
+                            selectedMetricId === metric.id ? 'bg-primary-100 text-primary-600' : 'bg-gray-50 text-gray-500'
+                          }`}>
+                            {METRIC_ICONS[metric.id] ?? <Target className="h-3.5 w-3.5" />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-sm font-bold truncate ${selectedMetricId === metric.id ? 'text-blue-700' : 'text-gray-700'}`}>
+                              {metric.label}
+                            </p>
+                          </div>
+                          {selectedMetricId === metric.id && (
+                            <Check className="h-4 w-4 text-blue-600" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ─── Individual Metrics View Container ──────────────────────────────────────
+
+function MetricsViewContent() {
+  const [selectedMetric, setSelectedMetric] = useState(METRICS[0].id);
+  const { stickyRef: metricsHeaderRef, isStuck: isMetricsHeaderStuck } = useStickyHeaderState();
+
+  return (
+    <div className="space-y-6">
+      {/* Metric Selector Bar */}
+      <div
+        ref={metricsHeaderRef}
+        className={`sticky -top-4 sm:-top-6 z-20 -mx-4 sm:-mx-6 rounded-b-xl border-b border-x px-5 py-4 shadow-sm backdrop-blur-xl backdrop-saturate-150 transition-[background-color,border-color,box-shadow] duration-200 ${
+          isMetricsHeaderStuck
+            ? "border-primary-200/35 bg-primary-50/28 shadow-[0_1px_0_0_rgba(255,255,255,0.35)_inset]"
+            : "border-white/30 bg-white/30 shadow-[0_1px_0_0_rgba(255,255,255,0.45)_inset]"
+        }`}
+      >
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex flex-col gap-4 sm:flex-row sm:items-center w-full"
+        >
+          <div className="w-full sm:w-72">
+            <MetricSelect
+              selectedMetricId={selectedMetric}
+              onSelect={setSelectedMetric}
+            />
+          </div>
+          <motion.div
+            key={selectedMetric}
+            initial={{ opacity: 0, x: 12 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="grid grid-cols-3 gap-3 sm:flex sm:items-center sm:gap-6 text-sm border-t border-gray-100 pt-3 sm:border-t-0 sm:pt-0 sm:border-l sm:border-gray-100 sm:pl-6"
+          >
+            {[
+              { label: "Category", value: getMetricCategory(selectedMetric) },
+              { label: "Type", value: selectedMetric.includes("compliance") ? "Pass/Fail" : selectedMetric === "average-order-value" ? "Currency" : "Score-based" },
+              { label: "Period", value: "Last 30 Days" },
+            ].map((info) => (
+              <div key={info.label} className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{info.label}</span>
+                <span className="text-xs sm:text-sm font-bold text-gray-700">{info.value}</span>
+              </div>
+            ))}
+          </motion.div>
+        </motion.div>
+      </div>
+
+      {/* Row 1: Summary + Top/Bottom + Benchmarks */}
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+        <div className="col-span-2 sm:col-span-1">
+          <MetricSummaryCard metricId={selectedMetric} />
+        </div>
+        <div className="col-span-2 sm:col-span-1">
+          <MetricBenchmarkCard metricId={selectedMetric} />
+        </div>
+        <div className="col-span-2">
+          <MetricTopBottomCard metricId={selectedMetric} />
+        </div>
+      </div>
+
+      {/* Row 2: Rankings + Insights */}
+      <div className="grid gap-4 lg:grid-cols-10">
+        <div className="lg:col-span-7 min-w-0">
+          <MetricEmployeeRankingCard metricId={selectedMetric} />
+        </div>
+        <div className="lg:col-span-3">
+          <MetricInsightsCard metricId={selectedMetric} />
+        </div>
+      </div>
+
+      {/* Row 3: Trend + Distribution */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <MetricTrendCard metricId={selectedMetric} />
+        </div>
+        <div className="lg:col-span-1">
+          <MetricDistributionCard metricId={selectedMetric} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 interface EmployeeAnalyticsPageProps {
@@ -2105,6 +3717,10 @@ interface EmployeeAnalyticsPageProps {
 export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPageProps) {
   const [activeView, setActiveView] = useState<AnalyticsView>('general');
   const [selectedUser, setSelectedUser] = useState<UserEntry | null>(null);
+  const { stickyRef: employeeHeaderRef, isStuck: isEmployeeHeaderStuck } = useStickyHeaderState(
+    activeView,
+    activeView === "employee",
+  );
 
   const stats = useMemo(() => {
     if (!selectedUser) return null;
@@ -2200,38 +3816,47 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
           {activeView === 'employee' && (
             <div className="space-y-6">
               {/* Employee Selector Bar */}
-              <motion.div
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="flex flex-col sm:flex-row sm:items-center gap-4 rounded-xl border border-gray-100 bg-white px-5 py-4 shadow-sm"
+              <div
+                ref={employeeHeaderRef}
+                className={`sticky -top-4 sm:-top-6 z-20 -mx-4 sm:-mx-6 rounded-b-xl border-b border-x px-5 py-4 shadow-sm backdrop-blur-xl backdrop-saturate-150 transition-[background-color,border-color,box-shadow] duration-200 ${
+                  isEmployeeHeaderStuck
+                    ? "border-primary-200/35 bg-primary-50/28 shadow-[0_1px_0_0_rgba(255,255,255,0.35)_inset]"
+                    : "border-white/30 bg-white/30 shadow-[0_1px_0_0_rgba(255,255,255,0.45)_inset]"
+                }`}
               >
-                <div className="w-full sm:w-72">
-                  <SingleUserSelect
-                    users={ANALYTICS_USER_ENTRIES}
-                    selectedUserId={selectedUser?.id ?? null}
-                    onSelect={setSelectedUser}
-                    placeholder="Select an employee..."
-                  />
-                </div>
-                {selectedUser && (
-                  <motion.div
-                    initial={{ opacity: 0, x: 12 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className="flex flex-wrap items-center gap-3 sm:gap-6 text-sm sm:border-l sm:border-gray-100 sm:pl-6"
-                  >
-                    {[
-                      { label: 'Department', value: 'Operations' },
-                      { label: 'Branch', value: 'Manila North' },
-                      { label: 'Tenure', value: '2.4 Years' },
-                    ].map((info) => (
-                      <div key={info.label} className="flex items-center gap-2">
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{info.label}</span>
-                        <span className="text-sm font-bold text-gray-700">{info.value}</span>
-                      </div>
-                    ))}
-                  </motion.div>
-                )}
-              </motion.div>
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex flex-col gap-4 sm:flex-row sm:items-center w-full"
+                >
+                  <div className="w-full sm:w-72">
+                    <SingleUserSelect
+                      users={ANALYTICS_USER_ENTRIES}
+                      selectedUserId={selectedUser?.id ?? null}
+                      onSelect={setSelectedUser}
+                      placeholder="Select an employee..."
+                    />
+                  </div>
+                  {selectedUser && (
+                    <motion.div
+                      initial={{ opacity: 0, x: 12 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      className="grid grid-cols-3 gap-3 sm:flex sm:items-center sm:gap-6 text-sm border-t border-gray-100 pt-3 sm:border-t-0 sm:pt-0 sm:border-l sm:border-gray-100 sm:pl-6"
+                    >
+                      {[
+                        { label: "Department", value: "Operations" },
+                        { label: "Branch", value: "Manila North" },
+                        { label: "Tenure", value: "2.4 Years" },
+                      ].map((info) => (
+                        <div key={info.label} className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2">
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{info.label}</span>
+                          <span className="text-xs sm:text-sm font-bold text-gray-700">{info.value}</span>
+                        </div>
+                      ))}
+                    </motion.div>
+                  )}
+                </motion.div>
+              </div>
 
               {!selectedUser ? (
                 <motion.div
@@ -2285,13 +3910,7 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
           )}
 
           {activeView === 'metrics' && (
-            <div className="flex flex-col items-center justify-center py-20 bg-white rounded-2xl border border-dashed border-gray-200">
-              <Target className="h-12 w-12 text-gray-300 mb-4" />
-              <h3 className="text-lg font-bold text-gray-900">Individual Metrics View</h3>
-              <p className="text-sm text-gray-500 max-w-xs text-center mt-1">
-                Analyze specific metrics across departments, locations, or time periods to identify organizational patterns.
-              </p>
-            </div>
+            <MetricsViewContent />
           )}
         </motion.div>
       </AnimatePresence>
