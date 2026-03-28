@@ -34,6 +34,8 @@ export const approveRegistrationRequestSchema = z.object({
     branchId: z.string().uuid('Invalid resident branchId'),
   }),
   employeeNumber: z.number().int().positive().optional(),
+  userKey: z.string().uuid('Invalid user key').optional(),
+  avatarUrl: z.string().url('Invalid avatar URL').max(500).optional(),
 });
 
 export const rejectRegistrationRequestSchema = z.object({

@@ -1,7 +1,9 @@
 import { AppError } from '../middleware/errorHandler.js';
 import { db } from '../config/database.js';
+import { logger } from '../utils/logger.js';
 import { assignGlobalCompanyBranches } from './globalUserManagement.service.js';
 import { loadUserWorkScope } from './globalUser.service.js';
+import { archiveEmployeesByWebsiteUserKey, unarchiveEmployeesByWebsiteUserKey } from './odoo.service.js';
 
 type EmploymentStatus = 'active' | 'resigned' | 'inactive' | 'suspended';
 
@@ -482,7 +484,7 @@ export async function updateEmployeeWorkInformation(input: {
 
   const existingUser = await db.getDb()('users')
     .where({ id: input.userId })
-    .first('id', 'email');
+    .first('id', 'email', 'user_key');
   if (!existingUser) {
     throw new AppError(404, 'Employee not found');
   }
@@ -568,6 +570,68 @@ export async function updateEmployeeWorkInformation(input: {
         updated_at: new Date(),
       });
   });
+
+  if (employmentStatus === 'resigned') {
+    const websiteUserKey = String(existingUser.user_key ?? '').trim();
+    if (websiteUserKey) {
+      try {
+        const archiveResult = await archiveEmployeesByWebsiteUserKey({ websiteUserKey });
+        logger.info(
+          {
+            userId: input.userId,
+            websiteUserKey,
+            matchedCount: archiveResult.matchedCount,
+            archivedCount: archiveResult.archivedCount,
+          },
+          'Archived resigned employee records in Odoo',
+        );
+      } catch (error) {
+        logger.warn(
+          {
+            userId: input.userId,
+            websiteUserKey,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          'Failed to archive resigned employee records in Odoo; continuing with local archive only',
+        );
+      }
+    } else {
+      logger.warn(
+        { userId: input.userId },
+        'Skipped Odoo archive for resigned employee because user_key is missing',
+      );
+    }
+  } else if (employmentStatus === 'active') {
+    const websiteUserKey = String(existingUser.user_key ?? '').trim();
+    if (websiteUserKey) {
+      try {
+        const unarchiveResult = await unarchiveEmployeesByWebsiteUserKey({ websiteUserKey });
+        logger.info(
+          {
+            userId: input.userId,
+            websiteUserKey,
+            matchedCount: unarchiveResult.matchedCount,
+            unarchivedCount: unarchiveResult.unarchivedCount,
+          },
+          'Unarchived active employee records in Odoo',
+        );
+      } catch (error) {
+        logger.warn(
+          {
+            userId: input.userId,
+            websiteUserKey,
+            error: error instanceof Error ? error.message : String(error),
+          },
+          'Failed to unarchive active employee records in Odoo; continuing with local activation only',
+        );
+      }
+    } else {
+      logger.warn(
+        { userId: input.userId },
+        'Skipped Odoo unarchive for active employee because user_key is missing',
+      );
+    }
+  }
 
   return getEmployeeProfileDetail(
     input.userId,

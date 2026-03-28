@@ -11,11 +11,13 @@ import {
   formatBranchEmployeeCode,
   formatEmployeeDisplayName,
   getEmployeeIdentitySnapshot,
+  syncAvatarToOdoo,
   unifyPartnerContactsByEmail,
 } from './odoo.service.js';
 import { sendRegistrationApprovedEmail } from './mail.service.js';
 import { getIO } from '../config/socket.js';
 import { normalizeEmail } from './globalUser.service.js';
+import { buildTenantStoragePrefix, deleteFolder, uploadFile } from './storage.service.js';
 
 const REGISTRATION_STATUSES = {
   PENDING: 'pending',
@@ -50,6 +52,46 @@ type ApprovalUserRow = {
   employee_number: number | null;
 };
 
+type OdooEmployeeByWebsiteKeyRow = {
+  id: number;
+  work_email?: string | null;
+  company_id?: [number, string] | false;
+  barcode?: string | null;
+  active?: boolean;
+};
+
+function inferImageMimeAndExt(buffer: Buffer): { mime: string; ext: string } {
+  if (buffer.length >= 8
+    && buffer[0] === 0x89
+    && buffer[1] === 0x50
+    && buffer[2] === 0x4e
+    && buffer[3] === 0x47
+    && buffer[4] === 0x0d
+    && buffer[5] === 0x0a
+    && buffer[6] === 0x1a
+    && buffer[7] === 0x0a) {
+    return { mime: 'image/png', ext: 'png' };
+  }
+
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return { mime: 'image/jpeg', ext: 'jpg' };
+  }
+
+  if (buffer.length >= 12
+    && buffer[0] === 0x52
+    && buffer[1] === 0x49
+    && buffer[2] === 0x46
+    && buffer[3] === 0x46
+    && buffer[8] === 0x57
+    && buffer[9] === 0x45
+    && buffer[10] === 0x42
+    && buffer[11] === 0x50) {
+    return { mime: 'image/webp', ext: 'webp' };
+  }
+
+  return { mime: 'image/jpeg', ext: 'jpg' };
+}
+
 export function normalizeOptionalUserKey(input: string | undefined): string | undefined {
   if (input === undefined) return undefined;
   const trimmed = input.trim();
@@ -58,6 +100,30 @@ export function normalizeOptionalUserKey(input: string | undefined): string | un
     throw new AppError(400, 'Invalid user key. Expected a UUID value.');
   }
   return trimmed;
+}
+
+export function resolveProvidedUserKeyEmployeeNumberOrThrow(input: {
+  providedEmployeeNumber?: number;
+  existingIdentityEmployeeNumber: number | null;
+}): number | null {
+  const existingEmployeeNumber = Number(input.existingIdentityEmployeeNumber ?? 0);
+  const hasExistingEmployeeNumber = Number.isInteger(existingEmployeeNumber) && existingEmployeeNumber > 0;
+
+  if (input.providedEmployeeNumber != null) {
+    if (hasExistingEmployeeNumber && existingEmployeeNumber !== input.providedEmployeeNumber) {
+      throw new AppError(
+        400,
+        `Provided employee number ${input.providedEmployeeNumber} does not match existing identity employee number ${existingEmployeeNumber}.`,
+      );
+    }
+    return input.providedEmployeeNumber;
+  }
+
+  if (hasExistingEmployeeNumber) {
+    return existingEmployeeNumber;
+  }
+
+  return null;
 }
 
 export function selectApprovalCanonicalUsers(input: {
@@ -246,6 +312,7 @@ async function getMaxEmployeeNumberFromOdoo(
       domain: [['barcode', '=ilike', `${companyCode}%`]],
       fields: ['barcode'],
       limit: 10000,
+      context: { active_test: false },
     },
   )) as Array<{ barcode?: string | null }>;
 
@@ -306,6 +373,104 @@ async function resolveOrCreateEmployeeIdentity(
       wasExisting: false,
     };
   });
+}
+
+async function listEmployeesByWebsiteUserKeyAcrossCompanies(userKey: string): Promise<OdooEmployeeByWebsiteKeyRow[]> {
+  return (await callOdooKw(
+    'hr.employee',
+    'search_read',
+    [],
+    {
+      domain: [['x_website_key', '=', userKey]],
+      fields: ['id', 'company_id', 'work_email', 'barcode', 'active'],
+      limit: 10000,
+      context: { active_test: false },
+    },
+  )) as OdooEmployeeByWebsiteKeyRow[];
+}
+
+async function syncExistingOdooEmployeeEmailsByUserKey(input: {
+  employees: OdooEmployeeByWebsiteKeyRow[];
+  normalizedEmail: string;
+}): Promise<number> {
+  let updatedCount = 0;
+  for (const employee of input.employees) {
+    const currentEmail = normalizeEmail(String(employee.work_email ?? ''));
+    if (currentEmail === input.normalizedEmail) continue;
+    await callOdooKw('hr.employee', 'write', [[employee.id], { work_email: input.normalizedEmail }]);
+    updatedCount += 1;
+  }
+  return updatedCount;
+}
+
+async function getFirstEmployeeAvatarBase64ByWebsiteKey(userKey: string): Promise<string | null> {
+  const rows = (await callOdooKw(
+    'hr.employee',
+    'search_read',
+    [],
+    {
+      domain: [['x_website_key', '=', userKey]],
+      fields: ['id', 'image_1920'],
+      order: 'id asc',
+      limit: 1,
+      context: { active_test: false },
+    },
+  )) as Array<{ id?: number; image_1920?: string | false | null }>;
+
+  if (!rows.length) return null;
+  const imageBase64 = String(rows[0].image_1920 ?? '').trim();
+  return imageBase64 || null;
+}
+
+async function importFirstOdooEmployeeAvatarToWebsite(input: {
+  websiteKey: string;
+  userId: string;
+  avatarStorageRoot?: string | null;
+}): Promise<string | null> {
+  const storageRoot = String(input.avatarStorageRoot ?? '').trim();
+  if (!storageRoot) return null;
+
+  const employeeAvatarBase64 = await getFirstEmployeeAvatarBase64ByWebsiteKey(input.websiteKey);
+  if (!employeeAvatarBase64) return null;
+
+  const cleanedBase64 = employeeAvatarBase64.includes(',')
+    ? String(employeeAvatarBase64.split(',').pop() ?? '').trim()
+    : employeeAvatarBase64;
+  if (!cleanedBase64) return null;
+
+  const avatarBuffer = Buffer.from(cleanedBase64, 'base64');
+  if (!avatarBuffer.length) return null;
+
+  const { mime, ext } = inferImageMimeAndExt(avatarBuffer);
+  const folderPath = buildTenantStoragePrefix(storageRoot, 'Profile Pictures', input.userId);
+  await deleteFolder(folderPath);
+
+  const avatarUrl = await uploadFile(
+    avatarBuffer,
+    `odoo-avatar.${ext}`,
+    mime,
+    folderPath,
+  );
+  return avatarUrl ?? null;
+}
+
+async function assertWebsiteEmployeeNumberAvailability(input: {
+  employeeNumber: number;
+  websiteKey: string;
+  identityId: string | null;
+}): Promise<void> {
+  const existingUser = await db.getDb()('users')
+    .where({ employee_number: input.employeeNumber })
+    .first('id', 'user_key');
+  if (!existingUser) return;
+
+  const existingId = String(existingUser.id ?? '');
+  const existingKey = String(existingUser.user_key ?? '').trim();
+  const sameById = input.identityId ? existingId === input.identityId : false;
+  const sameByKey = existingKey.length > 0 && existingKey === input.websiteKey;
+  if (sameById || sameByKey) return;
+
+  throw new AppError(400, `Employee number ${input.employeeNumber} is already taken by another website user.`);
 }
 
 async function resolveAssignmentsOrThrow(input: {
@@ -511,6 +676,8 @@ export async function approveRegistrationRequest(input: {
   residentBranch: ResidentBranchInput;
   employeeNumber?: number;
   userKey?: string;
+  avatarUrl?: string;
+  avatarStorageRoot?: string | null;
 }): Promise<{ requestId: string; userId: string }> {
   const masterDb = db.getDb();
 
@@ -552,21 +719,59 @@ export async function approveRegistrationRequest(input: {
   const residentAssignment = assignments.find((item) => item.companyId === resident.companyId)!;
 
   const normalizedEmail = normalizeEmail(String(request.email));
+  const requestedAvatarUrl = typeof input.avatarUrl === 'string' && input.avatarUrl.trim().length > 0
+    ? input.avatarUrl.trim()
+    : undefined;
   const requestedUserKey = normalizeOptionalUserKey(input.userKey);
   const identity = await resolveOrCreateEmployeeIdentity(normalizedEmail);
   const websiteKey = requestedUserKey ?? identity.websiteKey;
+  let skipOdooEmployeeUpsert = false;
+  let resolvedInputEmployeeNumber = input.employeeNumber;
   if (requestedUserKey) {
+    const existingEmployeesByUserKey = await listEmployeesByWebsiteUserKeyAcrossCompanies(requestedUserKey);
+    if (existingEmployeesByUserKey.length === 0) {
+      throw new AppError(400, `No employee found for user key ${requestedUserKey}.`);
+    }
+
+    const syncedEmployeeEmailsCount = await syncExistingOdooEmployeeEmailsByUserKey({
+      employees: existingEmployeesByUserKey,
+      normalizedEmail,
+    });
+
+    emitRegistrationApprovalProgress({
+      companyId: input.reviewerCompanyId,
+      verificationId: input.requestId,
+      reviewerId: input.reviewerId,
+      step: 'identity',
+      message: syncedEmployeeEmailsCount > 0
+        ? `Found ${existingEmployeesByUserKey.length} Odoo employee(s) for provided user key and synced ${syncedEmployeeEmailsCount} email(s).`
+        : `Found ${existingEmployeesByUserKey.length} Odoo employee(s) for provided user key.`,
+    });
+
     const userByProvidedKey = await masterDb('users')
       .where({ user_key: requestedUserKey })
       .first('id', 'employee_number');
+    const existingIdentityEmployeeNumber = Number(userByProvidedKey?.employee_number ?? 0) > 0
+      ? Number(userByProvidedKey?.employee_number)
+      : null;
+
+    const resolvedFromProvidedKey = resolveProvidedUserKeyEmployeeNumberOrThrow({
+      providedEmployeeNumber: input.employeeNumber,
+      existingIdentityEmployeeNumber,
+    });
+    if (resolvedFromProvidedKey != null) {
+      resolvedInputEmployeeNumber = resolvedFromProvidedKey;
+    }
+
     if (userByProvidedKey?.id) {
-      const providedEmployeeNumber = Number(userByProvidedKey.employee_number ?? 0);
-      if (providedEmployeeNumber > 0) {
-        identity.employeeNumber = providedEmployeeNumber;
+      if (existingIdentityEmployeeNumber != null) {
+        identity.employeeNumber = existingIdentityEmployeeNumber;
       }
       identity.identityId = userByProvidedKey.id as string;
       identity.wasExisting = true;
     }
+
+    skipOdooEmployeeUpsert = true;
   }
   let employeeNumber = identity.employeeNumber;
 
@@ -580,7 +785,6 @@ export async function approveRegistrationRequest(input: {
 
   const decryptedPassword = decryptText(String(request.encrypted_password));
 
-  const allOdooBranchIds = assignments.flatMap((item) => item.branches.map((branch) => branch.odooBranchId));
   const maxByCompanyCode: Record<string, number> = {};
   for (const assignment of assignments) {
     const key = assignment.companyCode;
@@ -665,11 +869,16 @@ export async function approveRegistrationRequest(input: {
     employeeNumber += 1;
   }
 
-  if (input.employeeNumber != null) {
-    if (!(await isEmployeeNumberAvailable(input.employeeNumber))) {
-      throw new AppError(400, `Employee number ${input.employeeNumber} is already taken by another employee.`);
+  if (resolvedInputEmployeeNumber != null) {
+    if (!(await isEmployeeNumberAvailable(resolvedInputEmployeeNumber))) {
+      throw new AppError(400, `Employee number ${resolvedInputEmployeeNumber} is already taken by another employee.`);
     }
-    employeeNumber = input.employeeNumber;
+    await assertWebsiteEmployeeNumberAvailability({
+      employeeNumber: resolvedInputEmployeeNumber,
+      websiteKey,
+      identityId: identity.identityId,
+    });
+    employeeNumber = resolvedInputEmployeeNumber;
   }
 
   // If the user already exists and the employee number shifted (Odoo collision),
@@ -681,73 +890,83 @@ export async function approveRegistrationRequest(input: {
   }
 
   const fullName = `${request.first_name} ${request.last_name}`.trim();
-  const totalBranches = assignments.reduce((acc, assignment) => acc + assignment.branches.length, 0);
-
-  emitRegistrationApprovalProgress({
-    companyId: input.reviewerCompanyId,
-    verificationId: input.requestId,
-    reviewerId: input.reviewerId,
-    step: 'employees',
-    message: `Creating/updating Odoo employees in ${totalBranches} selected branch(es)...`,
-  });
-
-  let processedBranches = 0;
-  for (const assignment of assignments) {
-    for (const branch of assignment.branches) {
-      const branchCode = formatBranchEmployeeCode(branch.odooBranchId, employeeNumber);
-      const barcode = `${assignment.companyCode}${branchCode}`;
-      const isResident = assignment.companyId === residentAssignment.companyId
-        && branch.id === resident.branchId;
-      await createOrUpdateEmployeeForRegistration({
-        companyId: branch.odooBranchId,
-        name: formatEmployeeDisplayName(
-          branch.odooBranchId,
-          employeeNumber,
-          String(request.first_name ?? ''),
-          String(request.last_name ?? ''),
-        ),
-        workEmail: normalizedEmail,
-        pin: sharedPin,
-        barcode,
-        websiteKey,
-        isResident,
-      });
-      processedBranches += 1;
-      emitRegistrationApprovalProgress({
-        companyId: input.reviewerCompanyId,
-        verificationId: input.requestId,
-        reviewerId: input.reviewerId,
-        step: 'employees',
-        message: `Processed branch ${processedBranches}/${totalBranches} (${assignment.companyName} · Odoo #${branch.odooBranchId}).`,
-      });
-    }
-  }
-
   const residentBranch = residentAssignment.branches.find((item) => item.id === resident.branchId)!;
 
-  emitRegistrationApprovalProgress({
-    companyId: input.reviewerCompanyId,
-    verificationId: input.requestId,
-    reviewerId: input.reviewerId,
-    step: 'employees',
-    message: `Ensuring default Odoo employee in company #${DEFAULT_REGISTRATION_COMPANY_ID}...`,
-  });
-  const defaultCompanyBranchCode = formatBranchEmployeeCode(DEFAULT_REGISTRATION_COMPANY_ID, employeeNumber);
-  const defaultCompanyBarcode = `${residentAssignment.companyCode}${defaultCompanyBranchCode}`;
-  await createOrUpdateEmployeeForRegistration({
-    companyId: DEFAULT_REGISTRATION_COMPANY_ID,
-    name: formatEmployeeDisplayName(
-      DEFAULT_REGISTRATION_COMPANY_ID,
-      employeeNumber,
-      String(request.first_name ?? ''),
-      String(request.last_name ?? ''),
-    ),
-    workEmail: normalizedEmail,
-    pin: sharedPin,
-    barcode: defaultCompanyBarcode,
-    websiteKey,
-    isResident: DEFAULT_REGISTRATION_COMPANY_ID === residentBranch.odooBranchId,
-  });
+  if (skipOdooEmployeeUpsert) {
+    emitRegistrationApprovalProgress({
+      companyId: input.reviewerCompanyId,
+      verificationId: input.requestId,
+      reviewerId: input.reviewerId,
+      step: 'employees',
+      message: 'Using existing Odoo employees from the provided user key; skipped employee upsert.',
+    });
+  } else {
+    const totalBranches = assignments.reduce((acc, assignment) => acc + assignment.branches.length, 0);
+
+    emitRegistrationApprovalProgress({
+      companyId: input.reviewerCompanyId,
+      verificationId: input.requestId,
+      reviewerId: input.reviewerId,
+      step: 'employees',
+      message: `Creating/updating Odoo employees in ${totalBranches} selected branch(es)...`,
+    });
+
+    let processedBranches = 0;
+    for (const assignment of assignments) {
+      for (const branch of assignment.branches) {
+        const branchCode = formatBranchEmployeeCode(branch.odooBranchId, employeeNumber);
+        const barcode = `${assignment.companyCode}${branchCode}`;
+        const isResident = assignment.companyId === residentAssignment.companyId
+          && branch.id === resident.branchId;
+        await createOrUpdateEmployeeForRegistration({
+          companyId: branch.odooBranchId,
+          name: formatEmployeeDisplayName(
+            branch.odooBranchId,
+            employeeNumber,
+            String(request.first_name ?? ''),
+            String(request.last_name ?? ''),
+          ),
+          workEmail: normalizedEmail,
+          pin: sharedPin,
+          barcode,
+          websiteKey,
+          isResident,
+        });
+        processedBranches += 1;
+        emitRegistrationApprovalProgress({
+          companyId: input.reviewerCompanyId,
+          verificationId: input.requestId,
+          reviewerId: input.reviewerId,
+          step: 'employees',
+          message: `Processed branch ${processedBranches}/${totalBranches} (${assignment.companyName} - Odoo #${branch.odooBranchId}).`,
+        });
+      }
+    }
+
+    emitRegistrationApprovalProgress({
+      companyId: input.reviewerCompanyId,
+      verificationId: input.requestId,
+      reviewerId: input.reviewerId,
+      step: 'employees',
+      message: `Ensuring default Odoo employee in company #${DEFAULT_REGISTRATION_COMPANY_ID}...`,
+    });
+    const defaultCompanyBranchCode = formatBranchEmployeeCode(DEFAULT_REGISTRATION_COMPANY_ID, employeeNumber);
+    const defaultCompanyBarcode = `${residentAssignment.companyCode}${defaultCompanyBranchCode}`;
+    await createOrUpdateEmployeeForRegistration({
+      companyId: DEFAULT_REGISTRATION_COMPANY_ID,
+      name: formatEmployeeDisplayName(
+        DEFAULT_REGISTRATION_COMPANY_ID,
+        employeeNumber,
+        String(request.first_name ?? ''),
+        String(request.last_name ?? ''),
+      ),
+      workEmail: normalizedEmail,
+      pin: sharedPin,
+      barcode: defaultCompanyBarcode,
+      websiteKey,
+      isResident: DEFAULT_REGISTRATION_COMPANY_ID === residentBranch.odooBranchId,
+    });
+  }
 
   emitRegistrationApprovalProgress({
     companyId: input.reviewerCompanyId,
@@ -824,34 +1043,42 @@ export async function approveRegistrationRequest(input: {
 
     let userId: string;
     if (canonicalDecision.canonicalUserId) {
+      const updatePayload: Record<string, unknown> = {
+        first_name: String(request.first_name ?? '').trim(),
+        last_name: String(request.last_name ?? '').trim(),
+        email: normalizedEmail,
+        password_hash: passwordHash,
+        employee_number: employeeNumber,
+        user_key: websiteKey,
+        is_active: true,
+        employment_status: 'active',
+        updated_at: new Date(),
+      };
+      if (requestedAvatarUrl) {
+        updatePayload.avatar_url = requestedAvatarUrl;
+      }
       const [updated] = await trx('users')
         .where({ id: canonicalDecision.canonicalUserId })
-        .update({
-          first_name: String(request.first_name ?? '').trim(),
-          last_name: String(request.last_name ?? '').trim(),
-          email: normalizedEmail,
-          password_hash: passwordHash,
-          employee_number: employeeNumber,
-          user_key: websiteKey,
-          is_active: true,
-          employment_status: 'active',
-          updated_at: new Date(),
-        })
+        .update(updatePayload)
         .returning('id');
       userId = updated.id as string;
     } else {
+      const createPayload: Record<string, unknown> = {
+        first_name: String(request.first_name ?? '').trim(),
+        last_name: String(request.last_name ?? '').trim(),
+        email: normalizedEmail,
+        password_hash: passwordHash,
+        employee_number: employeeNumber,
+        user_key: websiteKey,
+        epi_score: avgEpi,
+        is_active: true,
+        employment_status: 'active',
+      };
+      if (requestedAvatarUrl) {
+        createPayload.avatar_url = requestedAvatarUrl;
+      }
       const [created] = await trx('users')
-        .insert({
-          first_name: String(request.first_name ?? '').trim(),
-          last_name: String(request.last_name ?? '').trim(),
-          email: normalizedEmail,
-          password_hash: passwordHash,
-          employee_number: employeeNumber,
-          user_key: websiteKey,
-          epi_score: avgEpi,
-          is_active: true,
-          employment_status: 'active',
-        })
+        .insert(createPayload)
         .returning('id');
       userId = created.id as string;
     }
@@ -963,6 +1190,56 @@ export async function approveRegistrationRequest(input: {
     password: decryptedPassword,
     companySlug: result.firstCompanySlug ?? undefined,
   });
+
+  if (requestedAvatarUrl) {
+    try {
+      await syncAvatarToOdoo({
+        websiteUserKey: websiteKey,
+        email: normalizedEmail,
+        avatarUrl: requestedAvatarUrl,
+      });
+    } catch (error) {
+      logger.warn(
+        {
+          requestId: input.requestId,
+          userId: result.userId,
+          websiteKey,
+          email: normalizedEmail,
+          avatarUrl: requestedAvatarUrl,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to sync uploaded registration avatar to Odoo; continuing approval',
+      );
+    }
+  } else if (requestedUserKey) {
+    try {
+      const importedAvatarUrl = await importFirstOdooEmployeeAvatarToWebsite({
+        websiteKey: requestedUserKey,
+        userId: result.userId,
+        avatarStorageRoot: input.avatarStorageRoot,
+      });
+
+      if (importedAvatarUrl) {
+        await masterDb('users')
+          .where({ id: result.userId })
+          .update({
+            avatar_url: importedAvatarUrl,
+            updated_at: new Date(),
+          });
+      }
+    } catch (error) {
+      logger.warn(
+        {
+          requestId: input.requestId,
+          userId: result.userId,
+          websiteKey: requestedUserKey,
+          email: normalizedEmail,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to import Odoo employee avatar for user-key registration; continuing approval',
+      );
+    }
+  }
 
   emitRegistrationApprovalProgress({
     companyId: input.reviewerCompanyId,

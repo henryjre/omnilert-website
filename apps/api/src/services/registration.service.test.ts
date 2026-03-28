@@ -15,6 +15,7 @@ process.env.OPENAI_PROJECT_ID ??= "test-openai-project";
 
 const {
   normalizeOptionalUserKey,
+  resolveProvidedUserKeyEmployeeNumberOrThrow,
   selectApprovalCanonicalUsers,
 } = await import("./registration.service.js");
 
@@ -84,4 +85,37 @@ test("selectApprovalCanonicalUsers returns nulls when both users are absent", ()
     canonicalUserId: null,
     duplicateUserId: null,
   });
+});
+
+test("resolveProvidedUserKeyEmployeeNumberOrThrow uses provided number when no existing number", () => {
+  const resolved = resolveProvidedUserKeyEmployeeNumberOrThrow({
+    providedEmployeeNumber: 31,
+    existingIdentityEmployeeNumber: null,
+  });
+  assert.equal(resolved, 31);
+});
+
+test("resolveProvidedUserKeyEmployeeNumberOrThrow reuses existing number when none provided", () => {
+  const resolved = resolveProvidedUserKeyEmployeeNumberOrThrow({
+    existingIdentityEmployeeNumber: 44,
+  });
+  assert.equal(resolved, 44);
+});
+
+test("resolveProvidedUserKeyEmployeeNumberOrThrow returns null when no number is available", () => {
+  const resolved = resolveProvidedUserKeyEmployeeNumberOrThrow({
+    existingIdentityEmployeeNumber: null,
+  });
+  assert.equal(resolved, null);
+});
+
+test("resolveProvidedUserKeyEmployeeNumberOrThrow throws on mismatch with existing identity number", () => {
+  assert.throws(
+    () =>
+      resolveProvidedUserKeyEmployeeNumberOrThrow({
+        providedEmployeeNumber: 12,
+        existingIdentityEmployeeNumber: 22,
+      }),
+    /does not match existing identity employee number/i,
+  );
 });

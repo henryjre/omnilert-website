@@ -7,6 +7,7 @@ import { Button } from '@/shared/components/ui/Button';
 import { AnimatedModal } from '@/shared/components/ui/AnimatedModal';
 import { Input } from '@/shared/components/ui/Input';
 import { api } from '@/shared/services/api.client';
+import { normalizeFileForUpload } from '@/shared/utils/fileUpload';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useSocket } from '@/shared/hooks/useSocket';
 import { useAppToast } from '@/shared/hooks/useAppToast';
@@ -382,6 +383,8 @@ export function EmployeeVerificationsPage() {
   const [approveResidentBranchId, setApproveResidentBranchId] = useState('');
   const [approveEmployeeNumber, setApproveEmployeeNumber] = useState('');
   const [approveUserKey, setApproveUserKey] = useState('');
+  const [approveAvatarUrl, setApproveAvatarUrl] = useState('');
+  const [approveAvatarUploading, setApproveAvatarUploading] = useState(false);
   const [personalInfoEdits, setPersonalInfoEdits] = useState({
     firstName: '',
     lastName: '',
@@ -587,6 +590,8 @@ export function EmployeeVerificationsPage() {
       setApproveResidentBranchId('');
       setApproveEmployeeNumber('');
       setApproveUserKey('');
+      setApproveAvatarUrl('');
+      setApproveAvatarUploading(false);
     }
 
     if (type === 'personalInformation') {
@@ -622,6 +627,8 @@ export function EmployeeVerificationsPage() {
     setApprovalInProgressId(null);
     setApproveEmployeeNumber('');
     setApproveUserKey('');
+    setApproveAvatarUrl('');
+    setApproveAvatarUploading(false);
   };
 
   useEffect(() => {
@@ -713,6 +720,35 @@ export function EmployeeVerificationsPage() {
     });
   };
 
+  const uploadRegistrationAvatar = useCallback(async (file: File) => {
+    if (!selectedItem || selectedItem.type !== 'registration') return;
+
+    setPanelError('');
+    setApproveAvatarUploading(true);
+    try {
+      const normalized = await normalizeFileForUpload(file);
+      const formData = new FormData();
+      formData.append('avatar', normalized, normalized.name || 'avatar.jpg');
+
+      const response = await api.post(
+        `/employee-verifications/registration/${selectedItem.data.id}/avatar`,
+        formData,
+        { headers: { 'Content-Type': 'multipart/form-data' } },
+      );
+
+      const avatarUrl = String(response.data?.data?.avatar_url ?? '').trim();
+      if (!avatarUrl) {
+        throw new Error('Avatar upload response is missing URL');
+      }
+      setApproveAvatarUrl(avatarUrl);
+      showSuccessToast('Profile picture uploaded.');
+    } catch (err: any) {
+      showErrorToast(err.response?.data?.error || 'Failed to upload profile picture');
+    } finally {
+      setApproveAvatarUploading(false);
+    }
+  }, [selectedItem, showErrorToast, showSuccessToast]);
+
   const approveSelected = async () => {
     if (!selectedItem) return;
 
@@ -768,6 +804,11 @@ export function EmployeeVerificationsPage() {
           setSaving(false);
           return;
         }
+        if (approveAvatarUploading) {
+          setPanelError('Please wait for the profile picture upload to finish.');
+          setSaving(false);
+          return;
+        }
 
         await api.post(`/employee-verifications/registration/${selectedItem.data.id}/approve`, {
           roleIds: approveRoleIds,
@@ -780,6 +821,7 @@ export function EmployeeVerificationsPage() {
             ? { employeeNumber: parseInt(approveEmployeeNumber, 10) }
             : {}),
           ...(approveUserKey.trim() ? { userKey: approveUserKey.trim() } : {}),
+          ...(approveAvatarUrl.trim() ? { avatarUrl: approveAvatarUrl.trim() } : {}),
         });
       } else if (selectedItem.type === 'personalInformation') {
         const payload: Record<string, unknown> = {};
@@ -1143,6 +1185,80 @@ export function EmployeeVerificationsPage() {
 
                   {canActOnSelected && (
                     <>
+                    <div className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Profile Picture{' '}
+                          <span className="font-normal text-gray-400">(optional)</span>
+                        </label>
+                        <div className="flex items-center gap-3">
+                          <label className="inline-flex cursor-pointer items-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">
+                            {approveAvatarUploading ? 'Uploading...' : 'Choose image'}
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+                              className="hidden"
+                              disabled={approveAvatarUploading || saving}
+                              onChange={async (event) => {
+                                const file = event.target.files?.[0];
+                                event.target.value = '';
+                                if (!file) return;
+                                await uploadRegistrationAvatar(file);
+                              }}
+                            />
+                          </label>
+                          {approveAvatarUrl && (
+                            <button
+                              type="button"
+                              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+                              onClick={() => setApproveAvatarUrl('')}
+                              disabled={approveAvatarUploading || saving}
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                        {approveAvatarUrl ? (
+                          <img
+                            src={approveAvatarUrl}
+                            alt="Uploaded registration profile"
+                            className="h-24 w-24 rounded-full border border-gray-200 object-cover"
+                          />
+                        ) : (
+                          <p className="text-xs text-gray-500">No image uploaded.</p>
+                        )}
+                      </div>
+
+                      <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Employee Number{' '}
+                          <span className="font-normal text-gray-400">(optional — auto-assigned if blank)</span>
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={approveEmployeeNumber}
+                          onChange={(e) => setApproveEmployeeNumber(e.target.value)}
+                          placeholder="e.g. 4"
+                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                        />
+                      </div>
+
+                      <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                        <label className="block text-sm font-medium text-gray-700">
+                          User Key{' '}
+                          <span className="font-normal text-gray-400">(optional)</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={approveUserKey}
+                          onChange={(e) => setApproveUserKey(e.target.value)}
+                          placeholder="e.g. 7ceced51-2dc6-49fa-a38f-8798978f8763"
+                          autoComplete="off"
+                          spellCheck={false}
+                          className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                        />
+                      </div>
+
                       <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
                         <label className="block text-sm font-medium text-gray-700">
                           Roles (required)
@@ -1244,37 +1360,6 @@ export function EmployeeVerificationsPage() {
                               ));
                           })}
                         </select>
-                      </div>
-
-                      <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
-                        <label className="block text-sm font-medium text-gray-700">
-                          Employee Number{' '}
-                          <span className="font-normal text-gray-400">(optional — auto-assigned if blank)</span>
-                        </label>
-                        <input
-                          type="number"
-                          min={1}
-                          value={approveEmployeeNumber}
-                          onChange={(e) => setApproveEmployeeNumber(e.target.value)}
-                          placeholder="e.g. 4"
-                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                        />
-                      </div>
-
-                      <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
-                        <label className="block text-sm font-medium text-gray-700">
-                          User Key{' '}
-                          <span className="font-normal text-gray-400">(optional — UUID to bind an existing identity)</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={approveUserKey}
-                          onChange={(e) => setApproveUserKey(e.target.value)}
-                          placeholder="e.g. 7ceced51-2dc6-49fa-a38f-8798978f8763"
-                          autoComplete="off"
-                          spellCheck={false}
-                          className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                        />
                       </div>
 
                       {(approvalLogs.length > 0 || approvalInProgressId === selectedItem.data.id) && (

@@ -58,6 +58,12 @@ type OdooEmployeeIdentityRow = {
   work_contact_id?: [number, string] | false;
   x_website_key?: string | null;
 };
+type OdooKwCallFn = (
+  model: string,
+  method: string,
+  args: unknown[],
+  kwargs?: Record<string, unknown>,
+) => Promise<unknown>;
 
 /** First linked res.partner.bank id from hr.employee.bank_account_ids, if any. */
 function firstPartnerBankIdFromEmployee(employee: OdooEmployeeIdentityRow): number | null {
@@ -220,6 +226,96 @@ export async function getEmployeeIdentitySnapshot(input: {
   return {
     employeeCount: employees.length,
     existingPin,
+  };
+}
+
+export async function archiveEmployeesByWebsiteUserKey(
+  input: { websiteUserKey: string },
+  deps?: { callOdooKwFn?: OdooKwCallFn },
+): Promise<{ matchedCount: number; archivedCount: number }> {
+  const websiteUserKey = String(input.websiteUserKey ?? "").trim();
+  if (!websiteUserKey) {
+    return { matchedCount: 0, archivedCount: 0 };
+  }
+
+  const callFn = deps?.callOdooKwFn ?? callOdooKw;
+  const rows = (await callFn(
+    "hr.employee",
+    "search_read",
+    [],
+    {
+      domain: [["x_website_key", "=", websiteUserKey]],
+      fields: ["id", "active"],
+      limit: 10000,
+      context: { active_test: false },
+    },
+  )) as Array<{ id?: number; active?: boolean | null }>;
+
+  const activeById = new Map<number, boolean>();
+  for (const row of rows) {
+    const id = Number(row.id);
+    if (!Number.isFinite(id) || id <= 0) continue;
+    const isActive = row.active !== false;
+    activeById.set(id, (activeById.get(id) ?? false) || isActive);
+  }
+
+  const matchedEmployeeIds = Array.from(activeById.keys());
+  const employeeIdsToArchive = Array.from(activeById.entries())
+    .filter(([, isActive]) => isActive)
+    .map(([id]) => id);
+
+  if (employeeIdsToArchive.length > 0) {
+    await callFn("hr.employee", "write", [employeeIdsToArchive, { active: false }]);
+  }
+
+  return {
+    matchedCount: matchedEmployeeIds.length,
+    archivedCount: employeeIdsToArchive.length,
+  };
+}
+
+export async function unarchiveEmployeesByWebsiteUserKey(
+  input: { websiteUserKey: string },
+  deps?: { callOdooKwFn?: OdooKwCallFn },
+): Promise<{ matchedCount: number; unarchivedCount: number }> {
+  const websiteUserKey = String(input.websiteUserKey ?? "").trim();
+  if (!websiteUserKey) {
+    return { matchedCount: 0, unarchivedCount: 0 };
+  }
+
+  const callFn = deps?.callOdooKwFn ?? callOdooKw;
+  const rows = (await callFn(
+    "hr.employee",
+    "search_read",
+    [],
+    {
+      domain: [["x_website_key", "=", websiteUserKey]],
+      fields: ["id", "active"],
+      limit: 10000,
+      context: { active_test: false },
+    },
+  )) as Array<{ id?: number; active?: boolean | null }>;
+
+  const activeById = new Map<number, boolean>();
+  for (const row of rows) {
+    const id = Number(row.id);
+    if (!Number.isFinite(id) || id <= 0) continue;
+    const isActive = row.active !== false;
+    activeById.set(id, (activeById.get(id) ?? false) || isActive);
+  }
+
+  const matchedEmployeeIds = Array.from(activeById.keys());
+  const employeeIdsToUnarchive = Array.from(activeById.entries())
+    .filter(([, isActive]) => !isActive)
+    .map(([id]) => id);
+
+  if (employeeIdsToUnarchive.length > 0) {
+    await callFn("hr.employee", "write", [employeeIdsToUnarchive, { active: true }]);
+  }
+
+  return {
+    matchedCount: matchedEmployeeIds.length,
+    unarchivedCount: employeeIdsToUnarchive.length,
   };
 }
 

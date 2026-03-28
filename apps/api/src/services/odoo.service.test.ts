@@ -13,7 +13,11 @@ process.env.OPENAI_API_KEY ??= 'test-openai-key';
 process.env.OPENAI_ORGANIZATION_ID ??= 'test-openai-org';
 process.env.OPENAI_PROJECT_ID ??= 'test-openai-project';
 
-const { createOdooRpcClient } = await import('./odoo.service.js');
+const {
+  createOdooRpcClient,
+  archiveEmployeesByWebsiteUserKey,
+  unarchiveEmployeesByWebsiteUserKey,
+} = await import('./odoo.service.js');
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -120,4 +124,128 @@ test('createOdooRpcClient limits concurrent JSON-RPC calls', async () => {
   secondRequest.resolve(createJsonResponse([{ id: 'second' }]));
   assert.deepEqual(await secondCall, [{ id: 'second' }]);
   assert.deepEqual(fetchOrder, [1, 2]);
+});
+
+test('archiveEmployeesByWebsiteUserKey includes inactive employees in lookup and archives active matches', async () => {
+  const calls: Array<{
+    model: string;
+    method: string;
+    args: unknown[];
+    kwargs?: Record<string, unknown>;
+  }> = [];
+
+  const result = await archiveEmployeesByWebsiteUserKey(
+    { websiteUserKey: 'website-key-1' },
+    {
+      callOdooKwFn: async (
+        model: string,
+        method: string,
+        args: unknown[],
+        kwargs?: Record<string, unknown>,
+      ) => {
+        calls.push({ model, method, args, kwargs });
+
+        if (method === 'search_read') {
+          return [
+            { id: 10, active: true },
+            { id: 11, active: false },
+            { id: 10, active: true },
+          ];
+        }
+
+        if (method === 'write') {
+          return true;
+        }
+
+        throw new Error(`Unexpected method: ${method}`);
+      },
+    },
+  );
+
+  assert.deepEqual(result, { matchedCount: 2, archivedCount: 1 });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0]?.model, 'hr.employee');
+  assert.equal(calls[0]?.method, 'search_read');
+  assert.deepEqual(calls[0]?.kwargs?.context, { active_test: false });
+  assert.equal(calls[1]?.model, 'hr.employee');
+  assert.equal(calls[1]?.method, 'write');
+  assert.deepEqual(calls[1]?.args, [[10], { active: false }]);
+});
+
+test('archiveEmployeesByWebsiteUserKey skips calls when website key is blank', async () => {
+  let called = false;
+  const result = await archiveEmployeesByWebsiteUserKey(
+    { websiteUserKey: '   ' },
+    {
+      callOdooKwFn: async () => {
+        called = true;
+        return [];
+      },
+    },
+  );
+
+  assert.deepEqual(result, { matchedCount: 0, archivedCount: 0 });
+  assert.equal(called, false);
+});
+
+test('unarchiveEmployeesByWebsiteUserKey includes inactive employees in lookup and unarchives inactive matches', async () => {
+  const calls: Array<{
+    model: string;
+    method: string;
+    args: unknown[];
+    kwargs?: Record<string, unknown>;
+  }> = [];
+
+  const result = await unarchiveEmployeesByWebsiteUserKey(
+    { websiteUserKey: 'website-key-1' },
+    {
+      callOdooKwFn: async (
+        model: string,
+        method: string,
+        args: unknown[],
+        kwargs?: Record<string, unknown>,
+      ) => {
+        calls.push({ model, method, args, kwargs });
+
+        if (method === 'search_read') {
+          return [
+            { id: 10, active: true },
+            { id: 11, active: false },
+            { id: 11, active: false },
+          ];
+        }
+
+        if (method === 'write') {
+          return true;
+        }
+
+        throw new Error(`Unexpected method: ${method}`);
+      },
+    },
+  );
+
+  assert.deepEqual(result, { matchedCount: 2, unarchivedCount: 1 });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0]?.model, 'hr.employee');
+  assert.equal(calls[0]?.method, 'search_read');
+  assert.deepEqual(calls[0]?.kwargs?.context, { active_test: false });
+  assert.equal(calls[1]?.model, 'hr.employee');
+  assert.equal(calls[1]?.method, 'write');
+  assert.deepEqual(calls[1]?.args, [[11], { active: true }]);
+});
+
+test('unarchiveEmployeesByWebsiteUserKey skips calls when website key is blank', async () => {
+  let called = false;
+  const result = await unarchiveEmployeesByWebsiteUserKey(
+    { websiteUserKey: '   ' },
+    {
+      callOdooKwFn: async () => {
+        called = true;
+        return [];
+      },
+    },
+  );
+
+  assert.deepEqual(result, { matchedCount: 0, unarchivedCount: 0 });
+  assert.equal(called, false);
 });

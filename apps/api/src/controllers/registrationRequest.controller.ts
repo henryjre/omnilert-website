@@ -30,6 +30,8 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
       residentBranch: req.body.residentBranch,
       employeeNumber: req.body.employeeNumber,
       userKey: req.body.userKey,
+      avatarUrl: req.body.avatarUrl,
+      avatarStorageRoot: req.companyContext?.companyStorageRoot ?? null,
     });
     res.json({ success: true, data: result });
   } catch (error) {

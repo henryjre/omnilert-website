@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import multer from 'multer';
 import {
   PERMISSIONS,
   approvePersonalInformationVerificationSchema,
@@ -12,6 +13,14 @@ import { validateBody } from '../middleware/validateRequest.js';
 import * as employeeVerificationController from '../controllers/employeeVerification.controller.js';
 
 const router = Router();
+const imageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+    cb(null, allowed.includes(file.mimetype));
+  },
+});
 
 router.use(authenticate, resolveCompany);
 
@@ -21,6 +30,12 @@ router.get(
   employeeVerificationController.list,
 );
 
+router.post(
+  '/registration/:id/avatar',
+  requirePermission(PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_REGISTRATION),
+  imageUpload.single('avatar'),
+  employeeVerificationController.uploadRegistrationAvatar,
+);
 router.post(
   '/registration/:id/approve',
   requirePermission(PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_REGISTRATION),

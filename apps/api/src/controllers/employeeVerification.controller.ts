@@ -1,6 +1,9 @@
 import type { NextFunction, Request, Response } from 'express';
+import { db } from '../config/database.js';
+import { AppError } from '../middleware/errorHandler.js';
 import * as registrationService from '../services/registration.service.js';
 import * as employeeVerificationService from '../services/employeeVerification.service.js';
+import { buildTenantStoragePrefix, deleteFolder, uploadFile } from '../services/storage.service.js';
 
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
@@ -40,8 +43,53 @@ export async function approveRegistration(req: Request, res: Response, next: Nex
       residentBranch: req.body.residentBranch,
       employeeNumber: req.body.employeeNumber,
       userKey: req.body.userKey,
+      avatarUrl: req.body.avatarUrl,
+      avatarStorageRoot: req.companyContext?.companyStorageRoot ?? null,
     });
     res.json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function uploadRegistrationAvatar(req: Request, res: Response, next: NextFunction) {
+  try {
+    const file = req.file as Express.Multer.File | undefined;
+    if (!file) {
+      throw new AppError(400, 'No image uploaded');
+    }
+
+    const requestId = String(req.params.id ?? '').trim();
+    const request = await db.getDb()('registration_requests')
+      .where({ id: requestId })
+      .first('id', 'status');
+    if (!request) {
+      throw new AppError(404, 'Registration request not found');
+    }
+    if (request.status !== 'pending') {
+      throw new AppError(400, 'Registration request is already resolved');
+    }
+
+    const folderPath = buildTenantStoragePrefix(
+      req.companyContext?.companyStorageRoot ?? '',
+      'Employee Verifications',
+      'Registration',
+      requestId,
+      'Profile Picture',
+    );
+    await deleteFolder(folderPath);
+
+    const avatarUrl = await uploadFile(
+      file.buffer,
+      file.originalname,
+      file.mimetype,
+      folderPath,
+    );
+    if (!avatarUrl) {
+      throw new AppError(500, 'Failed to upload profile picture');
+    }
+
+    res.json({ success: true, data: { avatar_url: avatarUrl } });
   } catch (error) {
     next(error);
   }
