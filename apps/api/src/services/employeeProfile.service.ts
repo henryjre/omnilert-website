@@ -51,6 +51,21 @@ type UserBranchSummary = {
 
 type CompanyAssignmentInput = { companyId: string; branchIds: string[] };
 
+/**
+ * Picks a single active `user_company_access` row per user for `position_title` / `date_started`
+ * so list and detail queries do not duplicate rows when a user belongs to multiple companies.
+ * Preference: latest `date_started`, then stable `company_id` order.
+ */
+const USER_COMPANY_ACCESS_WORK_FIELDS_LATERAL_SQL = `
+LEFT JOIN LATERAL (
+  SELECT position_title, date_started
+  FROM user_company_access AS uca_pos
+  WHERE uca_pos.user_id = users.id AND uca_pos.is_active = ?
+  ORDER BY uca_pos.date_started DESC NULLS LAST, uca_pos.company_id ASC
+  LIMIT 1
+) AS uca_pos ON true
+`.trim();
+
 async function loadUserBranchSummaryMap(
   userIds: string[],
 ): Promise<Record<string, UserBranchSummary>> {
@@ -191,9 +206,7 @@ export async function listEmployeeProfiles(input: {
         .andWhere('uca.is_active', true);
     })
     .leftJoin('user_sensitive_info as usi', 'usi.user_id', 'users.id')
-    .leftJoin('user_company_access as uca_pos', (join) => {
-      join.on('uca_pos.user_id', '=', 'users.id').andOnVal('uca_pos.is_active', true);
-    })
+    .joinRaw(USER_COMPANY_ACCESS_WORK_FIELDS_LATERAL_SQL, [true])
     .select(
       'users.id',
       'users.first_name',
@@ -247,7 +260,7 @@ export async function listEmployeeProfiles(input: {
     .clone()
     .clearSelect()
     .clearOrder()
-    .count({ count: 'users.id' })
+    .countDistinct('users.id as count')
     .first()) as { count?: string | number } | undefined;
   const total = Number(countRow?.count ?? 0);
   const offset = (input.page - 1) * input.pageSize;
@@ -336,9 +349,7 @@ export async function getEmployeeProfileDetail(
       }
     })
     .leftJoin('user_sensitive_info as usi', 'usi.user_id', 'users.id')
-    .leftJoin('user_company_access as uca_pos', (join) => {
-      join.on('uca_pos.user_id', '=', 'users.id').andOnVal('uca_pos.is_active', true);
-    })
+    .joinRaw(USER_COMPANY_ACCESS_WORK_FIELDS_LATERAL_SQL, [true])
     .select(
       'users.id',
       'users.first_name',
