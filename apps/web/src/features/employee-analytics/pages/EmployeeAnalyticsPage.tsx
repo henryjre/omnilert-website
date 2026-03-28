@@ -3402,10 +3402,22 @@ function MetricTrendCard({ metricId }: { metricId: string }) {
                   }}
                   itemStyle={{ fontWeight: 700, fontSize: '12px' }}
                   labelStyle={{ fontWeight: 600, color: '#6b7280', marginBottom: '6px', fontSize: '11px' }}
-                  formatter={(v: number, name: string) => [
-                    `${prefix}${isAOV ? v.toFixed(0) : v.toFixed(1)}${suffix}`,
-                    name === 'value' ? 'Score' : 'Target',
-                  ]}
+                  formatter={(v, name) => {
+                    const num =
+                      typeof v === "number"
+                        ? v
+                        : typeof v === "string"
+                          ? Number(v)
+                          : NaN;
+                    const displayName = name === "value" ? "Score" : "Target";
+                    if (!Number.isFinite(num)) {
+                      return ["—", displayName];
+                    }
+                    return [
+                      `${prefix}${isAOV ? num.toFixed(0) : num.toFixed(1)}${suffix}`,
+                      displayName,
+                    ];
+                  }}
                 />
                 <Area
                   type="monotone"
