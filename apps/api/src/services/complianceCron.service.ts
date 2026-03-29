@@ -1,8 +1,8 @@
 import { db } from '../config/database.js';
 import { logger } from '../utils/logger.js';
-import { getActiveAttendances } from './odoo.service.js';
+import { getActiveAttendances, getEmployeeWebsiteKeyByEmployeeId } from './odoo.service.js';
 import { emitStoreAuditEvent } from './storeAuditRealtime.service.js';
-import { resolveCompanyByOdooBranchId } from './webhook.service.js';
+import { resolveCompanyByOdooBranchId, resolveUserIdByUserKey } from './webhook.service.js';
 import {
   COMPLIANCE_HOURLY_JOB_NAME,
   getComplianceSchedulingDecision,
@@ -293,6 +293,11 @@ export async function runComplianceCron(): Promise<ComplianceRunOutcome> {
       );
     }
 
+    const auditedUserKey = await getEmployeeWebsiteKeyByEmployeeId(Number(chosen.employee_id));
+    const auditedUserId = auditedUserKey
+      ? await resolveUserIdByUserKey(auditedUserKey)
+      : null;
+
     const [audit] = await db.getDb()('store_audits')
       .insert({
         company_id: company.id,
@@ -302,7 +307,8 @@ export async function runComplianceCron(): Promise<ComplianceRunOutcome> {
         monetary_reward: randomReward(),
         comp_odoo_employee_id: chosen.employee_id,
         comp_employee_name: chosen.employee_name,
-        comp_employee_avatar: chosen.employee_avatar,
+        audited_user_id: auditedUserId,
+        audited_user_key: auditedUserKey,
         comp_check_in_time: new Date(`${chosen.check_in.replace(' ', 'T')}Z`),
         comp_extra_fields: JSON.stringify(chosen.raw),
         created_at: new Date(),

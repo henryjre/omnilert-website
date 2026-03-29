@@ -37,6 +37,8 @@ import { SingleUserSelect, type UserEntry } from '../components/SingleUserSelect
 import { AnalyticsRangePicker, getSummaryForSelection } from '../components/AnalyticsRangePicker';
 import {
   createDefaultRangeForGranularity,
+  fromLocalYmd,
+  toLocalYmd,
   type AnalyticsRangeSelection,
 } from '../utils/analyticsRangeBuckets';
 import {
@@ -81,6 +83,10 @@ import {
   buildMetricComparisonRows,
   buildPersonalEpiSeries as buildLivePersonalEpiSeries,
   buildPersonalMetricRows,
+  getLatestGlobalMetricAverage,
+  getLatestSnapshotDate,
+  getLatestSnapshotDateForUser,
+  getLatestUserBranchAov,
   getGlobalRangeTotals,
   getGlobalSeries,
   getLeaderboardByLatestEpi,
@@ -615,6 +621,131 @@ function buildPersonalKeyInsights(
   return buildPersonalKeyInsightsMock(selection, args);
 }
 
+const HERO_ZONE_ORDER: readonly HeroEpiZone[] = ['red', 'amber', 'green', 'blue'];
+
+const HERO_ZONE_DISTRIBUTION_STYLE: Record<HeroEpiZone, { fill: string; shortLabel: string }> = {
+  red: { fill: '#ef4444', shortLabel: 'Critical Deficit' },
+  amber: { fill: '#f59e0b', shortLabel: 'Underperforming' },
+  green: { fill: '#10b981', shortLabel: 'On Target' },
+  blue: { fill: '#3b82f6', shortLabel: 'Exceptional' },
+};
+
+function getMetricMinBound(metricId: string | null): number {
+  if (!metricId) return 0;
+  return getMetricKind(metricId) === 'likert' ? 1 : 0;
+}
+
+function getMetricMaxBound(metricId: string | null): number {
+  if (!metricId) return 100;
+  if (metricId === 'average-order-value') return Number.POSITIVE_INFINITY;
+  return getMetricScaleMax(metricId) || 100;
+}
+
+function clampMetricValue(metricId: string | null, value: number): number {
+  const min = getMetricMinBound(metricId);
+  const max = getMetricMaxBound(metricId);
+  const boundedLow = Math.max(min, value);
+  return Number.isFinite(max) ? Math.min(max, boundedLow) : boundedLow;
+}
+
+function formatBandValue(metricId: string | null, value: number): string {
+  const rounded = Math.round(value * 10) / 10;
+  if (!metricId) {
+    return rounded.toFixed(1);
+  }
+
+  if (metricId === 'average-order-value') {
+    return `₱${rounded.toFixed(1)}`;
+  }
+
+  if (getMetricKind(metricId) === 'likert') {
+    return `${rounded.toFixed(2)}/5`;
+  }
+
+  return `${rounded.toFixed(1)}%`;
+}
+
+function getValueEquivalentBandLabels(globalAverage: number, metricId: string | null): Record<HeroEpiZone, string> {
+  if (!Number.isFinite(globalAverage) || globalAverage <= 0) {
+    return {
+      red: '≤−25%',
+      amber: '−25%–0%',
+      green: '0%–+50%',
+      blue: '>+50%',
+    };
+  }
+
+  const minus25 = clampMetricValue(metricId, globalAverage * 0.75);
+  const neutral = clampMetricValue(metricId, globalAverage);
+  const plus50 = clampMetricValue(metricId, globalAverage * 1.5);
+
+  return {
+    red: `≤${formatBandValue(metricId, minus25)}`,
+    amber: `${formatBandValue(metricId, minus25)}–${formatBandValue(metricId, neutral)}`,
+    green: `${formatBandValue(metricId, neutral)}–${formatBandValue(metricId, plus50)}`,
+    blue: `>${formatBandValue(metricId, plus50)}`,
+  };
+}
+
+function buildHeroDistributionFromValues(
+  values: number[],
+  globalAverage: number,
+  metricId: string | null,
+): {
+  distribution: Array<{ range: string; count: number; fill: string }>;
+  dominantEmployeeCount: number;
+  dominantSharePct: number;
+  dominantBandLabel: string;
+  dominantZone: HeroEpiZone;
+  totalEmployees: number;
+} {
+  const counts: Record<HeroEpiZone, number> = {
+    red: 0,
+    amber: 0,
+    green: 0,
+    blue: 0,
+  };
+
+  for (const value of values) {
+    const { zone } = resolveHeroEpiComparison({
+      userEpiScore: value,
+      globalAverageEpi: globalAverage,
+    });
+    counts[zone] += 1;
+  }
+
+  const labels = getValueEquivalentBandLabels(globalAverage, metricId);
+  const bins = HERO_ZONE_ORDER.map((zone) => ({
+    zone,
+    range: labels[zone],
+    count: counts[zone],
+    fill: HERO_ZONE_DISTRIBUTION_STYLE[zone].fill,
+  }));
+  const totalEmployees = bins.reduce((sum, bin) => sum + bin.count, 0);
+  const dominant = bins.reduce((best, current) => (current.count > best.count ? current : best), bins[0]);
+
+  return {
+    distribution: bins.map((bin) => ({ range: bin.range, count: bin.count, fill: bin.fill })),
+    dominantEmployeeCount: dominant.count,
+    dominantSharePct: totalEmployees > 0 ? Math.round((dominant.count / totalEmployees) * 100) : 0,
+    dominantBandLabel: dominant.range,
+    dominantZone: dominant.zone,
+    totalEmployees,
+  };
+}
+
+function subtractDaysFromYmd(ymd: string, days: number): string {
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(ymd)
+    ? ymd
+    : (() => {
+      const parsed = new Date(ymd);
+      return Number.isNaN(parsed.getTime()) ? '1970-01-01' : toLocalYmd(parsed);
+    })();
+  const date = fromLocalYmd(normalized);
+  date.setDate(date.getDate() - days);
+  return toLocalYmd(date);
+}
+
 function buildGeneralViewMockData(
   selection: AnalyticsRangeSelection,
   args: Parameters<typeof buildGeneralViewMockDataMock>[1],
@@ -634,20 +765,11 @@ function buildGeneralViewMockData(
     .sort((a, b) => a.epi - b.epi)
     .map((row) => ({ name: row.name, epi: row.epi }));
   const totals = getGlobalRangeTotals(dataset);
-
-  const bins = [
-    { range: '< 60', count: 0, fill: '#ef4444', zone: 'red' as HeroEpiZone },
-    { range: '60 - 74', count: 0, fill: '#f59e0b', zone: 'amber' as HeroEpiZone },
-    { range: '75 - 89', count: 0, fill: '#10b981', zone: 'green' as HeroEpiZone },
-    { range: '90+', count: 0, fill: '#3b82f6', zone: 'blue' as HeroEpiZone },
-  ];
-  for (const row of leaderboard) {
-    if (row.epi < 60) bins[0].count += 1;
-    else if (row.epi < 75) bins[1].count += 1;
-    else if (row.epi < 90) bins[2].count += 1;
-    else bins[3].count += 1;
-  }
-  const dominant = bins.reduce((best, current) => current.count > best.count ? current : best, bins[0]);
+  const distribution = buildHeroDistributionFromValues(
+    leaderboard.map((row) => row.epi),
+    last,
+    null,
+  );
 
   return {
     ...fallback,
@@ -658,12 +780,12 @@ function buildGeneralViewMockData(
     leaderboardBottom: bottom.length > 0 ? bottom : fallback.leaderboardBottom,
     awards: totals.awards,
     violations: totals.violations,
-    distribution: bins.map((bin) => ({ range: bin.range, count: bin.count, fill: bin.fill })),
-    distributionDominantEmployeeCount: dominant.count,
-    distributionDominantSharePct: leaderboard.length > 0 ? Math.round((dominant.count / leaderboard.length) * 100) : 0,
-    distributionDominantBandLabel: dominant.range,
-    distributionSummaryDominantZone: dominant.zone,
-    distributionTotal: leaderboard.length,
+    distribution: distribution.distribution,
+    distributionDominantEmployeeCount: distribution.dominantEmployeeCount,
+    distributionDominantSharePct: distribution.dominantSharePct,
+    distributionDominantBandLabel: distribution.dominantBandLabel,
+    distributionSummaryDominantZone: distribution.dominantZone,
+    distributionTotal: distribution.totalEmployees,
   };
 }
 
@@ -750,10 +872,18 @@ function buildRadarDataset(userName: string, selection: AnalyticsRangeSelection)
     }));
   }
 
-  const monetaryMax = Math.max(
-    1,
-    ...getMetricEmployeeRows(dataset, 'average-order-value').map((row) => row.value),
-  );
+  const latestBranchAov = getLatestUserBranchAov(dataset, userId);
+  const latestGlobalAov = getLatestGlobalMetricAverage(dataset, 'average-order-value');
+  const aovBenchmark = (() => {
+    if (typeof latestBranchAov === 'number' && Number.isFinite(latestBranchAov) && latestBranchAov > 0) {
+      return latestBranchAov;
+    }
+    if (typeof latestGlobalAov === 'number' && Number.isFinite(latestGlobalAov) && latestGlobalAov > 0) {
+      return latestGlobalAov;
+    }
+    const fallback = BRANCH_AVERAGES['average-order-value'];
+    return typeof fallback === 'number' && Number.isFinite(fallback) && fallback > 0 ? fallback : 1;
+  })();
 
   return METRICS.map((metric) => {
     const label = metric.label
@@ -766,9 +896,10 @@ function buildRadarDataset(userName: string, selection: AnalyticsRangeSelection)
       return { subject: label, A: 0, fullMark: 100 };
     }
     const { last } = firstAndLastFinite(getSeriesForUser(dataset, userId, metric.id).map((point) => point.value));
+    const denominator = metric.id === 'average-order-value' ? aovBenchmark : 100;
     return {
       subject: label,
-      A: metricProgressPct(metric.id, last, monetaryMax),
+      A: metricProgressPct(metric.id, last, denominator),
       fullMark: 100,
     };
   });
@@ -840,7 +971,29 @@ function getMetricHeroVsGlobalDistribution(
   getBaseMetricValue: (employeeName: string, metricId: string) => number,
   globalTarget: number,
 ) {
-  return getMetricHeroVsGlobalDistributionMock(metricId, selection, roster, getBaseMetricValue, globalTarget);
+  const dataset = ACTIVE_LIVE_DATASET;
+  if (!dataset || metricId === 'professional-conduct') {
+    return getMetricHeroVsGlobalDistributionMock(metricId, selection, roster, getBaseMetricValue, globalTarget);
+  }
+
+  const employees = getMetricEmployeeRows(dataset, metricId as EmployeeAnalyticsMetricId);
+  const latestGlobalAvg =
+    getLatestGlobalMetricAverage(dataset, metricId as Exclude<EmployeeAnalyticsMetricId, 'professional-conduct'>)
+    ?? globalTarget;
+  const distribution = buildHeroDistributionFromValues(
+    employees.map((row) => row.value),
+    latestGlobalAvg,
+    metricId,
+  );
+
+  return {
+    bins: distribution.distribution,
+    totalEmployees: distribution.totalEmployees,
+    dominantZone: distribution.dominantZone,
+    dominantEmployeeCount: distribution.dominantEmployeeCount,
+    dominantSharePct: distribution.dominantSharePct,
+    dominantBandLabel: distribution.dominantBandLabel,
+  };
 }
 
 function getMetricInsights(
@@ -1614,6 +1767,8 @@ function PersonalRankingCard({
     () => resolveHeroEpiComparison({ userEpiScore: displayEpi, globalAverageEpi: globalEpi }),
     [displayEpi, globalEpi],
   );
+  const safeTotalPeers = Math.max(totalPeers, 1);
+  const safeRank = Math.max(1, Math.min(rank, safeTotalPeers));
   const percentMain =
     hero.percentChange !== null && Number.isFinite(hero.percentChange)
       ? `${hero.percentChange > 0 ? "+" : ""}${hero.percentChange.toFixed(1)}%`
@@ -1642,13 +1797,13 @@ function PersonalRankingCard({
               <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-100">
                 <motion.div
                   initial={{ width: 0 }}
-                  animate={{ width: `${((totalPeers - rank + 1) / totalPeers) * 100}%` }}
+                  animate={{ width: `${((safeTotalPeers - safeRank + 1) / safeTotalPeers) * 100}%` }}
                   transition={{ duration: 1, ease: 'easeOut' }}
                   className="h-full rounded-full bg-primary-500"
                 />
               </div>
               <span className="text-[10px] font-bold text-gray-400">
-                Top {Math.round((rank / totalPeers) * 100)}%
+                Top {Math.round((safeRank / safeTotalPeers) * 100)}%
               </span>
             </div>
           </div>
@@ -2043,18 +2198,19 @@ const METRIC_DETAIL_CONFIGS: Record<EmployeeAnalyticsMetricId, MetricDetailConfi
   'customer-service': {
     columns: [
       { key: 'completedAt', label: 'Date' },
+      { key: 'branchName', label: 'Branch' },
+      { key: 'auditorName', label: 'Auditor' },
       { key: 'score', label: 'Score' },
-      { key: 'cashierName', label: 'Employee' },
-      { key: 'posReference', label: 'POS Ref' },
     ],
     formula: 'Average of all customer-service evaluations in period',
   },
   'workplace-relations': {
     columns: [
-      { key: 'submittedAt', label: 'Submitted' },
+      { key: 'submittedAt', label: 'Submitted Date' },
       { key: 'effectiveAt', label: 'Effective Date' },
+      { key: 'evaluatorName', label: 'Evaluator' },
+      { key: 'branchName', label: 'Branch' },
       { key: 'score', label: 'Score' },
-      { key: 'id', label: 'Evaluation ID' },
     ],
     formula: 'Average of all peer evaluation scores in period',
   },
@@ -2067,6 +2223,7 @@ const METRIC_DETAIL_CONFIGS: Record<EmployeeAnalyticsMetricId, MetricDetailConfi
       { key: 'date', label: 'Date' },
       { key: 'scheduledStart', label: 'Scheduled Start' },
       { key: 'checkIn', label: 'Check-in' },
+      { key: 'branchName', label: 'Branch' },
       { key: 'status', label: 'Status' },
     ],
     formula: '(Attended + Excused) / Total Scheduled',
@@ -2076,6 +2233,7 @@ const METRIC_DETAIL_CONFIGS: Record<EmployeeAnalyticsMetricId, MetricDetailConfi
       { key: 'date', label: 'Date' },
       { key: 'scheduledStart', label: 'Scheduled Start' },
       { key: 'checkIn', label: 'Check-in' },
+      { key: 'branchName', label: 'Branch' },
       { key: 'varianceMinutes', label: 'Variance (min)' },
       { key: 'status', label: 'Status' },
     ],
@@ -2084,9 +2242,9 @@ const METRIC_DETAIL_CONFIGS: Record<EmployeeAnalyticsMetricId, MetricDetailConfi
   'productivity-rate': {
     columns: [
       { key: 'completedAt', label: 'Date' },
+      { key: 'branchName', label: 'Branch' },
+      { key: 'auditorName', label: 'Auditor' },
       { key: 'result', label: 'Result' },
-      { key: 'employeeName', label: 'Employee' },
-      { key: 'score', label: 'Score' },
     ],
     formula: 'Passed productivity checks / total checks',
   },
@@ -2101,31 +2259,85 @@ const METRIC_DETAIL_CONFIGS: Record<EmployeeAnalyticsMetricId, MetricDetailConfi
   'uniform-compliance': {
     columns: [
       { key: 'completedAt', label: 'Date' },
+      { key: 'branchName', label: 'Branch' },
+      { key: 'auditorName', label: 'Auditor' },
       { key: 'result', label: 'Result' },
-      { key: 'employeeName', label: 'Employee' },
-      { key: 'score', label: 'Score' },
     ],
     formula: 'Passed uniform checks / total checks',
   },
   'hygiene-compliance': {
     columns: [
       { key: 'completedAt', label: 'Date' },
+      { key: 'branchName', label: 'Branch' },
+      { key: 'auditorName', label: 'Auditor' },
       { key: 'result', label: 'Result' },
-      { key: 'employeeName', label: 'Employee' },
-      { key: 'score', label: 'Score' },
     ],
     formula: 'Passed hygiene checks / total checks',
   },
   'sop-compliance': {
     columns: [
       { key: 'completedAt', label: 'Date' },
+      { key: 'branchName', label: 'Branch' },
+      { key: 'auditorName', label: 'Auditor' },
       { key: 'result', label: 'Result' },
-      { key: 'employeeName', label: 'Employee' },
-      { key: 'score', label: 'Score' },
     ],
     formula: 'Passed SOP checks / total checks',
   },
 };
+
+function parseEventDate(value: unknown): Date | null {
+  const parsed = new Date(String(value));
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatEventDateTime(value: unknown, isMobile: boolean): string {
+  const date = parseEventDate(value);
+  if (!date) {
+    return String(value);
+  }
+
+  const pad2 = (n: number) => String(n).padStart(2, '0');
+  const monthShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const month = pad2(date.getMonth() + 1);
+  const day = pad2(date.getDate());
+  const year4 = date.getFullYear();
+  const year2 = String(year4).slice(-2);
+  const minute = pad2(date.getMinutes());
+  const rawHour = date.getHours();
+  const meridiem = rawHour >= 12 ? 'PM' : 'AM';
+  const hour12 = rawHour % 12 || 12;
+
+  if (isMobile) {
+    return `${month}/${day}/${year2} ${hour12}:${minute} ${meridiem}`;
+  }
+
+  const desktopHour = String(hour12).padStart(2, '0');
+  const monthName = monthShort[date.getMonth()] ?? month;
+  return `${monthName} ${day}, ${year4} ${desktopHour}:${minute} ${meridiem}`;
+}
+
+function formatEventTimeOnly(value: unknown, isMobile: boolean): string {
+  const date = parseEventDate(value);
+  if (!date) {
+    return String(value);
+  }
+
+  const pad2 = (n: number) => String(n).padStart(2, '0');
+  const minute = pad2(date.getMinutes());
+  const rawHour = date.getHours();
+  const meridiem = rawHour >= 12 ? 'PM' : 'AM';
+  const hour12 = rawHour % 12 || 12;
+  if (isMobile) {
+    return `${hour12}:${minute} ${meridiem}`;
+  }
+  return `${String(hour12).padStart(2, '0')}:${minute} ${meridiem}`;
+}
+
+function isSameLocalDate(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear()
+    && a.getMonth() === b.getMonth()
+    && a.getDate() === b.getDate();
+}
 
 function formatEventCell(metricId: EmployeeAnalyticsMetricId, row: Record<string, unknown>, key: string): string {
   const value = row[key];
@@ -2133,11 +2345,26 @@ function formatEventCell(metricId: EmployeeAnalyticsMetricId, row: Record<string
     return '—';
   }
 
-  if (key.toLowerCase().includes('date') || key.endsWith('At')) {
-    const parsed = new Date(String(value));
-    if (!Number.isNaN(parsed.getTime())) {
-      return parsed.toLocaleString();
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+  const isDateTimeKey =
+    key === 'scheduledStart'
+    || key === 'checkIn'
+    || key.endsWith('At')
+    || key.toLowerCase().includes('date');
+
+  if (
+    key === 'checkIn'
+    && (metricId === 'attendance-rate' || metricId === 'punctuality-rate')
+  ) {
+    const checkInDate = parseEventDate(value);
+    const scheduledStartDate = parseEventDate(row.scheduledStart);
+    if (checkInDate && scheduledStartDate && isSameLocalDate(checkInDate, scheduledStartDate)) {
+      return formatEventTimeOnly(value, isMobile);
     }
+  }
+
+  if (isDateTimeKey) {
+    return formatEventDateTime(value, isMobile);
   }
 
   if (key === 'amountTotal') {
@@ -2165,26 +2392,31 @@ function PersonalMetricsBreakdownCard({
   analyticsRange,
   userId,
   userName,
+  liveDataset,
 }: {
   stats: ReturnType<typeof getPersonalizedStats>;
   analyticsRange: AnalyticsRangeSelection;
   userId: string;
   userName: string;
+  liveDataset: LiveAnalyticsDataset;
 }) {
   const [selectedMetric, setSelectedMetric] = useState<EmployeeAnalyticsMetricId | null>(null);
   const [currentPage, setCurrentPage] = useState(0);
 
   const metricGroups = useMemo(() => {
     const mk = (label: string, metricKey: keyof typeof stats.metrics & EmployeeAnalyticsMetricId) => {
-      const globalBase =
+      const fallbackGlobalBase =
         GLOBAL_AVERAGES[label as keyof typeof GLOBAL_AVERAGES] ??
         BRANCH_AVERAGES[metricKey as keyof typeof BRANCH_AVERAGES] ??
         85;
+      const liveGlobalAverage = metricKey === 'professional-conduct'
+        ? null
+        : getLatestGlobalMetricAverage(liveDataset, metricKey as RollingMetricId);
       return {
         label,
         metricId: metricKey,
         val: perturbPersonalMetricValue(stats.metrics[metricKey], metricKey, userName, analyticsRange),
-        avg: perturbGlobalMetricAverage(globalBase, analyticsRange),
+        avg: liveGlobalAverage ?? perturbGlobalMetricAverage(fallbackGlobalBase, analyticsRange),
       };
     };
     return [
@@ -2216,13 +2448,29 @@ function PersonalMetricsBreakdownCard({
         ],
       },
     ];
-  }, [stats, userName, analyticsRange]);
+  }, [stats, userName, analyticsRange, liveDataset]);
 
   const allItems = metricGroups.flatMap((g) => g.items);
 
   const selectedItem = selectedMetric ? allItems.find((i) => i.metricId === selectedMetric) : null;
   const detailConfig = selectedMetric ? METRIC_DETAIL_CONFIGS[selectedMetric] : null;
   const selectedMetricSupported = selectedMetric ? isMetricSupported(selectedMetric) : false;
+  const selectedMetricRankings = useMemo(() => {
+    if (!selectedMetric || !selectedMetricSupported) return null;
+    return getMetricEmployeeRows(liveDataset, selectedMetric);
+  }, [selectedMetric, selectedMetricSupported, liveDataset]);
+
+  const eventLogRange = useMemo(() => {
+    const anchorDate =
+      getLatestSnapshotDateForUser(liveDataset, userId)
+      ?? getLatestSnapshotDate(liveDataset)
+      ?? analyticsRange.rangeEndYmd;
+
+    return {
+      rangeStartYmd: subtractDaysFromYmd(anchorDate, 30),
+      rangeEndYmd: anchorDate,
+    };
+  }, [liveDataset, userId, analyticsRange.rangeEndYmd]);
 
   const metricEventsQuery = useQuery({
     queryKey: [
@@ -2230,16 +2478,16 @@ function PersonalMetricsBreakdownCard({
       'metric-events',
       userId,
       selectedMetric,
-      analyticsRange.rangeStartYmd,
-      analyticsRange.rangeEndYmd,
+      eventLogRange.rangeStartYmd,
+      eventLogRange.rangeEndYmd,
       currentPage,
     ],
     enabled: Boolean(selectedMetric && selectedMetricSupported),
     queryFn: () => fetchEmployeeMetricEvents({
       userId,
       metricId: selectedMetric as RollingMetricId,
-      rangeStartYmd: analyticsRange.rangeStartYmd,
-      rangeEndYmd: analyticsRange.rangeEndYmd,
+      rangeStartYmd: eventLogRange.rangeStartYmd,
+      rangeEndYmd: eventLogRange.rangeEndYmd,
       page: currentPage + 1,
       pageSize: ROWS_PER_PAGE,
     }),
@@ -2253,16 +2501,25 @@ function PersonalMetricsBreakdownCard({
 
   const globalAvg = useMemo(() => {
     if (!selectedItem) return 0;
-    return selectedItem.avg;
-  }, [selectedItem]);
+    if (!selectedMetric || !selectedMetricSupported) {
+      return selectedItem.avg;
+    }
+    return getLatestGlobalMetricAverage(liveDataset, selectedMetric as RollingMetricId) ?? selectedItem.avg;
+  }, [selectedItem, selectedMetric, selectedMetricSupported, liveDataset]);
 
   const rank = useMemo(() => {
     if (!selectedItem) return 0;
+    if (selectedMetricRankings) {
+      const index = selectedMetricRankings.findIndex((row) => row.userId === userId);
+      return index === -1 ? selectedMetricRankings.length : index + 1;
+    }
     const scorePct = metricProgressPct(selectedItem.metricId, selectedItem.val);
     const base = Math.max(1, Math.round((1 - scorePct / 100) * TOTAL_EMPLOYEES) + 1);
     const shift = (hashRangeSeed(analyticsRange) % 9) - 4;
     return Math.max(1, Math.min(TOTAL_EMPLOYEES, base + shift));
-  }, [selectedItem, analyticsRange]);
+  }, [selectedItem, selectedMetricRankings, userId, analyticsRange]);
+
+  const rankTotal = selectedMetricRankings?.length ?? TOTAL_EMPLOYEES;
 
   useEffect(() => {
     setCurrentPage(0);
@@ -2430,7 +2687,7 @@ function PersonalMetricsBreakdownCard({
                     <p className="text-2xl font-bold text-gray-600 tabular-nums">
                       {selectedMetricSupported ? (
                         <>
-                          {rank}<span className="text-sm font-medium text-gray-400">/{TOTAL_EMPLOYEES}</span>
+                          {rank}<span className="text-sm font-medium text-gray-400">/{rankTotal}</span>
                         </>
                       ) : (
                         'N/A'
@@ -4796,13 +5053,14 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
 
   const personalRankInfo = useMemo(() => {
     if (!selectedUser) return null;
-    const merged = [...generalViewMock.leaderboardTop, ...generalViewMock.leaderboardBottom].sort(
-      (a, b) => b.epi - a.epi,
-    );
-    const idx = merged.findIndex((r) => r.name === selectedUser.name);
-    const rank = idx === -1 ? merged.length : idx + 1;
-    return { rank, total: merged.length };
-  }, [selectedUser, generalViewMock]);
+    const leaderboard = getLeaderboardByLatestEpi(liveDataset);
+    if (leaderboard.length === 0) {
+      return { rank: 0, total: 0 };
+    }
+    const idx = leaderboard.findIndex((row) => row.userId === selectedUser.id || row.name === selectedUser.name);
+    const rank = idx === -1 ? leaderboard.length : idx + 1;
+    return { rank, total: leaderboard.length };
+  }, [selectedUser, liveDataset]);
 
   if (isLoading || (metricSnapshotsQuery.isLoading && !metricSnapshotsQuery.data)) {
     return <EmployeeAnalyticsSkeleton />;
@@ -5036,6 +5294,7 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
                         analyticsRange={analyticsRange}
                         userId={selectedUser.id}
                         userName={selectedUser.name}
+                        liveDataset={liveDataset}
                       />
                     </div>
                   </div>

@@ -29,6 +29,7 @@ export interface EmployeeMetricDailySnapshot {
   punctualityRate: number | null;
   productivityRate: number | null;
   averageOrderValue: number | null;
+  branchAov: number | null;
   uniformComplianceRate: number | null;
   hygieneComplianceRate: number | null;
   sopComplianceRate: number | null;

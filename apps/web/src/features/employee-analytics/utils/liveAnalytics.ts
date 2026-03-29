@@ -52,6 +52,7 @@ export interface NormalizedEmployeeMetricDailySnapshot extends Omit<EmployeeMetr
   | 'punctualityRate'
   | 'productivityRate'
   | 'averageOrderValue'
+  | 'branchAov'
   | 'uniformComplianceRate'
   | 'hygieneComplianceRate'
   | 'sopComplianceRate'
@@ -65,6 +66,7 @@ export interface NormalizedEmployeeMetricDailySnapshot extends Omit<EmployeeMetr
   punctualityRate: number | null;
   productivityRate: number | null;
   averageOrderValue: number | null;
+  branchAov: number | null;
   uniformComplianceRate: number | null;
   hygieneComplianceRate: number | null;
   sopComplianceRate: number | null;
@@ -136,15 +138,42 @@ function toInteger(value: unknown): number {
   return 0;
 }
 
+function normalizeYmd(value: unknown): string {
+  if (typeof value === 'string') {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      return value;
+    }
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      return toLocalYmd(parsed);
+    }
+    const maybeYmd = value.slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(maybeYmd)) {
+      return maybeYmd;
+    }
+    return '';
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? '' : toLocalYmd(value);
+  }
+
+  return '';
+}
+
 export function normalizeSnapshotRows(rows: EmployeeMetricDailySnapshot[]): NormalizedEmployeeMetricDailySnapshot[] {
   return rows.map((row) => ({
     ...row,
+    snapshotDate: normalizeYmd(row.snapshotDate),
+    windowStartDate: normalizeYmd(row.windowStartDate),
+    windowEndDate: normalizeYmd(row.windowEndDate),
     customerServiceScore: toNumber(row.customerServiceScore),
     workplaceRelationsScore: toNumber(row.workplaceRelationsScore),
     attendanceRate: toNumber(row.attendanceRate),
     punctualityRate: toNumber(row.punctualityRate),
     productivityRate: toNumber(row.productivityRate),
     averageOrderValue: toNumber(row.averageOrderValue),
+    branchAov: toNumber(row.branchAov),
     uniformComplianceRate: toNumber(row.uniformComplianceRate),
     hygieneComplianceRate: toNumber(row.hygieneComplianceRate),
     sopComplianceRate: toNumber(row.sopComplianceRate),
@@ -495,21 +524,22 @@ export function buildPersonalEpiSeries(
 
   const userSeries = getSeriesForUser(dataset, userId, 'epi-score');
   const globalSeries = getGlobalSeries(dataset, 'epi-score');
+  const rawUserValues = userSeries.map((point) => point.value);
+  const rawGlobalValues = globalSeries.map((point) => point.value);
 
   const chartData = dataset.bucketWindows.map((bucket, index) => ({
     label: bucket.label,
-    epi: userSeries[index]?.value ?? 0,
-    globalAvg: globalSeries[index]?.value ?? 0,
+    epi: rawUserValues[index] ?? 0,
+    globalAvg: rawGlobalValues[index] ?? 0,
   }));
 
-  const epiValues = chartData.map((point) => point.epi).filter((value) => Number.isFinite(value));
-  const globalValues = chartData.map((point) => point.globalAvg).filter((value) => Number.isFinite(value));
-  const displayEpi = epiValues.length > 0 ? epiValues.reduce((sum, value) => sum + value, 0) / epiValues.length : 0;
-  const globalAvgDisplay = globalValues.length > 0 ? globalValues.reduce((sum, value) => sum + value, 0) / globalValues.length : 0;
-
-  const first = epiValues[0] ?? displayEpi;
-  const last = epiValues[epiValues.length - 1] ?? displayEpi;
-  const epiDelta = last - first;
+  const { first, last } = firstAndLastFinite(rawUserValues);
+  const globalValues = rawGlobalValues.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  const firstValue = first ?? 0;
+  const lastValue = last ?? firstValue;
+  const globalAvgDisplay = globalValues[globalValues.length - 1] ?? 0;
+  const displayEpi = lastValue;
+  const epiDelta = lastValue - firstValue;
   const bucketCount = Math.max(1, dataset.bucketWindows.length);
   const unit = dataset.range.granularity === 'day'
     ? 'day'
@@ -546,3 +576,42 @@ export function getUserRangeTotals(
   return dataset.rangeTotalsByUserId.get(userId) ?? { awards: 0, violations: 0 };
 }
 
+export function getLatestSnapshotDateForUser(
+  dataset: LiveAnalyticsDataset,
+  userId: string,
+): string | null {
+  return dataset.latestRowByUserId.get(userId)?.snapshotDate ?? null;
+}
+
+export function getLatestSnapshotDate(dataset: LiveAnalyticsDataset): string | null {
+  let latest: string | null = null;
+  for (const row of dataset.latestRowByUserId.values()) {
+    if (!row) continue;
+    if (!latest || row.snapshotDate > latest) {
+      latest = row.snapshotDate;
+    }
+  }
+  return latest;
+}
+
+export function getLatestUserBranchAov(
+  dataset: LiveAnalyticsDataset,
+  userId: string,
+): number | null {
+  const value = dataset.latestRowByUserId.get(userId)?.branchAov;
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+export function getLatestGlobalMetricAverage(
+  dataset: LiveAnalyticsDataset,
+  metricId: Exclude<EmployeeAnalyticsMetricId, 'professional-conduct'> | 'epi-score',
+): number | null {
+  const series = getGlobalSeries(dataset, metricId);
+  for (let i = series.length - 1; i >= 0; i -= 1) {
+    const value = series[i]?.value;
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return null;
+}

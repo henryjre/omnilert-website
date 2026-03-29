@@ -1,6 +1,7 @@
 import { db } from '../config/database.js';
 import { logger } from '../utils/logger.js';
 import { calculateKpiScores, type KpiBreakdown, type UserKpiData } from './epiCalculation.service.js';
+import { getOdooEmployeeIdsByWebsiteKey } from './odooQuery.service.js';
 
 const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
 const ROLLING_WINDOW_DAYS = 30;
@@ -31,6 +32,7 @@ export interface RollingMetricSnapshotValues {
   punctualityRate: number | null;
   productivityRate: number | null;
   averageOrderValue: number | null;
+  branchAov: number | null;
   uniformComplianceRate: number | null;
   hygieneComplianceRate: number | null;
   sopComplianceRate: number | null;
@@ -166,6 +168,7 @@ export function mapBreakdownToRollingMetricSnapshot(breakdown: KpiBreakdown): Ro
     punctualityRate: breakdown.punctuality.rate,
     productivityRate: breakdown.productivity.rate,
     averageOrderValue: breakdown.aov.value,
+    branchAov: breakdown.aov.branch_avg,
     uniformComplianceRate: breakdown.uniform.rate,
     hygieneComplianceRate: breakdown.hygiene.rate,
     sopComplianceRate: breakdown.sop.rate,
@@ -194,9 +197,24 @@ async function fetchSnapshotUsers(): Promise<SnapshotUserRow[]> {
 
 async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKpiData> {
   const dbConn = db.getDb();
+  const odooEmployeeIds = await getOdooEmployeeIdsByWebsiteKey(userKey);
   const [cssAudits, peerEvaluations, complianceAuditRows, violationNotices] = await Promise.all([
     dbConn('store_audits')
-      .where({ css_cashier_user_key: userId, type: 'customer_service', status: 'completed' })
+      .where({ type: 'customer_service', status: 'completed' })
+      .andWhere((ownedQuery) => {
+        ownedQuery.where('audited_user_id', userId)
+          .orWhere((canonicalKeyQuery) => {
+            canonicalKeyQuery
+              .whereNull('audited_user_id')
+              .where('audited_user_key', userKey);
+          })
+          .orWhere((legacyQuery) => {
+            legacyQuery
+              .whereNull('audited_user_id')
+              .whereNull('audited_user_key')
+              .where('css_cashier_user_key', userKey);
+          });
+      })
       .select(dbConn.raw('css_star_rating as star_rating'), dbConn.raw('completed_at::text as audited_at')),
     dbConn('peer_evaluations')
       .where({ evaluated_user_id: userId })
@@ -207,7 +225,24 @@ async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKp
         dbConn.raw('wrs_effective_at::text'),
       ),
     dbConn('store_audits')
-      .where({ auditor_user_id: userId, type: 'compliance', status: 'completed' })
+      .where({ type: 'compliance', status: 'completed' })
+      .andWhere((ownedQuery) => {
+        ownedQuery.where('audited_user_id', userId)
+          .orWhere((canonicalKeyQuery) => {
+            canonicalKeyQuery
+              .whereNull('audited_user_id')
+              .where('audited_user_key', userKey);
+          });
+
+        if (odooEmployeeIds.length > 0) {
+          ownedQuery.orWhere((legacyQuery) => {
+            legacyQuery
+              .whereNull('audited_user_id')
+              .whereNull('audited_user_key')
+              .whereIn('comp_odoo_employee_id', odooEmployeeIds);
+          });
+        }
+      })
       .select(
         'comp_productivity_rate',
         'comp_uniform',
@@ -289,6 +324,7 @@ export async function runDailyEmployeeRollingMetricSnapshot(input?: { scheduledF
           punctuality_rate: values.punctualityRate,
           productivity_rate: values.productivityRate,
           average_order_value: values.averageOrderValue,
+          branch_aov: values.branchAov,
           uniform_compliance_rate: values.uniformComplianceRate,
           hygiene_compliance_rate: values.hygieneComplianceRate,
           sop_compliance_rate: values.sopComplianceRate,
@@ -310,6 +346,7 @@ export async function runDailyEmployeeRollingMetricSnapshot(input?: { scheduledF
           punctuality_rate: values.punctualityRate,
           productivity_rate: values.productivityRate,
           average_order_value: values.averageOrderValue,
+          branch_aov: values.branchAov,
           uniform_compliance_rate: values.uniformComplianceRate,
           hygiene_compliance_rate: values.hygieneComplianceRate,
           sop_compliance_rate: values.sopComplianceRate,
@@ -352,6 +389,7 @@ export async function getEmployeeMetricDailySnapshots(input: {
       's.punctuality_rate as punctualityRate',
       's.productivity_rate as productivityRate',
       's.average_order_value as averageOrderValue',
+      's.branch_aov as branchAov',
       's.uniform_compliance_rate as uniformComplianceRate',
       's.hygiene_compliance_rate as hygieneComplianceRate',
       's.sop_compliance_rate as sopComplianceRate',

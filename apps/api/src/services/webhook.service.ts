@@ -36,12 +36,29 @@ export async function resolveCompanyByOdooBranchId(odooCompanyId: number) {
   return company;
 }
 
-async function resolveUserIdByUserKey(
+export async function resolveUserIdByUserKey(
   userKey?: string | null,
 ): Promise<string | null> {
-  if (!userKey) return null;
-  const user = await db.getDb()('users').where({ user_key: userKey }).select('id').first();
-  return user?.id ?? null;
+  const normalized = typeof userKey === 'string' ? userKey.trim() : '';
+  if (!normalized) return null;
+
+  const byWebsiteKey = await db.getDb()('users')
+    .where({ user_key: normalized })
+    .first('id');
+  if (byWebsiteKey?.id) {
+    return String(byWebsiteKey.id);
+  }
+
+  // Fallback: some environments still mirror website key into users.id.
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized);
+  if (!isUuid) {
+    return null;
+  }
+
+  const byId = await db.getDb()('users')
+    .where({ id: normalized })
+    .first('id');
+  return byId?.id ? String(byId.id) : null;
 }
 
 export async function processPosVerification(
@@ -1940,6 +1957,13 @@ export async function createCssAudit(payload: {
     throw new AppError(404, `Branch not found for company_id: ${payload.company_id}`);
   }
 
+  const auditedUserKey = typeof payload.x_website_key === 'string'
+    ? payload.x_website_key.trim()
+    : '';
+  const auditedUserId = auditedUserKey
+    ? await resolveUserIdByUserKey(auditedUserKey)
+    : null;
+
   const record = {
     company_id: company.id,
     type: 'customer_service',
@@ -1951,7 +1975,9 @@ export async function createCssAudit(payload: {
     css_session_name: payload.x_session_name ?? null,
     css_company_name: payload.x_company_name ?? null,
     css_cashier_name: payload.cashier,
-    css_cashier_user_key: payload.x_website_key ?? null,
+    css_cashier_user_key: auditedUserKey || null,
+    audited_user_id: auditedUserId,
+    audited_user_key: auditedUserKey || null,
     css_date_order: payload.date_order ? new Date(`${payload.date_order.replace(' ', 'T')}Z`) : null,
     css_amount_total: payload.amount_total,
     css_order_lines: JSON.stringify(payload.x_order_lines ?? []),

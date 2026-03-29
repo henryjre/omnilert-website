@@ -77,6 +77,8 @@ export interface StoreAudit {
   css_company_name: string | null;
   css_cashier_name: string | null;
   css_cashier_user_key: string | null;
+  audited_user_id: string | null;
+  audited_user_key: string | null;
   css_date_order: string | null;
   css_amount_total: string | null;
   css_order_lines: StoreAuditOrderLine[] | null;
@@ -88,7 +90,6 @@ export interface StoreAudit {
 
   comp_odoo_employee_id: number | null;
   comp_employee_name: string | null;
-  comp_employee_avatar: string | null;
   comp_check_in_time: string | null;
   comp_extra_fields: Record<string, unknown> | null;
   comp_productivity_rate: boolean | null;

@@ -31,6 +31,8 @@ function createCompletedAudit(
     css_odoo_order_id: number | null;
     css_company_name: string | null;
     css_cashier_name: string | null;
+    audited_user_id: string | null;
+    audited_user_key: string | null;
     css_cashier_user_key: string | null;
     css_star_rating: number | null;
     comp_check_in_time: string | null;
@@ -54,6 +56,8 @@ function createCompletedAudit(
     css_odoo_order_id: overrides.css_odoo_order_id ?? 123,
     css_company_name: overrides.css_company_name ?? 'CSS Company',
     css_cashier_name: overrides.css_cashier_name ?? 'Cashier Crew',
+    audited_user_id: overrides.audited_user_id ?? null,
+    audited_user_key: overrides.audited_user_key ?? null,
     css_cashier_user_key: overrides.css_cashier_user_key ?? 'user-key-css',
     css_star_rating: overrides.css_star_rating ?? 4.2,
     comp_check_in_time: overrides.comp_check_in_time ?? '2026-03-21T08:30:00.000Z',
@@ -208,6 +212,7 @@ test('createStoreAuditResultsWebhookNotifier skips delivery when recipient canno
   const notifyCompletedStoreAudit = createStoreAuditResultsWebhookNotifier({
     webhookUrl: 'https://example.com/webhook/audit_results',
     resolveComplianceWebsiteUserKey: async () => null,
+    findUserById: async () => null,
     findUserByUserKey: async () => null,
     findCompanyById: async () => ({ id: 'company-1', name: 'Omnilert Company' }),
     sendWebhook: async () => {
@@ -226,6 +231,8 @@ test('createStoreAuditResultsWebhookNotifier skips delivery when recipient canno
     companyId: 'company-1',
     audit: createCompletedAudit({
       type: 'customer_service',
+      audited_user_id: null,
+      audited_user_key: null,
       css_cashier_user_key: 'missing-user',
     }),
   });
@@ -244,6 +251,7 @@ test('createStoreAuditResultsWebhookNotifier logs webhook failures without block
   const notifyCompletedStoreAudit = createStoreAuditResultsWebhookNotifier({
     webhookUrl: 'https://example.com/webhook/audit_results',
     resolveComplianceWebsiteUserKey: async () => 'user-key-comp',
+    findUserById: async () => null,
     findUserByUserKey: async () => ({
       user_id: 'user-2',
       user_key: 'user-key-comp',
@@ -268,6 +276,8 @@ test('createStoreAuditResultsWebhookNotifier logs webhook failures without block
     companyId: 'company-1',
     audit: createCompletedAudit({
       type: 'compliance',
+      audited_user_id: null,
+      audited_user_key: null,
       comp_odoo_employee_id: 88,
     }),
   });
@@ -278,4 +288,52 @@ test('createStoreAuditResultsWebhookNotifier logs webhook failures without block
   });
   assert.equal(sendCalls, 1);
   assert.equal(errorLogs.length, 1);
+});
+
+test('createStoreAuditResultsWebhookNotifier prefers canonical audited_user_id when available', async () => {
+  let sendCalls = 0;
+  let keyLookupCalls = 0;
+  let idLookupCalls = 0;
+  const notifyCompletedStoreAudit = createStoreAuditResultsWebhookNotifier({
+    webhookUrl: 'https://example.com/webhook/audit_results',
+    resolveComplianceWebsiteUserKey: async () => {
+      throw new Error('legacy resolver should not be used');
+    },
+    findUserById: async (userId) => {
+      idLookupCalls += 1;
+      assert.equal(userId, 'user-42');
+      return {
+        user_id: 'user-42',
+        user_key: 'user-key-42',
+        email: 'crew42@example.com',
+        full_name: 'Crew Forty Two',
+      };
+    },
+    findUserByUserKey: async () => {
+      keyLookupCalls += 1;
+      return null;
+    },
+    findCompanyById: async () => ({ id: 'company-1', name: 'Omnilert Company' }),
+    sendWebhook: async () => {
+      sendCalls += 1;
+    },
+    log: {
+      warn: () => undefined,
+      error: () => undefined,
+    },
+  });
+
+  const result = await notifyCompletedStoreAudit({
+    companyId: 'company-1',
+    audit: createCompletedAudit({
+      type: 'customer_service',
+      audited_user_id: 'user-42',
+      audited_user_key: 'user-key-42',
+    }),
+  });
+
+  assert.deepEqual(result, { status: 'sent' });
+  assert.equal(sendCalls, 1);
+  assert.equal(idLookupCalls, 1);
+  assert.equal(keyLookupCalls, 0);
 });

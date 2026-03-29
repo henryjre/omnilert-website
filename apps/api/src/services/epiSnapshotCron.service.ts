@@ -4,6 +4,7 @@ import { calculateKpiScores, type KpiBreakdown, type UserKpiData } from './epiCa
 import { generateEpiReportPdf, generateManagerSummaryPdf, type EpiReportData } from './epiReport.service.js';
 import { sendWeeklyEpiEmail, sendManagerEpiSummaryEmail } from './mail.service.js';
 import { runDailyEmployeeRollingMetricSnapshot } from './employeeAnalyticsSnapshot.service.js';
+import { getOdooEmployeeIdsByWebsiteKey } from './odooQuery.service.js';
 
 const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
 const THIRTY_DAY_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
@@ -44,10 +45,25 @@ function isEligibleForWeeklyEpiByAccountAge(createdAt: Date, referenceDate: Date
 
 async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKpiData> {
   const dbConn = db.getDb();
+  const odooEmployeeIds = await getOdooEmployeeIdsByWebsiteKey(userKey);
   const [cssAudits, peerEvaluations, complianceAuditRows, violationNotices] = await Promise.all([
     // CSS audits: the user was the cashier being audited (identified by user_key UUID)
     dbConn('store_audits')
-      .where({ css_cashier_user_key: userId, type: 'customer_service', status: 'completed' })
+      .where({ type: 'customer_service', status: 'completed' })
+      .andWhere((ownedQuery) => {
+        ownedQuery.where('audited_user_id', userId)
+          .orWhere((canonicalKeyQuery) => {
+            canonicalKeyQuery
+              .whereNull('audited_user_id')
+              .where('audited_user_key', userKey);
+          })
+          .orWhere((legacyQuery) => {
+            legacyQuery
+              .whereNull('audited_user_id')
+              .whereNull('audited_user_key')
+              .where('css_cashier_user_key', userKey);
+          });
+      })
       .select(dbConn.raw(`css_star_rating as star_rating`), dbConn.raw(`completed_at::text as audited_at`)),
     dbConn('peer_evaluations')
       .where({ evaluated_user_id: userId })
@@ -59,7 +75,24 @@ async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKp
       ),
     // Compliance audits: the user was the auditor
     dbConn('store_audits')
-      .where({ auditor_user_id: userId, type: 'compliance', status: 'completed' })
+      .where({ type: 'compliance', status: 'completed' })
+      .andWhere((ownedQuery) => {
+        ownedQuery.where('audited_user_id', userId)
+          .orWhere((canonicalKeyQuery) => {
+            canonicalKeyQuery
+              .whereNull('audited_user_id')
+              .where('audited_user_key', userKey);
+          });
+
+        if (odooEmployeeIds.length > 0) {
+          ownedQuery.orWhere((legacyQuery) => {
+            legacyQuery
+              .whereNull('audited_user_id')
+              .whereNull('audited_user_key')
+              .whereIn('comp_odoo_employee_id', odooEmployeeIds);
+          });
+        }
+      })
       .select(
         'comp_productivity_rate',
         'comp_uniform',

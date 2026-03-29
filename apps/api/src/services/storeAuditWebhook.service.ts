@@ -23,6 +23,8 @@ type StoreAuditWebhookAudit = Pick<
   | 'css_odoo_order_id'
   | 'css_company_name'
   | 'css_cashier_name'
+  | 'audited_user_id'
+  | 'audited_user_key'
   | 'css_cashier_user_key'
   | 'css_star_rating'
   | 'comp_check_in_time'
@@ -47,6 +49,10 @@ type NotifyCompletedStoreAuditInput = {
 type StoreAuditResultsWebhookNotifierDeps = {
   webhookUrl: string;
   resolveComplianceWebsiteUserKey: (odooEmployeeId: number) => Promise<string | null>;
+  findUserById: (
+    userId: string,
+    audit: StoreAuditWebhookAudit,
+  ) => Promise<AuditResultsRecipient | null>;
   findUserByUserKey: (
     userKey: string,
     audit: StoreAuditWebhookAudit,
@@ -174,6 +180,33 @@ async function defaultFindUserByUserKey(
   };
 }
 
+async function defaultFindUserById(
+  userId: string,
+  audit: StoreAuditWebhookAudit,
+): Promise<AuditResultsRecipient | null> {
+  const row = await db.getDb()('users')
+    .where({ id: userId })
+    .first('id', 'user_key', 'email', 'first_name', 'last_name');
+
+  const email = String(row?.email ?? '').trim();
+  const userKey = String(row?.user_key ?? '').trim();
+  if (!row || !email || !userKey) {
+    return null;
+  }
+
+  const fullName = `${String(row.first_name ?? '').trim()} ${String(row.last_name ?? '').trim()}`.trim()
+    || audit.css_cashier_name
+    || audit.comp_employee_name
+    || email;
+
+  return {
+    user_id: String(row.id),
+    user_key: userKey,
+    email,
+    full_name: fullName,
+  };
+}
+
 async function defaultFindCompanyById(
   companyId: string,
   audit: StoreAuditWebhookAudit,
@@ -213,6 +246,7 @@ export function createStoreAuditResultsWebhookNotifier(
     webhookUrl: overrides.webhookUrl ?? AUDIT_RESULTS_WEBHOOK_URL,
     resolveComplianceWebsiteUserKey:
       overrides.resolveComplianceWebsiteUserKey ?? getEmployeeWebsiteKeyByEmployeeId,
+    findUserById: overrides.findUserById ?? defaultFindUserById,
     findUserByUserKey: overrides.findUserByUserKey ?? defaultFindUserByUserKey,
     findCompanyById: overrides.findCompanyById ?? defaultFindCompanyById,
     sendWebhook: overrides.sendWebhook ?? defaultSendWebhook,
@@ -220,28 +254,35 @@ export function createStoreAuditResultsWebhookNotifier(
   };
 
   return async function notifyCompletedStoreAudit(input: NotifyCompletedStoreAuditInput) {
-    const auditedUserKey = input.audit.type === 'customer_service'
-      ? String(input.audit.css_cashier_user_key ?? '').trim() || null
-      : input.audit.comp_odoo_employee_id !== null
-        ? await deps.resolveComplianceWebsiteUserKey(Number(input.audit.comp_odoo_employee_id))
-        : null;
+    const auditedUserId = String(input.audit.audited_user_id ?? '').trim() || null;
+    const canonicalAuditedUserKey = String(input.audit.audited_user_key ?? '').trim() || null;
+    let recipient: AuditResultsRecipient | null = null;
 
-    if (!auditedUserKey) {
+    if (auditedUserId) {
+      recipient = await deps.findUserById(auditedUserId, input.audit);
+    }
+
+    if (!recipient && canonicalAuditedUserKey) {
+      recipient = await deps.findUserByUserKey(canonicalAuditedUserKey, input.audit);
+    }
+
+    // Temporary fallback path while old rows are still being backfilled.
+    if (!recipient) {
+      const legacyAuditedUserKey = input.audit.type === 'customer_service'
+        ? String(input.audit.css_cashier_user_key ?? '').trim() || null
+        : input.audit.comp_odoo_employee_id !== null
+          ? await deps.resolveComplianceWebsiteUserKey(Number(input.audit.comp_odoo_employee_id))
+          : null;
+
+      if (legacyAuditedUserKey) {
+        recipient = await deps.findUserByUserKey(legacyAuditedUserKey, input.audit);
+      }
+    }
+
+    if (!recipient) {
       deps.log.warn(
         { auditId: input.audit.id, auditType: input.audit.type },
         'Skipping audit results webhook because the audited user could not be resolved',
-      );
-      return {
-        status: 'skipped' as const,
-        reason: 'recipient_not_found' as const,
-      };
-    }
-
-    const recipient = await deps.findUserByUserKey(auditedUserKey, input.audit);
-    if (!recipient) {
-      deps.log.warn(
-        { auditId: input.audit.id, auditType: input.audit.type, auditedUserKey },
-        'Skipping audit results webhook because the recipient user or email is unavailable',
       );
       return {
         status: 'skipped' as const,

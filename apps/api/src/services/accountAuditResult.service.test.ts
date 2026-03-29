@@ -29,6 +29,8 @@ function createAuditRow(
     branch_name: string | null;
     completed_at: string | null;
     created_at: string;
+    audited_user_id: string | null;
+    audited_user_key: string | null;
     css_cashier_user_key: string | null;
     css_date_order: string | null;
     css_star_rating: number | null;
@@ -66,6 +68,8 @@ function createAuditRow(
     branch_name: overrides.branch_name ?? 'Main Branch',
     completed_at: overrides.completed_at ?? '2026-03-21T10:00:00.000Z',
     created_at: overrides.created_at ?? '2026-03-21T09:00:00.000Z',
+    audited_user_id: overrides.audited_user_id ?? null,
+    audited_user_key: overrides.audited_user_key ?? null,
     css_cashier_user_key: overrides.css_cashier_user_key ?? 'user-key-1',
     css_date_order: overrides.css_date_order ?? '2026-03-21T09:15:00.000Z',
     css_star_rating: overrides.css_star_rating ?? 4.2,
@@ -184,6 +188,7 @@ test('listAccountAuditResults returns only owned completed audits with normalize
 
   const service = createAccountAuditResultService({
     resolveViewerIdentity: async () => ({
+      userId: 'viewer-1',
       userKey: 'user-key-1',
       employeeIds: [88],
     }),
@@ -211,6 +216,51 @@ test('listAccountAuditResults returns only owned completed audits with normalize
   });
 });
 
+test('listAccountAuditResults prefers audited_user_id ownership and keeps legacy fallback support', async () => {
+  const rows = [
+    createAuditRow({
+      id: 'owned-by-audited-id',
+      type: 'customer_service',
+      audited_user_id: 'viewer-1',
+      audited_user_key: 'user-key-1',
+      css_cashier_user_key: 'different-legacy-key',
+    }),
+    createAuditRow({
+      id: 'owned-by-legacy-fallback',
+      type: 'customer_service',
+      audited_user_id: null,
+      audited_user_key: null,
+      css_cashier_user_key: 'user-key-1',
+    }),
+    createAuditRow({
+      id: 'not-owned',
+      type: 'customer_service',
+      audited_user_id: 'other-user',
+      audited_user_key: 'user-key-other',
+      css_cashier_user_key: 'user-key-other',
+    }),
+  ];
+
+  const service = createAccountAuditResultService({
+    resolveViewerIdentity: async () => ({
+      userId: 'viewer-1',
+      userKey: 'user-key-1',
+      employeeIds: [],
+    }),
+    listCompletedAuditRows: async () => rows,
+    getAuditRowById: async () => null,
+    listAuditMessages: async () => [],
+  });
+
+  const result = await service.listAccountAuditResults({
+    userId: 'viewer-1',
+    page: 1,
+    pageSize: 10,
+  });
+
+  assert.deepEqual(result.items.map((item) => item.id), ['owned-by-audited-id', 'owned-by-legacy-fallback']);
+});
+
 test('getAccountAuditResultById returns a sanitized read-only detail payload', async () => {
   const audit = createAuditRow({
     id: 'audit-safe',
@@ -219,6 +269,7 @@ test('getAccountAuditResultById returns a sanitized read-only detail payload', a
   });
   const service = createAccountAuditResultService({
     resolveViewerIdentity: async () => ({
+      userId: 'viewer-1',
       userKey: 'user-key-1',
       employeeIds: [],
     }),
@@ -271,6 +322,7 @@ test('getAccountAuditResultById returns a sanitized read-only detail payload', a
 test('getAccountAuditResultById rejects audits not owned by the viewer', async () => {
   const service = createAccountAuditResultService({
     resolveViewerIdentity: async () => ({
+      userId: 'viewer-1',
       userKey: 'user-key-1',
       employeeIds: [88],
     }),

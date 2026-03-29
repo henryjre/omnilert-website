@@ -35,7 +35,7 @@ const MONTH_NAMES = [
 ] as const;
 
 const YEAR_GRID_SPAN = 9;
-const MIN_ANALYTICS_DATE_YMD = "2026-03-29";
+const MIN_ANALYTICS_DATE_YMD = "2026-03-28";
 const MIN_ANALYTICS_DATE = fromLocalYmd(MIN_ANALYTICS_DATE_YMD);
 
 /* ─── Helpers ─────────────────────────────────────────────────────────── */

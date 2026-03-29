@@ -4,6 +4,7 @@ import { callOdooKw } from './odoo.service.js';
 
 export interface OdooPlanningSlot {
   employee_id: [number, string];
+  company_id?: [number, string] | false;
   start_datetime: string;
   end_datetime: string;
   allocated_hours: number;
@@ -65,7 +66,7 @@ export async function getScheduledSlots(
         ['start_datetime', '>=', dateFrom],
         ['end_datetime', '<=', dateTo],
       ],
-      fields: ['employee_id', 'start_datetime', 'end_datetime', 'allocated_hours'],
+      fields: ['employee_id', 'company_id', 'start_datetime', 'end_datetime', 'allocated_hours'],
       limit: 10000,
     },
   )) as OdooPlanningSlot[];

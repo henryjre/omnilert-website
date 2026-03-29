@@ -22,6 +22,8 @@ type AuditRowSource = {
   branch_name: string | null;
   completed_at: string | Date | null;
   created_at: string | Date;
+  audited_user_id: string | null;
+  audited_user_key: string | null;
   css_cashier_user_key: string | null;
   css_date_order: string | Date | null;
   css_star_rating: number | null;
@@ -55,6 +57,7 @@ type AuditMessageSource = {
 };
 
 type ViewerIdentity = {
+  userId: string;
   userKey: string | null;
   employeeIds: number[];
 };
@@ -221,7 +224,15 @@ function buildDetail(row: AuditRowSource, messages: AuditMessageSource[]): Accou
 }
 
 function isOwnedByViewer(row: AuditRowSource, viewerIdentity: ViewerIdentity): boolean {
+  if (row.audited_user_id && row.audited_user_id === viewerIdentity.userId) {
+    return true;
+  }
+
   const normalizedUserKey = String(viewerIdentity.userKey ?? '').trim();
+  const rowAuditedUserKey = String(row.audited_user_key ?? '').trim();
+  if (normalizedUserKey && rowAuditedUserKey && normalizedUserKey === rowAuditedUserKey) {
+    return true;
+  }
 
   if (row.type === 'customer_service') {
     return Boolean(normalizedUserKey) && normalizedUserKey === String(row.css_cashier_user_key ?? '').trim();
@@ -245,10 +256,11 @@ async function defaultResolveViewerIdentity(input: { userId: string }): Promise<
 
   const userKey = String(user?.user_key ?? '').trim() || null;
   if (!userKey) {
-    return { userKey: null, employeeIds: [] };
+    return { userId: input.userId, userKey: null, employeeIds: [] };
   }
 
   return {
+    userId: input.userId,
     userKey,
     employeeIds: await listEmployeeIdsByWebsiteUserKey(userKey),
   };
@@ -272,6 +284,8 @@ async function defaultListCompletedAuditRows(input: {
       'branches.name as branch_name',
       'audits.completed_at',
       'audits.created_at',
+      'audits.audited_user_id',
+      'audits.audited_user_key',
       'audits.css_cashier_user_key',
       'audits.css_date_order',
       'audits.css_star_rating',
@@ -312,6 +326,8 @@ async function defaultGetAuditRowById(input: {
       'branches.name as branch_name',
       'audits.completed_at',
       'audits.created_at',
+      'audits.audited_user_id',
+      'audits.audited_user_key',
       'audits.css_cashier_user_key',
       'audits.css_date_order',
       'audits.css_star_rating',

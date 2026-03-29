@@ -35,7 +35,7 @@ test('getRollingWindowForSnapshotDate returns inclusive 30-day range', () => {
   assert.equal(window.windowEndDate, '2026-03-28');
 });
 
-test('mapBreakdownToRollingMetricSnapshot returns only 9 rolling metrics', () => {
+test('mapBreakdownToRollingMetricSnapshot returns rolling metrics plus branch AOV benchmark', () => {
   const snapshot = mapBreakdownToRollingMetricSnapshot({
     css: { score: 4.5, impact: 2 },
     wrs: { score: 4.1, impact: 0.5 },
@@ -58,6 +58,7 @@ test('mapBreakdownToRollingMetricSnapshot returns only 9 rolling metrics', () =>
     punctualityRate: 96.2,
     productivityRate: 91.4,
     averageOrderValue: 420.5,
+    branchAov: 390.2,
     uniformComplianceRate: 99.2,
     hygieneComplianceRate: 97.8,
     sopComplianceRate: 96.4,

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { db } from '../config/database.js';
 
 process.env.JWT_SECRET ??= 'test-jwt-secret-12345';
 process.env.JWT_REFRESH_SECRET ??= 'test-jwt-refresh-secret';
@@ -21,12 +22,13 @@ function createAuditRow(
   overrides: Partial<Record<string, unknown>> = {},
 ) {
   return {
-    id: 'audit-1',
+    id: '11111111-1111-1111-1111-111111111111',
     company_id: 'company-a',
     company_name: 'Alpha Foods',
+    company_slug: 'alpha-foods',
     type: 'customer_service',
     status: 'pending',
-    branch_id: 'branch-1',
+    branch_id: '00000000-0000-0000-0000-000000000001',
     auditor_user_id: null,
     monetary_reward: '150.00',
     completed_at: null,
@@ -41,6 +43,8 @@ function createAuditRow(
     css_company_name: 'Alpha Foods',
     css_cashier_name: 'Cashier One',
     css_cashier_user_key: 'user-key-1',
+    audited_user_id: null,
+    audited_user_key: 'user-key-1',
     css_date_order: '2026-03-22T01:10:00.000Z',
     css_amount_total: '399.00',
     css_order_lines: null,
@@ -51,7 +55,6 @@ function createAuditRow(
     css_ai_report: null,
     comp_odoo_employee_id: null,
     comp_employee_name: null,
-    comp_employee_avatar: null,
     comp_check_in_time: null,
     comp_extra_fields: null,
     comp_productivity_rate: null,
@@ -72,12 +75,14 @@ test('listStoreAudits returns enriched items with company metadata and global pr
           id: 'audit-css',
           company_id: 'company-a',
           company_name: 'Alpha Foods',
+          company_slug: 'alpha-foods',
         }),
         createAuditRow({
           id: 'audit-comp',
           type: 'compliance',
           company_id: 'company-b',
           company_name: 'Beta Retail',
+          company_slug: 'beta-retail',
           css_odoo_order_id: null,
           css_cashier_name: null,
           comp_odoo_employee_id: 55,
@@ -191,4 +196,8 @@ test('processAudit throws 404 if audit company context cannot be resolved', asyn
     () => service.processAudit({ auditId: 'nonexistent', userId: 'auditor-1' }),
     /store audit not found/i,
   );
+});
+
+test.after(async () => {
+  await db.getDb().destroy();
 });

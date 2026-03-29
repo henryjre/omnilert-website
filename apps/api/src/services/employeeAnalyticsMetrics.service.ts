@@ -78,14 +78,30 @@ function normalizeRangeYmd(rangeStartYmd: string, rangeEndYmd: string): { startY
   return { startYmd: rangeEndYmd, endYmd: rangeStartYmd };
 }
 
-function buildAttendanceLookup(attendances: OdooAttendanceRecord[]): Map<string, Date> {
-  const lookup = new Map<string, Date>();
+interface AttendanceLookupValue {
+  checkIn: Date;
+  branchOdooId: number | null;
+  branchName: string | null;
+}
+
+function buildAttendanceLookup(attendances: OdooAttendanceRecord[]): Map<string, AttendanceLookupValue> {
+  const lookup = new Map<string, AttendanceLookupValue>();
   for (const attendance of attendances) {
     const employeeId = Array.isArray(attendance.employee_id) ? attendance.employee_id[0] : attendance.employee_id;
     const checkIn = new Date(attendance.check_in);
+    if (Number.isNaN(checkIn.getTime())) {
+      continue;
+    }
     const key = `${employeeId}:${checkIn.toDateString()}`;
-    if (!lookup.has(key)) {
-      lookup.set(key, checkIn);
+    const branchOdooId = Array.isArray(attendance.x_company_id) ? attendance.x_company_id[0] : null;
+    const branchName = Array.isArray(attendance.x_company_id) ? attendance.x_company_id[1] : null;
+    const existing = lookup.get(key);
+    if (!existing || checkIn.getTime() < existing.checkIn.getTime()) {
+      lookup.set(key, {
+        checkIn,
+        branchOdooId: typeof branchOdooId === 'number' ? branchOdooId : null,
+        branchName: typeof branchName === 'string' ? branchName : null,
+      });
     }
   }
   return lookup;
@@ -99,17 +115,29 @@ async function getWebsiteUserKey(userId: string): Promise<string | null> {
   return row.userKey.trim();
 }
 
+async function resolveAuditedUserIdentity(userId: string): Promise<{ userKey: string | null; odooEmployeeIds: number[] }> {
+  const userKey = await getWebsiteUserKey(userId);
+  if (!userKey) {
+    return { userKey: null, odooEmployeeIds: [] };
+  }
+
+  const odooEmployeeIds = await getOdooEmployeeIdsByWebsiteKey(userKey);
+  return { userKey, odooEmployeeIds };
+}
+
 async function getAttendanceBasedRows(input: {
   userId: string;
   rangeStartYmd: string;
   rangeEndYmd: string;
-}): Promise<Array<{ slot: OdooPlanningSlot; checkIn: Date | null }>> {
-  const userKey = await getWebsiteUserKey(input.userId);
-  if (!userKey) {
-    return [];
-  }
-
-  const employeeIds = await getOdooEmployeeIdsByWebsiteKey(userKey);
+}): Promise<Array<{
+  slot: OdooPlanningSlot;
+  checkIn: Date | null;
+  checkInBranchOdooId: number | null;
+  checkInBranchName: string | null;
+  scheduledBranchOdooId: number | null;
+  scheduledBranchName: string | null;
+}>> {
+  const { odooEmployeeIds: employeeIds } = await resolveAuditedUserIdentity(input.userId);
   if (employeeIds.length === 0) {
     return [];
   }
@@ -126,9 +154,16 @@ async function getAttendanceBasedRows(input: {
     const employeeId = Array.isArray(slot.employee_id) ? slot.employee_id[0] : slot.employee_id;
     const slotStart = new Date(slot.start_datetime);
     const key = `${employeeId}:${slotStart.toDateString()}`;
+    const attendance = attendanceLookup.get(key);
+    const scheduledBranchOdooId = Array.isArray(slot.company_id) ? slot.company_id[0] : null;
+    const scheduledBranchName = Array.isArray(slot.company_id) ? slot.company_id[1] : null;
     return {
       slot,
-      checkIn: attendanceLookup.get(key) ?? null,
+      checkIn: attendance?.checkIn ?? null,
+      checkInBranchOdooId: attendance?.branchOdooId ?? null,
+      checkInBranchName: attendance?.branchName ?? null,
+      scheduledBranchOdooId: typeof scheduledBranchOdooId === 'number' ? scheduledBranchOdooId : null,
+      scheduledBranchName: typeof scheduledBranchName === 'string' ? scheduledBranchName : null,
     };
   });
 
@@ -140,22 +175,40 @@ async function queryCustomerServiceEvents(input: MetricEventQueryInput): Promise
   const { startYmd, endYmd } = normalizeRangeYmd(input.rangeStartYmd, input.rangeEndYmd);
   const start = toLocalStartDate(startYmd);
   const end = toLocalEndDate(endYmd);
+  const userKey = await getWebsiteUserKey(input.userId);
 
-  const rows = await db.getDb()('store_audits')
+  const rows = await db.getDb()('store_audits as audits')
+    .leftJoin('branches as b', 'b.id', 'audits.branch_id')
+    .leftJoin('users as auditor', 'auditor.id', 'audits.auditor_user_id')
     .where({
-      type: 'customer_service',
-      status: 'completed',
-      css_cashier_user_key: input.userId,
+      'audits.type': 'customer_service',
+      'audits.status': 'completed',
     })
-    .whereBetween('completed_at', [start, end])
+    .andWhere((ownedQuery) => {
+      ownedQuery.where('audits.audited_user_id', input.userId);
+
+      if (userKey) {
+        ownedQuery.orWhere((canonicalKeyQuery) => {
+          canonicalKeyQuery
+            .whereNull('audits.audited_user_id')
+            .where('audits.audited_user_key', userKey);
+        });
+        ownedQuery.orWhere((legacyQuery) => {
+          legacyQuery
+            .whereNull('audits.audited_user_id')
+            .whereNull('audits.audited_user_key')
+            .where('audits.css_cashier_user_key', userKey);
+        });
+      }
+    })
+    .whereBetween('audits.completed_at', [start, end])
     .select(
-      'id',
-      'completed_at as completedAt',
-      'css_star_rating as score',
-      'css_pos_reference as posReference',
-      'css_cashier_name as cashierName',
+      'audits.completed_at as completedAt',
+      'audits.css_star_rating as score',
+      'b.name as branchName',
+      db.getDb().raw(`NULLIF(TRIM(CONCAT_WS(' ', auditor.first_name, auditor.last_name)), '') as "auditorName"`),
     )
-    .orderBy('completed_at', 'desc');
+    .orderBy('audits.completed_at', 'desc');
 
   return paginateRows(rows, input.page, input.pageSize);
 }
@@ -165,17 +218,21 @@ async function queryWorkplaceRelationsEvents(input: MetricEventQueryInput): Prom
   const start = toLocalStartDate(startYmd);
   const end = toLocalEndDate(endYmd);
 
-  const rows = await db.getDb()('peer_evaluations')
-    .where({ evaluated_user_id: input.userId })
-    .whereNotNull('submitted_at')
-    .whereRaw('COALESCE(wrs_effective_at, submitted_at) >= ? AND COALESCE(wrs_effective_at, submitted_at) <= ?', [start, end])
+  const rows = await db.getDb()('peer_evaluations as pe')
+    .join('users as evaluator', 'evaluator.id', 'pe.evaluator_user_id')
+    .leftJoin('employee_shifts as shifts', 'shifts.id', 'pe.shift_id')
+    .leftJoin('branches as b', 'b.id', 'shifts.branch_id')
+    .where({ 'pe.evaluated_user_id': input.userId })
+    .whereNotNull('pe.wrs_effective_at')
+    .whereBetween('pe.wrs_effective_at', [start, end])
     .select(
-      'id',
+      'pe.submitted_at as submittedAt',
+      'pe.wrs_effective_at as effectiveAt',
+      db.getDb().raw(`NULLIF(TRIM(CONCAT_WS(' ', evaluator.first_name, evaluator.last_name)), '') as "evaluatorName"`),
+      'b.name as branchName',
       db.getDb().raw('(q1_score + q2_score + q3_score) / 3.0 as score'),
-      db.getDb().raw('submitted_at as submittedAt'),
-      db.getDb().raw('wrs_effective_at as effectiveAt'),
     )
-    .orderByRaw('COALESCE(wrs_effective_at, submitted_at) DESC');
+    .orderBy('pe.wrs_effective_at', 'desc');
 
   return paginateRows(rows, input.page, input.pageSize);
 }
@@ -187,27 +244,49 @@ async function queryComplianceEvents(
   const { startYmd, endYmd } = normalizeRangeYmd(input.rangeStartYmd, input.rangeEndYmd);
   const start = toLocalStartDate(startYmd);
   const end = toLocalEndDate(endYmd);
+  const { userKey, odooEmployeeIds } = await resolveAuditedUserIdentity(input.userId);
 
-  const rows = await db.getDb()('store_audits')
+  const rows = await db.getDb()('store_audits as audits')
+    .leftJoin('branches as b', 'b.id', 'audits.branch_id')
+    .leftJoin('users as auditor', 'auditor.id', 'audits.auditor_user_id')
     .where({
-      type: 'compliance',
-      status: 'completed',
-      auditor_user_id: input.userId,
+      'audits.type': 'compliance',
+      'audits.status': 'completed',
     })
-    .whereBetween('completed_at', [start, end])
+    .andWhere((ownedQuery) => {
+      ownedQuery.where('audits.audited_user_id', input.userId);
+
+      if (userKey) {
+        ownedQuery.orWhere((canonicalKeyQuery) => {
+          canonicalKeyQuery
+            .whereNull('audits.audited_user_id')
+            .where('audits.audited_user_key', userKey);
+        });
+      }
+
+      if (odooEmployeeIds.length > 0) {
+        ownedQuery.orWhere((legacyQuery) => {
+          legacyQuery
+            .whereNull('audits.audited_user_id')
+            .whereNull('audits.audited_user_key')
+            .whereIn('audits.comp_odoo_employee_id', odooEmployeeIds);
+        });
+      }
+    })
+    .whereBetween('audits.completed_at', [start, end])
     .select(
-      'id',
-      'completed_at as completedAt',
+      'audits.completed_at as completedAt',
       db.getDb().raw(`${field} as passed`),
-      'comp_employee_name as employeeName',
-      'comp_odoo_employee_id as employeeOdooId',
+      'b.name as branchName',
+      db.getDb().raw(`NULLIF(TRIM(CONCAT_WS(' ', auditor.first_name, auditor.last_name)), '') as "auditorName"`),
     )
-    .orderBy('completed_at', 'desc');
+    .orderBy('audits.completed_at', 'desc');
 
   const mapped = rows.map((row) => ({
-    ...row,
+    completedAt: row.completedAt,
+    branchName: row.branchName ?? null,
+    auditorName: row.auditorName ?? null,
     result: row.passed === true ? 'Pass' : row.passed === false ? 'Fail' : null,
-    score: row.passed === true ? 100 : row.passed === false ? 0 : null,
   }));
   return paginateRows(mapped, input.page, input.pageSize);
 }
@@ -219,12 +298,14 @@ async function queryAttendanceEvents(input: MetricEventQueryInput): Promise<Metr
     rangeEndYmd: input.rangeEndYmd,
   });
 
-  const rows = attendanceRows.map(({ slot, checkIn }) => ({
+  const rows = attendanceRows.map(({ slot, checkIn, checkInBranchName, checkInBranchOdooId, scheduledBranchName, scheduledBranchOdooId }) => ({
     date: new Date(slot.start_datetime).toISOString(),
     scheduledStart: slot.start_datetime,
     scheduledEnd: slot.end_datetime,
     scheduledHours: slot.allocated_hours ?? 0,
     checkIn: checkIn ? checkIn.toISOString() : null,
+    branchName: checkInBranchName ?? scheduledBranchName,
+    branchOdooId: checkInBranchOdooId ?? scheduledBranchOdooId,
     status: checkIn ? 'Present' : 'Absent',
   }));
 
@@ -238,13 +319,15 @@ async function queryPunctualityEvents(input: MetricEventQueryInput): Promise<Met
     rangeEndYmd: input.rangeEndYmd,
   });
 
-  const rows = attendanceRows.map(({ slot, checkIn }) => {
+  const rows = attendanceRows.map(({ slot, checkIn, checkInBranchName, checkInBranchOdooId, scheduledBranchName, scheduledBranchOdooId }) => {
     const slotStart = new Date(slot.start_datetime);
     const varianceMinutes = checkIn ? Math.round((checkIn.getTime() - slotStart.getTime()) / 60000) : null;
     return {
       date: slotStart.toISOString(),
       scheduledStart: slot.start_datetime,
       checkIn: checkIn ? checkIn.toISOString() : null,
+      branchName: checkInBranchName ?? scheduledBranchName,
+      branchOdooId: checkInBranchOdooId ?? scheduledBranchOdooId,
       varianceMinutes,
       status: varianceMinutes === null ? 'No Check-in' : varianceMinutes <= 0 ? 'On-time' : 'Late',
     };

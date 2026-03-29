@@ -831,7 +831,7 @@ export async function completeStoreAudit(input: {
       })
       .returning('*');
 
-    if (audit.css_cashier_user_key) {
+    if (audit.audited_user_id || audit.audited_user_key || audit.css_cashier_user_key) {
       const monetaryReward = Number(audit.monetary_reward ?? 0);
       if (monetaryReward > 0) {
         const description = `CSS Audit ${input.auditId} - ${formatDescriptionTimestamp(completedAt)}`;
@@ -868,7 +868,7 @@ export async function completeStoreAudit(input: {
       })
       .returning('*');
 
-    if (audit.comp_odoo_employee_id) {
+    if (audit.audited_user_id || audit.audited_user_key || audit.comp_odoo_employee_id) {
       const monetaryReward = Number(audit.monetary_reward ?? 0);
       if (monetaryReward > 0) {
         const description = `Compliance Audit ${input.auditId} - ${formatDescriptionTimestamp(completedAt)}`;
