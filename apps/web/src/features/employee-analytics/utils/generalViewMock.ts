@@ -13,6 +13,17 @@ import {
   eachBucketInRange,
   formatComparisonPeriodCaption,
 } from "./analyticsRangeBuckets";
+import {
+  buildEmployeeInsights,
+  buildGlobalInsights,
+  buildMetricInsights as buildMetricRuleInsights,
+  formatInsightsPeriodSubtitle as formatRuleInsightsPeriodSubtitle,
+  getMetricKind,
+  mapEmployeeInsightsToCardRows,
+  mapGlobalInsightsToCardRows,
+  mapMetricInsightsToCardRows,
+  type EmployeeValuePoint,
+} from "./analyticsRuleEngine";
 
 /** Integer hash for stable mock perturbation (no Math.random). */
 export function hashRangeSeed(selection: AnalyticsRangeSelection): number {
@@ -28,15 +39,7 @@ export function hashRangeSeed(selection: AnalyticsRangeSelection): number {
  * Card subtitle aligned to granularity: "Based on Daily Data", "Based on Weekly Data", etc.
  */
 export function formatInsightsPeriodSubtitle(selection: AnalyticsRangeSelection): string {
-  const label =
-    selection.granularity === "day"
-      ? "Daily"
-      : selection.granularity === "week"
-        ? "Weekly"
-        : selection.granularity === "month"
-          ? "Monthly"
-          : "Yearly";
-  return `Based on ${label} Data`;
+  return formatRuleInsightsPeriodSubtitle(selection);
 }
 
 function bucketUnitLabel(selection: AnalyticsRangeSelection, count: number): string {
@@ -62,38 +65,25 @@ export interface GeneralKeyInsightAlert {
 }
 
 /** General View — Key Insights list; copy shifts with selected range (deterministic). */
-export function buildGeneralKeyInsights(selection: AnalyticsRangeSelection): GeneralKeyInsightAlert[] {
-  const rs = hashRangeSeed(selection);
-  const n = countBuckets(selection);
-  const unit = bucketUnitLabel(selection, n);
-  const employees = ["Sarah Jenkins", "Marcus Chen", "Elena Rodriguez"];
-  const pick = (i: number) => employees[((rs >> (i * 5)) + i) % 3];
-  const productivityPct = 8 + (rs % 8);
-  const sopGapPct = 3 + (rs % 6);
-
-  return [
-    {
-      id: 1,
-      employee: pick(0),
-      message: `Uniform compliance trending down over the last ${n} ${unit} in this window.`,
-      type: "warning",
-      metric: "Uniform Compliance",
-    },
-    {
-      id: 2,
-      employee: pick(1),
-      message: `Productivity rate up ${productivityPct}% vs prior period across the selected ${n} ${unit}.`,
-      type: "success",
-      metric: "Productivity Rate",
-    },
-    {
-      id: 3,
-      employee: pick(2),
-      message: `SOP compliance is ${sopGapPct}% below the global target for the selected range.`,
-      type: "warning",
-      metric: "SOP Compliance",
-    },
-  ];
+export function buildGeneralKeyInsights(
+  selection: AnalyticsRangeSelection,
+  args: {
+    globalEpiCurrent: number;
+    globalEpiPrevious: number;
+    employeeEpi: Array<{ name: string; epi: number }>;
+    metricRowsByMetric: Record<string, EmployeeValuePoint[]>;
+    metricBenchmarksByMetric?: Record<string, number>;
+  },
+): GeneralKeyInsightAlert[] {
+  const insights = buildGlobalInsights({
+    selection,
+    globalEpiCurrent: args.globalEpiCurrent,
+    globalEpiPrevious: args.globalEpiPrevious,
+    employeeEpi: args.employeeEpi,
+    metricRowsByMetric: args.metricRowsByMetric,
+    metricBenchmarksByMetric: args.metricBenchmarksByMetric,
+  });
+  return mapGlobalInsightsToCardRows(insights);
 }
 
 export interface PersonalKeyInsightRow {
@@ -103,30 +93,21 @@ export interface PersonalKeyInsightRow {
 }
 
 /** Employee View — Key Insights rows; messages reference bucket count and period. */
-export function buildPersonalKeyInsights(selection: AnalyticsRangeSelection): PersonalKeyInsightRow[] {
-  const rs = hashRangeSeed(selection);
-  const n = countBuckets(selection);
-  const unit = bucketUnitLabel(selection, n);
-  const improvingPct = (2 + (rs % 50) / 10).toFixed(1);
-  const attentionPct = (3 + (rs % 40) / 10).toFixed(1);
-
-  return [
-    {
-      type: "strength",
-      metric: "Customer Service",
-      message: `Consistently in the top 15% of the branch for this metric over the last ${n} ${unit}.`,
-    },
-    {
-      type: "improving",
-      metric: "Punctuality",
-      message: `Rate improved by ${improvingPct}% vs the prior period over the last ${n} ${unit}.`,
-    },
-    {
-      type: "attention",
-      metric: "SOP Compliance",
-      message: `Trending ${attentionPct}% below the branch target for the selected range.`,
-    },
-  ];
+export function buildPersonalKeyInsights(
+  selection: AnalyticsRangeSelection,
+  args: {
+    employeeName: string;
+    metricRowsByMetric: Record<string, EmployeeValuePoint[]>;
+    metricBenchmarksByMetric?: Record<string, number>;
+  },
+): PersonalKeyInsightRow[] {
+  const insights = buildEmployeeInsights({
+    selection,
+    employeeName: args.employeeName,
+    metricRowsByMetric: args.metricRowsByMetric,
+    metricBenchmarksByMetric: args.metricBenchmarksByMetric,
+  });
+  return mapEmployeeInsightsToCardRows(insights);
 }
 
 export interface LeaderboardRow {
@@ -163,6 +144,14 @@ const RADAR_METRICS: { id: string; label: string }[] = [
   { id: "hygiene-compliance", label: "Hygiene Compliance" },
   { id: "sop-compliance", label: "SOP Compliance" },
 ];
+
+const METRIC_LABELS_BY_ID: Record<string, string> = RADAR_METRICS.reduce<Record<string, string>>(
+  (acc, metric) => {
+    acc[metric.id] = metric.label;
+    return acc;
+  },
+  {},
+);
 
 function shortenRadarSubject(label: string): string {
   return label
@@ -468,12 +457,25 @@ export function buildTrendComparisonRows(
 ): TrendComparisonRow[] {
   const buckets = eachBucketInRange(selection);
   const rangeKey = `${selection.granularity}|${selection.rangeStartYmd}|${selection.rangeEndYmd}`;
+  const kind = getMetricKind(metricId);
   return buckets.map((b, i) => {
     const row: TrendComparisonRow = { date: b.label };
     users.forEach((user) => {
       const seed = `${user}${metricId}${rangeKey}`
         .split("")
         .reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+      if (kind === "likert") {
+        const base = 3.8 + (seed % 7) / 10;
+        const variance = Math.sin(seed + i) * 0.25;
+        row[user] = Math.min(5, Math.max(1, Math.round((base + variance) * 100) / 100));
+        return;
+      }
+      if (kind === "monetary") {
+        const base = 320 + (seed % 140);
+        const variance = Math.sin(seed + i) * 35;
+        row[user] = Math.max(0, Math.round((base + variance) * 10) / 10);
+        return;
+      }
       const base = seed % 20 + 75;
       const variance = Math.sin(seed + i) * 10;
       row[user] = Math.min(100, Math.max(0, Math.round((base + variance) * 10) / 10));
@@ -577,18 +579,35 @@ export function buildPersonalMetricTrendRows(
   const buckets = eachBucketInRange(selection);
   const rangeKey = `${selection.granularity}|${selection.rangeStartYmd}|${selection.rangeEndYmd}`;
   const rs = hashRangeSeed(selection);
+  const kind = getMetricKind(metricId);
   return buckets.map((b, i) => {
     const userSeed = `${userName}${metricId}${rangeKey}`
       .split("")
       .reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-    const base = userSeed % 20 + 75;
-    const variance = Math.sin(userSeed + i) * 10;
-    const userVal = Math.min(100, Math.max(0, Math.round((base + variance) * 10) / 10));
-    const gBase = 76 + (rs % 12);
-    const globalVal = Math.min(
-      100,
-      Math.max(45, Math.round((gBase + Math.sin(rs * 0.02 + i * 0.45) * 6) * 10) / 10),
-    );
+    let userVal: number;
+    let globalVal: number;
+    if (kind === "likert") {
+      const base = 3.7 + (userSeed % 8) / 10;
+      const variance = Math.sin(userSeed + i) * 0.25;
+      userVal = Math.min(5, Math.max(1, Math.round((base + variance) * 100) / 100));
+      const gBase = 3.8 + (rs % 6) / 20;
+      globalVal = Math.min(5, Math.max(1, Math.round((gBase + Math.sin(rs * 0.02 + i * 0.45) * 0.2) * 100) / 100));
+    } else if (kind === "monetary") {
+      const base = 320 + (userSeed % 140);
+      const variance = Math.sin(userSeed + i) * 28;
+      userVal = Math.max(0, Math.round((base + variance) * 10) / 10);
+      const gBase = 330 + (rs % 120);
+      globalVal = Math.max(0, Math.round((gBase + Math.sin(rs * 0.02 + i * 0.45) * 18) * 10) / 10);
+    } else {
+      const base = userSeed % 20 + 75;
+      const variance = Math.sin(userSeed + i) * 10;
+      userVal = Math.min(100, Math.max(0, Math.round((base + variance) * 10) / 10));
+      const gBase = 76 + (rs % 12);
+      globalVal = Math.min(
+        100,
+        Math.max(45, Math.round((gBase + Math.sin(rs * 0.02 + i * 0.45) * 6) * 10) / 10),
+      );
+    }
     const row: TrendComparisonRow = { date: b.label, [userName]: userVal, "Global Avg": globalVal };
     return row;
   });
@@ -603,7 +622,12 @@ export function perturbPersonalMetricValue(
 ): number {
   const rs = hashRangeSeed(selection);
   const h = `${userName}${metricKey}${rs}`.split("").reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-  const delta = (h % 13) / 10 - 0.6;
+  const kind = getMetricKind(metricKey);
+  if (kind === "likert") {
+    const delta = ((h % 13) - 6) / 20;
+    return Math.min(5, Math.max(1, Math.round((baseVal + delta) * 100) / 100));
+  }
+  const delta = ((h % 121) - 60) / 10;
   return Math.min(100, Math.max(0, Math.round((baseVal + delta) * 10) / 10));
 }
 
@@ -613,7 +637,12 @@ export function perturbGlobalMetricAverage(
   selection: AnalyticsRangeSelection,
 ): number {
   const rs = hashRangeSeed(selection);
-  const delta = ((rs >> 4) % 9) / 10 - 0.4;
+  const deltaSeed = (rs >> 4) % 11;
+  if (baseGlobal <= 5) {
+    const delta = (deltaSeed - 5) / 20;
+    return Math.min(5, Math.max(1, Math.round((baseGlobal + delta) * 100) / 100));
+  }
+  const delta = (deltaSeed - 5) / 2;
   return Math.min(100, Math.max(0, Math.round((baseGlobal + delta) * 10) / 10));
 }
 
@@ -636,8 +665,13 @@ export function perturbMetricGlobalTarget(
 /** One employee row for Individual Metrics ranking / distribution mocks. */
 export interface MetricEmployeeRow {
   name: string;
+  /** End-of-range value (latest bucket in selected range). */
   value: number;
-  /** Mock delta over the selected analytics range (deterministic; not a calendar week). */
+  /** Start-of-range value (first bucket in selected range). */
+  startValue: number;
+  /** End-of-range value (mirrors `value`, kept explicit for clarity). */
+  endValue: number;
+  /** Delta from first bucket to last bucket within the selected range. */
   periodChange: number;
   role: string;
 }
@@ -647,26 +681,43 @@ export interface IndividualMetricsRosterEntry {
   role: string;
 }
 
-/**
- * Perturbs a per-employee metric for Individual Metrics mocks; AOV stays on peso scale.
- */
-function perturbIndividualMetricEmployeeValue(
+/** Deterministic per-bucket employee value for a metric within the selected range. */
+function metricValueAtBucket(
   baseVal: number,
   metricId: string,
   userName: string,
   selection: AnalyticsRangeSelection,
+  bucketIndex: number,
+  bucketCount: number,
 ): number {
-  const rs = hashRangeSeed(selection);
-  const h = `${userName}${metricId}${rs}`.split("").reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-  if (metricId === "average-order-value") {
-    const delta = (h % 80) - 40;
-    return Math.max(0, Math.round((baseVal + delta) * 10) / 10);
+  const rangeKey = `${selection.granularity}|${selection.rangeStartYmd}|${selection.rangeEndYmd}`;
+  const h = `${userName}${metricId}${rangeKey}`
+    .split("")
+    .reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+  const kind = getMetricKind(metricId);
+  const progress = bucketCount > 1 ? bucketIndex / (bucketCount - 1) : 1;
+  const centeredProgress = progress - 0.5;
+  const wave = Math.sin((h + bucketIndex) * 0.43);
+
+  if (kind === "likert") {
+    const drift = (((h >> 3) % 15) - 7) * 0.035;
+    const value = baseVal + drift * 2 * centeredProgress + wave * 0.12;
+    return Math.min(5, Math.max(1, Math.round(value * 100) / 100));
   }
-  return perturbPersonalMetricValue(baseVal, metricId, userName, selection);
+
+  if (kind === "monetary") {
+    const drift = (((h >> 3) % 15) - 7) * 3.6;
+    const value = baseVal + drift * 2 * centeredProgress + wave * 12;
+    return Math.max(0, Math.round(value * 10) / 10);
+  }
+
+  const drift = (((h >> 3) % 15) - 7) * 0.6;
+  const value = baseVal + drift * 2 * centeredProgress + wave * 2;
+  return Math.min(100, Math.max(0, Math.round(value * 10) / 10));
 }
 
 /**
- * Per-employee metric values and period change, perturbed by `analyticsRange` (mock).
+ * Per-employee metric values and first->last bucket delta within `analyticsRange` (mock).
  */
 export function getMetricAllEmployeeData(
   metricId: string,
@@ -674,16 +725,30 @@ export function getMetricAllEmployeeData(
   roster: IndividualMetricsRosterEntry[],
   getBaseMetricValue: (employeeName: string, metricId: string) => number,
 ): MetricEmployeeRow[] {
-  const rs = hashRangeSeed(selection);
+  const kind = getMetricKind(metricId);
+  const bucketCount = Math.max(1, eachBucketInRange(selection).length);
   return roster
     .map((emp) => {
       const base = getBaseMetricValue(emp.name, metricId);
-      const value = perturbIndividualMetricEmployeeValue(base, metricId, emp.name, selection);
-      const h = `${emp.name}${metricId}${rs}`.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
-      const periodChange = parseFloat((((h % 80) - 40) / 10).toFixed(1));
+      const startValue = metricValueAtBucket(base, metricId, emp.name, selection, 0, bucketCount);
+      const endValue = metricValueAtBucket(
+        base,
+        metricId,
+        emp.name,
+        selection,
+        bucketCount - 1,
+        bucketCount,
+      );
+      const rawChange = endValue - startValue;
+      const periodChange =
+        kind === "likert"
+          ? parseFloat(rawChange.toFixed(2))
+          : parseFloat(rawChange.toFixed(1));
       return {
         name: emp.name,
-        value,
+        value: endValue,
+        startValue,
+        endValue,
         periodChange,
         role: emp.role,
       };
@@ -720,7 +785,12 @@ export function getMetricTrendForRange(
       const value = Math.max(0, Math.round((target + wobble) * 10) / 10);
       return { week: b.label, value, target };
     }
-    const wobble = Math.sin((rangeSeed + i) * 0.47) * 5.5 + (i / Math.max(n, 1)) * 1.8;
+    if (getMetricKind(metricId) === "likert") {
+      const wobble = Math.sin((rangeSeed + i) * 0.47) * 0.35 + (i / Math.max(n, 1)) * 0.08;
+      const value = Math.min(5, Math.max(1, Math.round((target + wobble) * 100) / 100));
+      return { week: b.label, value, target };
+    }
+    const wobble = Math.sin((rangeSeed + i) * 0.47) * 4 + (i / Math.max(n, 1)) * 1.4;
     const value = Math.min(100, Math.max(0, Math.round((target + wobble) * 10) / 10));
     return { week: b.label, value, target };
   });
@@ -799,88 +869,31 @@ export interface MetricInsightItem {
   message: string;
 }
 
-/**
- * Automated insight bullets for the metric (mock); `periodChange` is range-scoped.
- */
+/** Automated insight bullets for the metric (mock), using first->last bucket deltas in-range. */
 export function getMetricInsights(
   metricId: string,
   selection: AnalyticsRangeSelection,
   roster: IndividualMetricsRosterEntry[],
   getBaseMetricValue: (employeeName: string, metricId: string) => number,
+  metricBenchmarkBase?: number,
 ): MetricInsightItem[] {
   const employees = getMetricAllEmployeeData(metricId, selection, roster, getBaseMetricValue);
-  const avg = employees.reduce((s, e) => s + e.value, 0) / employees.length;
-  const insights: MetricInsightItem[] = [];
-
-  const topImprovers = employees
-    .filter((e) => e.periodChange > 2)
-    .sort((a, b) => b.periodChange - a.periodChange);
-  if (topImprovers.length > 0) {
-    const t = topImprovers[0];
-    const deltaLabel =
-      metricId === "average-order-value"
-        ? `${t.periodChange >= 0 ? "+" : ""}${t.periodChange.toFixed(1)}`
-        : `${t.periodChange >= 0 ? "+" : ""}${t.periodChange.toFixed(1)}%`;
-    insights.push({
-      type: "success",
-      title: "Top Improver",
-      message: `${t.name} improved by ${deltaLabel} over the selected period — highest gain across the team.`,
-    });
-  }
-
-  const declining = employees
-    .filter((e) => e.periodChange < -2)
-    .sort((a, b) => a.periodChange - b.periodChange);
-  if (declining.length > 0) {
-    const d = declining[0];
-    const deltaLabel =
-      metricId === "average-order-value"
-        ? `${Math.abs(d.periodChange).toFixed(1)}`
-        : `${d.periodChange.toFixed(1)}%`;
-    insights.push({
-      type: "warning",
-      title: "Declining Trend",
-      message: `${d.name} dropped ${deltaLabel} — consider a check-in or coaching session.`,
-    });
-  }
-
-  const belowAvg = employees.filter((e) => e.value < avg - 10);
-  if (belowAvg.length > 0) {
-    insights.push({
-      type: "warning",
-      title: "Below Threshold",
-      message: `${belowAvg.length} employee${belowAvg.length > 1 ? "s" : ""} score${belowAvg.length === 1 ? "s" : ""} 10+ points below the global average.`,
-    });
-  }
-
-  const excellenceThreshold = metricId === "average-order-value" ? 500 : 95;
-  const aboveTarget = employees.filter((e) => e.value >= excellenceThreshold);
-  if (metricId === "average-order-value") {
-    insights.push({
-      type: "info",
-      title: "Excellence Rate",
-      message: `${aboveTarget.length} of ${employees.length} employees (${Math.round((aboveTarget.length / employees.length) * 100)}%) are at ₱500+ average order value.`,
-    });
-  } else {
-    insights.push({
-      type: "info",
-      title: "Excellence Rate",
-      message: `${aboveTarget.length} of ${employees.length} employees (${Math.round((aboveTarget.length / employees.length) * 100)}%) are scoring 95%+ on this metric.`,
-    });
-  }
-
-  const spread = employees[0].value - employees[employees.length - 1].value;
-  const spreadHigh = metricId === "average-order-value" ? spread > 150 : spread > 30;
-  insights.push({
-    type: spreadHigh ? "warning" : "info",
-    title: "Score Spread",
-    message:
-      metricId === "average-order-value"
-        ? `${spread.toFixed(0)} peso gap between top and bottom performer${spreadHigh ? " — high variance may indicate inconsistent training." : "."}`
-        : `${spread.toFixed(1)} point gap between top and bottom performer${spreadHigh ? " — high variance may indicate inconsistent training." : "."}`,
+  const benchmarkValue =
+    typeof metricBenchmarkBase === "number" && Number.isFinite(metricBenchmarkBase)
+      ? metricBenchmarkBase
+      : employees.reduce((sum, row) => sum + row.value, 0) / Math.max(employees.length, 1);
+  const ruleInsights = buildMetricRuleInsights({
+    selection,
+    metricId,
+    metricLabel: METRIC_LABELS_BY_ID[metricId] ?? metricId,
+    benchmarkValue,
+    employeeRows: employees.map((row) => ({
+      name: row.name,
+      value: row.value,
+      previousValue: row.startValue,
+    })),
   });
-
-  return insights;
+  return mapMetricInsightsToCardRows(ruleInsights);
 }
 
 /** Footer label for the metric summary sparkline (e.g. `7-day trend`). */

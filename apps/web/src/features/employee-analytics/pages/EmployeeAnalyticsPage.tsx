@@ -64,6 +64,12 @@ import {
   perturbMetricGlobalTarget,
   perturbPersonalMetricValue,
 } from '../utils/generalViewMock';
+import {
+  formatMetricDelta as formatRuleMetricDelta,
+  formatMetricValue as formatRuleMetricValue,
+  getMetricKind,
+  getMetricScaleMax,
+} from '../utils/analyticsRuleEngine';
 import { isStickyHeaderStuck } from '../stickyHeader';
 
 // ─── Skeleton Primitives ─────────────────────────────────────────────────────
@@ -359,9 +365,9 @@ const BRANCH_AVERAGES = {
   epi: 85.4,
   awards: 8.2,
   violations: 1.4,
-  'customer-service': 88.5,
-  'workplace-relations': 87.2,
-  'professional-conduct': 89.1,
+  'customer-service': 4.2,
+  'workplace-relations': 4.0,
+  'professional-conduct': 4.2,
   'attendance-rate': 98.4,
   'punctuality-rate': 96.8,
   'productivity-rate': 82.5,
@@ -371,11 +377,20 @@ const BRANCH_AVERAGES = {
   'sop-compliance': 95.2,
 };
 
+const METRIC_BENCHMARKS: Record<string, number> = {
+  'average-order-value': BRANCH_AVERAGES['average-order-value'],
+};
+
 const getPersonalizedStats = (userName: string) => {
   const seed = userName.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
   
   const getVal = (base: number, range: number) => {
     return parseFloat((base + (seed % range) - (range / 2)).toFixed(1));
+  };
+
+  const getLikert = (base: number) => {
+    const raw = base + ((seed % 13) - 6) / 20;
+    return parseFloat(Math.min(5, Math.max(1, raw)).toFixed(2));
   };
 
   return {
@@ -384,9 +399,9 @@ const getPersonalizedStats = (userName: string) => {
     awards: Math.floor(getVal(BRANCH_AVERAGES.awards, 10)),
     violations: Math.floor(Math.max(0, getVal(BRANCH_AVERAGES.violations, 4))),
     metrics: {
-      'customer-service': getVal(BRANCH_AVERAGES['customer-service'], 12),
-      'workplace-relations': getVal(BRANCH_AVERAGES['workplace-relations'], 12),
-      'professional-conduct': getVal(BRANCH_AVERAGES['professional-conduct'], 12),
+      'customer-service': getLikert(BRANCH_AVERAGES['customer-service']),
+      'workplace-relations': getLikert(BRANCH_AVERAGES['workplace-relations']),
+      'professional-conduct': getLikert(BRANCH_AVERAGES['professional-conduct']),
       'attendance-rate': Math.min(100, getVal(BRANCH_AVERAGES['attendance-rate'], 5)),
       'punctuality-rate': Math.min(100, getVal(BRANCH_AVERAGES['punctuality-rate'], 8)),
       'productivity-rate': getVal(BRANCH_AVERAGES['productivity-rate'], 20),
@@ -573,6 +588,80 @@ function AnalyticsCard({ icon, title, subtitle, children, className = '', header
       </div>
       {/* Card body */}
       <div className="flex flex-col flex-1">{children}</div>
+    </div>
+  );
+}
+
+const PEOPLE_INSIGHTS_PAGE_SIZE = 4;
+const METRIC_INSIGHTS_PAGE_SIZE = 8;
+const FIXED_KEY_INSIGHTS_CARD_HEIGHT = 'h-[540px]';
+
+const keyInsightsPageVariants = {
+  enter: (direction: number) => ({
+    opacity: 0,
+    x: direction === 0 ? 0 : direction > 0 ? 20 : -20,
+  }),
+  center: {
+    opacity: 1,
+    x: 0,
+    transition: { duration: 0.22, ease: 'easeOut' as const },
+  },
+  exit: (direction: number) => ({
+    opacity: 0,
+    x: direction === 0 ? 0 : direction > 0 ? -20 : 20,
+    transition: { duration: 0.16, ease: 'easeInOut' as const },
+  }),
+};
+
+interface CardPaginationProps {
+  currentPage: number;
+  totalPages: number;
+  onPrevious: () => void;
+  onNext: () => void;
+  layout?: 'edge' | 'centered';
+}
+
+function CardPagination({
+  currentPage,
+  totalPages,
+  onPrevious,
+  onNext,
+  layout = 'edge',
+}: CardPaginationProps) {
+  if (totalPages <= 1) {
+    return null;
+  }
+
+  const containerClass =
+    layout === 'centered'
+      ? 'flex items-center justify-center gap-3 pt-3 border-t border-gray-50'
+      : 'grid grid-cols-[1fr_auto_1fr] items-center gap-3 pt-3 border-t border-gray-50';
+
+  return (
+    <div className={containerClass}>
+      <div className={layout === 'centered' ? undefined : 'flex justify-start'}>
+        <button
+          onClick={onPrevious}
+          disabled={currentPage === 0}
+          className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-gray-500 transition-colors hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+          Previous
+        </button>
+      </div>
+      <span className="text-center text-[11px] font-bold text-gray-400 tabular-nums">
+        Page {currentPage + 1} of {totalPages}
+      </span>
+      <div className={layout === 'centered' ? undefined : 'flex justify-end'}>
+        <button
+          onClick={onNext}
+          disabled={currentPage >= totalPages - 1}
+          className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-gray-500 transition-colors hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          Next
+          <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+      </div>
     </div>
   );
 }
@@ -1189,6 +1278,17 @@ function PersonalTrendCard({
   );
 
   const subtitle = useMemo(() => buildPersonalTrendSubtitle(analyticsRange), [analyticsRange]);
+  const selectedMetricKind = getMetricKind(selectedMetric);
+  const trendYPadding = selectedMetricKind === 'likert' ? 0.25 : selectedMetricKind === 'monetary' ? 30 : 5;
+  const yAxisDomain = useMemo<[number | ((v: number) => number), number | ((v: number) => number)]>(() => {
+    if (selectedMetricKind === 'likert') {
+      return [1, 5];
+    }
+    return [
+      (dataMin: number) => Math.max(0, dataMin - trendYPadding),
+      (dataMax: number) => dataMax + trendYPadding,
+    ];
+  }, [selectedMetricKind, trendYPadding]);
 
   const controlLabel = "text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1.5 flex items-center gap-1.5";
 
@@ -1254,7 +1354,7 @@ function PersonalTrendCard({
                   axisLine={false}
                   tickLine={false}
                   tick={{ fill: '#9ca3af', fontSize: 11, fontWeight: 600 }}
-                  domain={[50, 100]}
+                  domain={yAxisDomain}
                   tickCount={6}
                 />
                 <Tooltip
@@ -1266,6 +1366,19 @@ function PersonalTrendCard({
                   }}
                   itemStyle={{ fontWeight: 700, fontSize: '12px' }}
                   labelStyle={{ fontWeight: 600, color: '#6b7280', marginBottom: '6px', fontSize: '11px' }}
+                  formatter={(v, name) => {
+                    const num =
+                      typeof v === "number"
+                        ? v
+                        : typeof v === "string"
+                          ? Number(v)
+                          : NaN;
+                    const label = typeof name === "string" ? name : "Score";
+                    if (!Number.isFinite(num)) {
+                      return ["—", label];
+                    }
+                    return [formatMetricDisplay(selectedMetric, num), label];
+                  }}
                 />
                 <Area
                   type="monotone"
@@ -1300,11 +1413,56 @@ function PersonalTrendCard({
   );
 }
 
-function PersonalInsightsCard({ analyticsRange }: { analyticsRange: AnalyticsRangeSelection }) {
+function PersonalInsightsCard({
+  analyticsRange,
+  userName,
+}: {
+  analyticsRange: AnalyticsRangeSelection;
+  userName: string;
+}) {
+  const [currentPage, setCurrentPage] = useState(0);
+  const [pageDirection, setPageDirection] = useState(0);
+  const metricRowsByMetric = useMemo(() => {
+    const rows: Record<string, { name: string; value: number; previousValue: number }[]> = {};
+    for (const metric of METRICS) {
+      rows[metric.id] = getMetricAllEmployeeData(
+        metric.id,
+        analyticsRange,
+        INDIVIDUAL_METRICS_ROSTER,
+        getBaseMetricValueForEmployee,
+      ).map((row) => ({
+        name: row.name,
+        value: row.value,
+        previousValue: row.startValue,
+      }));
+    }
+    return rows;
+  }, [analyticsRange]);
+
   const insights = useMemo(
-    () => buildPersonalKeyInsights(analyticsRange),
-    [analyticsRange],
+    () =>
+      buildPersonalKeyInsights(analyticsRange, {
+        employeeName: userName,
+        metricRowsByMetric,
+        metricBenchmarksByMetric: METRIC_BENCHMARKS,
+      }),
+    [analyticsRange, metricRowsByMetric, userName],
   );
+  const totalPages = Math.max(1, Math.ceil(insights.length / PEOPLE_INSIGHTS_PAGE_SIZE));
+  const safeCurrentPage = Math.min(currentPage, totalPages - 1);
+  const pageInsights = useMemo(
+    () =>
+      insights.slice(
+        safeCurrentPage * PEOPLE_INSIGHTS_PAGE_SIZE,
+        (safeCurrentPage + 1) * PEOPLE_INSIGHTS_PAGE_SIZE,
+      ),
+    [insights, safeCurrentPage],
+  );
+
+  useEffect(() => {
+    setCurrentPage(0);
+    setPageDirection(0);
+  }, [analyticsRange, userName]);
 
   return (
     <motion.div custom={4} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
@@ -1312,45 +1470,74 @@ function PersonalInsightsCard({ analyticsRange }: { analyticsRange: AnalyticsRan
         icon={<AlertTriangle className="h-4 w-4" />}
         title="Key Insights"
         subtitle={formatInsightsPeriodSubtitle(analyticsRange)}
+        className={FIXED_KEY_INSIGHTS_CARD_HEIGHT}
       >
-        <div className="divide-y divide-gray-50 flex-1 overflow-auto">
-          {insights.map((insight, idx) => (
-            <div
-              key={idx}
-              className="flex flex-col gap-3 p-4 transition-colors hover:bg-gray-50/60"
-            >
-              <div className="flex items-start gap-3">
-                <div
-                  className={`mt-0.5 flex-shrink-0 h-8 w-8 rounded-lg flex items-center justify-center ${
-                    insight.type === 'attention'
-                      ? 'bg-amber-50 text-amber-500'
-                      : insight.type === 'improving'
-                        ? 'bg-blue-50 text-blue-500'
-                        : 'bg-emerald-50 text-emerald-500'
-                  }`}
-                >
-                  {insight.type === 'attention' ? (
-                    <AlertTriangle className="h-4 w-4" />
-                  ) : insight.type === 'improving' ? (
-                    <TrendingUp className="h-4 w-4" />
-                  ) : (
-                    <Trophy className="h-4 w-4" />
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400 mb-0.5">
-                    {insight.metric}
-                  </p>
-                  <p className={`text-sm font-semibold leading-none mb-1 ${
-                    insight.type === 'attention' ? 'text-amber-700' : insight.type === 'improving' ? 'text-blue-700' : 'text-emerald-700'
-                  }`}>
-                    {insight.type === 'strength' ? 'Strength' : insight.type === 'improving' ? 'Improving' : 'Needs Attention'}
-                  </p>
-                  <p className="text-xs text-gray-500 leading-relaxed">{insight.message}</p>
-                </div>
-              </div>
-            </div>
-          ))}
+        <div className="flex flex-col flex-1 overflow-hidden">
+          <div className="flex-1 overflow-hidden">
+            <AnimatePresence mode="wait" initial={false} custom={pageDirection}>
+              <motion.div
+                key={safeCurrentPage}
+                custom={pageDirection}
+                variants={keyInsightsPageVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                className="divide-y divide-gray-50 h-full overflow-auto"
+              >
+                {pageInsights.map((insight, idx) => (
+                  <div
+                    key={`${safeCurrentPage}-${idx}-${insight.metric}`}
+                    className="flex flex-col gap-3 p-4 transition-colors hover:bg-gray-50/60"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div
+                        className={`mt-0.5 flex-shrink-0 h-8 w-8 rounded-lg flex items-center justify-center ${
+                          insight.type === 'attention'
+                            ? 'bg-amber-50 text-amber-500'
+                            : insight.type === 'improving'
+                              ? 'bg-blue-50 text-blue-500'
+                              : 'bg-emerald-50 text-emerald-500'
+                        }`}
+                      >
+                        {insight.type === 'attention' ? (
+                          <AlertTriangle className="h-4 w-4" />
+                        ) : insight.type === 'improving' ? (
+                          <TrendingUp className="h-4 w-4" />
+                        ) : (
+                          <Trophy className="h-4 w-4" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400 mb-0.5">
+                          {insight.metric}
+                        </p>
+                        <p className={`text-sm font-semibold leading-none mb-1 ${
+                          insight.type === 'attention' ? 'text-amber-700' : insight.type === 'improving' ? 'text-blue-700' : 'text-emerald-700'
+                        }`}>
+                          {insight.type === 'strength' ? 'Strength' : insight.type === 'improving' ? 'Improving' : 'Needs Attention'}
+                        </p>
+                        <p className="text-xs text-gray-500 leading-relaxed">{insight.message}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </motion.div>
+            </AnimatePresence>
+          </div>
+          <div className="px-4 pb-3">
+            <CardPagination
+              currentPage={safeCurrentPage}
+              totalPages={totalPages}
+              onPrevious={() => {
+                setPageDirection(-1);
+                setCurrentPage(p => Math.max(0, p - 1));
+              }}
+              onNext={() => {
+                setPageDirection(1);
+                setCurrentPage(p => Math.min(totalPages - 1, p + 1));
+              }}
+            />
+          </div>
         </div>
       </AnalyticsCard>
     </motion.div>
@@ -1411,9 +1598,9 @@ function PersonalRadarCard({
 // ─── Metric Detail Mock Data ─────────────────────────────────────────────────
 
 const GLOBAL_AVERAGES: Record<string, number> = {
-  'Customer Service': 87.2,
-  'Workplace Relations': 85.8,
-  'Professional Conduct': 88.0,
+  'Customer Service': 4.1,
+  'Workplace Relations': 3.9,
+  'Professional Conduct': 4.1,
   'Attendance': 96.1,
   'Punctuality': 94.5,
   'Productivity': 81.0,
@@ -1658,6 +1845,7 @@ function PersonalMetricsBreakdownCard({
         85;
       return {
         label,
+        metricId: metricKey,
         val: perturbPersonalMetricValue(stats.metrics[metricKey], metricKey, userName, analyticsRange),
         avg: perturbGlobalMetricAverage(globalBase, analyticsRange),
       };
@@ -1704,8 +1892,12 @@ function PersonalMetricsBreakdownCard({
     return detailConfig.generateRows(seed, analyticsRange);
   }, [selectedMetric, detailConfig, analyticsRange]);
 
-  const totalPages = Math.ceil(eventRows.length / ROWS_PER_PAGE);
-  const pageRows = eventRows.slice(currentPage * ROWS_PER_PAGE, (currentPage + 1) * ROWS_PER_PAGE);
+  const totalPages = Math.max(1, Math.ceil(eventRows.length / ROWS_PER_PAGE));
+  const safeCurrentPage = Math.min(currentPage, totalPages - 1);
+  const pageRows = eventRows.slice(
+    safeCurrentPage * ROWS_PER_PAGE,
+    (safeCurrentPage + 1) * ROWS_PER_PAGE,
+  );
 
   const globalAvg = useMemo(() => {
     if (!selectedMetric) return 0;
@@ -1715,7 +1907,8 @@ function PersonalMetricsBreakdownCard({
 
   const rank = useMemo(() => {
     if (!selectedItem) return 0;
-    const base = Math.max(1, Math.round((1 - selectedItem.val / 100) * TOTAL_EMPLOYEES) + 1);
+    const scorePct = metricProgressPct(selectedItem.metricId, selectedItem.val);
+    const base = Math.max(1, Math.round((1 - scorePct / 100) * TOTAL_EMPLOYEES) + 1);
     const shift = (hashRangeSeed(analyticsRange) % 9) - 4;
     return Math.max(1, Math.min(TOTAL_EMPLOYEES, base + shift));
   }, [selectedItem, analyticsRange]);
@@ -1796,7 +1989,9 @@ function PersonalMetricsBreakdownCard({
                             <ChevronRight className="h-3 w-3 text-gray-300" />
                           </div>
                           <div className="flex items-center gap-2.5">
-                            <span className="text-sm font-bold text-gray-800 tabular-nums">{item.val}%</span>
+                            <span className="text-sm font-bold text-gray-800 tabular-nums">
+                              {formatMetricDisplay(item.metricId, item.val)}
+                            </span>
                             <span
                               className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ring-inset ${
                                 isPos
@@ -1804,21 +1999,21 @@ function PersonalMetricsBreakdownCard({
                                   : 'bg-amber-50 text-amber-600 ring-amber-100'
                               }`}
                             >
-                              {isPos ? '+' : ''}{diff.toFixed(1)}%
+                              {formatMetricDeltaDisplay(item.metricId, diff)}
                             </span>
                           </div>
                         </div>
                         <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
                           <motion.div
                             initial={{ width: 0 }}
-                            animate={{ width: `${item.val}%` }}
+                            animate={{ width: `${metricProgressPct(item.metricId, item.val)}%` }}
                             transition={{ duration: 0.8, ease: 'easeOut' }}
                             className={`h-full rounded-full ${isPos ? 'bg-emerald-500' : 'bg-amber-400'}`}
                           />
                           <div
                             className="absolute top-0 h-full w-0.5 bg-gray-400/60"
-                            style={{ left: `${item.avg}%` }}
-                            title={`Global avg: ${item.avg}%`}
+                            style={{ left: `${metricProgressPct(item.metricId, item.avg)}%` }}
+                            title={`Global avg: ${formatMetricDisplay(item.metricId, item.avg)}`}
                           />
                         </div>
                       </div>
@@ -1861,12 +2056,14 @@ function PersonalMetricsBreakdownCard({
                     <p className={`text-2xl font-bold tabular-nums ${
                       selectedItem.val >= globalAvg ? 'text-emerald-700' : 'text-amber-700'
                     }`}>
-                      {selectedItem.val}%
+                      {formatMetricDisplay(selectedItem.metricId, selectedItem.val)}
                     </p>
                   </div>
                   <div className="rounded-lg bg-gray-50 p-3 text-center ring-1 ring-inset ring-gray-100">
                     <p className="text-[9px] font-bold uppercase tracking-widest text-gray-400 mb-1">Global Avg</p>
-                    <p className="text-2xl font-bold text-gray-600 tabular-nums">{globalAvg}%</p>
+                    <p className="text-2xl font-bold text-gray-600 tabular-nums">
+                      {formatMetricDisplay(selectedItem.metricId, globalAvg)}
+                    </p>
                   </div>
                   <div className="rounded-lg bg-gray-50 p-3 text-center ring-1 ring-inset ring-gray-100">
                     <p className="text-[9px] font-bold uppercase tracking-widest text-gray-400 mb-1">Rank</p>
@@ -1943,27 +2140,13 @@ function PersonalMetricsBreakdownCard({
                   </div>
 
                   {/* Pagination */}
-                  <div className="flex items-center justify-center gap-3 pt-3 border-t border-gray-50">
-                    <button
-                      onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
-                      disabled={currentPage === 0}
-                      className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-gray-500 transition-colors hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
-                    >
-                      <ChevronLeft className="h-3.5 w-3.5" />
-                      Prev
-                    </button>
-                    <span className="text-[11px] font-bold text-gray-400 tabular-nums">
-                      Page {currentPage + 1} of {totalPages}
-                    </span>
-                    <button
-                      onClick={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))}
-                      disabled={currentPage >= totalPages - 1}
-                      className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-gray-500 transition-colors hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
-                    >
-                      Next
-                      <ChevronRight className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
+                  <CardPagination
+                    currentPage={safeCurrentPage}
+                    totalPages={totalPages}
+                    onPrevious={() => setCurrentPage(p => Math.max(0, p - 1))}
+                    onNext={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))}
+                    layout="centered"
+                  />
                 </div>
               </motion.div>
             )}
@@ -2001,6 +2184,17 @@ function TrendAnalyticsCard({
     () => buildTrendComparisonRows(analyticsRange, selectedUsers, selectedMetric),
     [analyticsRange, selectedUsers, selectedMetric],
   );
+  const selectedMetricKind = getMetricKind(selectedMetric);
+  const trendYPadding = selectedMetricKind === 'likert' ? 0.25 : selectedMetricKind === 'monetary' ? 30 : 5;
+  const yAxisDomain = useMemo<[number | ((v: number) => number), number | ((v: number) => number)]>(() => {
+    if (selectedMetricKind === 'likert') {
+      return [1, 5];
+    }
+    return [
+      (dataMin: number) => Math.max(0, dataMin - trendYPadding),
+      (dataMax: number) => dataMax + trendYPadding,
+    ];
+  }, [selectedMetricKind, trendYPadding]);
 
   const handleToggleUser = (userName: string) => {
     if (selectedUsers.includes(userName)) {
@@ -2116,7 +2310,7 @@ function TrendAnalyticsCard({
                   axisLine={false}
                   tickLine={false}
                   tick={{ fill: '#9ca3af', fontSize: 11, fontWeight: 600 }}
-                  domain={[50, 100]}
+                  domain={yAxisDomain}
                   tickCount={6}
                 />
                 <Tooltip
@@ -2129,6 +2323,19 @@ function TrendAnalyticsCard({
                   itemStyle={{ fontWeight: 700, fontSize: '12px' }}
                   labelStyle={{ fontWeight: 600, color: '#6b7280', marginBottom: '6px', fontSize: '11px' }}
                   labelFormatter={v => `${v}`}
+                  formatter={(v, name) => {
+                    const num =
+                      typeof v === "number"
+                        ? v
+                        : typeof v === "string"
+                          ? Number(v)
+                          : NaN;
+                    const label = typeof name === "string" ? name : "Score";
+                    if (!Number.isFinite(num)) {
+                      return ["—", label];
+                    }
+                    return [formatMetricDisplay(selectedMetric, num), label];
+                  }}
                 />
                 {selectedUsers.map((user, idx) => (
                   <Area
@@ -2156,12 +2363,62 @@ function TrendAnalyticsCard({
 
 // ─── General View: Key Insights Card ───────────────────────────────────────────
 
-function GeneralKeyInsightsCard({ analyticsRange }: { analyticsRange: AnalyticsRangeSelection }) {
-  const navigate = useNavigate();
+function GeneralKeyInsightsCard({
+  analyticsRange,
+  globalEpiCurrent,
+  globalEpiPrevious,
+  employeeEpi,
+}: {
+  analyticsRange: AnalyticsRangeSelection;
+  globalEpiCurrent: number;
+  globalEpiPrevious: number;
+  employeeEpi: Array<{ name: string; epi: number }>;
+}) {
+  const [currentPage, setCurrentPage] = useState(0);
+  const [pageDirection, setPageDirection] = useState(0);
+  const metricRowsByMetric = useMemo(() => {
+    const rows: Record<string, { name: string; value: number; previousValue: number }[]> = {};
+    for (const metric of METRICS) {
+      rows[metric.id] = getMetricAllEmployeeData(
+        metric.id,
+        analyticsRange,
+        INDIVIDUAL_METRICS_ROSTER,
+        getBaseMetricValueForEmployee,
+      ).map((row) => ({
+        name: row.name,
+        value: row.value,
+        previousValue: row.startValue,
+      }));
+    }
+    return rows;
+  }, [analyticsRange]);
+
   const alerts = useMemo(
-    () => buildGeneralKeyInsights(analyticsRange),
-    [analyticsRange],
+    () =>
+      buildGeneralKeyInsights(analyticsRange, {
+        globalEpiCurrent,
+        globalEpiPrevious,
+        employeeEpi,
+        metricRowsByMetric,
+        metricBenchmarksByMetric: METRIC_BENCHMARKS,
+      }),
+    [analyticsRange, employeeEpi, globalEpiCurrent, globalEpiPrevious, metricRowsByMetric],
   );
+  const totalPages = Math.max(1, Math.ceil(alerts.length / PEOPLE_INSIGHTS_PAGE_SIZE));
+  const safeCurrentPage = Math.min(currentPage, totalPages - 1);
+  const pageAlerts = useMemo(
+    () =>
+      alerts.slice(
+        safeCurrentPage * PEOPLE_INSIGHTS_PAGE_SIZE,
+        (safeCurrentPage + 1) * PEOPLE_INSIGHTS_PAGE_SIZE,
+      ),
+    [alerts, safeCurrentPage],
+  );
+
+  useEffect(() => {
+    setCurrentPage(0);
+    setPageDirection(0);
+  }, [analyticsRange]);
 
   return (
     <motion.div custom={4} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
@@ -2169,11 +2426,23 @@ function GeneralKeyInsightsCard({ analyticsRange }: { analyticsRange: AnalyticsR
         icon={<AlertTriangle className="h-4 w-4" />}
         title="Key Insights"
         subtitle={formatInsightsPeriodSubtitle(analyticsRange)}
+        className={FIXED_KEY_INSIGHTS_CARD_HEIGHT}
       >
-        <div className="divide-y divide-gray-50 flex-1 overflow-auto">
-          {alerts.map(alert => (
+        <div className="flex flex-col flex-1 overflow-hidden">
+          <div className="flex-1 overflow-hidden">
+            <AnimatePresence mode="wait" initial={false} custom={pageDirection}>
+              <motion.div
+                key={safeCurrentPage}
+                custom={pageDirection}
+                variants={keyInsightsPageVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                className="divide-y divide-gray-50 h-full overflow-auto"
+              >
+          {pageAlerts.map((alert, idx) => (
             <div
-              key={alert.id}
+              key={`${safeCurrentPage}-${idx}-${alert.id}`}
               className="flex flex-col gap-3 p-4 transition-colors hover:bg-gray-50/60"
             >
               <div className="flex items-start gap-3">
@@ -2194,20 +2463,33 @@ function GeneralKeyInsightsCard({ analyticsRange }: { analyticsRange: AnalyticsR
                   <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400 mb-0.5">
                     {alert.metric}
                   </p>
-                  <p className="text-sm font-semibold text-gray-800 leading-none mb-1">
+                  <p className={`text-sm font-semibold leading-none mb-1 ${
+                    alert.type === 'warning' ? 'text-amber-700' : 'text-emerald-700'
+                  }`}>
                     {alert.employee}
                   </p>
                   <p className="text-xs text-gray-500 leading-relaxed">{alert.message}</p>
                 </div>
               </div>
-              <button
-                onClick={() => navigate('/employee-profiles')}
-                className="self-end text-[11px] font-bold text-primary-600 hover:text-primary-700 transition-colors"
-              >
-                Review →
-              </button>
             </div>
           ))}
+              </motion.div>
+            </AnimatePresence>
+          </div>
+          <div className="px-4 pb-3">
+            <CardPagination
+              currentPage={safeCurrentPage}
+              totalPages={totalPages}
+              onPrevious={() => {
+                setPageDirection(-1);
+                setCurrentPage(p => Math.max(0, p - 1));
+              }}
+              onNext={() => {
+                setPageDirection(1);
+                setCurrentPage(p => Math.min(totalPages - 1, p + 1));
+              }}
+            />
+          </div>
         </div>
       </AnalyticsCard>
     </motion.div>
@@ -2763,22 +3045,42 @@ const METRIC_LABELS: Record<string, string> = {
   'sop-compliance': 'SOP Compliance',
 };
 
-const METRIC_UNITS: Record<string, string> = {
-  'average-order-value': '₱',
-};
+function formatMetricDisplay(metricId: string, value: number, fractionDigits = 1): string {
+  const kind = getMetricKind(metricId);
+  if (kind === 'monetary') {
+    return `₱${value.toFixed(0)}`;
+  }
+  if (kind === 'likert') {
+    const digits = fractionDigits > 1 ? fractionDigits : 2;
+    return `${value.toFixed(digits)}/5`;
+  }
+  return `${value.toFixed(1)}%`;
+}
 
-const METRIC_SUFFIX: Record<string, string> = {
-  'customer-service': '%',
-  'workplace-relations': '%',
-  'professional-conduct': '%',
-  'attendance-rate': '%',
-  'punctuality-rate': '%',
-  'productivity-rate': '%',
-  'uniform-compliance': '%',
-  'hygiene-compliance': '%',
-  'sop-compliance': '%',
-  'average-order-value': '',
-};
+function formatMetricDeltaDisplay(metricId: string, delta: number): string {
+  return formatRuleMetricDelta(metricId, delta);
+}
+
+function formatMetricStdDev(metricId: string, value: number): string {
+  const kind = getMetricKind(metricId);
+  if (kind === 'monetary') {
+    return `±₱${value.toFixed(1)}`;
+  }
+  if (kind === 'likert') {
+    return `±${value.toFixed(2)}`;
+  }
+  return `±${value.toFixed(1)} pts`;
+}
+
+function metricProgressPct(metricId: string, value: number, maxForMonetary = 100): number {
+  const kind = getMetricKind(metricId);
+  if (kind === 'monetary') {
+    const safeMax = maxForMonetary > 0 ? maxForMonetary : 1;
+    return Math.min(100, Math.max(0, (value / safeMax) * 100));
+  }
+  const scale = getMetricScaleMax(metricId) || 100;
+  return Math.min(100, Math.max(0, (value / scale) * 100));
+}
 
 function MetricSummaryCard({
   metricId,
@@ -2802,11 +3104,9 @@ function MetricSummaryCard({
     [metricId, analyticsRange],
   );
   const avg = employees.reduce((s, e) => s + e.value, 0) / employees.length;
-  const isAOV = metricId === 'average-order-value';
-  const suffix = METRIC_SUFFIX[metricId] ?? '%';
-  const prefix = METRIC_UNITS[metricId] ?? '';
   const avgPeriodChange = employees.reduce((s, e) => s + e.periodChange, 0) / employees.length;
   const summaryTrendFooter = useMemo(() => buildMetricSummaryTrendFooter(analyticsRange), [analyticsRange]);
+  const summaryYPadding = getMetricKind(metricId) === 'likert' ? 0.4 : 3;
 
   return (
     <motion.div custom={0} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
@@ -2831,7 +3131,7 @@ function MetricSummaryCard({
               className="text-[48px] font-bold leading-none text-white tabular-nums"
               style={{ letterSpacing: '-2px' }}
             >
-              {prefix}{isAOV ? avg.toFixed(0) : avg.toFixed(1)}{suffix}
+              {formatMetricDisplay(metricId, avg)}
             </span>
             <div className="mb-2 flex items-center gap-1.5">
               <span className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ring-inset ${
@@ -2840,7 +3140,7 @@ function MetricSummaryCard({
                   : 'bg-red-400/20 text-red-300 ring-red-400/20'
               }`}>
                 {avgPeriodChange >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                {avgPeriodChange >= 0 ? '+' : ''}{avgPeriodChange.toFixed(1)}
+                {formatMetricDeltaDisplay(metricId, avgPeriodChange)}
               </span>
               <span className="text-[10px] font-semibold uppercase tracking-widest text-white/40">
                 avg period
@@ -2858,7 +3158,13 @@ function MetricSummaryCard({
                   <stop offset="100%" stopColor="rgba(255,255,255,0.9)" />
                 </linearGradient>
               </defs>
-              <YAxis domain={['dataMin - 3', 'dataMax + 3']} hide />
+              <YAxis
+                domain={[
+                  (dataMin: number) => Math.max(0, dataMin - summaryYPadding),
+                  (dataMax: number) => dataMax + summaryYPadding,
+                ]}
+                hide
+              />
               <Tooltip
                 contentStyle={{
                   background: 'rgba(15,23,42,0.85)',
@@ -2869,7 +3175,10 @@ function MetricSummaryCard({
                 }}
                 labelStyle={{ color: 'rgba(255,255,255,0.5)', fontSize: '10px', fontWeight: 700, marginBottom: '2px' }}
                 itemStyle={{ color: '#fff', fontSize: '13px', fontWeight: 700 }}
-                formatter={(v) => [`${prefix}${v}${suffix}`, 'Score']}
+                formatter={(v) => {
+                  const num = typeof v === 'number' ? v : Number(v);
+                  return [Number.isFinite(num) ? formatRuleMetricValue(metricId, num) : '—', 'Score'];
+                }}
               />
               <Line
                 type="monotone"
@@ -2910,9 +3219,6 @@ function MetricTopBottomCard({
       getMetricAllEmployeeData(metricId, analyticsRange, INDIVIDUAL_METRICS_ROSTER, getBaseMetricValueForEmployee),
     [metricId, analyticsRange],
   );
-  const isAOV = metricId === 'average-order-value';
-  const prefix = METRIC_UNITS[metricId] ?? '';
-  const suffix = METRIC_SUFFIX[metricId] ?? '%';
   const top3 = employees.slice(0, 3);
   const bottom3 = employees.slice(-3).reverse();
 
@@ -2944,7 +3250,7 @@ function MetricTopBottomCard({
                     <span className="text-sm font-medium text-gray-700 truncate">{emp.name}</span>
                   </div>
                   <span className="ml-2 text-sm font-bold text-emerald-600 tabular-nums flex-shrink-0">
-                    {prefix}{isAOV ? emp.value.toFixed(0) : emp.value.toFixed(1)}{suffix}
+                    {formatMetricDisplay(metricId, emp.value)}
                   </span>
                 </motion.div>
               ))}
@@ -2975,7 +3281,7 @@ function MetricTopBottomCard({
                     <span className="text-sm font-medium text-gray-700 truncate">{emp.name}</span>
                   </div>
                   <span className="ml-2 text-sm font-bold text-red-500 tabular-nums flex-shrink-0">
-                    {prefix}{isAOV ? emp.value.toFixed(0) : emp.value.toFixed(1)}{suffix}
+                    {formatMetricDisplay(metricId, emp.value)}
                   </span>
                 </motion.div>
               ))}
@@ -3009,9 +3315,6 @@ function MetricBenchmarkCard({
       ),
     [metricId, analyticsRange],
   );
-  const isAOV = metricId === 'average-order-value';
-  const prefix = METRIC_UNITS[metricId] ?? '';
-  const suffix = METRIC_SUFFIX[metricId] ?? '%';
 
   const aboveTarget = employees.filter((e) => e.value >= globalTarget).length;
   const pctAbove = Math.round((aboveTarget / employees.length) * 100);
@@ -3025,9 +3328,9 @@ function MetricBenchmarkCard({
           {/* Key metrics grid */}
           <div className="grid grid-cols-2 gap-3">
             {[
-              { label: 'Target', value: `${prefix}${isAOV ? globalTarget.toFixed(0) : globalTarget.toFixed(1)}${suffix}`, icon: Target, color: 'text-primary-600' },
-              { label: 'Median', value: `${prefix}${isAOV ? median.toFixed(0) : median.toFixed(1)}${suffix}`, icon: Hash, color: 'text-violet-600' },
-              { label: 'Std Dev', value: `±${stdDev.toFixed(1)}`, icon: Activity, color: 'text-amber-600' },
+              { label: 'Target', value: formatMetricDisplay(metricId, globalTarget), icon: Target, color: 'text-primary-600' },
+              { label: 'Median', value: formatMetricDisplay(metricId, median), icon: Hash, color: 'text-violet-600' },
+              { label: 'Std Dev', value: formatMetricStdDev(metricId, stdDev), icon: Activity, color: 'text-amber-600' },
               { label: 'Above Target', value: `${pctAbove}%`, icon: Percent, color: 'text-emerald-600' },
             ].map((stat) => (
               <div key={stat.label} className="rounded-lg bg-gray-50 p-3 ring-1 ring-inset ring-gray-100">
@@ -3074,9 +3377,6 @@ function MetricEmployeeRankingCard({
       getMetricAllEmployeeData(metricId, analyticsRange, INDIVIDUAL_METRICS_ROSTER, getBaseMetricValueForEmployee),
     [metricId, analyticsRange],
   );
-  const isAOV = metricId === 'average-order-value';
-  const prefix = METRIC_UNITS[metricId] ?? '';
-  const suffix = METRIC_SUFFIX[metricId] ?? '%';
   const avg = employees.reduce((s, e) => s + e.value, 0) / employees.length;
   const maxVal = Math.max(...employees.map(e => e.value));
 
@@ -3092,7 +3392,7 @@ function MetricEmployeeRankingCard({
       <AnalyticsCard
         icon={<BarChart2 className="h-4 w-4" />}
         title="Employee Rankings"
-        subtitle={`All employees sorted by ${sortBy === 'rank' ? 'score' : 'period change (mock)'}`}
+        subtitle={`All employees sorted by ${sortBy === 'rank' ? 'score' : 'range change'}`}
         headerRight={
           <div className="hidden sm:flex items-center gap-0 rounded-lg bg-gray-100 p-0.5">
             {(['rank', 'change'] as const).map((tab) => (
@@ -3153,7 +3453,8 @@ function MetricEmployeeRankingCard({
             {sorted.map((emp, idx) => {
               const diff = emp.value - avg;
               const isAboveAvg = diff >= 0;
-              const barWidth = isAOV ? (emp.value / maxVal) * 100 : emp.value;
+              const barWidth = metricProgressPct(metricId, emp.value, maxVal);
+              const avgMarker = metricProgressPct(metricId, avg, maxVal);
               const originalRank = employees.findIndex(e => e.name === emp.name) + 1;
               const displayRank = sortBy === 'rank' ? idx + 1 : originalRank;
 
@@ -3200,15 +3501,15 @@ function MetricEmployeeRankingCard({
                         />
                         <div
                           className="absolute top-0 h-full w-px bg-gray-400/50"
-                          style={{ left: `${isAOV ? (avg / maxVal) * 100 : avg}%` }}
+                          style={{ left: `${avgMarker}%` }}
                         />
                       </div>
                       <span className="text-xs font-bold text-gray-700 tabular-nums w-14 text-right flex-shrink-0">
-                        {prefix}{isAOV ? emp.value.toFixed(0) : emp.value.toFixed(1)}{suffix}
+                        {formatMetricDisplay(metricId, emp.value)}
                       </span>
                     </div>
 
-                    {/* Period change (mock; range-stable) */}
+                    {/* Period change: first bucket to last bucket in selected range */}
                     <div className="col-span-3 flex items-center justify-end">
                       <span className={`flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ring-inset ${
                         emp.periodChange > 0
@@ -3224,7 +3525,7 @@ function MetricEmployeeRankingCard({
                         ) : (
                           <Minus className="h-3 w-3" />
                         )}
-                        {emp.periodChange > 0 ? '+' : ''}{emp.periodChange}
+                        {formatMetricDeltaDisplay(metricId, emp.periodChange)}
                       </span>
                     </div>
                   </div>
@@ -3258,7 +3559,7 @@ function MetricEmployeeRankingCard({
                         ) : (
                           <Minus className="h-3 w-3" />
                         )}
-                        {emp.periodChange > 0 ? '+' : ''}{emp.periodChange}
+                        {formatMetricDeltaDisplay(metricId, emp.periodChange)}
                       </span>
                     </div>
 
@@ -3276,11 +3577,11 @@ function MetricEmployeeRankingCard({
                         />
                         <div
                           className="absolute top-0 h-full w-px bg-gray-400/50"
-                          style={{ left: `${isAOV ? (avg / maxVal) * 100 : avg}%` }}
+                          style={{ left: `${avgMarker}%` }}
                         />
                       </div>
                       <span className="text-xs font-bold text-gray-700 tabular-nums flex-shrink-0">
-                        {prefix}{isAOV ? emp.value.toFixed(0) : emp.value.toFixed(1)}{suffix}
+                        {formatMetricDisplay(metricId, emp.value)}
                       </span>
                     </div>
                   </div>
@@ -3323,11 +3624,34 @@ function MetricInsightsCard({
   metricId: string;
   analyticsRange: AnalyticsRangeSelection;
 }) {
+  const [currentPage, setCurrentPage] = useState(0);
+  const [pageDirection, setPageDirection] = useState(0);
   const insights = useMemo(
     () =>
-      getMetricInsights(metricId, analyticsRange, INDIVIDUAL_METRICS_ROSTER, getBaseMetricValueForEmployee),
+      getMetricInsights(
+        metricId,
+        analyticsRange,
+        INDIVIDUAL_METRICS_ROSTER,
+        getBaseMetricValueForEmployee,
+        BRANCH_AVERAGES[metricId as keyof typeof BRANCH_AVERAGES] ?? 85,
+      ),
     [metricId, analyticsRange],
   );
+  const totalPages = Math.max(1, Math.ceil(insights.length / METRIC_INSIGHTS_PAGE_SIZE));
+  const safeCurrentPage = Math.min(currentPage, totalPages - 1);
+  const pageInsights = useMemo(
+    () =>
+      insights.slice(
+        safeCurrentPage * METRIC_INSIGHTS_PAGE_SIZE,
+        (safeCurrentPage + 1) * METRIC_INSIGHTS_PAGE_SIZE,
+      ),
+    [insights, safeCurrentPage],
+  );
+
+  useEffect(() => {
+    setCurrentPage(0);
+    setPageDirection(0);
+  }, [metricId, analyticsRange]);
 
   return (
     <motion.div custom={4} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
@@ -3336,41 +3660,69 @@ function MetricInsightsCard({
         title="Key Insights"
         subtitle={formatInsightsPeriodSubtitle(analyticsRange)}
       >
-        <div className="divide-y divide-gray-50 flex-1 overflow-auto">
-          {insights.map((insight, idx) => (
-            <div
-              key={idx}
-              className="flex flex-col gap-2 p-4 transition-colors hover:bg-gray-50/60"
-            >
-              <div className="flex items-start gap-3">
-                <div
-                  className={`mt-0.5 flex-shrink-0 h-8 w-8 rounded-lg flex items-center justify-center ${
-                    insight.type === 'warning'
-                      ? 'bg-amber-50 text-amber-500'
-                      : insight.type === 'success'
-                        ? 'bg-emerald-50 text-emerald-500'
-                        : 'bg-blue-50 text-blue-500'
-                  }`}
-                >
-                  {insight.type === 'warning' ? (
-                    <AlertTriangle className="h-4 w-4" />
-                  ) : insight.type === 'success' ? (
-                    <TrendingUp className="h-4 w-4" />
-                  ) : (
-                    <Activity className="h-4 w-4" />
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className={`text-sm font-semibold leading-none mb-1 ${
-                    insight.type === 'warning' ? 'text-amber-700' : insight.type === 'success' ? 'text-emerald-700' : 'text-blue-700'
-                  }`}>
-                    {insight.title}
-                  </p>
-                  <p className="text-xs text-gray-500 leading-relaxed">{insight.message}</p>
-                </div>
-              </div>
-            </div>
-          ))}
+        <div className="flex flex-col flex-1 overflow-hidden">
+          <div className="flex-1 overflow-hidden">
+            <AnimatePresence mode="wait" initial={false} custom={pageDirection}>
+              <motion.div
+                key={safeCurrentPage}
+                custom={pageDirection}
+                variants={keyInsightsPageVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                className="divide-y divide-gray-50 h-full overflow-auto"
+              >
+                {pageInsights.map((insight, idx) => (
+                  <div
+                    key={`${safeCurrentPage}-${idx}-${insight.title}`}
+                    className="flex flex-col gap-2 p-4 transition-colors hover:bg-gray-50/60"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div
+                        className={`mt-0.5 flex-shrink-0 h-8 w-8 rounded-lg flex items-center justify-center ${
+                          insight.type === 'warning'
+                            ? 'bg-amber-50 text-amber-500'
+                            : insight.type === 'success'
+                              ? 'bg-emerald-50 text-emerald-500'
+                              : 'bg-blue-50 text-blue-500'
+                        }`}
+                      >
+                        {insight.type === 'warning' ? (
+                          <AlertTriangle className="h-4 w-4" />
+                        ) : insight.type === 'success' ? (
+                          <TrendingUp className="h-4 w-4" />
+                        ) : (
+                          <Activity className="h-4 w-4" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-semibold leading-none mb-1 ${
+                          insight.type === 'warning' ? 'text-amber-700' : insight.type === 'success' ? 'text-emerald-700' : 'text-blue-700'
+                        }`}>
+                          {insight.title}
+                        </p>
+                        <p className="text-xs text-gray-500 leading-relaxed">{insight.message}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </motion.div>
+            </AnimatePresence>
+          </div>
+          <div className="px-4 pb-3">
+            <CardPagination
+              currentPage={safeCurrentPage}
+              totalPages={totalPages}
+              onPrevious={() => {
+                setPageDirection(-1);
+                setCurrentPage(p => Math.max(0, p - 1));
+              }}
+              onNext={() => {
+                setPageDirection(1);
+                setCurrentPage(p => Math.min(totalPages - 1, p + 1));
+              }}
+            />
+          </div>
         </div>
       </AnalyticsCard>
     </motion.div>
@@ -3484,10 +3836,8 @@ function MetricTrendCard({
   );
   const trendTitle = useMemo(() => buildMetricTrendCardTitle(analyticsRange), [analyticsRange]);
   const trendSubtitle = buildMetricTrendCardSubtitle();
-  const isAOV = metricId === 'average-order-value';
-  const prefix = METRIC_UNITS[metricId] ?? '';
-  const suffix = METRIC_SUFFIX[metricId] ?? '%';
   const targetDisplay = trendData[0]?.target ?? 0;
+  const trendYPadding = getMetricKind(metricId) === 'likert' ? 0.4 : 5;
 
   return (
     <motion.div custom={6} variants={cardVariants} initial="hidden" animate="visible" className="h-full min-w-0 w-full">
@@ -3508,7 +3858,7 @@ function MetricTrendCard({
               className="flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-gray-400 shadow-sm ring-1 ring-inset ring-gray-200"
               style={{ borderLeft: '3px solid #d1d5db' }}
             >
-              Target ({prefix}{isAOV ? targetDisplay.toFixed(0) : targetDisplay.toFixed(1)}{suffix})
+              Target ({formatMetricDisplay(metricId, targetDisplay)})
             </div>
           </div>
         </div>
@@ -3535,7 +3885,10 @@ function MetricTrendCard({
                   axisLine={false}
                   tickLine={false}
                   tick={{ fill: '#9ca3af', fontSize: 11, fontWeight: 600 }}
-                  domain={['dataMin - 5', 'dataMax + 5']}
+                  domain={[
+                    (dataMin: number) => Math.max(0, dataMin - trendYPadding),
+                    (dataMax: number) => dataMax + trendYPadding,
+                  ]}
                   tickCount={6}
                 />
                 <Tooltip
@@ -3559,7 +3912,7 @@ function MetricTrendCard({
                       return ["—", displayName];
                     }
                     return [
-                      `${prefix}${isAOV ? num.toFixed(0) : num.toFixed(1)}${suffix}`,
+                      formatRuleMetricValue(metricId, num),
                       displayName,
                     ];
                   }}
@@ -3823,7 +4176,17 @@ function MetricsViewContent({
           >
             {[
               { label: "Category", value: getMetricCategory(selectedMetric) },
-              { label: "Type", value: selectedMetric.includes("compliance") ? "Pass/Fail" : selectedMetric === "average-order-value" ? "Currency" : "Score-based" },
+              {
+                label: "Type",
+                value:
+                  getMetricKind(selectedMetric) === "likert"
+                    ? "Likert (1-5)"
+                    : getMetricKind(selectedMetric) === "monetary"
+                      ? "Currency"
+                      : selectedMetric.includes("compliance")
+                        ? "Pass/Fail"
+                        : "Percentage",
+              },
               { label: "Period", value: periodLabel },
             ].map((info) => (
               <div key={info.label} className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2">
@@ -4014,7 +4377,18 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
                   />
                 </div>
                 <div className="lg:col-span-3">
-                  <GeneralKeyInsightsCard analyticsRange={analyticsRange} />
+                  <GeneralKeyInsightsCard
+                    analyticsRange={analyticsRange}
+                    globalEpiCurrent={
+                      generalViewMock.globalEpiTrend[generalViewMock.globalEpiTrend.length - 1]?.epi ??
+                      generalViewMock.globalEpi
+                    }
+                    globalEpiPrevious={
+                      generalViewMock.globalEpiTrend[0]?.epi ??
+                      generalViewMock.globalEpi
+                    }
+                    employeeEpi={[...generalViewMock.leaderboardTop, ...generalViewMock.leaderboardBottom]}
+                  />
                 </div>
               </div>
 
@@ -4133,7 +4507,7 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
                       <PersonalTrendCard userName={selectedUser.name} analyticsRange={analyticsRange} />
                     </div>
                     <div className="lg:col-span-3">
-                      <PersonalInsightsCard analyticsRange={analyticsRange} />
+                      <PersonalInsightsCard analyticsRange={analyticsRange} userName={selectedUser.name} />
                     </div>
                   </div>
 
