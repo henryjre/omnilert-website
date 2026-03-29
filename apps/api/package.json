@@ -7,6 +7,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
+    "backfill:employee-metric-snapshots": "tsx src/scripts/backfillEmployeeMetricSnapshots.ts",
     "permissions:audit": "tsx src/scripts/permissions-audit.ts",
     "permissions:probe": "tsx src/scripts/permissions-runtime-probe.ts",
     "permissions:verify": "pnpm run permissions:audit && pnpm run permissions:probe",
