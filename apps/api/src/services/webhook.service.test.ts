@@ -834,6 +834,27 @@ test('createAttendanceProcessor checkout re-enables all temporarily disabled rol
   assert.ok(harness.socketEvents.some((evt) => evt.event === 'user:auth-scope-updated'));
 });
 
+test('createAttendanceProcessor persists resolved website key on shift logs when webhook payload omits x_website_key', async () => {
+  const harness = createAttendanceHarness({
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+  });
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  await processAttendance({
+    id: 9601,
+    check_in: '2026-03-20 01:00:00',
+    x_company_id: 2,
+    x_cumulative_minutes: 0,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: false,
+  });
+
+  assert.equal(harness.logs.length, 1);
+  const savedPayload = JSON.parse(String(harness.logs[0]?.odoo_payload ?? '{}')) as { x_website_key?: string };
+  assert.equal(savedPayload.x_website_key, 'website-user-1');
+});
+
 function createSocketEmitHarness() {
   const emits: Array<{
     namespace: string;

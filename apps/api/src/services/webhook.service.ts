@@ -1007,6 +1007,10 @@ export function createAttendanceProcessor(
     const eventTime = isCheckOut
       ? parseOdooUtcDateTime(payload.check_out!)
       : parseOdooUtcDateTime(payload.check_in);
+    const resolvedIdentity = await deps.resolveAttendanceIdentity(payload);
+    const logPayload = resolvedIdentity.websiteUserKey && !payload.x_website_key
+      ? { ...payload, x_website_key: resolvedIdentity.websiteUserKey }
+      : payload;
 
     let log = await deps.createShiftLog({
       company_id: branch.company_id,
@@ -1017,10 +1021,8 @@ export function createAttendanceProcessor(
       event_time: eventTime,
       worked_hours: payload.worked_hours ?? null,
       cumulative_minutes: payload.x_cumulative_minutes,
-      odoo_payload: JSON.stringify(payload),
+      odoo_payload: JSON.stringify(logPayload),
     });
-
-    const resolvedIdentity = await deps.resolveAttendanceIdentity(payload);
 
     let updatedTotalWorkedHours: number | null = null;
     let createdInterimShift = false;
