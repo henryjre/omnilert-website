@@ -193,12 +193,6 @@ async function queryCustomerServiceEvents(input: MetricEventQueryInput): Promise
             .whereNull('audits.audited_user_id')
             .where('audits.audited_user_key', userKey);
         });
-        ownedQuery.orWhere((legacyQuery) => {
-          legacyQuery
-            .whereNull('audits.audited_user_id')
-            .whereNull('audits.audited_user_key')
-            .where('audits.css_cashier_user_key', userKey);
-        });
       }
     })
     .whereBetween('audits.completed_at', [start, end])
@@ -244,7 +238,7 @@ async function queryComplianceEvents(
   const { startYmd, endYmd } = normalizeRangeYmd(input.rangeStartYmd, input.rangeEndYmd);
   const start = toLocalStartDate(startYmd);
   const end = toLocalEndDate(endYmd);
-  const { userKey, odooEmployeeIds } = await resolveAuditedUserIdentity(input.userId);
+  const userKey = await getWebsiteUserKey(input.userId);
 
   const rows = await db.getDb()('store_audits as audits')
     .leftJoin('branches as b', 'b.id', 'audits.branch_id')
@@ -261,15 +255,6 @@ async function queryComplianceEvents(
           canonicalKeyQuery
             .whereNull('audits.audited_user_id')
             .where('audits.audited_user_key', userKey);
-        });
-      }
-
-      if (odooEmployeeIds.length > 0) {
-        ownedQuery.orWhere((legacyQuery) => {
-          legacyQuery
-            .whereNull('audits.audited_user_id')
-            .whereNull('audits.audited_user_key')
-            .whereIn('audits.comp_odoo_employee_id', odooEmployeeIds);
         });
       }
     })
