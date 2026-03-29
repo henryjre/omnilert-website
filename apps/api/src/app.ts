@@ -52,6 +52,15 @@ export function createApp() {
     }),
   );
 
+  app.use(
+    '/api/v1/integrations/discord',
+    rateLimit({
+      windowMs: 1 * 60 * 1000, // 1 minute
+      max: 120,
+      message: { success: false, error: 'Too many discord integration requests' },
+    }),
+  );
+
   // Body parsing
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));

@@ -8,6 +8,7 @@ import posVerificationRoutes from './posVerification.routes.js';
 import posSessionRoutes from './posSession.routes.js';
 import employeeShiftRoutes from './employeeShift.routes.js';
 import webhookRoutes from './webhook.routes.js';
+import discordIntegrationRoutes from './discordIntegration.routes.js';
 import accountRoutes from './account.routes.js';
 import dashboardRoutes from './dashboard.routes.js';
 import shiftAuthorizationRoutes from './shiftAuthorization.routes.js';
@@ -80,5 +81,8 @@ router.use('/dashboard', dashboardRoutes);
 
 // Webhooks (no JWT)
 router.use('/webhooks', webhookRoutes);
+
+// Service-to-service integrations
+router.use('/integrations/discord', discordIntegrationRoutes);
 
 export default router;

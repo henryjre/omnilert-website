@@ -69,6 +69,7 @@ export async function update(req: Request, res: Response, next: NextFunction) {
       lastName: req.body.lastName,
       userKey: req.body.userKey,
       employeeNumber: req.body.employeeNumber,
+      discordId: req.body.discordId,
       isActive: req.body.isActive,
     });
 
@@ -76,6 +77,10 @@ export async function update(req: Request, res: Response, next: NextFunction) {
   } catch (err: any) {
     if (err?.code === '23505' && String(err?.detail ?? '').includes('user_key')) {
       next(new AppError(409, 'User key already exists'));
+      return;
+    }
+    if (err?.code === '23505' && String(err?.detail ?? '').includes('discord_user_id')) {
+      next(new AppError(409, 'Discord ID already exists'));
       return;
     }
     next(err);

@@ -23,6 +23,7 @@ export const updateUserSchema = z.object({
   lastName: z.string().min(1).optional(),
   userKey: uuid.optional(),
   employeeNumber: z.number().int().positive().optional(),
+  discordId: z.string().regex(/^\d{17,20}$/, 'discordId must be a valid Discord snowflake').nullable().optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -36,7 +37,13 @@ export const assignUserCompanyAssignmentsSchema = z.object({
   companyAssignments: z.array(companyAssignmentSchema).min(1, 'At least one company assignment is required'),
 });
 
+export const updateUserDiscordIdSchema = z.object({
+  email: z.string().email(),
+  discord_id: z.string().regex(/^\d{17,20}$/, 'discord_id must be a valid Discord snowflake'),
+});
+
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
 export type ChangeMyPasswordInput = z.infer<typeof changeMyPasswordSchema>;
 export type AssignUserCompanyAssignmentsInput = z.infer<typeof assignUserCompanyAssignmentsSchema>;
+export type UpdateUserDiscordIdInput = z.infer<typeof updateUserDiscordIdSchema>;

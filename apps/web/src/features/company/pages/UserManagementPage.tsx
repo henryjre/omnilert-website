@@ -6,7 +6,7 @@ import { Input } from '@/shared/components/ui/Input';
 import { Spinner } from '@/shared/components/ui/Spinner';
 import { api } from '@/shared/services/api.client';
 import { useAppToast } from '@/shared/hooks/useAppToast';
-import { Archive, LayoutGrid, Plus, Save, UserCheck, Users, X } from 'lucide-react';
+import { Archive, Copy, LayoutGrid, Plus, Save, UserCheck, Users, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 type Role = {
@@ -36,6 +36,7 @@ type UserItem = {
   first_name: string;
   last_name: string;
   user_key: string | null;
+  discord_user_id: string | null;
   employee_number: number | null;
   is_active: boolean;
   last_login_at: string | null;
@@ -147,6 +148,7 @@ export function UserManagementPage() {
   const [editRoleIds, setEditRoleIds] = useState<string[]>([]);
   const [editCompanyAssignments, setEditCompanyAssignments] = useState<CompanyAssignmentForm[]>([]);
   const [editUserKey, setEditUserKey] = useState('');
+  const [editDiscordId, setEditDiscordId] = useState('');
   const [editEmployeeNumber, setEditEmployeeNumber] = useState('');
 
   const selectedUser = useMemo(
@@ -239,6 +241,7 @@ export function UserManagementPage() {
     setEditRoleIds(user.roles.map((role) => role.id));
     setEditCompanyAssignments(groupBranchesByCompany(user));
     setEditUserKey(user.user_key || '');
+    setEditDiscordId(user.discord_user_id || '');
     setEditEmployeeNumber(user.employee_number ? String(user.employee_number) : '');
   };
 
@@ -247,6 +250,7 @@ export function UserManagementPage() {
     setEditRoleIds([]);
     setEditCompanyAssignments([]);
     setEditUserKey('');
+    setEditDiscordId('');
     setEditEmployeeNumber('');
   };
 
@@ -306,12 +310,15 @@ export function UserManagementPage() {
       if (branchesChanged) updates.push(api.put(`/users/${selectedUser.id}/branches`, { companyAssignments: editCompanyAssignments }));
 
       const trimmedUserKey = editUserKey.trim();
+      const trimmedDiscordId = editDiscordId.trim();
       const trimmedEmployeeNumber = editEmployeeNumber.trim();
       const userKeyChanged = trimmedUserKey !== (selectedUser.user_key || '');
+      const discordIdChanged = trimmedDiscordId !== (selectedUser.discord_user_id || '');
       const employeeNumberChanged = trimmedEmployeeNumber !== (selectedUser.employee_number ? String(selectedUser.employee_number) : '');
-      if (userKeyChanged || employeeNumberChanged) {
+      if (userKeyChanged || discordIdChanged || employeeNumberChanged) {
         updates.push(api.put(`/users/${selectedUser.id}`, {
           userKey: userKeyChanged ? (trimmedUserKey || undefined) : undefined,
+          discordId: discordIdChanged ? (trimmedDiscordId || null) : undefined,
           employeeNumber: employeeNumberChanged && trimmedEmployeeNumber ? Number(trimmedEmployeeNumber) : undefined,
         }));
       }
@@ -357,6 +364,16 @@ export function UserManagementPage() {
       showErrorToast(err.response?.data?.error || 'Failed to delete user');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const copySelectedUserId = async () => {
+    if (!selectedUser) return;
+    try {
+      await navigator.clipboard.writeText(selectedUser.id);
+      showSuccessToast('User ID copied.');
+    } catch {
+      showErrorToast('Failed to copy user ID');
     }
   };
 
@@ -612,13 +629,19 @@ export function UserManagementPage() {
                 </h2>
                 <p className="text-sm text-gray-600">{selectedUser.email}</p>
               </div>
-              <button
-                type="button"
-                onClick={closePanel}
-                className="rounded-md p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
-              >
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <Button type="button" variant="secondary" size="sm" onClick={copySelectedUserId}>
+                  <Copy className="mr-1 h-4 w-4" />
+                  Copy User ID
+                </Button>
+                <button
+                  type="button"
+                  onClick={closePanel}
+                  className="rounded-md p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 space-y-5 overflow-y-auto p-5">
@@ -629,11 +652,17 @@ export function UserManagementPage() {
                 {pillsWithOverflow(uniqueNames(selectedUser.companyBranches.map((branch) => branch.branchName)), 10, 'emerald')}
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 <Input
                   label="User Key"
                   value={editUserKey}
                   onChange={(e) => setEditUserKey(e.target.value)}
+                />
+                <Input
+                  label="Discord ID (optional)"
+                  value={editDiscordId}
+                  onChange={(e) => setEditDiscordId(e.target.value)}
+                  placeholder="e.g. 1484847611604373564"
                 />
                 <Input
                   label="Employee Number"

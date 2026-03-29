@@ -284,9 +284,10 @@ const BANK_DRAFT_KEY = 'omnilert:profile:bank-draft';
 
 type PersonalDraft = {
   firstName: string;
+  middleName: string;
   lastName: string;
+  suffix: string;
   mobileNumber: string;
-  legalName: string;
   birthday: string;
   gender: string;
   address: string;
@@ -309,12 +310,84 @@ function normalizeDraftString(value: unknown): string {
   return typeof value === 'string' ? value : String(value ?? '');
 }
 
+const COMMON_NAME_SUFFIXES = new Set([
+  'jr',
+  'sr',
+  'ii',
+  'iii',
+  'iv',
+  'v',
+  'vi',
+  'vii',
+  'viii',
+  'ix',
+  'x',
+]);
+
+function normalizeNamePart(value: string): string {
+  return value.trim().replace(/\s+/g, ' ');
+}
+
+function splitNameParts(value: string): string[] {
+  const normalized = normalizeNamePart(value);
+  return normalized ? normalized.split(' ') : [];
+}
+
+function trimKnownPrefix(tokens: string[], prefix: string[]): string[] {
+  if (!prefix.length || tokens.length < prefix.length) return tokens;
+  const matches = prefix.every((token, index) => token.toLowerCase() === tokens[index]?.toLowerCase());
+  return matches ? tokens.slice(prefix.length) : tokens;
+}
+
+function trimKnownSuffix(tokens: string[], suffix: string[]): string[] {
+  if (!suffix.length || tokens.length < suffix.length) return tokens;
+  const startIndex = tokens.length - suffix.length;
+  const matches = suffix.every((token, index) => token.toLowerCase() === tokens[startIndex + index]?.toLowerCase());
+  return matches ? tokens.slice(0, startIndex) : tokens;
+}
+
+function normalizeSuffixToken(value: string): string {
+  return value.toLowerCase().replace(/\./g, '');
+}
+
+function parseLegalNameParts(legalName: string, firstName: string, lastName: string): { middleName: string; suffix: string } {
+  const tokens = splitNameParts(legalName);
+  if (!tokens.length) return { middleName: '', suffix: '' };
+
+  let suffix = '';
+  const lastToken = tokens[tokens.length - 1] ?? '';
+  if (COMMON_NAME_SUFFIXES.has(normalizeSuffixToken(lastToken))) {
+    suffix = lastToken;
+    tokens.pop();
+  }
+
+  const withoutFirst = trimKnownPrefix(tokens, splitNameParts(firstName));
+  const middleTokens = trimKnownSuffix(withoutFirst, splitNameParts(lastName));
+
+  return {
+    middleName: middleTokens.join(' ').trim(),
+    suffix: normalizeNamePart(suffix),
+  };
+}
+
+function buildLegalNameFromParts(firstName: string, middleName: string, lastName: string, suffix: string): string {
+  return [
+    normalizeNamePart(firstName),
+    normalizeNamePart(middleName),
+    normalizeNamePart(lastName),
+    normalizeNamePart(suffix),
+  ]
+    .filter((part) => part.length > 0)
+    .join(' ');
+}
+
 function buildPersonalDraft(input: Partial<Record<keyof PersonalDraft, unknown>>): PersonalDraft {
   return {
     firstName: normalizeDraftString(input.firstName).trim(),
+    middleName: normalizeDraftString(input.middleName).trim(),
     lastName: normalizeDraftString(input.lastName).trim(),
+    suffix: normalizeDraftString(input.suffix).trim(),
     mobileNumber: normalizeDraftString(input.mobileNumber).trim(),
-    legalName: normalizeDraftString(input.legalName).trim(),
     birthday: normalizeDraftString(input.birthday).trim(),
     gender: normalizeDraftString(input.gender).trim(),
     address: normalizeDraftString(input.address).trim(),
@@ -339,9 +412,10 @@ function buildBankDraft(input: Partial<Record<keyof BankDraft, unknown>>): BankD
 function arePersonalDraftsEqual(a: PersonalDraft, b: PersonalDraft): boolean {
   return (
     a.firstName === b.firstName
+    && a.middleName === b.middleName
     && a.lastName === b.lastName
+    && a.suffix === b.suffix
     && a.mobileNumber === b.mobileNumber
-    && a.legalName === b.legalName
     && a.birthday === b.birthday
     && a.gender === b.gender
     && a.address === b.address
@@ -378,9 +452,10 @@ export function EmploymentTab() {
   const [requirements, setRequirements] = useState<RequirementItem[]>([]);
 
   const [firstName, setFirstName] = useState('');
+  const [middleName, setMiddleName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [suffix, setSuffix] = useState('');
   const [mobileNumber, setMobileNumber] = useState('');
-  const [legalName, setLegalName] = useState('');
   const [birthday, setBirthday] = useState('');
   const [gender, setGender] = useState('');
   const [address, setAddress] = useState('');
@@ -426,70 +501,88 @@ export function EmploymentTab() {
     const requestedChanges = parseRequestedChanges(payload.personalVerification.latest?.requested_changes);
     const isBankPending = payload.bankVerification.status === 'pending';
 
-    setFirstName(
+    const nextFirstName = (
       isPersonalPending && shouldApplyRequestedValue('firstName', requestedChanges.firstName, payload.user.first_name)
         ? String(requestedChanges.firstName ?? '')
-        : (payload.user.first_name || ''),
+        : (payload.user.first_name || '')
     );
-    setLastName(
+    const nextLastName = (
       isPersonalPending && shouldApplyRequestedValue('lastName', requestedChanges.lastName, payload.user.last_name)
         ? String(requestedChanges.lastName ?? '')
-        : (payload.user.last_name || ''),
+        : (payload.user.last_name || '')
     );
-    setMobileNumber(
+    const nextLegalName = (
+      isPersonalPending && shouldApplyRequestedValue('legalName', requestedChanges.legalName, payload.user.legal_name)
+        ? String(requestedChanges.legalName ?? '')
+        : (payload.user.legal_name || '')
+    );
+    const parsedLegalName = parseLegalNameParts(nextLegalName, nextFirstName, nextLastName);
+    const nextMiddleName = parsedLegalName.middleName;
+    const nextSuffix = parsedLegalName.suffix;
+
+    const nextMobileNumber = (
       isPersonalPending
       && shouldApplyRequestedValue('mobileNumber', requestedChanges.mobileNumber, payload.user.mobile_number)
         ? String(requestedChanges.mobileNumber ?? '')
-        : (payload.user.mobile_number || ''),
+        : (payload.user.mobile_number || '')
     );
-    setLegalName(
-      isPersonalPending && shouldApplyRequestedValue('legalName', requestedChanges.legalName, payload.user.legal_name)
-        ? String(requestedChanges.legalName ?? '')
-        : (payload.user.legal_name || ''),
-    );
-    setBirthday(
+    const nextBirthday = (
       isPersonalPending && shouldApplyRequestedValue('birthday', requestedChanges.birthday, payload.user.birthday)
         ? toDateInput((requestedChanges.birthday as string | null) ?? null)
-        : toDateInput(payload.user.birthday),
+        : toDateInput(payload.user.birthday)
     );
-    setGender(
+    const nextGender = (
       isPersonalPending && shouldApplyRequestedValue('gender', requestedChanges.gender, payload.user.gender)
         ? String(requestedChanges.gender ?? '')
-        : (payload.user.gender || ''),
+        : (payload.user.gender || '')
     );
-    setAddress(
+    const nextAddress = (
       isPersonalPending && shouldApplyRequestedValue('address', requestedChanges.address, payload.user.address)
         ? String(requestedChanges.address ?? '')
-        : (payload.user.address || ''),
+        : (payload.user.address || '')
     );
-    setSssNumber(
+    const nextSssNumber = (
       isPersonalPending && shouldApplyRequestedValue('sssNumber', requestedChanges.sssNumber, payload.user.sss_number)
         ? String(requestedChanges.sssNumber ?? '')
-        : (payload.user.sss_number || ''),
+        : (payload.user.sss_number || '')
     );
-    setTinNumber(
+    const nextTinNumber = (
       isPersonalPending && shouldApplyRequestedValue('tinNumber', requestedChanges.tinNumber, payload.user.tin_number)
         ? String(requestedChanges.tinNumber ?? '')
-        : (payload.user.tin_number || ''),
+        : (payload.user.tin_number || '')
     );
-    setPagibigNumber(
+    const nextPagibigNumber = (
       isPersonalPending
       && shouldApplyRequestedValue('pagibigNumber', requestedChanges.pagibigNumber, payload.user.pagibig_number)
         ? String(requestedChanges.pagibigNumber ?? '')
-        : (payload.user.pagibig_number || ''),
+        : (payload.user.pagibig_number || '')
     );
-    setPhilhealthNumber(
+    const nextPhilhealthNumber = (
       isPersonalPending
       && shouldApplyRequestedValue('philhealthNumber', requestedChanges.philhealthNumber, payload.user.philhealth_number)
         ? String(requestedChanges.philhealthNumber ?? '')
-        : (payload.user.philhealth_number || ''),
+        : (payload.user.philhealth_number || '')
     );
-    setMaritalStatus(
+    const nextMaritalStatus = (
       isPersonalPending
       && shouldApplyRequestedValue('maritalStatus', requestedChanges.maritalStatus, payload.user.marital_status)
         ? normalizeMaritalStatusValue(requestedChanges.maritalStatus)
-        : normalizeMaritalStatusValue(payload.user.marital_status),
+        : normalizeMaritalStatusValue(payload.user.marital_status)
     );
+
+    setFirstName(nextFirstName);
+    setMiddleName(nextMiddleName);
+    setLastName(nextLastName);
+    setSuffix(nextSuffix);
+    setMobileNumber(nextMobileNumber);
+    setBirthday(nextBirthday);
+    setGender(nextGender);
+    setAddress(nextAddress);
+    setSssNumber(nextSssNumber);
+    setTinNumber(nextTinNumber);
+    setPagibigNumber(nextPagibigNumber);
+    setPhilhealthNumber(nextPhilhealthNumber);
+    setMaritalStatus(nextMaritalStatus);
     setPin(payload.user.pin || '');
     setAvatarUrl(payload.user.avatar_url || null);
     setValidIdUrl(payload.user.valid_id_url || null);
@@ -528,70 +621,19 @@ export function EmploymentTab() {
 
     // Capture baseline values after applying server + pending-change overlay.
     const nextPersonalBaseline = buildPersonalDraft({
-      firstName: (
-        isPersonalPending && shouldApplyRequestedValue('firstName', requestedChanges.firstName, payload.user.first_name)
-          ? String(requestedChanges.firstName ?? '')
-          : (payload.user.first_name || '')
-      ),
-      lastName: (
-        isPersonalPending && shouldApplyRequestedValue('lastName', requestedChanges.lastName, payload.user.last_name)
-          ? String(requestedChanges.lastName ?? '')
-          : (payload.user.last_name || '')
-      ),
-      mobileNumber: (
-        isPersonalPending
-        && shouldApplyRequestedValue('mobileNumber', requestedChanges.mobileNumber, payload.user.mobile_number)
-          ? String(requestedChanges.mobileNumber ?? '')
-          : (payload.user.mobile_number || '')
-      ),
-      legalName: (
-        isPersonalPending && shouldApplyRequestedValue('legalName', requestedChanges.legalName, payload.user.legal_name)
-          ? String(requestedChanges.legalName ?? '')
-          : (payload.user.legal_name || '')
-      ),
-      birthday: (
-        isPersonalPending && shouldApplyRequestedValue('birthday', requestedChanges.birthday, payload.user.birthday)
-          ? toDateInput((requestedChanges.birthday as string | null) ?? null)
-          : toDateInput(payload.user.birthday)
-      ),
-      gender: (
-        isPersonalPending && shouldApplyRequestedValue('gender', requestedChanges.gender, payload.user.gender)
-          ? String(requestedChanges.gender ?? '')
-          : (payload.user.gender || '')
-      ),
-      address: (
-        isPersonalPending && shouldApplyRequestedValue('address', requestedChanges.address, payload.user.address)
-          ? String(requestedChanges.address ?? '')
-          : (payload.user.address || '')
-      ),
-      sssNumber: (
-        isPersonalPending && shouldApplyRequestedValue('sssNumber', requestedChanges.sssNumber, payload.user.sss_number)
-          ? String(requestedChanges.sssNumber ?? '')
-          : (payload.user.sss_number || '')
-      ),
-      tinNumber: (
-        isPersonalPending && shouldApplyRequestedValue('tinNumber', requestedChanges.tinNumber, payload.user.tin_number)
-          ? String(requestedChanges.tinNumber ?? '')
-          : (payload.user.tin_number || '')
-      ),
-      pagibigNumber: (
-        isPersonalPending
-        && shouldApplyRequestedValue('pagibigNumber', requestedChanges.pagibigNumber, payload.user.pagibig_number)
-          ? String(requestedChanges.pagibigNumber ?? '')
-          : (payload.user.pagibig_number || '')
-      ),
-      philhealthNumber: (
-        isPersonalPending
-        && shouldApplyRequestedValue('philhealthNumber', requestedChanges.philhealthNumber, payload.user.philhealth_number)
-          ? String(requestedChanges.philhealthNumber ?? '')
-          : (payload.user.philhealth_number || '')
-      ),
-      maritalStatus: (
-        isPersonalPending
-        && shouldApplyRequestedValue('maritalStatus', requestedChanges.maritalStatus, payload.user.marital_status)
-          ? normalizeMaritalStatusValue(requestedChanges.maritalStatus)
-          : normalizeMaritalStatusValue(payload.user.marital_status)
-      ),
+      firstName: nextFirstName,
+      middleName: nextMiddleName,
+      lastName: nextLastName,
+      suffix: nextSuffix,
+      mobileNumber: nextMobileNumber,
+      birthday: nextBirthday,
+      gender: nextGender,
+      address: nextAddress,
+      sssNumber: nextSssNumber,
+      tinNumber: nextTinNumber,
+      pagibigNumber: nextPagibigNumber,
+      philhealthNumber: nextPhilhealthNumber,
+      maritalStatus: nextMaritalStatus,
       emergencyContact: (
         isPersonalPending
         && shouldApplyRequestedValue('emergencyContact', requestedChanges.emergencyContact, payload.user.emergency_contact)
@@ -650,9 +692,10 @@ export function EmploymentTab() {
               setPersonalDraftRestored(false);
             } else {
               setFirstName(draft.firstName);
+              setMiddleName(draft.middleName);
               setLastName(draft.lastName);
+              setSuffix(draft.suffix);
               setMobileNumber(draft.mobileNumber);
-              setLegalName(draft.legalName);
               setBirthday(draft.birthday);
               setGender(draft.gender);
               setAddress(draft.address);
@@ -727,7 +770,7 @@ export function EmploymentTab() {
     try {
       const baseline = personalBaselineRef.current;
       const draft = buildPersonalDraft({
-        firstName, lastName, mobileNumber, legalName, birthday, gender,
+        firstName, middleName, lastName, suffix, mobileNumber, birthday, gender,
         address, sssNumber, tinNumber, pagibigNumber, philhealthNumber,
         maritalStatus, emergencyContact, emergencyPhone, emergencyRelationship,
       });
@@ -741,7 +784,7 @@ export function EmploymentTab() {
       localStorage.setItem(PERSONAL_DRAFT_KEY, JSON.stringify(draft));
     } catch { /* ignore storage quota errors */ }
   }, [
-    firstName, lastName, mobileNumber, legalName, birthday, gender,
+    firstName, middleName, lastName, suffix, mobileNumber, birthday, gender,
     address, sssNumber, tinNumber, pagibigNumber, philhealthNumber,
     maritalStatus, emergencyContact, emergencyPhone, emergencyRelationship,
     loading, personalPending,
@@ -833,13 +876,22 @@ export function EmploymentTab() {
       showErrorToast('You do not have permission to edit your profile.');
       return;
     }
+
+    const trimmedMiddleName = normalizeNamePart(middleName);
+    if (!trimmedMiddleName) {
+      showErrorToast('Middle Name is required. Enter "N/A" if none.');
+      return;
+    }
+
+    const legalName = buildLegalNameFromParts(firstName, trimmedMiddleName, lastName, suffix);
+
     setSubmittingPersonal(true);
     try {
       await api.post('/account/personal-information/verifications', {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         mobileNumber: mobileNumber.trim(),
-        legalName: legalName.trim(),
+        legalName,
         birthday: birthday || null,
         gender: gender || null,
         address: address.trim(),
@@ -1191,8 +1243,8 @@ export function EmploymentTab() {
           {/* Basic details */}
           <div className="space-y-3">
             <h4 className="text-sm font-semibold text-gray-700">Basic Details</h4>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1">
+            <div className="grid gap-4 md:grid-cols-10">
+              <div className="space-y-1 md:col-span-3">
                 <label className="text-sm font-medium text-gray-700">First Name</label>
                 <Input
                   type="text"
@@ -1202,7 +1254,17 @@ export function EmploymentTab() {
                   disabled={personalPending}
                 />
               </div>
-              <div className="space-y-1">
+              <div className="space-y-1 md:col-span-3">
+                <label className="text-sm font-medium text-gray-700">Middle Name</label>
+                <Input
+                  type="text"
+                  value={middleName}
+                  onChange={(e) => setMiddleName(e.target.value)}
+                  placeholder="N/A if none"
+                  disabled={personalPending}
+                />
+              </div>
+              <div className="space-y-1 md:col-span-3">
                 <label className="text-sm font-medium text-gray-700">Last Name</label>
                 <Input
                   type="text"
@@ -1212,16 +1274,18 @@ export function EmploymentTab() {
                   disabled={personalPending}
                 />
               </div>
-              <div className="space-y-1 sm:col-span-2">
-                <label className="text-sm font-medium text-gray-700">Legal Name</label>
+              <div className="space-y-1 md:col-span-1">
+                <label className="text-sm font-medium text-gray-700">Suffix</label>
                 <Input
                   type="text"
-                  value={legalName}
-                  onChange={(e) => setLegalName(e.target.value)}
-                  placeholder="Enter your full legal name as it appears on your ID"
+                  value={suffix}
+                  onChange={(e) => setSuffix(e.target.value)}
+                  placeholder="Jr."
                   disabled={personalPending}
                 />
               </div>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1">
                 <label className="text-sm font-medium text-gray-700">Birthday</label>
                 <Input

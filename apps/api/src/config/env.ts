@@ -49,6 +49,7 @@ const envSchema = z.object({
   SMTP_PASS: z.string().optional(),
   SMTP_FROM: z.string().optional(),
   DISCORD_INVITE_URL: z.string().url().default('https://discord.gg/9E2e4TPS7g'),
+  DISCORD_BOT_API_TOKEN: z.string().optional(),
 
   QUEUE_SCHEMA: z.string().default('pgboss'),
   EARLY_CHECKIN_QUEUE_NAME: z.string().default('early-checkin-auth'),

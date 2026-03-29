@@ -5,6 +5,7 @@ export type * from './types/accountAuditResult.types.js';
 export type * from './types/branch.types.js';
 export type * from './types/caseReport.types.js';
 export type * from './types/company.types.js';
+export type * from './types/discordIntegration.types.js';
 export type * from './types/pos.types.js';
 export type * from './types/role.types.js';
 export type * from './types/socket.types.js';
@@ -115,12 +116,14 @@ export {
   updateUserSchema,
   changeMyPasswordSchema,
   assignUserCompanyAssignmentsSchema,
+  updateUserDiscordIdSchema,
 } from './validation/user.schema.js';
 export type {
   CreateUserInput,
   UpdateUserInput,
   ChangeMyPasswordInput,
   AssignUserCompanyAssignmentsInput,
+  UpdateUserDiscordIdInput,
 } from './validation/user.schema.js';
 
 export {

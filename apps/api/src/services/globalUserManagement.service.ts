@@ -336,6 +336,7 @@ export async function listGlobalUsers() {
       'first_name',
       'last_name',
       'user_key',
+      'discord_user_id',
       'employee_number',
       'avatar_url',
       'is_active',
@@ -651,6 +652,7 @@ export async function updateGlobalUser(input: {
   lastName?: string;
   userKey?: string;
   employeeNumber?: number;
+  discordId?: string | null;
   isActive?: boolean;
 }) {
   const masterDb = db.getDb();
@@ -661,6 +663,7 @@ export async function updateGlobalUser(input: {
   if (input.lastName !== undefined) updates.last_name = input.lastName.trim();
   if (input.userKey !== undefined) updates.user_key = input.userKey;
   if (input.employeeNumber !== undefined) updates.employee_number = input.employeeNumber;
+  if (input.discordId !== undefined) updates.discord_user_id = input.discordId;
   if (input.isActive !== undefined) {
     updates.is_active = input.isActive;
     updates.employment_status = input.isActive ? 'active' : 'inactive';

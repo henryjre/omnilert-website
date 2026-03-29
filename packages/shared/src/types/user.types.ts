@@ -39,5 +39,6 @@ export interface UpdateUserRequest {
   firstName?: string;
   lastName?: string;
   employeeNumber?: number;
+  discordId?: string | null;
   isActive?: boolean;
 }
