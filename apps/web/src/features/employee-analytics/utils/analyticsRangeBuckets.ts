@@ -249,4 +249,212 @@ export function monthKeyBounds(key: string): { rangeStartYmd: string; rangeEndYm
   return { rangeStartYmd: toLocalYmd(start), rangeEndYmd: toLocalYmd(end) };
 }
 
+/** One chart row / aggregation bucket inside an inclusive analytics range. */
+export interface AnalyticsBucket {
+  /** Stable id (e.g. YYYY-MM-DD for a day, Monday YMD for a week). */
+  key: string;
+  /** Short label for chart axes / tooltips. */
+  label: string;
+}
+
+/** Normalize selection so `rangeStartYmd` <= `rangeEndYmd`. */
+export function normalizeRange(selection: AnalyticsRangeSelection): AnalyticsRangeSelection {
+  const { rangeStartYmd, rangeEndYmd } = normalizeRangeYmd(selection.rangeStartYmd, selection.rangeEndYmd);
+  return { ...selection, rangeStartYmd, rangeEndYmd };
+}
+
+/** Monday-based week index (1-based) within the calendar month of `monday`. Matches picker week rows. */
+function weekNumberInMonth(monday: Date): number {
+  const year = monday.getFullYear();
+  const month = monday.getMonth();
+  const first = new Date(year, month, 1);
+  const dow = first.getDay();
+  const offsetToMonday = dow === 0 ? -6 : dow === 1 ? 0 : -(dow - 1);
+  let m = new Date(year, month, 1 + offsetToMonday);
+  if (m.getMonth() < month || m.getFullYear() < year) {
+    m.setDate(m.getDate() + 7);
+  }
+  const targetYmd = toLocalYmd(monday);
+  let weekNum = 1;
+  while (m.getMonth() === month && m.getFullYear() === year) {
+    if (toLocalYmd(startOfLocalDay(m)) === targetYmd) {
+      return weekNum;
+    }
+    m.setDate(m.getDate() + 7);
+    weekNum += 1;
+  }
+  return 1;
+}
+
+function formatWeekBucketLabel(monday: Date): string {
+  const sun = addLocalDays(monday, 6);
+  return `${formatShortMonthDay(monday)} – ${formatShortMonthDay(sun)}`;
+}
+
+/**
+ * Ordered buckets covering the inclusive range, aligned to `granularity`.
+ */
+export function eachBucketInRange(selection: AnalyticsRangeSelection): AnalyticsBucket[] {
+  const { granularity, rangeStartYmd, rangeEndYmd } = normalizeRange(selection);
+  const startDay = startOfLocalDay(fromLocalYmd(rangeStartYmd));
+  const endDay = startOfLocalDay(fromLocalYmd(rangeEndYmd));
+
+  if (compareYmd(rangeStartYmd, rangeEndYmd) > 0) {
+    return [];
+  }
+
+  switch (granularity) {
+    case "day": {
+      const out: AnalyticsBucket[] = [];
+      for (let d = new Date(startDay); d.getTime() <= endDay.getTime(); d = addLocalDays(d, 1)) {
+        const ymd = toLocalYmd(d);
+        out.push({ key: ymd, label: formatShortMonthDay(d) });
+      }
+      return out;
+    }
+    case "week": {
+      const out: AnalyticsBucket[] = [];
+      const firstMonday = startOfWeekMonday(startDay);
+      const lastMonday = startOfWeekMonday(endDay);
+      for (let m = new Date(firstMonday); m.getTime() <= lastMonday.getTime(); m = addLocalDays(m, 7)) {
+        const mon = startOfLocalDay(m);
+        out.push({
+          key: toLocalYmd(mon),
+          label: formatWeekBucketLabel(mon),
+        });
+      }
+      return out;
+    }
+    case "month": {
+      const out: AnalyticsBucket[] = [];
+      let y = startDay.getFullYear();
+      let mi = startDay.getMonth();
+      const endY = endDay.getFullYear();
+      const endM = endDay.getMonth();
+      while (y < endY || (y === endY && mi <= endM)) {
+        const key = `${y}-${pad2(mi + 1)}`;
+        out.push({ key, label: `${MONTH_NAMES_SHORT[mi]} ${y}` });
+        mi += 1;
+        if (mi > 11) {
+          mi = 0;
+          y += 1;
+        }
+      }
+      return out;
+    }
+    case "year": {
+      const out: AnalyticsBucket[] = [];
+      const y0 = startDay.getFullYear();
+      const y1 = endDay.getFullYear();
+      for (let y = y0; y <= y1; y += 1) {
+        out.push({ key: String(y), label: String(y) });
+      }
+      return out;
+    }
+    default: {
+      const _exhaustive: never = granularity;
+      return _exhaustive;
+    }
+  }
+}
+
+/** Number of aggregation buckets in the inclusive range. */
+export function countBuckets(selection: AnalyticsRangeSelection): number {
+  return eachBucketInRange(selection).length;
+}
+
+/** Every calendar day YYYY-MM-DD from range start through end (inclusive). For event logs / daily sampling. */
+export function eachCalendarDayYmdInRange(selection: AnalyticsRangeSelection): string[] {
+  const { rangeStartYmd, rangeEndYmd } = normalizeRange(selection);
+  const startDay = startOfLocalDay(fromLocalYmd(rangeStartYmd));
+  const endDay = startOfLocalDay(fromLocalYmd(rangeEndYmd));
+  const out: string[] = [];
+  for (let d = new Date(startDay); d.getTime() <= endDay.getTime(); d = addLocalDays(d, 1)) {
+    out.push(toLocalYmd(d));
+  }
+  return out;
+}
+
+/** Locale date string for tables (matches prior `generateDates` style). */
+export function formatYmdForEventLog(ymd: string): string {
+  return fromLocalYmd(ymd).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+/**
+ * Caps row count for mock event logs when the selected range spans many days.
+ * Preserves first and last days when downsampling.
+ */
+export function sampleCalendarDaysForEventLog(selection: AnalyticsRangeSelection, maxRows: number): string[] {
+  const days = eachCalendarDayYmdInRange(selection);
+  if (days.length <= maxRows) {
+    return days;
+  }
+  const step = Math.ceil(days.length / maxRows);
+  const sampled: string[] = [];
+  for (let i = 0; i < days.length; i += step) {
+    const y = days[i];
+    if (y !== undefined) {
+      sampled.push(y);
+    }
+  }
+  const last = days[days.length - 1];
+  if (last !== undefined && sampled[sampled.length - 1] !== last) {
+    sampled.push(last);
+  }
+  return sampled.slice(0, maxRows);
+}
+
+/**
+ * Caption beside the delta badge (replaces “from last week”): range boundaries in human form.
+ */
+export function formatComparisonPeriodCaption(selection: AnalyticsRangeSelection): string {
+  const { granularity, rangeStartYmd, rangeEndYmd } = normalizeRange(selection);
+  const a = startOfLocalDay(fromLocalYmd(rangeStartYmd));
+  const b = startOfLocalDay(fromLocalYmd(rangeEndYmd));
+
+  if (granularity === "day") {
+    if (rangeStartYmd === rangeEndYmd) {
+      return `from ${formatShortMonthDay(a)}`;
+    }
+    return `from ${formatShortMonthDay(a)} to ${formatShortMonthDay(b)}`;
+  }
+
+  if (granularity === "week") {
+    const monA = startOfWeekMonday(a);
+    const monB = startOfWeekMonday(b);
+    const wA = weekNumberInMonth(monA);
+    const wB = weekNumberInMonth(monB);
+    const mA = MONTH_NAMES_SHORT[monA.getMonth()];
+    const mB = MONTH_NAMES_SHORT[monB.getMonth()];
+    if (toLocalYmd(monA) === toLocalYmd(monB)) {
+      return `from W${wA} ${mA}`;
+    }
+    return `from W${wA} ${mA} to W${wB} ${mB}`;
+  }
+
+  if (granularity === "month") {
+    const sameYear = a.getFullYear() === b.getFullYear();
+    const sameMonth = a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
+    if (sameMonth) {
+      return `from ${MONTH_NAMES_SHORT[a.getMonth()]} ${a.getFullYear()}`;
+    }
+    if (sameYear) {
+      return `from ${MONTH_NAMES_SHORT[a.getMonth()]} to ${MONTH_NAMES_SHORT[b.getMonth()]}`;
+    }
+    return `from ${MONTH_NAMES_SHORT[a.getMonth()]} ${a.getFullYear()} to ${MONTH_NAMES_SHORT[b.getMonth()]} ${b.getFullYear()}`;
+  }
+
+  if (granularity === "year") {
+    const yA = a.getFullYear();
+    const yB = b.getFullYear();
+    if (yA === yB) {
+      return `from ${yA}`;
+    }
+    return `from ${yA} to ${yB}`;
+  }
+
+  const _never: never = granularity;
+  return _never;
+}
+
 export { MONTH_NAMES, MONTH_NAMES_SHORT };

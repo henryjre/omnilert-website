@@ -27,9 +27,43 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { ViewToggle, type ViewOption } from '@/shared/components/ui/ViewToggle';
+import {
+  getHeroZoneLabel,
+  resolveHeroEpiComparison,
+  type HeroEpiZone,
+} from "../../dashboard/components/epi/heroEpiComparison";
 import { SingleUserSelect, type UserEntry } from '../components/SingleUserSelect';
 import { AnalyticsRangePicker, getSummaryForSelection } from '../components/AnalyticsRangePicker';
-import { createDefaultRangeForGranularity, type AnalyticsRangeSelection } from '../utils/analyticsRangeBuckets';
+import {
+  createDefaultRangeForGranularity,
+  type AnalyticsRangeSelection,
+  formatYmdForEventLog,
+  sampleCalendarDaysForEventLog,
+} from '../utils/analyticsRangeBuckets';
+import {
+  buildGeneralKeyInsights,
+  buildGeneralViewMockData,
+  buildMetricSummaryTrendFooter,
+  buildMetricTrendCardSubtitle,
+  buildMetricTrendCardTitle,
+  buildPersonalEpiSeries,
+  buildPersonalKeyInsights,
+  buildPersonalMetricTrendRows,
+  buildPersonalRecognitionValues,
+  buildPersonalTrendSubtitle,
+  buildRadarDataset,
+  buildTrendComparisonRows,
+  formatInsightsPeriodSubtitle,
+  getMetricAllEmployeeData,
+  getMetricHeroVsGlobalDistribution,
+  getMetricInsights,
+  getMetricTrendForRange,
+  hashRangeSeed,
+  type IndividualMetricsRosterEntry,
+  perturbGlobalMetricAverage,
+  perturbMetricGlobalTarget,
+  perturbPersonalMetricValue,
+} from '../utils/generalViewMock';
 import { isStickyHeaderStuck } from '../stickyHeader';
 
 // ─── Skeleton Primitives ─────────────────────────────────────────────────────
@@ -364,6 +398,18 @@ const getPersonalizedStats = (userName: string) => {
   };
 };
 
+/** Roster for Individual Metrics mock cards (same people as leaderboards). */
+const INDIVIDUAL_METRICS_ROSTER: IndividualMetricsRosterEntry[] = [
+  ...TOP_PERFORMERS.map((p) => ({ name: p.name, role: "Senior Service Crew" })),
+  ...PRIORITY_REVIEW.map((p) => ({ name: p.name, role: "Service Crew" })),
+];
+
+function getBaseMetricValueForEmployee(employeeName: string, metricId: string): number {
+  const stats = getPersonalizedStats(employeeName);
+  const v = stats.metrics[metricId as keyof typeof stats.metrics];
+  return typeof v === "number" ? v : 0;
+}
+
 const METRICS = [
   { id: 'customer-service', label: 'Customer Service Score' },
   { id: 'workplace-relations', label: 'Workplace Relations Score' },
@@ -377,94 +423,7 @@ const METRICS = [
   { id: 'sop-compliance', label: 'SOP Compliance' },
 ];
 
-const WEEKLY_ALERTS = [
-  {
-    id: 1,
-    employee: 'Sarah Jenkins',
-    message: "Uniform compliance on a downtrend for the last 7 days.",
-    type: 'warning',
-    metric: 'Uniform Compliance',
-  },
-  {
-    id: 2,
-    employee: 'Marcus Chen',
-    message: "Productivity rate up 15% this week, exceeding targets.",
-    type: 'success',
-    metric: 'Productivity Rate',
-  },
-  {
-    id: 3,
-    employee: 'Elena Rodriguez',
-    message: "SOP compliance is 8% below the branch target of 95%.",
-    type: 'warning',
-    metric: 'SOP Compliance',
-  },
-];
-
-const EPI_TREND_12W = [
-  { week: 'W1',  epi: 81.2 },
-  { week: 'W2',  epi: 80.8 },
-  { week: 'W3',  epi: 82.1 },
-  { week: 'W4',  epi: 81.7 },
-  { week: 'W5',  epi: 83.0 },
-  { week: 'W6',  epi: 82.4 },
-  { week: 'W7',  epi: 83.9 },
-  { week: 'W8',  epi: 84.1 },
-  { week: 'W9',  epi: 83.6 },
-  { week: 'W10', epi: 84.8 },
-  { week: 'W11', epi: 85.1 },
-  { week: 'W12', epi: 85.4 },
-];
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-const getLast7Days = () => {
-  const dates = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    dates.push(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-  }
-  return dates;
-};
-
-const generateMockTrendData = (users: string[], metricId: string) => {
-  const dates = getLast7Days();
-  return dates.map((date, i) => {
-    const dataPoint: any = { date };
-    users.forEach(user => {
-      const seed = (user + metricId).split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-      const base = seed % 20 + 75;
-      const variance = Math.sin(seed + i) * 10;
-      dataPoint[user] = parseFloat(Math.min(100, Math.max(0, base + variance)).toFixed(1));
-    });
-    return dataPoint;
-  });
-};
-
-const generateRadarData = (user: string) => {
-  return METRICS.map(m => {
-    const seed = (user + m.id).split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    return {
-      subject: m.label
-        .replace(' Score', '')
-        .replace(' Rate', '')
-        .replace(' Compliance', '')
-        .replace('Professional Conduct', 'Prof. Conduct')
-        .replace('Workplace Relations', 'Workplace Rel.'),
-      A: 60 + (seed % 40),
-      fullMark: 100,
-    };
-  });
-};
-
-const generateDistributionData = () => [
-  { range: '0–50', count: 4, fill: '#ef4444' },
-  { range: '51–70', count: 12, fill: '#f59e0b' },
-  { range: '71–85', count: 28, fill: '#3b82f6' },
-  { range: '86–95', count: 42, fill: '#10b981' },
-  { range: '96–100', count: 14, fill: '#059669' },
-];
 
 const CHART_COLORS = ['#2563eb', '#059669', '#d97706', '#7c3aed', '#db2777', '#ea580c'];
 
@@ -629,7 +588,28 @@ const cardVariants = {
   }),
 };
 
-function GlobalEpiCard() {
+function GlobalEpiCard({
+  globalEpi,
+  globalEpiDelta,
+  globalEpiTrend,
+  comparisonCaption,
+  trendFooter,
+}: {
+  globalEpi: number;
+  globalEpiDelta: number;
+  globalEpiTrend: { label: string; epi: number }[];
+  comparisonCaption: string;
+  trendFooter: string;
+}) {
+  const deltas = globalEpiTrend.map((p) => p.epi);
+  const lo = deltas.length ? Math.min(...deltas) : 70;
+  const hi = deltas.length ? Math.max(...deltas) : 90;
+  const pad = Math.max(2, (hi - lo) * 0.08);
+  const yDomain: [number, number] = [Math.max(0, lo - pad), Math.min(100, hi + pad)];
+
+  const deltaPositive = globalEpiDelta > 0;
+  const deltaNegative = globalEpiDelta < 0;
+
   return (
     <motion.div custom={0} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
       <div
@@ -656,15 +636,30 @@ function GlobalEpiCard() {
               className="text-[48px] font-bold leading-none text-white tabular-nums"
               style={{ letterSpacing: '-2px' }}
             >
-              85.4
+              {globalEpi.toFixed(1)}
             </span>
             <div className="mb-2 flex items-center gap-1.5">
-              <span className="flex items-center gap-1 rounded-full bg-emerald-400/20 px-2.5 py-1 text-[11px] font-bold text-emerald-300 ring-1 ring-inset ring-emerald-400/20">
-                <TrendingUp className="h-3 w-3" />
-                +2.3
+              <span
+                className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ring-inset ${
+                  deltaPositive
+                    ? 'bg-emerald-400/20 text-emerald-300 ring-emerald-400/20'
+                    : deltaNegative
+                      ? 'bg-red-400/20 text-red-300 ring-red-400/20'
+                      : 'bg-white/10 text-white/70 ring-white/15'
+                }`}
+              >
+                {deltaPositive ? (
+                  <TrendingUp className="h-3 w-3" />
+                ) : deltaNegative ? (
+                  <TrendingDown className="h-3 w-3" />
+                ) : (
+                  <Minus className="h-3 w-3" />
+                )}
+                {globalEpiDelta > 0 ? '+' : ''}
+                {globalEpiDelta.toFixed(1)}
               </span>
               <span className="text-[10px] font-semibold uppercase tracking-widest text-white/40">
-                from last week
+                {comparisonCaption}
               </span>
             </div>
           </div>
@@ -674,14 +669,14 @@ function GlobalEpiCard() {
         {/* Sparkline — fills remaining space */}
         <div className="flex-1 min-h-[80px]">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={EPI_TREND_12W} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+            <LineChart data={globalEpiTrend} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="epi-line-glow" x1="0" y1="0" x2="1" y2="0">
                   <stop offset="0%" stopColor="rgba(255,255,255,0.3)" />
                   <stop offset="100%" stopColor="rgba(255,255,255,0.9)" />
                 </linearGradient>
               </defs>
-              <YAxis domain={[78, 88]} hide />
+              <YAxis domain={yDomain} hide />
               <Tooltip
                 contentStyle={{
                   background: 'rgba(15,23,42,0.85)',
@@ -693,6 +688,10 @@ function GlobalEpiCard() {
                 labelStyle={{ color: 'rgba(255,255,255,0.5)', fontSize: '10px', fontWeight: 700, marginBottom: '2px' }}
                 itemStyle={{ color: '#fff', fontSize: '13px', fontWeight: 700 }}
                 formatter={(v) => [v, 'EPI']}
+                labelFormatter={(_, items) => {
+                  const row = items?.[0]?.payload as { label?: string } | undefined;
+                  return row?.label ?? '';
+                }}
               />
               <Line
                 type="monotone"
@@ -711,7 +710,7 @@ function GlobalEpiCard() {
         {/* Footer strip */}
         <div className="flex items-center justify-end px-5 py-2.5 border-t border-white/10 flex-shrink-0">
           <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">
-            12-week trend
+            {trendFooter}
           </span>
         </div>
       </div>
@@ -719,13 +718,21 @@ function GlobalEpiCard() {
   );
 }
 
-function AwardsViolationsCard() {
+function AwardsViolationsCard({
+  recognitionSubtitle,
+  awards,
+  violations,
+}: {
+  recognitionSubtitle: string;
+  awards: number;
+  violations: number;
+}) {
   return (
     <motion.div custom={1} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
       <AnalyticsCard
         icon={<Trophy className="h-4 w-4" />}
         title="Recognition"
-        subtitle="Last 30 days"
+        subtitle={recognitionSubtitle}
       >
         <div className="flex flex-col gap-3 p-4 flex-1">
           {/* Awards */}
@@ -735,7 +742,7 @@ function AwardsViolationsCard() {
                 <Trophy className="h-3.5 w-3.5 text-emerald-600" />
                 <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600/70">Total Awards</span>
               </div>
-              <span className="text-3xl font-bold leading-none text-emerald-900 tabular-nums">12</span>
+              <span className="text-3xl font-bold leading-none text-emerald-900 tabular-nums">{awards}</span>
             </div>
             <ChevronRight className="h-4 w-4 text-emerald-300 opacity-0 -translate-x-1 transition-all duration-200 group-hover:opacity-100 group-hover:translate-x-0" />
           </div>
@@ -747,7 +754,7 @@ function AwardsViolationsCard() {
                 <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
                 <span className="text-[10px] font-bold uppercase tracking-widest text-red-600/70">Total Violations</span>
               </div>
-              <span className="text-3xl font-bold leading-none text-red-900 tabular-nums">3</span>
+              <span className="text-3xl font-bold leading-none text-red-900 tabular-nums">{violations}</span>
             </div>
             <ChevronRight className="h-4 w-4 text-red-300 opacity-0 -translate-x-1 transition-all duration-200 group-hover:opacity-100 group-hover:translate-x-0" />
           </div>
@@ -757,7 +764,13 @@ function AwardsViolationsCard() {
   );
 }
 
-function LeaderboardCard() {
+function LeaderboardCard({
+  topPerformers,
+  priorityReview,
+}: {
+  topPerformers: { name: string; epi: number }[];
+  priorityReview: { name: string; epi: number }[];
+}) {
   const navigate = useNavigate();
 
   return (
@@ -771,7 +784,7 @@ function LeaderboardCard() {
               <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600">Top Performers</span>
             </div>
             <div className="space-y-0.5">
-              {TOP_PERFORMERS.map((employee, idx) => (
+              {topPerformers.map((employee, idx) => (
                 <motion.div
                   key={employee.name}
                   variants={{
@@ -809,7 +822,7 @@ function LeaderboardCard() {
               <span className="text-[10px] font-bold uppercase tracking-widest text-red-600">Priority Review</span>
             </div>
             <div className="space-y-0.5">
-              {PRIORITY_REVIEW.map((employee, idx) => (
+              {priorityReview.map((employee, idx) => (
                 <motion.div
                   key={employee.name}
                   variants={{
@@ -847,23 +860,28 @@ function LeaderboardCard() {
 
 // ─── Individual Employee View Components ────────────────────────────────────
 
-const generatePersonalTrendData = (userName: string) => {
-  const seed = userName.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  return EPI_TREND_12W.map((w, i) => ({
-    week: w.week,
-    epi: parseFloat((w.epi + ((seed + i * 7) % 10) - 5).toFixed(1)),
-    branchAvg: w.epi,
-  }));
-};
-
-const PERSONAL_INSIGHTS = [
-  { type: 'strength' as const, metric: 'Customer Service', message: 'Consistently in the top 15% of branch for this metric over the last 4 weeks.' },
-  { type: 'improving' as const, metric: 'Punctuality', message: 'Rate improved by 3.2% in the last 2 weeks compared to prior month average.' },
-  { type: 'attention' as const, metric: 'SOP Compliance', message: 'Trending 4.1% below the branch target. Review recommended.' },
-];
-
-function PersonalEpiCard({ stats }: { stats: ReturnType<typeof getPersonalizedStats> }) {
-  const personalTrend = useMemo(() => generatePersonalTrendData('employee'), []);
+function PersonalEpiCard({
+  displayEpi,
+  epiDelta,
+  comparisonCaption,
+  trendFooter,
+  globalAvgDisplay,
+  chartData,
+}: {
+  displayEpi: number;
+  epiDelta: number;
+  comparisonCaption: string;
+  trendFooter: string;
+  globalAvgDisplay: number;
+  chartData: { label: string; epi: number; globalAvg: number }[];
+}) {
+  const vals = chartData.flatMap((p) => [p.epi, p.globalAvg]);
+  const lo = vals.length ? Math.min(...vals) : 60;
+  const hi = vals.length ? Math.max(...vals) : 95;
+  const pad = Math.max(2, (hi - lo) * 0.08);
+  const yDomain: [number, number] = [Math.max(0, lo - pad), Math.min(100, hi + pad)];
+  const deltaPositive = epiDelta > 0;
+  const deltaNegative = epiDelta < 0;
 
   return (
     <motion.div custom={0} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
@@ -891,19 +909,30 @@ function PersonalEpiCard({ stats }: { stats: ReturnType<typeof getPersonalizedSt
               className="text-[48px] font-bold leading-none text-white tabular-nums"
               style={{ letterSpacing: '-2px' }}
             >
-              {stats.epi.toFixed(1)}
+              {displayEpi.toFixed(1)}
             </span>
             <div className="mb-2 flex items-center gap-1.5">
-              <span className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ring-inset ${
-                stats.epiTrend >= 0
-                  ? 'bg-emerald-400/20 text-emerald-300 ring-emerald-400/20'
-                  : 'bg-red-400/20 text-red-300 ring-red-400/20'
-              }`}>
-                {stats.epiTrend >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                {stats.epiTrend >= 0 ? '+' : ''}{stats.epiTrend.toFixed(1)}
+              <span
+                className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ring-inset ${
+                  deltaPositive
+                    ? 'bg-emerald-400/20 text-emerald-300 ring-emerald-400/20'
+                    : deltaNegative
+                      ? 'bg-red-400/20 text-red-300 ring-red-400/20'
+                      : 'bg-white/10 text-white/70 ring-white/15'
+                }`}
+              >
+                {deltaPositive ? (
+                  <TrendingUp className="h-3 w-3" />
+                ) : deltaNegative ? (
+                  <TrendingDown className="h-3 w-3" />
+                ) : (
+                  <Minus className="h-3 w-3" />
+                )}
+                {epiDelta > 0 ? '+' : ''}
+                {epiDelta.toFixed(1)}
               </span>
               <span className="text-[10px] font-semibold uppercase tracking-widest text-white/40">
-                from last week
+                {comparisonCaption}
               </span>
             </div>
           </div>
@@ -912,14 +941,14 @@ function PersonalEpiCard({ stats }: { stats: ReturnType<typeof getPersonalizedSt
         {/* Sparkline */}
         <div className="flex-1 min-h-[80px]">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={personalTrend} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+            <LineChart data={chartData} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="personal-epi-glow" x1="0" y1="0" x2="1" y2="0">
                   <stop offset="0%" stopColor="rgba(255,255,255,0.3)" />
                   <stop offset="100%" stopColor="rgba(255,255,255,0.9)" />
                 </linearGradient>
               </defs>
-              <YAxis domain={['dataMin - 3', 'dataMax + 3']} hide />
+              <YAxis domain={yDomain} hide />
               <Tooltip
                 contentStyle={{
                   background: 'rgba(15,23,42,0.85)',
@@ -930,7 +959,22 @@ function PersonalEpiCard({ stats }: { stats: ReturnType<typeof getPersonalizedSt
                 }}
                 labelStyle={{ color: 'rgba(255,255,255,0.5)', fontSize: '10px', fontWeight: 700, marginBottom: '2px' }}
                 itemStyle={{ color: '#fff', fontSize: '13px', fontWeight: 700 }}
-                formatter={(v) => [v, 'EPI']}
+                formatter={(v, name) => [v, name === 'epi' ? 'You' : 'Global']}
+                labelFormatter={(_, items) => {
+                  const row = items?.[0]?.payload as { label?: string } | undefined;
+                  return row?.label ?? '';
+                }}
+              />
+              <Line
+                type="monotone"
+                dataKey="globalAvg"
+                stroke="rgba(255,255,255,0.35)"
+                strokeWidth={1.5}
+                strokeDasharray="5 4"
+                dot={false}
+                activeDot={{ r: 3, fill: 'rgba(255,255,255,0.5)', strokeWidth: 0 }}
+                animationDuration={1200}
+                animationEasing="ease-out"
               />
               <Line
                 type="monotone"
@@ -949,10 +993,10 @@ function PersonalEpiCard({ stats }: { stats: ReturnType<typeof getPersonalizedSt
         {/* Footer strip */}
         <div className="flex items-center justify-between px-5 py-2.5 border-t border-white/10 flex-shrink-0">
           <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">
-            Branch Avg: {BRANCH_AVERAGES.epi}
+            Global Avg: {globalAvgDisplay.toFixed(1)}
           </span>
           <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">
-            12-week trend
+            {trendFooter}
           </span>
         </div>
       </div>
@@ -960,13 +1004,21 @@ function PersonalEpiCard({ stats }: { stats: ReturnType<typeof getPersonalizedSt
   );
 }
 
-function PersonalRecognitionCard({ stats }: { stats: ReturnType<typeof getPersonalizedStats> }) {
+function PersonalRecognitionCard({
+  recognitionSubtitle,
+  awards,
+  violations,
+}: {
+  recognitionSubtitle: string;
+  awards: number;
+  violations: number;
+}) {
   return (
     <motion.div custom={1} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
       <AnalyticsCard
         icon={<Trophy className="h-4 w-4" />}
         title="Recognition"
-        subtitle="Cumulative record"
+        subtitle={recognitionSubtitle}
       >
         <div className="flex flex-col gap-3 p-4 flex-1">
           {/* Awards */}
@@ -976,7 +1028,7 @@ function PersonalRecognitionCard({ stats }: { stats: ReturnType<typeof getPerson
                 <Trophy className="h-3.5 w-3.5 text-emerald-600" />
                 <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600/70">Total Awards</span>
               </div>
-              <span className="text-3xl font-bold leading-none text-emerald-900 tabular-nums">{stats.awards}</span>
+              <span className="text-3xl font-bold leading-none text-emerald-900 tabular-nums">{awards}</span>
             </div>
             <ChevronRight className="h-4 w-4 text-emerald-300 opacity-0 -translate-x-1 transition-all duration-200 group-hover:opacity-100 group-hover:translate-x-0" />
           </div>
@@ -988,7 +1040,7 @@ function PersonalRecognitionCard({ stats }: { stats: ReturnType<typeof getPerson
                 <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
                 <span className="text-[10px] font-bold uppercase tracking-widest text-red-600/70">Violations</span>
               </div>
-              <span className="text-3xl font-bold leading-none text-red-900 tabular-nums">{stats.violations}</span>
+              <span className="text-3xl font-bold leading-none text-red-900 tabular-nums">{violations}</span>
             </div>
             <ChevronRight className="h-4 w-4 text-red-300 opacity-0 -translate-x-1 transition-all duration-200 group-hover:opacity-100 group-hover:translate-x-0" />
           </div>
@@ -998,22 +1050,77 @@ function PersonalRecognitionCard({ stats }: { stats: ReturnType<typeof getPerson
   );
 }
 
-function PersonalRankingCard({ stats }: { stats: ReturnType<typeof getPersonalizedStats> }) {
-  const allEmployees = useMemo(() => {
-    const entries = [...TOP_PERFORMERS, ...PRIORITY_REVIEW].sort((a, b) => b.epi - a.epi);
-    return entries;
-  }, []);
+const HERO_ZONE_TEXT: Record<HeroEpiZone, string> = {
+  red: "text-red-500",
+  amber: "text-amber-600",
+  green: "text-emerald-600",
+  blue: "text-blue-500",
+};
 
-  const rank = useMemo(() => {
-    const idx = allEmployees.findIndex(e => stats.epi >= e.epi);
-    return idx === -1 ? allEmployees.length : idx + 1;
-  }, [stats.epi, allEmployees]);
+/** Subtle border + background for EPI distribution summary (tracks dominant hero zone). */
+const HERO_ZONE_DISTRIBUTION_PANEL: Record<HeroEpiZone, string> = {
+  red: "border-red-200 bg-red-50/80",
+  amber: "border-amber-200 bg-amber-50/80",
+  green: "border-emerald-200 bg-emerald-50/80",
+  blue: "border-blue-200 bg-blue-50/80",
+};
+
+/** Shared summary strip under hero-zone distribution charts (EPI or metric vs global). */
+function HeroZoneDistributionSummaryPanel({
+  dominantEmployeeCount,
+  dominantSharePct,
+  dominantBandLabel,
+  dominantZone,
+  trailingAfterBand,
+}: {
+  dominantEmployeeCount: number;
+  dominantSharePct: number;
+  dominantBandLabel: string;
+  dominantZone: HeroEpiZone;
+  trailingAfterBand: string;
+}) {
+  const accentClass = HERO_ZONE_TEXT[dominantZone];
+  const panelClass = HERO_ZONE_DISTRIBUTION_PANEL[dominantZone];
+  return (
+    <div className={`rounded-lg border px-3.5 py-2.5 ${panelClass}`}>
+      <p className="text-xs text-gray-600 leading-relaxed">
+        <span className={`font-bold ${accentClass}`}>
+          {dominantEmployeeCount} employees ({dominantSharePct}%)
+        </span>
+        <span> in the </span>
+        <span className={`font-bold ${accentClass}`}>{dominantBandLabel}</span>
+        <span>{trailingAfterBand}</span>
+      </p>
+    </div>
+  );
+}
+
+function PersonalRankingCard({
+  rank,
+  totalPeers,
+  displayEpi,
+  globalEpi,
+}: {
+  rank: number;
+  totalPeers: number;
+  displayEpi: number;
+  globalEpi: number;
+}) {
+  const hero = useMemo(
+    () => resolveHeroEpiComparison({ userEpiScore: displayEpi, globalAverageEpi: globalEpi }),
+    [displayEpi, globalEpi],
+  );
+  const percentMain =
+    hero.percentChange !== null && Number.isFinite(hero.percentChange)
+      ? `${hero.percentChange > 0 ? "+" : ""}${hero.percentChange.toFixed(1)}%`
+      : "—";
+  const zoneClass = HERO_ZONE_TEXT[hero.zone];
 
   return (
     <motion.div custom={2} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
       <AnalyticsCard
         icon={<Users className="h-4 w-4" />}
-        title="Branch Ranking"
+        title="Global Ranking"
         subtitle="Position among peers"
       >
         <div className="grid grid-cols-1 sm:grid-cols-2 divide-y divide-gray-100 sm:divide-y-0 sm:divide-x p-4 sm:p-5 gap-0 flex-1">
@@ -1025,46 +1132,39 @@ function PersonalRankingCard({ stats }: { stats: ReturnType<typeof getPersonaliz
             </div>
             <div className="flex items-baseline gap-2">
               <span className="text-5xl font-bold text-gray-900 tabular-nums leading-none">#{rank}</span>
-              <span className="text-sm text-gray-400 font-medium">of {allEmployees.length}</span>
+              <span className="text-sm text-gray-400 font-medium">of {totalPeers}</span>
             </div>
             <div className="mt-3 flex items-center gap-2">
               <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-100">
                 <motion.div
                   initial={{ width: 0 }}
-                  animate={{ width: `${((allEmployees.length - rank + 1) / allEmployees.length) * 100}%` }}
+                  animate={{ width: `${((totalPeers - rank + 1) / totalPeers) * 100}%` }}
                   transition={{ duration: 1, ease: 'easeOut' }}
                   className="h-full rounded-full bg-primary-500"
                 />
               </div>
               <span className="text-[10px] font-bold text-gray-400">
-                Top {Math.round(((rank) / allEmployees.length) * 100)}%
+                Top {Math.round((rank / totalPeers) * 100)}%
               </span>
             </div>
           </div>
 
-          {/* Key Benchmarks */}
+          {/* vs Global — EPI only */}
           <div className="pt-4 sm:pt-0 sm:pl-6 flex flex-col justify-center">
             <div className="flex items-center gap-1.5 mb-2.5">
               <BarChart2 className="h-3.5 w-3.5 text-gray-400" />
-              <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">vs Branch</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">vs Global</span>
             </div>
-            <div className="space-y-3">
-              {[
-                { label: 'EPI Score', val: stats.epi, avg: BRANCH_AVERAGES.epi },
-                { label: 'Compliance', val: stats.metrics['hygiene-compliance'], avg: BRANCH_AVERAGES['hygiene-compliance'] },
-                { label: 'Productivity', val: stats.metrics['productivity-rate'], avg: BRANCH_AVERAGES['productivity-rate'] },
-              ].map((item) => {
-                const diff = item.val - item.avg;
-                const isPos = diff >= 0;
-                return (
-                  <div key={item.label} className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-gray-500">{item.label}</span>
-                    <span className={`text-[11px] font-bold ${isPos ? 'text-emerald-600' : 'text-amber-600'}`}>
-                      {isPos ? '+' : ''}{diff.toFixed(1)}%
-                    </span>
-                  </div>
-                );
-              })}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
+                % change vs global
+              </p>
+              <span className={`text-5xl font-bold tabular-nums leading-none block ${zoneClass}`}>
+                {percentMain}
+              </span>
+              <p className={`text-xs font-medium mt-2 leading-snug ${zoneClass}`}>
+                {getHeroZoneLabel(hero.zone)}
+              </p>
             </div>
           </div>
         </div>
@@ -1073,24 +1173,22 @@ function PersonalRankingCard({ stats }: { stats: ReturnType<typeof getPersonaliz
   );
 }
 
-function PersonalTrendCard({ userName, stats }: { userName: string; stats: ReturnType<typeof getPersonalizedStats> }) {
+function PersonalTrendCard({
+  userName,
+  analyticsRange,
+}: {
+  userName: string;
+  analyticsRange: AnalyticsRangeSelection;
+}) {
   const [selectedMetric, setSelectedMetric] = useState(METRICS[0].id);
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
 
-  const chartData = useMemo(() => {
-    const dates = getLast7Days();
-    return dates.map((date, i) => {
-      const seed = (userName + selectedMetric).split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-      const base = seed % 20 + 75;
-      const variance = Math.sin(seed + i) * 10;
-      const branchBase = 80 + (i * 0.8);
-      return {
-        date,
-        [userName]: parseFloat(Math.min(100, Math.max(0, base + variance)).toFixed(1)),
-        'Branch Avg': parseFloat(branchBase.toFixed(1)),
-      };
-    });
-  }, [userName, selectedMetric]);
+  const chartData = useMemo(
+    () => buildPersonalMetricTrendRows(userName, selectedMetric, analyticsRange),
+    [userName, selectedMetric, analyticsRange],
+  );
+
+  const subtitle = useMemo(() => buildPersonalTrendSubtitle(analyticsRange), [analyticsRange]);
 
   const controlLabel = "text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1.5 flex items-center gap-1.5";
 
@@ -1099,7 +1197,7 @@ function PersonalTrendCard({ userName, stats }: { userName: string; stats: Retur
       <AnalyticsCard
         icon={<Activity className="h-4 w-4" />}
         title="Performance Trends"
-        subtitle="7-day personal metric trend"
+        subtitle={subtitle}
       >
         {/* Controls */}
         <div className="flex flex-col sm:flex-row sm:items-end gap-3 px-4 sm:px-5 pt-4 pb-3 border-b border-gray-50">
@@ -1126,7 +1224,7 @@ function PersonalTrendCard({ userName, stats }: { userName: string; stats: Retur
               className="flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-gray-400 shadow-sm ring-1 ring-inset ring-gray-200"
               style={{ borderLeft: '3px solid #d1d5db' }}
             >
-              Branch Avg
+              Global Avg
             </div>
           </div>
         </div>
@@ -1183,7 +1281,7 @@ function PersonalTrendCard({ userName, stats }: { userName: string; stats: Retur
                 />
                 <Area
                   type="monotone"
-                  dataKey="Branch Avg"
+                  dataKey="Global Avg"
                   stroke="#d1d5db"
                   strokeWidth={1.5}
                   strokeDasharray="6 3"
@@ -1202,16 +1300,21 @@ function PersonalTrendCard({ userName, stats }: { userName: string; stats: Retur
   );
 }
 
-function PersonalInsightsCard() {
+function PersonalInsightsCard({ analyticsRange }: { analyticsRange: AnalyticsRangeSelection }) {
+  const insights = useMemo(
+    () => buildPersonalKeyInsights(analyticsRange),
+    [analyticsRange],
+  );
+
   return (
     <motion.div custom={4} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
       <AnalyticsCard
         icon={<AlertTriangle className="h-4 w-4" />}
         title="Key Insights"
-        subtitle="Automated observations"
+        subtitle={formatInsightsPeriodSubtitle(analyticsRange)}
       >
         <div className="divide-y divide-gray-50 flex-1 overflow-auto">
-          {PERSONAL_INSIGHTS.map((insight, idx) => (
+          {insights.map((insight, idx) => (
             <div
               key={idx}
               className="flex flex-col gap-3 p-4 transition-colors hover:bg-gray-50/60"
@@ -1254,8 +1357,17 @@ function PersonalInsightsCard() {
   );
 }
 
-function PersonalRadarCard({ userName }: { userName: string }) {
-  const radarData = useMemo(() => generateRadarData(userName), [userName]);
+function PersonalRadarCard({
+  userName,
+  analyticsRange,
+}: {
+  userName: string;
+  analyticsRange: AnalyticsRangeSelection;
+}) {
+  const radarData = useMemo(
+    () => buildRadarDataset(userName, analyticsRange),
+    [userName, analyticsRange],
+  );
 
   return (
     <motion.div custom={5} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
@@ -1322,18 +1434,8 @@ type MetricEventRow = Record<string, string | number>;
 interface MetricDetailConfig {
   columns: { key: string; label: string }[];
   formula: string;
-  generateRows: (seed: number) => MetricEventRow[];
+  generateRows: (seed: number, selection: AnalyticsRangeSelection) => MetricEventRow[];
 }
-
-const generateDates = (count: number): string[] => {
-  const dates: string[] = [];
-  for (let i = 0; i < count; i++) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    dates.push(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
-  }
-  return dates;
-};
 
 const seededRandom = (seed: number, idx: number) => {
   const x = Math.sin(seed + idx * 127.1) * 43758.5453;
@@ -1349,8 +1451,8 @@ const METRIC_DETAIL_CONFIGS: Record<string, MetricDetailConfig> = {
       { key: 'category', label: 'Category' },
     ],
     formula: 'Average of all evaluation scores in period',
-    generateRows: (seed) => {
-      const dates = generateDates(30);
+    generateRows: (seed, selection) => {
+      const dates = sampleCalendarDaysForEventLog(selection, 40).map(formatYmdForEventLog);
       return dates.map((date, i) => ({
         date,
         score: Math.round(75 + seededRandom(seed, i) * 25),
@@ -1367,8 +1469,8 @@ const METRIC_DETAIL_CONFIGS: Record<string, MetricDetailConfig> = {
       { key: 'category', label: 'Category' },
     ],
     formula: 'Average of all evaluation scores in period',
-    generateRows: (seed) => {
-      const dates = generateDates(25);
+    generateRows: (seed, selection) => {
+      const dates = sampleCalendarDaysForEventLog(selection, 35).map(formatYmdForEventLog);
       return dates.map((date, i) => ({
         date,
         score: Math.round(70 + seededRandom(seed + 1, i) * 30),
@@ -1385,8 +1487,8 @@ const METRIC_DETAIL_CONFIGS: Record<string, MetricDetailConfig> = {
       { key: 'category', label: 'Category' },
     ],
     formula: 'Average of all evaluation scores in period',
-    generateRows: (seed) => {
-      const dates = generateDates(20);
+    generateRows: (seed, selection) => {
+      const dates = sampleCalendarDaysForEventLog(selection, 30).map(formatYmdForEventLog);
       return dates.map((date, i) => ({
         date,
         score: Math.round(78 + seededRandom(seed + 2, i) * 22),
@@ -1403,8 +1505,8 @@ const METRIC_DETAIL_CONFIGS: Record<string, MetricDetailConfig> = {
       { key: 'notes', label: 'Notes' },
     ],
     formula: '(Attended + Excused) / Total Scheduled',
-    generateRows: (seed) => {
-      const dates = generateDates(40);
+    generateRows: (seed, selection) => {
+      const dates = sampleCalendarDaysForEventLog(selection, 45).map(formatYmdForEventLog);
       return dates.map((date, i) => {
         const r = seededRandom(seed + 3, i);
         const status = r > 0.12 ? 'Present' : r > 0.05 ? 'Excused' : 'Absent';
@@ -1426,8 +1528,8 @@ const METRIC_DETAIL_CONFIGS: Record<string, MetricDetailConfig> = {
       { key: 'status', label: 'Status' },
     ],
     formula: 'On-time Shifts / Total Shifts',
-    generateRows: (seed) => {
-      const dates = generateDates(35);
+    generateRows: (seed, selection) => {
+      const dates = sampleCalendarDaysForEventLog(selection, 40).map(formatYmdForEventLog);
       return dates.map((date, i) => {
         const varianceMin = Math.round((seededRandom(seed + 4, i) - 0.3) * 30);
         const status = varianceMin <= 0 ? 'On-time' : varianceMin <= 5 ? 'Late' : 'Late';
@@ -1454,8 +1556,8 @@ const METRIC_DETAIL_CONFIGS: Record<string, MetricDetailConfig> = {
       { key: 'remarks', label: 'Remarks' },
     ],
     formula: 'Avg Daily Achievement %',
-    generateRows: (seed) => {
-      const dates = generateDates(28);
+    generateRows: (seed, selection) => {
+      const dates = sampleCalendarDaysForEventLog(selection, 35).map(formatYmdForEventLog);
       return dates.map((date, i) => {
         const pct = Math.round(65 + seededRandom(seed + 5, i) * 35);
         return {
@@ -1475,8 +1577,8 @@ const METRIC_DETAIL_CONFIGS: Record<string, MetricDetailConfig> = {
       { key: 'remarks', label: 'Remarks' },
     ],
     formula: 'Passed Checks / Total Checks',
-    generateRows: (seed) => {
-      const dates = generateDates(22);
+    generateRows: (seed, selection) => {
+      const dates = sampleCalendarDaysForEventLog(selection, 30).map(formatYmdForEventLog);
       return dates.map((date, i) => {
         const pass = seededRandom(seed + 6, i) > 0.08;
         return {
@@ -1496,8 +1598,8 @@ const METRIC_DETAIL_CONFIGS: Record<string, MetricDetailConfig> = {
       { key: 'remarks', label: 'Remarks' },
     ],
     formula: 'Passed Checks / Total Checks',
-    generateRows: (seed) => {
-      const dates = generateDates(25);
+    generateRows: (seed, selection) => {
+      const dates = sampleCalendarDaysForEventLog(selection, 32).map(formatYmdForEventLog);
       return dates.map((date, i) => {
         const pass = seededRandom(seed + 7, i) > 0.1;
         return {
@@ -1517,8 +1619,8 @@ const METRIC_DETAIL_CONFIGS: Record<string, MetricDetailConfig> = {
       { key: 'remarks', label: 'Remarks' },
     ],
     formula: 'Passed Checks / Total Checks',
-    generateRows: (seed) => {
-      const dates = generateDates(30);
+    generateRows: (seed, selection) => {
+      const dates = sampleCalendarDaysForEventLog(selection, 40).map(formatYmdForEventLog);
       return dates.map((date, i) => {
         const pass = seededRandom(seed + 8, i) > 0.12;
         return {
@@ -1536,59 +1638,91 @@ const ROWS_PER_PAGE = 10;
 
 // ─── Detailed Metrics Card with Slide ────────────────────────────────────────
 
-function PersonalMetricsBreakdownCard({ stats }: { stats: ReturnType<typeof getPersonalizedStats> }) {
+function PersonalMetricsBreakdownCard({
+  stats,
+  analyticsRange,
+  userName,
+}: {
+  stats: ReturnType<typeof getPersonalizedStats>;
+  analyticsRange: AnalyticsRangeSelection;
+  userName: string;
+}) {
   const [selectedMetric, setSelectedMetric] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(0);
 
-  const metricGroups = [
-    {
-      title: 'Core Performance',
-      icon: <BarChart2 className="h-3.5 w-3.5 text-blue-500" />,
-      items: [
-        { label: 'Customer Service', val: stats.metrics['customer-service'], avg: BRANCH_AVERAGES['customer-service'] },
-        { label: 'Workplace Relations', val: stats.metrics['workplace-relations'], avg: BRANCH_AVERAGES['workplace-relations'] },
-        { label: 'Professional Conduct', val: stats.metrics['professional-conduct'], avg: BRANCH_AVERAGES['professional-conduct'] },
-      ],
-    },
-    {
-      title: 'Operational',
-      icon: <Activity className="h-3.5 w-3.5 text-violet-500" />,
-      items: [
-        { label: 'Attendance', val: stats.metrics['attendance-rate'], avg: BRANCH_AVERAGES['attendance-rate'] },
-        { label: 'Punctuality', val: stats.metrics['punctuality-rate'], avg: BRANCH_AVERAGES['punctuality-rate'] },
-        { label: 'Productivity', val: stats.metrics['productivity-rate'], avg: BRANCH_AVERAGES['productivity-rate'] },
-      ],
-    },
-    {
-      title: 'SOP & Compliance',
-      icon: <Target className="h-3.5 w-3.5 text-emerald-500" />,
-      items: [
-        { label: 'Uniform', val: stats.metrics['uniform-compliance'], avg: BRANCH_AVERAGES['uniform-compliance'] },
-        { label: 'Hygiene', val: stats.metrics['hygiene-compliance'], avg: BRANCH_AVERAGES['hygiene-compliance'] },
-        { label: 'SOP', val: stats.metrics['sop-compliance'], avg: BRANCH_AVERAGES['sop-compliance'] },
-      ],
-    },
-  ];
+  const metricGroups = useMemo(() => {
+    const mk = (label: string, metricKey: keyof typeof stats.metrics) => {
+      const globalBase =
+        GLOBAL_AVERAGES[label as keyof typeof GLOBAL_AVERAGES] ??
+        BRANCH_AVERAGES[metricKey as keyof typeof BRANCH_AVERAGES] ??
+        85;
+      return {
+        label,
+        val: perturbPersonalMetricValue(stats.metrics[metricKey], metricKey, userName, analyticsRange),
+        avg: perturbGlobalMetricAverage(globalBase, analyticsRange),
+      };
+    };
+    return [
+      {
+        title: "Core Performance",
+        icon: <BarChart2 className="h-3.5 w-3.5 text-blue-500" />,
+        items: [
+          mk("Customer Service", "customer-service"),
+          mk("Workplace Relations", "workplace-relations"),
+          mk("Professional Conduct", "professional-conduct"),
+        ],
+      },
+      {
+        title: "Operational",
+        icon: <Activity className="h-3.5 w-3.5 text-violet-500" />,
+        items: [
+          mk("Attendance", "attendance-rate"),
+          mk("Punctuality", "punctuality-rate"),
+          mk("Productivity", "productivity-rate"),
+        ],
+      },
+      {
+        title: "SOP & Compliance",
+        icon: <Target className="h-3.5 w-3.5 text-emerald-500" />,
+        items: [
+          mk("Uniform", "uniform-compliance"),
+          mk("Hygiene", "hygiene-compliance"),
+          mk("SOP", "sop-compliance"),
+        ],
+      },
+    ];
+  }, [stats, userName, analyticsRange]);
 
-  const allItems = metricGroups.flatMap(g => g.items);
+  const allItems = metricGroups.flatMap((g) => g.items);
 
-  const selectedItem = selectedMetric ? allItems.find(i => i.label === selectedMetric) : null;
+  const selectedItem = selectedMetric ? allItems.find((i) => i.label === selectedMetric) : null;
   const detailConfig = selectedMetric ? METRIC_DETAIL_CONFIGS[selectedMetric] : null;
 
   const eventRows = useMemo(() => {
     if (!selectedMetric || !detailConfig) return [];
-    const seed = selectedMetric.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
-    return detailConfig.generateRows(seed);
-  }, [selectedMetric, detailConfig]);
+    const seed = selectedMetric.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
+    return detailConfig.generateRows(seed, analyticsRange);
+  }, [selectedMetric, detailConfig, analyticsRange]);
 
   const totalPages = Math.ceil(eventRows.length / ROWS_PER_PAGE);
   const pageRows = eventRows.slice(currentPage * ROWS_PER_PAGE, (currentPage + 1) * ROWS_PER_PAGE);
 
-  const globalAvg = selectedMetric ? (GLOBAL_AVERAGES[selectedMetric] ?? 0) : 0;
+  const globalAvg = useMemo(() => {
+    if (!selectedMetric) return 0;
+    const base = GLOBAL_AVERAGES[selectedMetric as keyof typeof GLOBAL_AVERAGES] ?? 0;
+    return perturbGlobalMetricAverage(base, analyticsRange);
+  }, [selectedMetric, analyticsRange]);
+
   const rank = useMemo(() => {
     if (!selectedItem) return 0;
-    return Math.max(1, Math.round((1 - (selectedItem.val / 100)) * TOTAL_EMPLOYEES) + 1);
-  }, [selectedItem]);
+    const base = Math.max(1, Math.round((1 - selectedItem.val / 100) * TOTAL_EMPLOYEES) + 1);
+    const shift = (hashRangeSeed(analyticsRange) % 9) - 4;
+    return Math.max(1, Math.min(TOTAL_EMPLOYEES, base + shift));
+  }, [selectedItem, analyticsRange]);
+
+  useEffect(() => {
+    setCurrentPage(0);
+  }, [analyticsRange]);
 
   const handleOpenDetail = (label: string) => {
     setCurrentPage(0);
@@ -1615,7 +1749,7 @@ function PersonalMetricsBreakdownCard({ stats }: { stats: ReturnType<typeof getP
                 Detailed Metrics
               </h3>
               <p className="mt-0.5 text-xs text-gray-400 truncate">
-                {isDetailView ? selectedMetric : 'All scores vs branch average'}
+                {isDetailView ? selectedMetric : "All scores vs global average"}
               </p>
             </div>
           </div>
@@ -1684,7 +1818,7 @@ function PersonalMetricsBreakdownCard({ stats }: { stats: ReturnType<typeof getP
                           <div
                             className="absolute top-0 h-full w-0.5 bg-gray-400/60"
                             style={{ left: `${item.avg}%` }}
-                            title={`Branch avg: ${item.avg}%`}
+                            title={`Global avg: ${item.avg}%`}
                           />
                         </div>
                       </div>
@@ -1700,7 +1834,7 @@ function PersonalMetricsBreakdownCard({ stats }: { stats: ReturnType<typeof getP
                 <span className="font-bold text-blue-700">
                   {allItems.filter(i => i.val >= i.avg).length} of {allItems.length} metrics
                 </span>{' '}
-                are at or above branch average.
+                are at or above global average.
               </p>
             </div>
           </motion.div>
@@ -1852,14 +1986,20 @@ const toShortDate = (label: string) => {
   return `${months[mon] ?? mon}/${day}`;
 };
 
-function TrendAnalyticsCard() {
+function TrendAnalyticsCard({
+  analyticsRange,
+  comparisonSubtitle,
+}: {
+  analyticsRange: AnalyticsRangeSelection;
+  comparisonSubtitle: string;
+}) {
   const [selectedUsers, setSelectedUsers] = useState<string[]>([ANALYTICS_USERS[0]]);
   const [selectedMetric, setSelectedMetric] = useState(METRICS[0].id);
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
 
   const chartData = useMemo(
-    () => generateMockTrendData(selectedUsers, selectedMetric),
-    [selectedUsers, selectedMetric]
+    () => buildTrendComparisonRows(analyticsRange, selectedUsers, selectedMetric),
+    [analyticsRange, selectedUsers, selectedMetric],
   );
 
   const handleToggleUser = (userName: string) => {
@@ -1891,7 +2031,7 @@ function TrendAnalyticsCard() {
       <AnalyticsCard
         icon={<Activity className="h-4 w-4" />}
         title="Performance Trends"
-        subtitle="7-day metric comparison"
+        subtitle={comparisonSubtitle}
       >
         {/* Controls — stacked on mobile, inline on desktop */}
         <div className="flex flex-col sm:flex-row sm:items-end gap-3 px-4 sm:px-5 pt-4 pb-3 border-b border-gray-50">
@@ -2014,20 +2154,24 @@ function TrendAnalyticsCard() {
   );
 }
 
-// ─── Weekly Alerts Card ───────────────────────────────────────────────────────
+// ─── General View: Key Insights Card ───────────────────────────────────────────
 
-function WeeklyAnalyticsAlerts() {
+function GeneralKeyInsightsCard({ analyticsRange }: { analyticsRange: AnalyticsRangeSelection }) {
   const navigate = useNavigate();
+  const alerts = useMemo(
+    () => buildGeneralKeyInsights(analyticsRange),
+    [analyticsRange],
+  );
 
   return (
     <motion.div custom={4} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
       <AnalyticsCard
         icon={<AlertTriangle className="h-4 w-4" />}
-        title="Weekly Alerts"
-        subtitle="Automated insights"
+        title="Key Insights"
+        subtitle={formatInsightsPeriodSubtitle(analyticsRange)}
       >
         <div className="divide-y divide-gray-50 flex-1 overflow-auto">
-          {WEEKLY_ALERTS.map(alert => (
+          {alerts.map(alert => (
             <div
               key={alert.id}
               className="flex flex-col gap-3 p-4 transition-colors hover:bg-gray-50/60"
@@ -2072,9 +2216,12 @@ function WeeklyAnalyticsAlerts() {
 
 // ─── Performance Radar Card ───────────────────────────────────────────────────
 
-function PerformanceRadarCard() {
+function PerformanceRadarCard({ analyticsRange }: { analyticsRange: AnalyticsRangeSelection }) {
   const [selectedUser, setSelectedUser] = useState(ANALYTICS_USERS[0]);
-  const radarData = useMemo(() => generateRadarData(selectedUser), [selectedUser]);
+  const radarData = useMemo(
+    () => buildRadarDataset(selectedUser, analyticsRange),
+    [selectedUser, analyticsRange],
+  );
 
   return (
     <motion.div custom={5} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
@@ -2124,17 +2271,27 @@ function PerformanceRadarCard() {
 
 // ─── Score Distribution Card ──────────────────────────────────────────────────
 
-function MetricsDistributionCard() {
-  const distributionData = useMemo(() => generateDistributionData(), []);
-
+function MetricsDistributionCard({
+  distributionData,
+  distributionDominantEmployeeCount,
+  distributionDominantSharePct,
+  distributionDominantBandLabel,
+  distributionSummaryDominantZone,
+}: {
+  distributionData: { range: string; count: number; fill: string }[];
+  distributionDominantEmployeeCount: number;
+  distributionDominantSharePct: number;
+  distributionDominantBandLabel: string;
+  distributionSummaryDominantZone: HeroEpiZone;
+}) {
   const totalEmployees = distributionData.reduce((sum, d) => sum + d.count, 0);
 
   return (
     <motion.div custom={6} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
       <AnalyticsCard
         icon={<Users className="h-4 w-4" />}
-        title="Score Distribution"
-        subtitle={`${totalEmployees} employees total`}
+        title="EPI score distribution"
+        subtitle={`${totalEmployees} employees · vs Global Average EPI`}
       >
         <div className="p-5 flex flex-col flex-1 gap-4">
           {/* Bar chart */}
@@ -2172,27 +2329,27 @@ function MetricsDistributionCard() {
             </ResponsiveContainer>
           </div>
 
-          {/* Legend */}
-          <div className="grid grid-cols-5 gap-1">
+          {/* Legend — single row on all breakpoints */}
+          <div className="grid grid-cols-4 gap-1">
             {distributionData.map(d => {
-              const pct = Math.round((d.count / totalEmployees) * 100);
+              const pct = totalEmployees > 0 ? Math.round((d.count / totalEmployees) * 100) : 0;
               return (
-                <div key={d.range} className="flex flex-col items-center gap-1">
+                <div key={d.range} className="flex min-w-0 flex-col items-center gap-1">
                   <div className="h-1.5 w-full rounded-full" style={{ background: d.fill }} />
                   <span className="text-[10px] font-bold text-gray-500 tabular-nums">{pct}%</span>
-                  <span className="text-[9px] text-gray-400 font-medium">{d.range}</span>
+                  <span className="text-[8px] sm:text-[9px] text-gray-400 font-medium text-center leading-tight px-0.5 break-words">{d.range}</span>
                 </div>
               );
             })}
           </div>
 
-          {/* Summary */}
-          <div className="rounded-lg border border-emerald-100 bg-emerald-50/50 px-3.5 py-2.5">
-            <p className="text-xs text-gray-600 leading-relaxed">
-              <span className="font-bold text-emerald-700">42% of workforce</span> scores in the{' '}
-              <span className="font-bold text-emerald-700">Excellent (86–95)</span> range — the highest concentration.
-            </p>
-          </div>
+          <HeroZoneDistributionSummaryPanel
+            dominantEmployeeCount={distributionDominantEmployeeCount}
+            dominantSharePct={distributionDominantSharePct}
+            dominantBandLabel={distributionDominantBandLabel}
+            dominantZone={distributionSummaryDominantZone}
+            trailingAfterBand=" category — the highest concentration."
+          />
         </div>
       </AnalyticsCard>
     </motion.div>
@@ -2623,126 +2780,33 @@ const METRIC_SUFFIX: Record<string, string> = {
   'average-order-value': '',
 };
 
-const getMetricAllEmployeeData = (metricId: string) => {
-  const allEmployees = [...TOP_PERFORMERS, ...PRIORITY_REVIEW];
-  return allEmployees.map(emp => {
-    const stats = getPersonalizedStats(emp.name);
-    const val = metricId === 'average-order-value'
-      ? stats.metrics[metricId as keyof typeof stats.metrics] ?? 0
-      : stats.metrics[metricId as keyof typeof stats.metrics] ?? 0;
-    const seed = (emp.name + metricId).split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
-    const weeklyChange = parseFloat(((seed % 80 - 40) / 10).toFixed(1));
-    return {
-      name: emp.name,
-      value: typeof val === 'number' ? val : 0,
-      weeklyChange,
-      role: TOP_PERFORMERS.some(t => t.name === emp.name) ? 'Senior Service Crew' : 'Service Crew',
-    };
-  }).sort((a, b) => b.value - a.value);
-};
-
-const getMetricTrend12W = (metricId: string) => {
-  const base = BRANCH_AVERAGES[metricId as keyof typeof BRANCH_AVERAGES] ?? 85;
-  return EPI_TREND_12W.map((w, i) => {
-    const seed = metricId.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
-    const drift = (i - 6) * 0.3;
-    const noise = Math.sin(seed + i * 2.7) * 2.5;
-    return {
-      week: w.week,
-      value: parseFloat((base + drift + noise).toFixed(1)),
-      target: base,
-    };
-  });
-};
-
-const getMetricDistribution = (metricId: string) => {
-  const employees = getMetricAllEmployeeData(metricId);
-  const isAOV = metricId === 'average-order-value';
-
-  if (isAOV) {
-    const ranges = [
-      { range: '₱0–200', min: 0, max: 200, fill: '#ef4444' },
-      { range: '₱201–300', min: 201, max: 300, fill: '#f59e0b' },
-      { range: '₱301–400', min: 301, max: 400, fill: '#3b82f6' },
-      { range: '₱401–500', min: 401, max: 500, fill: '#10b981' },
-      { range: '₱500+', min: 501, max: 9999, fill: '#059669' },
-    ];
-    return ranges.map(r => ({
-      ...r,
-      count: employees.filter(e => e.value >= r.min && e.value <= r.max).length,
-    }));
-  }
-
-  const ranges = [
-    { range: '0–50%', min: 0, max: 50, fill: '#ef4444' },
-    { range: '51–70%', min: 51, max: 70, fill: '#f59e0b' },
-    { range: '71–85%', min: 71, max: 85, fill: '#3b82f6' },
-    { range: '86–95%', min: 86, max: 95, fill: '#10b981' },
-    { range: '96–100%', min: 96, max: 100, fill: '#059669' },
-  ];
-  return ranges.map(r => ({
-    ...r,
-    count: employees.filter(e => e.value >= r.min && e.value <= r.max).length,
-  }));
-};
-
-const getMetricInsights = (metricId: string) => {
-  const employees = getMetricAllEmployeeData(metricId);
-  const avg = employees.reduce((s, e) => s + e.value, 0) / employees.length;
-  const insights: { type: 'success' | 'warning' | 'info'; title: string; message: string }[] = [];
-
-  const topImprovers = employees.filter(e => e.weeklyChange > 2).sort((a, b) => b.weeklyChange - a.weeklyChange);
-  if (topImprovers.length > 0) {
-    insights.push({
-      type: 'success',
-      title: 'Top Improver',
-      message: `${topImprovers[0].name} improved by +${topImprovers[0].weeklyChange}% this week — highest gain across the team.`,
-    });
-  }
-
-  const declining = employees.filter(e => e.weeklyChange < -2).sort((a, b) => a.weeklyChange - b.weeklyChange);
-  if (declining.length > 0) {
-    insights.push({
-      type: 'warning',
-      title: 'Declining Trend',
-      message: `${declining[0].name} dropped ${declining[0].weeklyChange}% — consider a check-in or coaching session.`,
-    });
-  }
-
-  const belowAvg = employees.filter(e => e.value < avg - 10);
-  if (belowAvg.length > 0) {
-    insights.push({
-      type: 'warning',
-      title: 'Below Threshold',
-      message: `${belowAvg.length} employee${belowAvg.length > 1 ? 's' : ''} score${belowAvg.length === 1 ? 's' : ''} 10+ points below the branch average.`,
-    });
-  }
-
-  const aboveTarget = employees.filter(e => e.value >= 95);
-  insights.push({
-    type: 'info',
-    title: 'Excellence Rate',
-    message: `${aboveTarget.length} of ${employees.length} employees (${Math.round((aboveTarget.length / employees.length) * 100)}%) are scoring 95%+ on this metric.`,
-  });
-
-  const spread = employees[0].value - employees[employees.length - 1].value;
-  insights.push({
-    type: spread > 30 ? 'warning' : 'info',
-    title: 'Score Spread',
-    message: `${spread.toFixed(1)} point gap between top and bottom performer${spread > 30 ? ' — high variance may indicate inconsistent training.' : '.'}`,
-  });
-
-  return insights;
-};
-
-function MetricSummaryCard({ metricId }: { metricId: string }) {
-  const employees = useMemo(() => getMetricAllEmployeeData(metricId), [metricId]);
-  const trendData = useMemo(() => getMetricTrend12W(metricId), [metricId]);
+function MetricSummaryCard({
+  metricId,
+  analyticsRange,
+}: {
+  metricId: string;
+  analyticsRange: AnalyticsRangeSelection;
+}) {
+  const employees = useMemo(
+    () =>
+      getMetricAllEmployeeData(metricId, analyticsRange, INDIVIDUAL_METRICS_ROSTER, getBaseMetricValueForEmployee),
+    [metricId, analyticsRange],
+  );
+  const trendData = useMemo(
+    () =>
+      getMetricTrendForRange(
+        metricId,
+        analyticsRange,
+        BRANCH_AVERAGES[metricId as keyof typeof BRANCH_AVERAGES] ?? 85,
+      ),
+    [metricId, analyticsRange],
+  );
   const avg = employees.reduce((s, e) => s + e.value, 0) / employees.length;
   const isAOV = metricId === 'average-order-value';
   const suffix = METRIC_SUFFIX[metricId] ?? '%';
   const prefix = METRIC_UNITS[metricId] ?? '';
-  const weeklyAvgChange = employees.reduce((s, e) => s + e.weeklyChange, 0) / employees.length;
+  const avgPeriodChange = employees.reduce((s, e) => s + e.periodChange, 0) / employees.length;
+  const summaryTrendFooter = useMemo(() => buildMetricSummaryTrendFooter(analyticsRange), [analyticsRange]);
 
   return (
     <motion.div custom={0} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
@@ -2760,7 +2824,7 @@ function MetricSummaryCard({ metricId }: { metricId: string }) {
 
         <div className="px-5 pt-5 pb-3 flex-shrink-0">
           <p className="text-[10px] font-bold uppercase tracking-widest text-white/55">
-            Branch Average
+            Global Average
           </p>
           <div className="mt-2 flex items-end gap-3">
             <span
@@ -2771,15 +2835,15 @@ function MetricSummaryCard({ metricId }: { metricId: string }) {
             </span>
             <div className="mb-2 flex items-center gap-1.5">
               <span className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ring-inset ${
-                weeklyAvgChange >= 0
+                avgPeriodChange >= 0
                   ? 'bg-emerald-400/20 text-emerald-300 ring-emerald-400/20'
                   : 'bg-red-400/20 text-red-300 ring-red-400/20'
               }`}>
-                {weeklyAvgChange >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                {weeklyAvgChange >= 0 ? '+' : ''}{weeklyAvgChange.toFixed(1)}
+                {avgPeriodChange >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                {avgPeriodChange >= 0 ? '+' : ''}{avgPeriodChange.toFixed(1)}
               </span>
               <span className="text-[10px] font-semibold uppercase tracking-widest text-white/40">
-                avg weekly
+                avg period
               </span>
             </div>
           </div>
@@ -2826,7 +2890,7 @@ function MetricSummaryCard({ metricId }: { metricId: string }) {
             {employees.length} employees
           </span>
           <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">
-            12-week trend
+            {summaryTrendFooter}
           </span>
         </div>
       </div>
@@ -2834,8 +2898,18 @@ function MetricSummaryCard({ metricId }: { metricId: string }) {
   );
 }
 
-function MetricTopBottomCard({ metricId }: { metricId: string }) {
-  const employees = useMemo(() => getMetricAllEmployeeData(metricId), [metricId]);
+function MetricTopBottomCard({
+  metricId,
+  analyticsRange,
+}: {
+  metricId: string;
+  analyticsRange: AnalyticsRangeSelection;
+}) {
+  const employees = useMemo(
+    () =>
+      getMetricAllEmployeeData(metricId, analyticsRange, INDIVIDUAL_METRICS_ROSTER, getBaseMetricValueForEmployee),
+    [metricId, analyticsRange],
+  );
   const isAOV = metricId === 'average-order-value';
   const prefix = METRIC_UNITS[metricId] ?? '';
   const suffix = METRIC_SUFFIX[metricId] ?? '%';
@@ -2913,15 +2987,33 @@ function MetricTopBottomCard({ metricId }: { metricId: string }) {
   );
 }
 
-function MetricBenchmarkCard({ metricId }: { metricId: string }) {
-  const employees = useMemo(() => getMetricAllEmployeeData(metricId), [metricId]);
+function MetricBenchmarkCard({
+  metricId,
+  analyticsRange,
+}: {
+  metricId: string;
+  analyticsRange: AnalyticsRangeSelection;
+}) {
+  const employees = useMemo(
+    () =>
+      getMetricAllEmployeeData(metricId, analyticsRange, INDIVIDUAL_METRICS_ROSTER, getBaseMetricValueForEmployee),
+    [metricId, analyticsRange],
+  );
   const avg = employees.reduce((s, e) => s + e.value, 0) / employees.length;
-  const branchTarget = BRANCH_AVERAGES[metricId as keyof typeof BRANCH_AVERAGES] ?? 85;
+  const globalTarget = useMemo(
+    () =>
+      perturbMetricGlobalTarget(
+        metricId,
+        BRANCH_AVERAGES[metricId as keyof typeof BRANCH_AVERAGES] ?? 85,
+        analyticsRange,
+      ),
+    [metricId, analyticsRange],
+  );
   const isAOV = metricId === 'average-order-value';
   const prefix = METRIC_UNITS[metricId] ?? '';
   const suffix = METRIC_SUFFIX[metricId] ?? '%';
 
-  const aboveTarget = employees.filter(e => e.value >= branchTarget).length;
+  const aboveTarget = employees.filter((e) => e.value >= globalTarget).length;
   const pctAbove = Math.round((aboveTarget / employees.length) * 100);
   const median = employees[Math.floor(employees.length / 2)]?.value ?? 0;
   const stdDev = Math.sqrt(employees.reduce((s, e) => s + Math.pow(e.value - avg, 2), 0) / employees.length);
@@ -2933,7 +3025,7 @@ function MetricBenchmarkCard({ metricId }: { metricId: string }) {
           {/* Key metrics grid */}
           <div className="grid grid-cols-2 gap-3">
             {[
-              { label: 'Target', value: `${prefix}${isAOV ? branchTarget.toFixed(0) : branchTarget.toFixed(1)}${suffix}`, icon: Target, color: 'text-primary-600' },
+              { label: 'Target', value: `${prefix}${isAOV ? globalTarget.toFixed(0) : globalTarget.toFixed(1)}${suffix}`, icon: Target, color: 'text-primary-600' },
               { label: 'Median', value: `${prefix}${isAOV ? median.toFixed(0) : median.toFixed(1)}${suffix}`, icon: Hash, color: 'text-violet-600' },
               { label: 'Std Dev', value: `±${stdDev.toFixed(1)}`, icon: Activity, color: 'text-amber-600' },
               { label: 'Above Target', value: `${pctAbove}%`, icon: Percent, color: 'text-emerald-600' },
@@ -2969,9 +3061,19 @@ function MetricBenchmarkCard({ metricId }: { metricId: string }) {
   );
 }
 
-function MetricEmployeeRankingCard({ metricId }: { metricId: string }) {
+function MetricEmployeeRankingCard({
+  metricId,
+  analyticsRange,
+}: {
+  metricId: string;
+  analyticsRange: AnalyticsRangeSelection;
+}) {
   const [sortBy, setSortBy] = useState<'rank' | 'change'>('rank');
-  const employees = useMemo(() => getMetricAllEmployeeData(metricId), [metricId]);
+  const employees = useMemo(
+    () =>
+      getMetricAllEmployeeData(metricId, analyticsRange, INDIVIDUAL_METRICS_ROSTER, getBaseMetricValueForEmployee),
+    [metricId, analyticsRange],
+  );
   const isAOV = metricId === 'average-order-value';
   const prefix = METRIC_UNITS[metricId] ?? '';
   const suffix = METRIC_SUFFIX[metricId] ?? '%';
@@ -2980,7 +3082,7 @@ function MetricEmployeeRankingCard({ metricId }: { metricId: string }) {
 
   const sorted = useMemo(() => {
     if (sortBy === 'change') {
-      return [...employees].sort((a, b) => b.weeklyChange - a.weeklyChange);
+      return [...employees].sort((a, b) => b.periodChange - a.periodChange);
     }
     return employees;
   }, [employees, sortBy]);
@@ -2990,7 +3092,7 @@ function MetricEmployeeRankingCard({ metricId }: { metricId: string }) {
       <AnalyticsCard
         icon={<BarChart2 className="h-4 w-4" />}
         title="Employee Rankings"
-        subtitle={`All employees sorted by ${sortBy === 'rank' ? 'score' : 'weekly change'}`}
+        subtitle={`All employees sorted by ${sortBy === 'rank' ? 'score' : 'period change (mock)'}`}
         headerRight={
           <div className="hidden sm:flex items-center gap-0 rounded-lg bg-gray-100 p-0.5">
             {(['rank', 'change'] as const).map((tab) => (
@@ -3042,7 +3144,7 @@ function MetricEmployeeRankingCard({ metricId }: { metricId: string }) {
             <div className="col-span-1 text-center">#</div>
             <div className="col-span-3">Employee</div>
             <div className="col-span-5">Score</div>
-            <div className="col-span-3 text-right">Change</div>
+            <div className="col-span-3 text-right">Period Δ</div>
           </div>
 
           {/* Employee rows */}
@@ -3106,23 +3208,23 @@ function MetricEmployeeRankingCard({ metricId }: { metricId: string }) {
                       </span>
                     </div>
 
-                    {/* Weekly change */}
+                    {/* Period change (mock; range-stable) */}
                     <div className="col-span-3 flex items-center justify-end">
                       <span className={`flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ring-inset ${
-                        emp.weeklyChange > 0
+                        emp.periodChange > 0
                           ? 'bg-emerald-50 text-emerald-600 ring-emerald-100'
-                          : emp.weeklyChange < 0
+                          : emp.periodChange < 0
                             ? 'bg-red-50 text-red-500 ring-red-100'
                             : 'bg-gray-50 text-gray-500 ring-gray-100'
                       }`}>
-                        {emp.weeklyChange > 0 ? (
+                        {emp.periodChange > 0 ? (
                           <ArrowUpRight className="h-3 w-3" />
-                        ) : emp.weeklyChange < 0 ? (
+                        ) : emp.periodChange < 0 ? (
                           <ArrowDownRight className="h-3 w-3" />
                         ) : (
                           <Minus className="h-3 w-3" />
                         )}
-                        {emp.weeklyChange > 0 ? '+' : ''}{emp.weeklyChange}
+                        {emp.periodChange > 0 ? '+' : ''}{emp.periodChange}
                       </span>
                     </div>
                   </div>
@@ -3143,20 +3245,20 @@ function MetricEmployeeRankingCard({ metricId }: { metricId: string }) {
                         <p className="text-[10px] text-gray-400">{emp.role}</p>
                       </div>
                       <span className={`flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ring-inset flex-shrink-0 ${
-                        emp.weeklyChange > 0
+                        emp.periodChange > 0
                           ? 'bg-emerald-50 text-emerald-600 ring-emerald-100'
-                          : emp.weeklyChange < 0
+                          : emp.periodChange < 0
                             ? 'bg-red-50 text-red-500 ring-red-100'
                             : 'bg-gray-50 text-gray-500 ring-gray-100'
                       }`}>
-                        {emp.weeklyChange > 0 ? (
+                        {emp.periodChange > 0 ? (
                           <ArrowUpRight className="h-3 w-3" />
-                        ) : emp.weeklyChange < 0 ? (
+                        ) : emp.periodChange < 0 ? (
                           <ArrowDownRight className="h-3 w-3" />
                         ) : (
                           <Minus className="h-3 w-3" />
                         )}
-                        {emp.weeklyChange > 0 ? '+' : ''}{emp.weeklyChange}
+                        {emp.periodChange > 0 ? '+' : ''}{emp.periodChange}
                       </span>
                     </div>
 
@@ -3201,7 +3303,7 @@ function MetricEmployeeRankingCard({ metricId }: { metricId: string }) {
               </div>
               <div className="flex items-center gap-1.5">
                 <div className="h-px w-3 bg-gray-400/50" />
-                <span className="text-[10px] font-semibold text-gray-400">Branch avg</span>
+                <span className="text-[10px] font-semibold text-gray-400">Global avg</span>
               </div>
             </div>
             <span className="text-[10px] font-bold text-gray-400">
@@ -3214,15 +3316,25 @@ function MetricEmployeeRankingCard({ metricId }: { metricId: string }) {
   );
 }
 
-function MetricInsightsCard({ metricId }: { metricId: string }) {
-  const insights = useMemo(() => getMetricInsights(metricId), [metricId]);
+function MetricInsightsCard({
+  metricId,
+  analyticsRange,
+}: {
+  metricId: string;
+  analyticsRange: AnalyticsRangeSelection;
+}) {
+  const insights = useMemo(
+    () =>
+      getMetricInsights(metricId, analyticsRange, INDIVIDUAL_METRICS_ROSTER, getBaseMetricValueForEmployee),
+    [metricId, analyticsRange],
+  );
 
   return (
     <motion.div custom={4} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
       <AnalyticsCard
         icon={<Eye className="h-4 w-4" />}
-        title="Metric Insights"
-        subtitle="Automated observations"
+        title="Key Insights"
+        subtitle={formatInsightsPeriodSubtitle(analyticsRange)}
       >
         <div className="divide-y divide-gray-50 flex-1 overflow-auto">
           {insights.map((insight, idx) => (
@@ -3265,22 +3377,38 @@ function MetricInsightsCard({ metricId }: { metricId: string }) {
   );
 }
 
-function MetricDistributionCard({ metricId }: { metricId: string }) {
-  const distributionData = useMemo(() => getMetricDistribution(metricId), [metricId]);
-  const totalEmployees = distributionData.reduce((sum, d) => sum + d.count, 0);
-  const peakBucket = distributionData.reduce((max, d) => d.count > max.count ? d : max, distributionData[0]);
+function MetricDistributionCard({
+  metricId,
+  analyticsRange,
+}: {
+  metricId: string;
+  analyticsRange: AnalyticsRangeSelection;
+}) {
+  const metricDistribution = useMemo(
+    () =>
+      getMetricHeroVsGlobalDistribution(
+        metricId,
+        analyticsRange,
+        INDIVIDUAL_METRICS_ROSTER,
+        getBaseMetricValueForEmployee,
+        BRANCH_AVERAGES[metricId as keyof typeof BRANCH_AVERAGES] ?? 85,
+      ),
+    [metricId, analyticsRange],
+  );
+  const { bins: distributionData, totalEmployees, dominantZone, dominantEmployeeCount, dominantSharePct, dominantBandLabel } =
+    metricDistribution;
 
   return (
-    <motion.div custom={5} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
+    <motion.div custom={5} variants={cardVariants} initial="hidden" animate="visible" className="h-full min-w-0 w-full">
       <AnalyticsCard
         icon={<Users className="h-4 w-4" />}
-        title="Score Distribution"
-        subtitle={`${totalEmployees} employees`}
+        title="Score distribution"
+        subtitle={`${totalEmployees} employees · vs Global Avg ${METRIC_LABELS[metricId] ?? ''}`}
       >
-        <div className="p-5 flex flex-col flex-1 gap-4">
-          <div className="h-[200px] w-full">
+        <div className="flex flex-col flex-1 gap-4 px-3 py-4 sm:p-5">
+          <div className="h-[200px] w-full min-w-0">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={distributionData} margin={{ top: 4, right: 0, left: -24, bottom: 0 }}>
+              <BarChart data={distributionData} margin={{ top: 4, right: 0, left: -12, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
                 <XAxis
                   dataKey="range"
@@ -3312,68 +3440,83 @@ function MetricDistributionCard({ metricId }: { metricId: string }) {
             </ResponsiveContainer>
           </div>
 
-          <div className="grid grid-cols-5 gap-1">
+          <div className="grid grid-cols-4 gap-1">
             {distributionData.map(d => {
               const pct = totalEmployees > 0 ? Math.round((d.count / totalEmployees) * 100) : 0;
               return (
-                <div key={d.range} className="flex flex-col items-center gap-1">
+                <div key={d.range} className="flex min-w-0 flex-col items-center gap-1">
                   <div className="h-1.5 w-full rounded-full" style={{ background: d.fill }} />
                   <span className="text-[10px] font-bold text-gray-500 tabular-nums">{pct}%</span>
-                  <span className="text-[9px] text-gray-400 font-medium">{d.range}</span>
+                  <span className="text-[8px] sm:text-[9px] text-gray-400 font-medium text-center leading-tight px-0.5 break-words">{d.range}</span>
                 </div>
               );
             })}
           </div>
 
-          <div className="rounded-lg border border-emerald-100 bg-emerald-50/50 px-3.5 py-2.5">
-            <p className="text-xs text-gray-600 leading-relaxed">
-              <span className="font-bold text-emerald-700">
-                {peakBucket.count} employees ({totalEmployees > 0 ? Math.round((peakBucket.count / totalEmployees) * 100) : 0}%)
-              </span>{' '}
-              fall in the <span className="font-bold text-emerald-700">{peakBucket.range}</span> range — the highest concentration.
-            </p>
-          </div>
+          <HeroZoneDistributionSummaryPanel
+            dominantEmployeeCount={dominantEmployeeCount}
+            dominantSharePct={dominantSharePct}
+            dominantBandLabel={dominantBandLabel}
+            dominantZone={dominantZone}
+            trailingAfterBand=" category — the highest concentration."
+          />
         </div>
       </AnalyticsCard>
     </motion.div>
   );
 }
 
-function MetricTrendCard({ metricId }: { metricId: string }) {
-  const trendData = useMemo(() => getMetricTrend12W(metricId), [metricId]);
+function MetricTrendCard({
+  metricId,
+  analyticsRange,
+}: {
+  metricId: string;
+  analyticsRange: AnalyticsRangeSelection;
+}) {
+  const trendData = useMemo(
+    () =>
+      getMetricTrendForRange(
+        metricId,
+        analyticsRange,
+        BRANCH_AVERAGES[metricId as keyof typeof BRANCH_AVERAGES] ?? 85,
+      ),
+    [metricId, analyticsRange],
+  );
+  const trendTitle = useMemo(() => buildMetricTrendCardTitle(analyticsRange), [analyticsRange]);
+  const trendSubtitle = buildMetricTrendCardSubtitle();
   const isAOV = metricId === 'average-order-value';
   const prefix = METRIC_UNITS[metricId] ?? '';
   const suffix = METRIC_SUFFIX[metricId] ?? '%';
-  const target = BRANCH_AVERAGES[metricId as keyof typeof BRANCH_AVERAGES] ?? 85;
+  const targetDisplay = trendData[0]?.target ?? 0;
 
   return (
-    <motion.div custom={6} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
+    <motion.div custom={6} variants={cardVariants} initial="hidden" animate="visible" className="h-full min-w-0 w-full">
       <AnalyticsCard
         icon={<Activity className="h-4 w-4" />}
-        title="12-Week Trend"
-        subtitle="Branch-wide metric performance over time"
+        title={trendTitle}
+        subtitle={trendSubtitle}
       >
-        <div className="flex items-center gap-3 px-4 sm:px-5 pt-3 pb-2 border-b border-gray-50">
+        <div className="flex items-center gap-3 px-3 sm:px-5 pt-3 pb-2 border-b border-gray-50">
           <div className="flex flex-wrap gap-1.5">
             <div
               className="flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-200"
               style={{ borderLeft: '3px solid #2563eb' }}
             >
-              Branch Average
+              Global Average
             </div>
             <div
               className="flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-gray-400 shadow-sm ring-1 ring-inset ring-gray-200"
               style={{ borderLeft: '3px solid #d1d5db' }}
             >
-              Target ({prefix}{isAOV ? target.toFixed(0) : target.toFixed(1)}{suffix})
+              Target ({prefix}{isAOV ? targetDisplay.toFixed(0) : targetDisplay.toFixed(1)}{suffix})
             </div>
           </div>
         </div>
 
-        <div className="p-3 sm:p-5 flex-1">
-          <div className="h-[240px] sm:h-[280px] w-full">
+        <div className="px-2 pb-3 pt-2 sm:p-5 flex-1">
+          <div className="h-[240px] sm:h-[280px] w-full min-w-0">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={trendData} margin={{ top: 8, right: 4, left: -24, bottom: 0 }}>
+              <AreaChart data={trendData} margin={{ top: 8, right: 2, left: -12, bottom: 0 }}>
                 <defs>
                   <linearGradient id="grad-metric-trend" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#2563eb" stopOpacity={0.18} />
@@ -3640,9 +3783,15 @@ function MetricSelect({
 
 // ─── Individual Metrics View Container ──────────────────────────────────────
 
-function MetricsViewContent({ periodLabel }: { periodLabel: string }) {
+function MetricsViewContent({
+  periodLabel,
+  analyticsRange,
+}: {
+  periodLabel: string;
+  analyticsRange: AnalyticsRangeSelection;
+}) {
   const [selectedMetric, setSelectedMetric] = useState(METRICS[0].id);
-  const { stickyRef: metricsHeaderRef, isStuck: isMetricsHeaderStuck } = useStickyHeaderState();
+  const { stickyRef: metricsHeaderRef, isStuck: isMetricsHeaderStuck } = useStickyHeaderState(analyticsRange);
 
   return (
     <div className="space-y-6">
@@ -3687,35 +3836,35 @@ function MetricsViewContent({ periodLabel }: { periodLabel: string }) {
       </div>
 
       {/* Row 1: Summary + Top/Bottom + Benchmarks */}
-      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+      <div className="grid w-full min-w-0 gap-4 grid-cols-2 lg:grid-cols-4">
         <div className="col-span-2 sm:col-span-1">
-          <MetricSummaryCard metricId={selectedMetric} />
+          <MetricSummaryCard metricId={selectedMetric} analyticsRange={analyticsRange} />
         </div>
         <div className="col-span-2 sm:col-span-1">
-          <MetricBenchmarkCard metricId={selectedMetric} />
+          <MetricBenchmarkCard metricId={selectedMetric} analyticsRange={analyticsRange} />
         </div>
         <div className="col-span-2">
-          <MetricTopBottomCard metricId={selectedMetric} />
+          <MetricTopBottomCard metricId={selectedMetric} analyticsRange={analyticsRange} />
         </div>
       </div>
 
       {/* Row 2: Rankings + Insights */}
-      <div className="grid gap-4 lg:grid-cols-10">
+      <div className="grid w-full min-w-0 gap-4 lg:grid-cols-10">
         <div className="lg:col-span-7 min-w-0">
-          <MetricEmployeeRankingCard metricId={selectedMetric} />
+          <MetricEmployeeRankingCard metricId={selectedMetric} analyticsRange={analyticsRange} />
         </div>
         <div className="lg:col-span-3">
-          <MetricInsightsCard metricId={selectedMetric} />
+          <MetricInsightsCard metricId={selectedMetric} analyticsRange={analyticsRange} />
         </div>
       </div>
 
-      {/* Row 3: Trend + Distribution */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <MetricTrendCard metricId={selectedMetric} />
+      {/* Row 3: Trend + Distribution — same horizontal width as other metric rows on mobile */}
+      <div className="grid w-full min-w-0 gap-4 lg:grid-cols-3">
+        <div className="min-w-0 w-full lg:col-span-2">
+          <MetricTrendCard metricId={selectedMetric} analyticsRange={analyticsRange} />
         </div>
-        <div className="lg:col-span-1">
-          <MetricDistributionCard metricId={selectedMetric} />
+        <div className="min-w-0 w-full lg:col-span-1">
+          <MetricDistributionCard metricId={selectedMetric} analyticsRange={analyticsRange} />
         </div>
       </div>
     </div>
@@ -3748,6 +3897,35 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
     () => getSummaryForSelection(analyticsRange),
     [analyticsRange],
   );
+
+  const generalViewMock = useMemo(
+    () =>
+      buildGeneralViewMockData(analyticsRange, {
+        topPerformers: TOP_PERFORMERS,
+        priorityReview: PRIORITY_REVIEW,
+      }),
+    [analyticsRange],
+  );
+
+  const personalEpiSeries = useMemo(() => {
+    if (!selectedUser || !stats) return null;
+    return buildPersonalEpiSeries(selectedUser.name, analyticsRange, stats.epi, generalViewMock.globalEpiTrend);
+  }, [selectedUser, stats, analyticsRange, generalViewMock]);
+
+  const personalRecognition = useMemo(() => {
+    if (!selectedUser || !stats) return null;
+    return buildPersonalRecognitionValues(selectedUser.name, analyticsRange, stats.awards, stats.violations);
+  }, [selectedUser, stats, analyticsRange]);
+
+  const personalRankInfo = useMemo(() => {
+    if (!selectedUser) return null;
+    const merged = [...generalViewMock.leaderboardTop, ...generalViewMock.leaderboardBottom].sort(
+      (a, b) => b.epi - a.epi,
+    );
+    const idx = merged.findIndex((r) => r.name === selectedUser.name);
+    const rank = idx === -1 ? merged.length : idx + 1;
+    return { rank, total: merged.length };
+  }, [selectedUser, generalViewMock]);
 
   if (isLoading) {
     return <EmployeeAnalyticsSkeleton />;
@@ -3802,35 +3980,57 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
               <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
                 {/* EPI: full-width on mobile, 1 col on lg */}
                 <div className="col-span-2 sm:col-span-1">
-                  <GlobalEpiCard />
+                  <GlobalEpiCard
+                    globalEpi={generalViewMock.globalEpi}
+                    globalEpiDelta={generalViewMock.globalEpiDelta}
+                    globalEpiTrend={generalViewMock.globalEpiTrend}
+                    comparisonCaption={generalViewMock.comparisonCaption}
+                    trendFooter={generalViewMock.trendFooter}
+                  />
                 </div>
                 {/* Recognition: full-width on mobile, 1 col on lg */}
                 <div className="col-span-2 sm:col-span-1">
-                  <AwardsViolationsCard />
+                  <AwardsViolationsCard
+                    recognitionSubtitle={generalViewMock.recognitionSubtitle}
+                    awards={generalViewMock.awards}
+                    violations={generalViewMock.violations}
+                  />
                 </div>
                 {/* Leaderboard: always full-width on mobile, 2 cols on lg */}
                 <div className="col-span-2">
-                  <LeaderboardCard />
+                  <LeaderboardCard
+                    topPerformers={generalViewMock.leaderboardTop}
+                    priorityReview={generalViewMock.leaderboardBottom}
+                  />
                 </div>
               </div>
 
               {/* Trend + Alerts row */}
               <div className="grid gap-4 lg:grid-cols-10">
                 <div className="lg:col-span-7 min-w-0">
-                  <TrendAnalyticsCard />
+                  <TrendAnalyticsCard
+                    analyticsRange={analyticsRange}
+                    comparisonSubtitle={generalViewMock.trendComparisonSubtitle}
+                  />
                 </div>
                 <div className="lg:col-span-3">
-                  <WeeklyAnalyticsAlerts />
+                  <GeneralKeyInsightsCard analyticsRange={analyticsRange} />
                 </div>
               </div>
 
               {/* Radar + Distribution row */}
               <div className="grid gap-4 lg:grid-cols-3">
                 <div className="lg:col-span-1">
-                  <PerformanceRadarCard />
+                  <PerformanceRadarCard analyticsRange={analyticsRange} />
                 </div>
                 <div className="lg:col-span-2">
-                  <MetricsDistributionCard />
+                  <MetricsDistributionCard
+                    distributionData={generalViewMock.distribution}
+                    distributionDominantEmployeeCount={generalViewMock.distributionDominantEmployeeCount}
+                    distributionDominantSharePct={generalViewMock.distributionDominantSharePct}
+                    distributionDominantBandLabel={generalViewMock.distributionDominantBandLabel}
+                    distributionSummaryDominantZone={generalViewMock.distributionSummaryDominantZone}
+                  />
                 </div>
               </div>
             </div>
@@ -3893,47 +4093,70 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
                     Select an employee above to view their detailed performance analytics.
                   </p>
                 </motion.div>
-              ) : stats && (
+              ) : stats &&
+                personalEpiSeries &&
+                personalRecognition &&
+                personalRankInfo ? (
                 <div className="space-y-6">
-                  {/* Row 1: EPI + Recognition + Ranking (mirrors General View top row) */}
+                  {/* Row 1: EPI + Global Ranking + Recognition */}
                   <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
                     <div className="col-span-2 sm:col-span-1">
-                      <PersonalEpiCard stats={stats} />
-                    </div>
-                    <div className="col-span-2 sm:col-span-1">
-                      <PersonalRecognitionCard stats={stats} />
+                      <PersonalEpiCard
+                        displayEpi={personalEpiSeries.displayEpi}
+                        epiDelta={personalEpiSeries.epiDelta}
+                        comparisonCaption={personalEpiSeries.comparisonCaption}
+                        trendFooter={personalEpiSeries.trendFooter}
+                        globalAvgDisplay={personalEpiSeries.globalAvgDisplay}
+                        chartData={personalEpiSeries.chartData}
+                      />
                     </div>
                     <div className="col-span-2">
-                      <PersonalRankingCard stats={stats} />
+                      <PersonalRankingCard
+                        rank={personalRankInfo.rank}
+                        totalPeers={personalRankInfo.total}
+                        displayEpi={personalEpiSeries.displayEpi}
+                        globalEpi={generalViewMock.globalEpi}
+                      />
+                    </div>
+                    <div className="col-span-2 sm:col-span-1">
+                      <PersonalRecognitionCard
+                        recognitionSubtitle={generalViewMock.recognitionSubtitle}
+                        awards={personalRecognition.awards}
+                        violations={personalRecognition.violations}
+                      />
                     </div>
                   </div>
 
                   {/* Row 2: Trend + Insights (mirrors General View trend + alerts) */}
                   <div className="grid gap-4 lg:grid-cols-10">
                     <div className="lg:col-span-7 min-w-0">
-                      <PersonalTrendCard userName={selectedUser.name} stats={stats} />
+                      <PersonalTrendCard userName={selectedUser.name} analyticsRange={analyticsRange} />
                     </div>
                     <div className="lg:col-span-3">
-                      <PersonalInsightsCard />
+                      <PersonalInsightsCard analyticsRange={analyticsRange} />
                     </div>
                   </div>
 
                   {/* Row 3: Radar + Metrics Breakdown (mirrors General View radar + distribution) */}
                   <div className="grid gap-4 lg:grid-cols-3">
                     <div className="lg:col-span-1">
-                      <PersonalRadarCard userName={selectedUser.name} />
+                      <PersonalRadarCard userName={selectedUser.name} analyticsRange={analyticsRange} />
                     </div>
                     <div className="lg:col-span-2">
-                      <PersonalMetricsBreakdownCard stats={stats} />
+                      <PersonalMetricsBreakdownCard
+                        stats={stats}
+                        analyticsRange={analyticsRange}
+                        userName={selectedUser.name}
+                      />
                     </div>
                   </div>
                 </div>
-              )}
+              ) : null}
             </div>
           )}
 
           {activeView === 'metrics' && (
-            <MetricsViewContent periodLabel={analyticsPeriodLabel} />
+            <MetricsViewContent periodLabel={analyticsPeriodLabel} analyticsRange={analyticsRange} />
           )}
         </motion.div>
       </AnimatePresence>
