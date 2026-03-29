@@ -3,6 +3,7 @@ import { logger } from '../utils/logger.js';
 import { calculateKpiScores, type KpiBreakdown, type UserKpiData } from './epiCalculation.service.js';
 import { generateEpiReportPdf, generateManagerSummaryPdf, type EpiReportData } from './epiReport.service.js';
 import { sendWeeklyEpiEmail, sendManagerEpiSummaryEmail } from './mail.service.js';
+import { runDailyEmployeeRollingMetricSnapshot } from './employeeAnalyticsSnapshot.service.js';
 
 const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
 const THIRTY_DAY_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
@@ -11,8 +12,10 @@ const STALE_RUN_THRESHOLD_MS = 6 * 60 * 60 * 1000;
 
 const WEEKLY_EPI_JOB_NAME = 'epi-weekly-snapshot';
 const MONTHLY_EPI_JOB_NAME = 'epi-monthly-snapshot';
+const EMPLOYEE_METRIC_DAILY_JOB_NAME = 'employee-metric-daily-snapshot';
 const WEEKLY_EPI_CRON = '0 17 * * 0';
 const MONTHLY_EPI_CRON = '0 4 1 * *';
+const EMPLOYEE_METRIC_DAILY_CRON = '30 3 * * *';
 
 interface EpiHistoryEntry {
   type: 'weekly' | 'monthly';
@@ -143,6 +146,13 @@ const scheduledJobs: ScheduledSnapshotJob[] = [
     handle: null,
     runner: ({ scheduledFor }) => runMonthlyEpiSnapshot({ scheduledFor }),
   },
+  {
+    name: EMPLOYEE_METRIC_DAILY_JOB_NAME,
+    expression: EMPLOYEE_METRIC_DAILY_CRON,
+    schedule: parseCronExpression(EMPLOYEE_METRIC_DAILY_CRON),
+    handle: null,
+    runner: ({ scheduledFor }) => runDailyEmployeeRollingMetricSnapshot({ scheduledFor }),
+  },
 ];
 
 let initialized = false;
@@ -181,6 +191,12 @@ function getPreviousMonthDateString(date: Date): string {
   const previousYear = parts.month === 1 ? parts.year - 1 : parts.year;
   const previousMonthLastDay = new Date(Date.UTC(previousYear, previousMonth, 0)).getUTCDate();
   return `${previousYear}-${String(previousMonth).padStart(2, '0')}-${String(previousMonthLastDay).padStart(2, '0')}`;
+}
+
+function getPreviousManilaDateString(date: Date): string {
+  const shifted = new Date(date.getTime() + MANILA_OFFSET_MS);
+  shifted.setUTCDate(shifted.getUTCDate() - 1);
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}-${String(shifted.getUTCDate()).padStart(2, '0')}`;
 }
 
 function parseCronField(field: string, label: string, min: number, max: number): number | null {
@@ -349,18 +365,27 @@ async function claimScheduledJobRun(jobName: string, scheduledFor: Date): Promis
 }
 
 function getExpectedSnapshotDate(job: ScheduledSnapshotJob, scheduledFor: Date): string {
-  return job.name === WEEKLY_EPI_JOB_NAME
-    ? formatManilaDate(scheduledFor)
-    : getPreviousMonthDateString(scheduledFor);
-}
-
-function getExpectedSnapshotType(job: ScheduledSnapshotJob): EpiHistoryEntry['type'] {
-  return job.name === WEEKLY_EPI_JOB_NAME ? 'weekly' : 'monthly';
+  if (job.name === WEEKLY_EPI_JOB_NAME) {
+    return formatManilaDate(scheduledFor);
+  }
+  if (job.name === MONTHLY_EPI_JOB_NAME) {
+    return getPreviousMonthDateString(scheduledFor);
+  }
+  return getPreviousManilaDateString(scheduledFor);
 }
 
 async function hasExistingSnapshotHistory(job: ScheduledSnapshotJob, scheduledFor: Date): Promise<boolean> {
+  if (job.name === EMPLOYEE_METRIC_DAILY_JOB_NAME) {
+    const masterDb = db.getDb();
+    const snapshotDate = getExpectedSnapshotDate(job, scheduledFor);
+    const row = await masterDb('employee_metric_daily_snapshots')
+      .where({ snapshot_date: snapshotDate })
+      .first('id');
+    return Boolean(row);
+  }
+
   const masterDb = db.getDb();
-  const snapshotType = getExpectedSnapshotType(job);
+  const snapshotType: EpiHistoryEntry['type'] = job.name === WEEKLY_EPI_JOB_NAME ? 'weekly' : 'monthly';
   const snapshotDate = getExpectedSnapshotDate(job, scheduledFor);
   const jsonPath = `$[*] ? (@.type == "${snapshotType}" && @.date == "${snapshotDate}")`;
 

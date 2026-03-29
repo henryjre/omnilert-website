@@ -35,6 +35,8 @@ const MONTH_NAMES = [
 ] as const;
 
 const YEAR_GRID_SPAN = 9;
+const MIN_ANALYTICS_DATE_YMD = "2026-03-29";
+const MIN_ANALYTICS_DATE = fromLocalYmd(MIN_ANALYTICS_DATE_YMD);
 
 /* ─── Helpers ─────────────────────────────────────────────────────────── */
 
@@ -45,6 +47,26 @@ function mondayLeadingEmptyCells(year: number, month: number): number {
 
 function rangeSelectionsEqual(a: AnalyticsRangeSelection, b: AnalyticsRangeSelection): boolean {
   return a.granularity === b.granularity && a.rangeStartYmd === b.rangeStartYmd && a.rangeEndYmd === b.rangeEndYmd;
+}
+
+function isBeforeMinAnalyticsDate(ymd: string): boolean {
+  return compareYmd(ymd, MIN_ANALYTICS_DATE_YMD) < 0;
+}
+
+function clampSelectionToMinAnalyticsDate(selection: AnalyticsRangeSelection): AnalyticsRangeSelection {
+  const normalized = normalizeRangeYmd(selection.rangeStartYmd, selection.rangeEndYmd);
+  const clampedStart = isBeforeMinAnalyticsDate(normalized.rangeStartYmd)
+    ? MIN_ANALYTICS_DATE_YMD
+    : normalized.rangeStartYmd;
+  const clampedEnd = isBeforeMinAnalyticsDate(normalized.rangeEndYmd)
+    ? MIN_ANALYTICS_DATE_YMD
+    : normalized.rangeEndYmd;
+  const { rangeStartYmd, rangeEndYmd } = normalizeRangeYmd(clampedStart, clampedEnd);
+  return {
+    granularity: selection.granularity,
+    rangeStartYmd,
+    rangeEndYmd,
+  };
 }
 
 /** Build cells for a month: null = empty leading/trailing slot, number = day. */
@@ -112,21 +134,22 @@ export function AnalyticsRangePicker({ value, onChange, className = "" }: Analyt
   const drawerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelId = useId();
+  const clampedValue = useMemo(() => clampSelectionToMinAnalyticsDate(value), [value]);
 
   // Snapshot the value when the picker opens — used by Discard
-  const [initialValue, setInitialValue] = useState(value);
-  const [draft, setDraft] = useState(value);
+  const [initialValue, setInitialValue] = useState(clampedValue);
+  const [draft, setDraft] = useState(clampedValue);
 
-  const summary = useMemo(() => formatAnalyticsRangeSummary(value), [value]);
+  const summary = useMemo(() => formatAnalyticsRangeSummary(clampedValue), [clampedValue]);
 
   const openPicker = useCallback(() => {
-    setInitialValue(value);
-    setDraft(value);
+    setInitialValue(clampedValue);
+    setDraft(clampedValue);
     setOpen(true);
-  }, [value]);
+  }, [clampedValue]);
 
   const handleApply = useCallback(() => {
-    onChange(draft);
+    onChange(clampSelectionToMinAnalyticsDate(draft));
     setOpen(false);
   }, [draft, onChange]);
 
@@ -142,12 +165,19 @@ export function AnalyticsRangePicker({ value, onChange, className = "" }: Analyt
   const setGranularity = useCallback(
     (g: AnalyticsGranularity) => {
       if (g === draft.granularity) return;
-      setDraft(createDefaultRangeForGranularity(g));
+      setDraft(clampSelectionToMinAnalyticsDate(createDefaultRangeForGranularity(g)));
     },
     [draft.granularity],
   );
 
   const isDirty = !rangeSelectionsEqual(draft, initialValue);
+
+  useEffect(() => {
+    if (rangeSelectionsEqual(value, clampedValue)) {
+      return;
+    }
+    onChange(clampedValue);
+  }, [clampedValue, onChange, value]);
 
   // Desktop: close on outside click / Escape
   useEffect(() => {
@@ -465,12 +495,16 @@ function NavHeader({
   onNext,
   prevLabel,
   nextLabel,
+  disablePrev = false,
+  disableNext = false,
 }: {
   label: string;
   onPrev: () => void;
   onNext: () => void;
   prevLabel: string;
   nextLabel: string;
+  disablePrev?: boolean;
+  disableNext?: boolean;
 }) {
   return (
     <div className="mb-3 flex items-center justify-between">
@@ -478,7 +512,12 @@ function NavHeader({
         type="button"
         whileTap={{ scale: 0.9 }}
         onClick={onPrev}
-        className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
+        disabled={disablePrev}
+        className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
+          disablePrev
+            ? "cursor-not-allowed text-gray-300"
+            : "text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+        }`}
         aria-label={prevLabel}
       >
         <ChevronLeft className="h-4 w-4" />
@@ -488,7 +527,12 @@ function NavHeader({
         type="button"
         whileTap={{ scale: 0.9 }}
         onClick={onNext}
-        className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
+        disabled={disableNext}
+        className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
+          disableNext
+            ? "cursor-not-allowed text-gray-300"
+            : "text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+        }`}
         aria-label={nextLabel}
       >
         <ChevronRight className="h-4 w-4" />
@@ -525,6 +569,9 @@ function DayGrid({
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
   const [picking, setPicking] = useState<"start" | "end">("start");
+  const minYear = MIN_ANALYTICS_DATE.getFullYear();
+  const minMonth = MIN_ANALYTICS_DATE.getMonth();
+  const canGoPrevMonth = viewYear > minYear || (viewYear === minYear && viewMonth > minMonth);
 
   const dateFrom = draft.rangeStartYmd;
   const dateTo = draft.rangeEndYmd;
@@ -565,6 +612,7 @@ function DayGrid({
         onNext={nextMonth}
         prevLabel="Previous month"
         nextLabel="Next month"
+        disablePrev={!canGoPrevMonth}
       />
 
       <AnimatePresence mode="wait" initial={false}>
@@ -581,6 +629,7 @@ function DayGrid({
               if (day === null) return <div key={`e-${idx}`} className="h-9" />;
 
               const ymd = toLocalYmd(new Date(viewYear, viewMonth, day));
+              const isDisabled = isBeforeMinAnalyticsDate(ymd);
               const isToday = ymd === todayYmd;
               const isStart = ymd === dateFrom;
               const isEnd = ymd === dateTo;
@@ -607,12 +656,18 @@ function DayGrid({
                   <motion.button
                     type="button"
                     whileTap={{ scale: 0.88 }}
-                    onClick={() => handleDayClick(ymd)}
+                    onClick={() => {
+                      if (isDisabled) return;
+                      handleDayClick(ymd);
+                    }}
+                    disabled={isDisabled}
                     className={`relative z-10 m-auto flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold transition-colors ${
                       isEdge
                         ? "bg-primary-600 text-white shadow-sm"
                         : inRange
                           ? "text-primary-800 hover:bg-primary-100"
+                          : isDisabled
+                            ? "cursor-not-allowed text-gray-300"
                           : isToday
                             ? "font-bold text-primary-600 ring-1 ring-inset ring-primary-300"
                             : "text-gray-700 hover:bg-gray-100"
@@ -649,6 +704,9 @@ function WeekGrid({
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
   const [anchor, setAnchor] = useState<string | null>(null);
+  const minYear = MIN_ANALYTICS_DATE.getFullYear();
+  const minMonth = MIN_ANALYTICS_DATE.getMonth();
+  const canGoPrevMonth = viewYear > minYear || (viewYear === minYear && viewMonth > minMonth);
 
   const prevMonth = useCallback(() => {
     if (viewMonth === 0) { setViewMonth(11); setViewYear((y) => y - 1); }
@@ -693,6 +751,7 @@ function WeekGrid({
         onNext={nextMonth}
         prevLabel="Previous month"
         nextLabel="Next month"
+        disablePrev={!canGoPrevMonth}
       />
 
       <AnimatePresence mode="wait" initial={false}>
@@ -705,6 +764,7 @@ function WeekGrid({
         >
           <div className="grid grid-cols-2 gap-2">
             {weeks.map((w) => {
+              const isDisabled = isBeforeMinAnalyticsDate(w.sundayYmd);
               const overlaps = !(compareYmd(w.sundayYmd, startY) < 0 || compareYmd(w.mondayYmd, endY) > 0);
               const isEdge = overlaps && (
                 (compareYmd(w.mondayYmd, startY) <= 0 && compareYmd(w.sundayYmd, startY) >= 0) ||
@@ -717,9 +777,15 @@ function WeekGrid({
                   key={w.mondayYmd}
                   type="button"
                   whileTap={{ scale: 0.96 }}
-                  onClick={() => handleWeekClick(w.mondayYmd, w.sundayYmd)}
+                  onClick={() => {
+                    if (isDisabled) return;
+                    handleWeekClick(w.mondayYmd, w.sundayYmd);
+                  }}
+                  disabled={isDisabled}
                   className={`flex flex-col items-center justify-center rounded-lg border px-2 py-3 transition-all ${
-                    isEdge
+                    isDisabled
+                      ? "cursor-not-allowed border-gray-100 bg-gray-50 text-gray-300"
+                      : isEdge
                       ? "border-primary-500 bg-primary-600 text-white shadow-sm"
                       : isMid
                         ? "border-primary-200 bg-primary-50 text-primary-800"
@@ -727,7 +793,11 @@ function WeekGrid({
                   }`}
                 >
                   <span className={`text-[10px] font-bold uppercase tracking-widest ${
-                    isEdge ? "text-primary-200" : "text-gray-400"
+                    isDisabled
+                      ? "text-gray-300"
+                      : isEdge
+                        ? "text-primary-200"
+                        : "text-gray-400"
                   }`}>
                     Week {w.weekNum}
                   </span>
@@ -758,6 +828,7 @@ function MonthGrid({
   const now = new Date();
   const [viewYear, setViewYear] = useState(now.getFullYear());
   const [anchorKey, setAnchorKey] = useState<string | null>(null);
+  const minYear = MIN_ANALYTICS_DATE.getFullYear();
 
   const onMonthClick = useCallback(
     (mi: number) => {
@@ -802,10 +873,13 @@ function MonthGrid({
         onNext={() => setViewYear((y) => y + 1)}
         prevLabel="Previous year"
         nextLabel="Next year"
+        disablePrev={viewYear <= minYear}
       />
       <div className="grid grid-cols-3 gap-1.5">
         {MONTH_NAMES.map((name, mi) => {
           const kOrd = viewYear * 12 + mi;
+          const bounds = monthKeyBounds(monthKey(viewYear, mi));
+          const isDisabled = !bounds || isBeforeMinAnalyticsDate(bounds.rangeEndYmd);
           const selected = rangeLo !== null && kOrd >= rangeLo.loOrd && kOrd <= rangeLo.hiOrd;
           const isEdge = rangeLo !== null && (kOrd === rangeLo.loOrd || kOrd === rangeLo.hiOrd);
           return (
@@ -813,9 +887,15 @@ function MonthGrid({
               key={monthKey(viewYear, mi)}
               type="button"
               whileTap={{ scale: 0.95 }}
-              onClick={() => onMonthClick(mi)}
+              onClick={() => {
+                if (isDisabled) return;
+                onMonthClick(mi);
+              }}
+              disabled={isDisabled}
               className={`flex h-10 items-center justify-center rounded-lg border text-xs font-semibold transition-all ${
-                isEdge
+                isDisabled
+                  ? "cursor-not-allowed border-gray-100 bg-gray-50 text-gray-300"
+                  : isEdge
                   ? "border-primary-500 bg-primary-600 text-white shadow-sm"
                   : selected
                     ? "border-primary-200 bg-primary-50 text-primary-800"
@@ -852,6 +932,7 @@ function YearGrid({
   }, [center]);
 
   const [anchorYear, setAnchorYear] = useState<number | null>(null);
+  const minYear = MIN_ANALYTICS_DATE.getFullYear();
 
   const onYearClick = useCallback(
     (y: number) => {
@@ -883,9 +964,12 @@ function YearGrid({
         onNext={() => setCenter((c) => c + YEAR_GRID_SPAN)}
         prevLabel="Earlier years"
         nextLabel="Later years"
+        disablePrev={years[0] <= minYear}
       />
       <div className="grid grid-cols-3 gap-1.5">
         {years.map((y) => {
+          const yearEndYmd = toLocalYmd(endOfLocalDay(new Date(y, 11, 31)));
+          const isDisabled = isBeforeMinAnalyticsDate(yearEndYmd);
           const inRange = y >= sy && y <= ey;
           const isEdge = y === sy || y === ey;
           return (
@@ -893,9 +977,15 @@ function YearGrid({
               key={y}
               type="button"
               whileTap={{ scale: 0.95 }}
-              onClick={() => onYearClick(y)}
+              onClick={() => {
+                if (isDisabled) return;
+                onYearClick(y);
+              }}
+              disabled={isDisabled}
               className={`flex h-10 items-center justify-center rounded-lg border text-sm font-bold transition-all ${
-                isEdge
+                isDisabled
+                  ? "cursor-not-allowed border-gray-100 bg-gray-50 text-gray-300"
+                  : isEdge
                   ? "border-primary-500 bg-primary-600 text-white shadow-sm"
                   : inRange
                     ? "border-primary-200 bg-primary-50 text-primary-800"

@@ -233,3 +233,44 @@ test('getWrsStatusSummary falls back to submitted_at when wrs_effective_at is nu
   assert.equal(summary.effectiveCount, 1);
   assert.equal(summary.delayedCount, 0);
 });
+
+test('calculateKpiScoresWithQueryDeps respects explicit rolling window', async () => {
+  const calls: Array<{ fn: 'slots' | 'attendance' | 'orders'; from: string; to: string }> = [];
+
+  const result = await calculateKpiScoresWithQueryDeps({
+    userId: 'user-1',
+    userKey: 'website-key-1',
+    cssAudits: [
+      { star_rating: 5, audited_at: '2026-03-01T08:00:00.000Z' },
+      { star_rating: 2, audited_at: '2026-01-01T08:00:00.000Z' },
+    ],
+    peerEvaluations: null,
+    complianceAudit: null,
+    violationNotices: null,
+  }, {
+    getOdooEmployeeIdsByWebsiteKey: async () => [101],
+    getScheduledSlots: async (_ids, from, to) => {
+      calls.push({ fn: 'slots', from, to });
+      return [];
+    },
+    getAttendanceRecords: async (_ids, from, to) => {
+      calls.push({ fn: 'attendance', from, to });
+      return [];
+    },
+    getPosOrders: async (_key, from, to) => {
+      calls.push({ fn: 'orders', from, to });
+      return [];
+    },
+    getBranchPosOrders: async () => [],
+  }, {
+    from: new Date(2026, 1, 25, 0, 0, 0, 0),
+    to: new Date(2026, 2, 25, 23, 59, 59, 999),
+  });
+
+  assert.equal(result.breakdown.css.score, 5);
+  assert.deepEqual(calls, [
+    { fn: 'slots', from: '2026-02-25 00:00:00', to: '2026-03-25 23:59:59' },
+    { fn: 'attendance', from: '2026-02-25 00:00:00', to: '2026-03-25 23:59:59' },
+    { fn: 'orders', from: '2026-02-25 00:00:00', to: '2026-03-25 23:59:59' },
+  ]);
+});

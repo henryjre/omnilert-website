@@ -57,4 +57,14 @@ router.get(
   dashboardController.getEpiLeaderboardDetailData,
 );
 
+router.get(
+  '/employee-analytics/metric-snapshots',
+  dashboardController.getEmployeeMetricSnapshotsData,
+);
+
+router.get(
+  '/employee-analytics/metric-events',
+  dashboardController.getEmployeeMetricEventsData,
+);
+
 export default router;

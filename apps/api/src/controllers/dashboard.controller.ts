@@ -7,6 +7,11 @@ import { getEmployeeByWebsiteUserKey, getEmployeePayslipData, createViewOnlyPays
 import type { PayslipListItem, PayslipDetailResponse, PayslipStatus } from '@omnilert/shared';
 import { SYSTEM_ROLES } from '@omnilert/shared';
 import { getEpiDashboard, getEpiLeaderboard, getEpiLeaderboardDetail } from '../services/epiDashboard.service.js';
+import { getEmployeeMetricDailySnapshots } from '../services/employeeAnalyticsSnapshot.service.js';
+import {
+  getEmployeeMetricEventRows,
+  type RollingMetricId,
+} from '../services/employeeAnalyticsMetrics.service.js';
 
 function parseMonthKey(monthKeyParam: string | undefined): string {
   if (!monthKeyParam) {
@@ -24,6 +29,48 @@ function parseMonthKey(monthKeyParam: string | undefined): string {
   }
 
   return monthKeyParam;
+}
+
+function parseRangeYmd(value: string | undefined, fieldName: 'rangeStartYmd' | 'rangeEndYmd'): string {
+  if (!value) {
+    throw new AppError(400, `${fieldName} is required`);
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new AppError(400, `${fieldName} must be in YYYY-MM-DD format`);
+  }
+  return value;
+}
+
+function parseMetricId(value: string | undefined): RollingMetricId {
+  if (!value) {
+    throw new AppError(400, 'metricId is required');
+  }
+
+  const allowed: RollingMetricId[] = [
+    'customer-service',
+    'workplace-relations',
+    'attendance-rate',
+    'punctuality-rate',
+    'productivity-rate',
+    'average-order-value',
+    'uniform-compliance',
+    'hygiene-compliance',
+    'sop-compliance',
+  ];
+
+  if (!allowed.includes(value as RollingMetricId)) {
+    throw new AppError(400, 'metricId is invalid');
+  }
+  return value as RollingMetricId;
+}
+
+function parsePositiveInt(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return parsed;
 }
 
 export async function getPerformanceIndex(req: Request, res: Response, next: NextFunction) {
@@ -453,6 +500,52 @@ export async function getEpiLeaderboardDetailData(req: Request, res: Response, n
     const monthKey = parseMonthKey(req.query.monthKey as string | undefined);
     const data = await getEpiLeaderboardDetail(userId, monthKey);
     res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getEmployeeMetricSnapshotsData(req: Request, res: Response, next: NextFunction) {
+  try {
+    const rangeStartYmd = parseRangeYmd(req.query.rangeStartYmd as string | undefined, 'rangeStartYmd');
+    const rangeEndYmd = parseRangeYmd(req.query.rangeEndYmd as string | undefined, 'rangeEndYmd');
+    const userId = (req.query.userId as string | undefined)?.trim() || null;
+
+    const rows = await getEmployeeMetricDailySnapshots({
+      rangeStartYmd,
+      rangeEndYmd,
+      userId,
+    });
+
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getEmployeeMetricEventsData(req: Request, res: Response, next: NextFunction) {
+  try {
+    const userId = (req.query.userId as string | undefined)?.trim();
+    if (!userId) {
+      throw new AppError(400, 'userId is required');
+    }
+
+    const metricId = parseMetricId(req.query.metricId as string | undefined);
+    const rangeStartYmd = parseRangeYmd(req.query.rangeStartYmd as string | undefined, 'rangeStartYmd');
+    const rangeEndYmd = parseRangeYmd(req.query.rangeEndYmd as string | undefined, 'rangeEndYmd');
+    const page = parsePositiveInt(req.query.page as string | undefined, 1);
+    const pageSize = parsePositiveInt(req.query.pageSize as string | undefined, 25);
+
+    const result = await getEmployeeMetricEventRows({
+      userId,
+      metricId,
+      rangeStartYmd,
+      rangeEndYmd,
+      page,
+      pageSize,
+    });
+
+    res.json({ success: true, data: result });
   } catch (err) {
     next(err);
   }

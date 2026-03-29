@@ -33,6 +33,11 @@ export interface EpiDeltaResult {
   capped: boolean;
 }
 
+export interface KpiComputationWindow {
+  from: Date;
+  to: Date;
+}
+
 export interface WrsStatusSummary {
   effectiveCount: number;
   delayedCount: number;
@@ -138,6 +143,20 @@ function formatDateTime(date: Date): string {
 function getPast30DayRange(): { from: Date; to: Date; fromStr: string; toStr: string } {
   const to = new Date();
   const from = new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
+  return { from, to, fromStr: formatDateTime(from), toStr: formatDateTime(to) };
+}
+
+function resolveKpiComputationWindow(window?: KpiComputationWindow): { from: Date; to: Date; fromStr: string; toStr: string } {
+  if (!window) {
+    return getPast30DayRange();
+  }
+
+  const from = new Date(window.from);
+  const to = new Date(window.to);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from > to) {
+    return getPast30DayRange();
+  }
+
   return { from, to, fromStr: formatDateTime(from), toStr: formatDateTime(to) };
 }
 
@@ -435,8 +454,9 @@ export interface UserKpiData {
 export async function calculateKpiScoresWithQueryDeps(
   userData: UserKpiData,
   queryDeps: KpiQueryDeps,
+  window?: KpiComputationWindow,
 ): Promise<EpiDeltaResult> {
-  const { from, to, fromStr, toStr } = getPast30DayRange();
+  const { from, to, fromStr, toStr } = resolveKpiComputationWindow(window);
 
   // Resolve Odoo employee IDs for this user
   const employeeOdooIds = await queryDeps.getOdooEmployeeIdsByWebsiteKey(userData.userKey);
@@ -531,6 +551,9 @@ export async function calculateKpiScoresWithQueryDeps(
   return { breakdown, delta, raw_delta, capped };
 }
 
-export async function calculateKpiScores(userData: UserKpiData): Promise<EpiDeltaResult> {
-  return calculateKpiScoresWithQueryDeps(userData, defaultKpiQueryDeps);
+export async function calculateKpiScores(
+  userData: UserKpiData,
+  window?: KpiComputationWindow,
+): Promise<EpiDeltaResult> {
+  return calculateKpiScoresWithQueryDeps(userData, defaultKpiQueryDeps, window);
 }
