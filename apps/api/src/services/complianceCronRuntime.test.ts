@@ -41,6 +41,7 @@ test('createComplianceOccurrenceExecutor skips when another worker already claim
 
 test('createComplianceOccurrenceExecutor marks success when an audit is created', async () => {
   const calls: string[] = [];
+  const notifications: string[] = [];
   const execute = createComplianceOccurrenceExecutor({
     jobName: 'compliance_hourly_audit',
     claimOccurrence: async () => true,
@@ -58,6 +59,9 @@ test('createComplianceOccurrenceExecutor marks success when an audit is created'
       info: () => undefined,
       error: () => undefined,
     },
+    notifyResult: async (input) => {
+      notifications.push(input.status);
+    },
     formatScheduledForKey: () => '2026-03-21T12:27',
     formatScheduledForManila: () => '2026-03-21 12:27:00',
   });
@@ -68,10 +72,12 @@ test('createComplianceOccurrenceExecutor marks success when an audit is created'
   });
 
   assert.deepEqual(calls, ['success']);
+  assert.deepEqual(notifications, ['success']);
 });
 
 test('createComplianceOccurrenceExecutor marks skipped when the occurrence is consumed without an audit', async () => {
   const skippedReasons: Array<string | null | undefined> = [];
+  let notificationCount = 0;
   const execute = createComplianceOccurrenceExecutor({
     jobName: 'compliance_hourly_audit',
     claimOccurrence: async () => true,
@@ -85,6 +91,9 @@ test('createComplianceOccurrenceExecutor marks skipped when the occurrence is co
       info: () => undefined,
       error: () => undefined,
     },
+    notifyResult: async () => {
+      notificationCount += 1;
+    },
     formatScheduledForKey: () => '2026-03-21T12:27',
     formatScheduledForManila: () => '2026-03-21 12:27:00',
   });
@@ -95,10 +104,12 @@ test('createComplianceOccurrenceExecutor marks skipped when the occurrence is co
   });
 
   assert.deepEqual(skippedReasons, ['No eligible attendance']);
+  assert.equal(notificationCount, 0);
 });
 
 test('createComplianceOccurrenceExecutor marks failures when the compliance run throws', async () => {
   const failures: string[] = [];
+  const notifications: string[] = [];
   const execute = createComplianceOccurrenceExecutor({
     jobName: 'compliance_hourly_audit',
     claimOccurrence: async () => true,
@@ -114,6 +125,9 @@ test('createComplianceOccurrenceExecutor marks failures when the compliance run 
       info: () => undefined,
       error: () => undefined,
     },
+    notifyResult: async (input) => {
+      notifications.push(input.status);
+    },
     formatScheduledForKey: () => '2026-03-21T12:27',
     formatScheduledForManila: () => '2026-03-21 12:27:00',
   });
@@ -124,4 +138,5 @@ test('createComplianceOccurrenceExecutor marks failures when the compliance run 
   });
 
   assert.deepEqual(failures, ['boom']);
+  assert.deepEqual(notifications, ['failed']);
 });

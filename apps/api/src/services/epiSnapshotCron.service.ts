@@ -5,6 +5,7 @@ import { generateEpiReportPdf, generateManagerSummaryPdf, type EpiReportData } f
 import { sendWeeklyEpiEmail, sendManagerEpiSummaryEmail } from './mail.service.js';
 import { runDailyEmployeeRollingMetricSnapshot } from './employeeAnalyticsSnapshot.service.js';
 import { getOdooEmployeeIdsByWebsiteKey } from './odooQuery.service.js';
+import { notifyCronJobRun } from './cronNotification.service.js';
 
 const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
 const THIRTY_DAY_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
@@ -510,13 +511,46 @@ async function runScheduledJob(job: ScheduledSnapshotJob, scheduledFor: Date, so
     'Starting EPI snapshot job',
   );
 
+  const startedAt = new Date();
   try {
     await job.runner({ scheduledFor });
+    const finishedAt = new Date();
     await markScheduledJobRunSuccess(job.name, scheduledFor);
     logger.info({ jobName: job.name, scheduledForKey }, 'Completed EPI snapshot job');
+    await notifyCronJobRun({
+      jobName: job.name,
+      jobFamily: 'epi_snapshot',
+      schedule: job.expression,
+      source,
+      scheduledForKey,
+      scheduledForManila: formatManilaDateTime(scheduledFor),
+      startedAt,
+      finishedAt,
+      attempt: null,
+      status: 'success',
+      message: 'Completed EPI snapshot job',
+      errorMessage: null,
+      stats: null,
+    });
   } catch (error) {
+    const finishedAt = new Date();
     await markScheduledJobRunFailure(job.name, scheduledFor, error);
     logger.error({ err: error, jobName: job.name, scheduledForKey }, 'EPI snapshot job failed');
+    await notifyCronJobRun({
+      jobName: job.name,
+      jobFamily: 'epi_snapshot',
+      schedule: job.expression,
+      source,
+      scheduledForKey,
+      scheduledForManila: formatManilaDateTime(scheduledFor),
+      startedAt,
+      finishedAt,
+      attempt: null,
+      status: 'failed',
+      message: 'EPI snapshot job failed',
+      errorMessage: error instanceof Error ? error.message : String(error),
+      stats: null,
+    });
   }
 }
 

@@ -11,6 +11,7 @@ import {
   createComplianceOccurrenceExecutor,
   type ComplianceRunOutcome,
 } from './complianceCronRuntime.js';
+import { notifyCronJobRun } from './cronNotification.service.js';
 
 let scheduledHandle: NodeJS.Timeout | null = null;
 let initialized = false;
@@ -332,6 +333,23 @@ const executeComplianceOccurrence = createComplianceOccurrenceExecutor({
   markSuccess: markComplianceOccurrenceSuccess,
   markSkipped: markComplianceOccurrenceSkipped,
   markFailure: markComplianceOccurrenceFailure,
+  notifyResult: async (result) => {
+    await notifyCronJobRun({
+      jobName: COMPLIANCE_HOURLY_JOB_NAME,
+      jobFamily: 'compliance',
+      schedule: 'hourly@deterministic-minute',
+      source: result.source,
+      scheduledForKey: result.scheduledForKey,
+      scheduledForManila: result.scheduledForManila,
+      startedAt: result.startedAt,
+      finishedAt: result.finishedAt,
+      attempt: null,
+      status: result.status,
+      message: result.message,
+      errorMessage: result.errorMessage ?? null,
+      stats: null,
+    });
+  },
   logger,
   formatScheduledForKey,
   formatScheduledForManila: formatManilaDateTime,

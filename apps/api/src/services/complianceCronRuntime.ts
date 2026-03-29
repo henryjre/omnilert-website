@@ -9,6 +9,17 @@ interface ComplianceOccurrenceExecutorDeps {
   markSuccess: (scheduledFor: Date) => Promise<void>;
   markSkipped: (scheduledFor: Date, reason?: string | null) => Promise<void>;
   markFailure: (scheduledFor: Date, error: unknown) => Promise<void>;
+  notifyResult?: (input: {
+    status: 'success' | 'failed';
+    scheduledFor: Date;
+    scheduledForKey: string;
+    scheduledForManila: string;
+    source: 'scheduled' | 'startup';
+    startedAt: Date;
+    finishedAt: Date;
+    message: string;
+    errorMessage?: string | null;
+  }) => Promise<void>;
   logger: {
     info: (context: Record<string, unknown>, message: string) => void;
     error: (context: Record<string, unknown>, message: string) => void;
@@ -23,6 +34,7 @@ export function createComplianceOccurrenceExecutor(deps: ComplianceOccurrenceExe
     source: 'scheduled' | 'startup';
   }): Promise<void> {
     const scheduledForKey = deps.formatScheduledForKey(input.scheduledFor);
+    const scheduledForManila = deps.formatScheduledForManila(input.scheduledFor);
     const claimed = await deps.claimOccurrence(input.scheduledFor);
 
     if (!claimed) {
@@ -33,11 +45,12 @@ export function createComplianceOccurrenceExecutor(deps: ComplianceOccurrenceExe
       return;
     }
 
+    const startedAt = new Date();
     deps.logger.info(
       {
         jobName: deps.jobName,
         scheduledForKey,
-        scheduledForManila: deps.formatScheduledForManila(input.scheduledFor),
+        scheduledForManila,
         source: input.source,
       },
       'Starting compliance cron occurrence',
@@ -46,11 +59,31 @@ export function createComplianceOccurrenceExecutor(deps: ComplianceOccurrenceExe
     try {
       const outcome = await deps.runComplianceJob();
       if (outcome.status === 'success') {
+        const finishedAt = new Date();
         await deps.markSuccess(input.scheduledFor);
         deps.logger.info(
           { jobName: deps.jobName, scheduledForKey },
           'Completed compliance cron occurrence',
         );
+        if (deps.notifyResult) {
+          try {
+            await deps.notifyResult({
+              status: 'success',
+              scheduledFor: input.scheduledFor,
+              scheduledForKey,
+              scheduledForManila,
+              source: input.source,
+              startedAt,
+              finishedAt,
+              message: 'Completed compliance cron occurrence',
+            });
+          } catch (notifyError) {
+            deps.logger.error(
+              { err: notifyError, jobName: deps.jobName, scheduledForKey },
+              'Failed to send compliance cron notification',
+            );
+          }
+        }
         return;
       }
 
@@ -60,11 +93,32 @@ export function createComplianceOccurrenceExecutor(deps: ComplianceOccurrenceExe
         'Skipped compliance cron occurrence',
       );
     } catch (error) {
+      const finishedAt = new Date();
       await deps.markFailure(input.scheduledFor, error);
       deps.logger.error(
         { err: error, jobName: deps.jobName, scheduledForKey },
         'Compliance cron occurrence failed',
       );
+      if (deps.notifyResult) {
+        try {
+          await deps.notifyResult({
+            status: 'failed',
+            scheduledFor: input.scheduledFor,
+            scheduledForKey,
+            scheduledForManila,
+            source: input.source,
+            startedAt,
+            finishedAt,
+            message: 'Compliance cron occurrence failed',
+            errorMessage: error instanceof Error ? error.message : String(error),
+          });
+        } catch (notifyError) {
+          deps.logger.error(
+            { err: notifyError, jobName: deps.jobName, scheduledForKey },
+            'Failed to send compliance cron notification',
+          );
+        }
+      }
     }
   };
 }

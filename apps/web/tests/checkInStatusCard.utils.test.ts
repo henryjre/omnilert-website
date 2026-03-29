@@ -9,6 +9,8 @@ import {
 test('parseOdooUtcDateTime parses Odoo UTC datetime values', () => {
   const parsed = parseOdooUtcDateTime('2026-03-26 12:00:00');
   assert.equal(parsed?.toISOString(), '2026-03-26T12:00:00.000Z');
+  const parsedIso = parseOdooUtcDateTime('2026-03-26T12:00:00.000Z');
+  assert.equal(parsedIso?.toISOString(), '2026-03-26T12:00:00.000Z');
   assert.equal(parseOdooUtcDateTime(''), null);
   assert.equal(parseOdooUtcDateTime(null), null);
 });

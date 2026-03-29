@@ -3,7 +3,7 @@ import { db } from '../config/database.js';
 import { getIO } from '../config/socket.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
-import { getEmployeeByWebsiteUserKey, getEmployeePayslipData, createViewOnlyPayslip, getEmployeeEPIData, getEmployeeAuditRatings, getAllEmployeesWithEPI, getAllPayslipsForUser, calculatePendingPayslipStubs, getPayslipDetailById, getOrCreatePendingPayslipDetail, getEmployeesForWebsiteUserKey, getLatestActiveAttendanceForWebsiteUserKey } from '../services/odoo.service.js';
+import { getEmployeeByWebsiteUserKey, getEmployeePayslipData, createViewOnlyPayslip, getEmployeeEPIData, getEmployeeAuditRatings, getAllEmployeesWithEPI, getAllPayslipsForUser, calculatePendingPayslipStubs, getPayslipDetailById, getOrCreatePendingPayslipDetail, getEmployeesForWebsiteUserKey } from '../services/odoo.service.js';
 import type { PayslipListItem, PayslipDetailResponse, PayslipStatus } from '@omnilert/shared';
 import { SYSTEM_ROLES } from '@omnilert/shared';
 import { getEpiDashboard, getEpiLeaderboard, getEpiLeaderboardDetail } from '../services/epiDashboard.service.js';
@@ -341,6 +341,82 @@ function buildCheckedOutStatus() {
   };
 }
 
+interface LatestAttendanceWebhookEventRow {
+  log_type: 'check_in' | 'check_out' | string;
+  company_id: string;
+  odoo_payload: unknown;
+  branch_name: string | null;
+  company_name: string | null;
+}
+
+interface ParsedAttendanceWebhookEvent {
+  checkedIn: boolean;
+  checkInTimeUtc: string | null;
+  activeCompanyId: number | null;
+  branchName: string | null;
+  companyName: string | null;
+}
+
+function parseAttendancePayloadValue(
+  value: unknown,
+): Record<string, unknown> | null {
+  if (!value) return null;
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  if (typeof value !== 'string') return null;
+
+  try {
+    const parsed = JSON.parse(value);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function parseNumericCompanyId(value: unknown): number | null {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return parsed;
+}
+
+function parseLatestAttendanceWebhookEvent(
+  row: LatestAttendanceWebhookEventRow,
+): ParsedAttendanceWebhookEvent {
+  const payload = parseAttendancePayloadValue(row.odoo_payload);
+  const checkInRaw = typeof payload?.check_in === 'string' ? payload.check_in.trim() : '';
+  const checkInTimeUtc = checkInRaw || null;
+  const activeCompanyId = parseNumericCompanyId(payload?.x_company_id);
+
+  return {
+    checkedIn: row.log_type === 'check_in',
+    checkInTimeUtc,
+    activeCompanyId,
+    branchName: row.branch_name,
+    companyName: row.company_name,
+  };
+}
+
+async function getLatestAttendanceWebhookEventForWebsiteUserKey(
+  websiteUserKey: string,
+): Promise<ParsedAttendanceWebhookEvent | null> {
+  const row = await db.getDb()('shift_logs as sl')
+    .leftJoin('branches as b', 'sl.branch_id', 'b.id')
+    .leftJoin('companies as c', 'sl.company_id', 'c.id')
+    .whereIn('sl.log_type', ['check_in', 'check_out'])
+    .whereRaw(`sl.odoo_payload->>'x_website_key' = ?`, [websiteUserKey])
+    .orderBy('sl.event_time', 'desc')
+    .orderBy('sl.created_at', 'desc')
+    .first('sl.log_type', 'sl.company_id', 'sl.odoo_payload', 'b.name as branch_name', 'c.name as company_name');
+
+  if (!row) return null;
+  return parseLatestAttendanceWebhookEvent(row as LatestAttendanceWebhookEventRow);
+}
+
 async function reconcileRoleDisableScopeFromActiveAttendance(input: {
   userId: string;
   activeCompanyId: number;
@@ -406,8 +482,8 @@ export async function getCheckInStatus(req: Request, res: Response, next: NextFu
       return;
     }
 
-    const activeAttendance = await getLatestActiveAttendanceForWebsiteUserKey(userKey);
-    if (!activeAttendance) {
+    const latestAttendanceEvent = await getLatestAttendanceWebhookEventForWebsiteUserKey(userKey);
+    if (!latestAttendanceEvent || !latestAttendanceEvent.checkedIn) {
       const clearedCount = Number(await db.getDb()('user_role_disables')
         .where({ user_id: userId })
         .delete());
@@ -425,34 +501,35 @@ export async function getCheckInStatus(req: Request, res: Response, next: NextFu
       return;
     }
 
-    const roleScopeChanged = await reconcileRoleDisableScopeFromActiveAttendance({
-      userId,
-      activeCompanyId: Number(activeAttendance.company_id),
-    });
-    if (roleScopeChanged) {
-      try {
-        getIO()
-          .of('/user-events')
-          .to(`user:${userId}`)
-          .emit('user:auth-scope-updated', { userId });
-      } catch {
-        // Socket server may be unavailable during startup/tests.
+    if (latestAttendanceEvent.activeCompanyId !== null) {
+      const roleScopeChanged = await reconcileRoleDisableScopeFromActiveAttendance({
+        userId,
+        activeCompanyId: latestAttendanceEvent.activeCompanyId,
+      });
+      if (roleScopeChanged) {
+        try {
+          getIO()
+            .of('/user-events')
+            .to(`user:${userId}`)
+            .emit('user:auth-scope-updated', { userId });
+        } catch {
+          // Socket server may be unavailable during startup/tests.
+        }
       }
     }
-
-    const branch = await db.getDb()('branches as b')
-      .leftJoin('companies as c', 'b.company_id', 'c.id')
-      .where('b.odoo_branch_id', String(activeAttendance.company_id))
-      .first('b.name as branch_name', 'c.name as company_name');
 
     res.json({
       success: true,
       data: {
         checkedIn: true,
-        roleType: activeAttendance.company_id === 1 ? 'Management' : 'Service Crew',
-        companyName: (branch?.company_name as string | null) ?? null,
-        branchName: (branch?.branch_name as string | null) ?? null,
-        checkInTimeUtc: activeAttendance.check_in,
+        roleType: latestAttendanceEvent.activeCompanyId === null
+          ? null
+          : latestAttendanceEvent.activeCompanyId === 1
+            ? 'Management'
+            : 'Service Crew',
+        companyName: latestAttendanceEvent.companyName ?? null,
+        branchName: latestAttendanceEvent.branchName ?? null,
+        checkInTimeUtc: latestAttendanceEvent.checkInTimeUtc,
       },
     });
   } catch (err) {

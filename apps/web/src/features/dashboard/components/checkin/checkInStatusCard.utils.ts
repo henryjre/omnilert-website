@@ -32,7 +32,13 @@ export function parseOdooUtcDateTime(value: string | null | undefined): Date | n
   const normalized = value.trim();
   if (!normalized) return null;
 
-  const parsed = new Date(`${normalized} UTC`);
+  const hasExplicitTimezone = /(?:Z|[+-]\d{2}:\d{2}|UTC)$/i.test(normalized);
+  const looksIso = normalized.includes('T');
+  const candidate = hasExplicitTimezone || looksIso
+    ? normalized
+    : `${normalized} UTC`;
+
+  const parsed = new Date(candidate);
   if (Number.isNaN(parsed.getTime())) {
     return null;
   }

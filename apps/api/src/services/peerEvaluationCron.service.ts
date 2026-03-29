@@ -1,8 +1,10 @@
 import { db } from '../config/database.js';
 import { getIO } from '../config/socket.js';
 import { logger } from '../utils/logger.js';
+import { notifyCronJobRun } from './cronNotification.service.js';
 
 let cronHandle: NodeJS.Timeout | null = null;
+const PEER_EVALUATION_EXPIRY_JOB_NAME = 'peer-evaluation-expiry';
 
 type ExpiredPeerEvaluationRow = {
   id: string;
@@ -10,12 +12,21 @@ type ExpiredPeerEvaluationRow = {
   evaluator_user_id: string;
 };
 
-export async function runPeerEvaluationExpiryRun(): Promise<void> {
+export async function runPeerEvaluationExpiryRun(
+  input: { source?: 'scheduled' | 'startup' } = {},
+): Promise<void> {
+  const source: 'scheduled' | 'startup' = input.source ?? 'scheduled';
+  const startedAt = new Date();
+  let companiesProcessed = 0;
+  let companyFailures = 0;
+  const failedCompanyIds: string[] = [];
+
   const companies = await db.getDb()('companies')
     .where({ is_active: true })
     .select('id');
 
   for (const company of companies) {
+    companiesProcessed += 1;
     try {
       const now = new Date();
       const expiredRows = await db.getDb()('peer_evaluations')
@@ -112,6 +123,8 @@ export async function runPeerEvaluationExpiryRun(): Promise<void> {
         );
       }
     } catch (error) {
+      companyFailures += 1;
+      failedCompanyIds.push(String(company.id));
       logger.error(
         { err: error, companyId: company.id },
         'Peer evaluation expiry cron failed for company',
@@ -120,14 +133,45 @@ export async function runPeerEvaluationExpiryRun(): Promise<void> {
   }
 
   logger.info('Peer evaluation expiry cron run completed');
+
+  const finishedAt = new Date();
+  const failedCompanyCount = companyFailures;
+  const succeededCompanyCount = Math.max(0, companiesProcessed - failedCompanyCount);
+  const status: 'success' | 'failed' = failedCompanyCount > 0 ? 'failed' : 'success';
+  const errorMessage = failedCompanyCount > 0
+    ? `Failed company IDs: ${failedCompanyIds.join(', ')}`
+    : null;
+
+  await notifyCronJobRun({
+    jobName: PEER_EVALUATION_EXPIRY_JOB_NAME,
+    jobFamily: 'peer_evaluation_expiry',
+    schedule: '*/30 * * * *',
+    source,
+    scheduledForKey: null,
+    scheduledForManila: null,
+    startedAt,
+    finishedAt,
+    attempt: null,
+    status,
+    message: status === 'failed'
+      ? 'Peer evaluation expiry cron run failed'
+      : 'Peer evaluation expiry cron run completed',
+    errorMessage,
+    stats: {
+      processed: companiesProcessed,
+      succeeded: succeededCompanyCount,
+      failed: failedCompanyCount,
+      skipped: null,
+    },
+  });
 }
 
 export function initPeerEvaluationCron(): void {
   if (cronHandle) return;
   // Run once immediately on startup to catch any expired records from before last restart
-  void runPeerEvaluationExpiryRun();
+  void runPeerEvaluationExpiryRun({ source: 'startup' });
   cronHandle = setInterval(() => {
-    void runPeerEvaluationExpiryRun();
+    void runPeerEvaluationExpiryRun({ source: 'scheduled' });
   }, 30 * 60 * 1000); // 30 minutes
   logger.info('Peer evaluation expiry cron initialized (every 30 minutes)');
 }

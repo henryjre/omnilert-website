@@ -91,3 +91,55 @@ export interface AuditResultsWebhookPayload {
   audit: AuditResultsWebhookAudit;
   summary: AuditResultsWebhookSummary;
 }
+
+export type CronJobNotificationEvent = 'cron_job.run';
+export type CronJobNotificationStatus = 'success' | 'failed';
+export type CronJobNotificationTrigger = 'scheduled' | 'startup' | 'manual';
+export type CronJobNotificationFamily = 'compliance' | 'epi_snapshot' | 'peer_evaluation_expiry';
+
+export interface CronJobNotificationJob {
+  name: string;
+  family: CronJobNotificationFamily;
+  schedule: string;
+  trigger: CronJobNotificationTrigger;
+}
+
+export interface CronJobNotificationRun {
+  id: string;
+  scheduled_for_key: string | null;
+  scheduled_for_manila: string | null;
+  source: CronJobNotificationTrigger;
+  started_at: string;
+  finished_at: string;
+  duration_ms: number;
+  attempt: number | null;
+}
+
+export interface CronJobNotificationResult {
+  status: CronJobNotificationStatus;
+  message: string;
+  error_message: string | null;
+}
+
+export interface CronJobNotificationStats {
+  processed: number | null;
+  succeeded: number | null;
+  failed: number | null;
+  skipped: number | null;
+}
+
+export interface CronJobNotificationMeta {
+  timezone: 'Asia/Manila';
+}
+
+export interface CronJobNotificationPayload {
+  event: CronJobNotificationEvent;
+  version: 1;
+  environment: 'development' | 'production' | 'test';
+  sent_at: string;
+  job: CronJobNotificationJob;
+  run: CronJobNotificationRun;
+  result: CronJobNotificationResult;
+  stats: CronJobNotificationStats;
+  meta: CronJobNotificationMeta;
+}
