@@ -161,7 +161,7 @@ export async function runPeerEvaluationExpiryRun(
       processed: companiesProcessed,
       succeeded: succeededCompanyCount,
       failed: failedCompanyCount,
-      skipped: null,
+      skipped: 0,
     },
   });
 }

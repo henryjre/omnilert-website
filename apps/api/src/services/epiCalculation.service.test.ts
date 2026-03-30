@@ -267,7 +267,7 @@ test('calculateKpiScoresWithQueryDeps respects explicit rolling window', async (
     to: new Date(2026, 2, 25, 23, 59, 59, 999),
   });
 
-  assert.equal(result.breakdown.css.score, 5);
+  assert.equal(result.breakdown.cashiering.score, null);
   assert.deepEqual(calls, [
     { fn: 'slots', from: '2026-02-25 00:00:00', to: '2026-03-25 23:59:59' },
     { fn: 'attendance', from: '2026-02-25 00:00:00', to: '2026-03-25 23:59:59' },

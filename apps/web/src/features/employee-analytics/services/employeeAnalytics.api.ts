@@ -8,7 +8,11 @@ export type RollingMetricId =
   | 'average-order-value'
   | 'uniform-compliance'
   | 'hygiene-compliance'
-  | 'sop-compliance';
+  | 'sop-compliance'
+  | 'customer-interaction'
+  | 'cashiering'
+  | 'suggestive-selling-and-upselling'
+  | 'service-efficiency';
 
 export type EmployeeAnalyticsMetricId = RollingMetricId | 'professional-conduct';
 
@@ -22,7 +26,6 @@ export interface EmployeeMetricDailySnapshot {
   snapshotDate: string;
   windowStartDate: string;
   windowEndDate: string;
-  customerServiceScore: number | null;
   workplaceRelationsScore: number | null;
   attendanceRate: number | null;
   punctualityRate: number | null;
@@ -32,6 +35,10 @@ export interface EmployeeMetricDailySnapshot {
   uniformComplianceRate: number | null;
   hygieneComplianceRate: number | null;
   sopComplianceRate: number | null;
+  customerInteractionScore: number | null;
+  cashieringScore: number | null;
+  suggestiveSellingAndUpsellingScore: number | null;
+  serviceEfficiencyScore: number | null;
   epiScore: number | null;
   awardsCount: number;
   violationsCount: number;

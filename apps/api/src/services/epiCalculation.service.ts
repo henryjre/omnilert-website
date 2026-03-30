@@ -12,7 +12,6 @@ import {
 // ─── KPI Breakdown Types ──────────────────────────────────────────────────────
 
 export interface KpiBreakdown {
-  css: { score: number | null; impact: number };
   wrs: { score: number | null; impact: number };
   pcs: { score: number | null; impact: number };
   attendance: { rate: number | null; impact: number };
@@ -22,6 +21,10 @@ export interface KpiBreakdown {
   uniform: { rate: number | null; impact: number };
   hygiene: { rate: number | null; impact: number };
   sop: { rate: number | null; impact: number };
+  customer_interaction: { score: number | null; impact: number };
+  cashiering: { score: number | null; impact: number };
+  suggestive_selling_and_upselling: { score: number | null; impact: number };
+  service_efficiency: { score: number | null; impact: number };
   awards: { count: number; impact: number };
   violations: { count: number; total_decrease: number; impact: number };
 }
@@ -60,14 +63,6 @@ const defaultKpiQueryDeps: KpiQueryDeps = {
 };
 
 // ─── Impact Tables ────────────────────────────────────────────────────────────
-
-function cssImpact(score: number): number {
-  if (score >= 4.5) return 2;
-  if (score >= 4.2) return 1;
-  if (score >= 3.8) return 0;
-  if (score >= 3.5) return -1;
-  return -2;
-}
 
 function wrsImpact(score: number): number {
   if (score >= 4.5) return 1;
@@ -126,6 +121,42 @@ function hygieneImpact(rate: number): number {
 
 function sopImpact(rate: number): number {
   return uniformImpact(rate); // Same table
+}
+
+function customerInteractionImpact(score: number): number {
+  if (score >= 4.60) return 3;
+  if (score >= 4.30) return 2;
+  if (score >= 4.00) return 1;
+  if (score >= 3.70) return 0;
+  if (score >= 3.40) return -2;
+  return -3;
+}
+
+function cashieringImpact(score: number): number {
+  if (score >= 4.60) return 2;
+  if (score >= 4.30) return 1;
+  if (score >= 4.00) return 0;
+  if (score >= 3.70) return -1;
+  if (score >= 3.40) return -2;
+  return -3;
+}
+
+function suggestiveSellingImpact(score: number): number {
+  if (score >= 4.50) return 2;
+  if (score >= 4.20) return 1;
+  if (score >= 3.80) return 0;
+  if (score >= 3.50) return -1;
+  if (score >= 3.20) return -2;
+  return -3;
+}
+
+function serviceEfficiencyImpact(score: number): number {
+  if (score >= 4.50) return 2;
+  if (score >= 4.20) return 1;
+  if (score >= 3.90) return 0;
+  if (score >= 3.60) return -1;
+  if (score >= 3.30) return -2;
+  return -3;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -216,15 +247,6 @@ export function getWrsStatusSummary(
 
 // ─── Individual KPI Calculators ───────────────────────────────────────────────
 
-function calcCss(cssAudits: Array<{ star_rating: number; audited_at: string }> | null, from: Date, to: Date): { score: number | null; impact: number } {
-  if (!Array.isArray(cssAudits) || cssAudits.length === 0) return { score: null, impact: 0 };
-  const recent = cssAudits.filter((a) => dateRangeFilter(a.audited_at, from, to));
-  if (recent.length === 0) return { score: null, impact: 0 };
-  const avg = recent.reduce((s, a) => s + a.star_rating, 0) / recent.length;
-  const score = Math.round(avg * 100) / 100;
-  return { score, impact: cssImpact(score) };
-}
-
 function calcWrs(
   peerEvaluations: Array<{
     average_score: number;
@@ -242,16 +264,33 @@ function calcWrs(
 }
 
 function calcComplianceRate(
-  complianceAudit: Array<{ answers: Record<string, boolean>; audited_at: string }> | null,
+  complianceAudit: Array<{ answers: Record<string, any>; audited_at: string }> | null,
   field: string,
   from: Date,
   to: Date,
 ): number | null {
   if (!Array.isArray(complianceAudit) || complianceAudit.length === 0) return null;
-  const recent = complianceAudit.filter((a) => dateRangeFilter(a.audited_at, from, to));
+  const recent = complianceAudit.filter(
+    (a) => dateRangeFilter(a.audited_at, from, to) && typeof a.answers?.[field] === 'boolean'
+  );
   if (recent.length === 0) return null;
-  const trueCount = recent.filter((a) => a.answers?.[field] === true).length;
+  const trueCount = recent.filter((a) => a.answers[field] === true).length;
   return Math.round((trueCount / recent.length) * 1000) / 10;
+}
+
+function calcAverageScore(
+  complianceAudit: Array<{ answers: Record<string, any>; audited_at: string }> | null,
+  field: string,
+  from: Date,
+  to: Date,
+): number | null {
+  if (!Array.isArray(complianceAudit) || complianceAudit.length === 0) return null;
+  const recent = complianceAudit.filter(
+    (a) => dateRangeFilter(a.audited_at, from, to) && typeof a.answers?.[field] === 'number'
+  );
+  if (recent.length === 0) return null;
+  const sum = recent.reduce((s, a) => s + a.answers[field], 0);
+  return Math.round((sum / recent.length) * 100) / 100;
 }
 
 function calcAttendanceFromRecords(
@@ -443,7 +482,7 @@ export interface UserKpiData {
     submitted_at?: string | null;
     wrs_effective_at?: string | null;
   }> | null;
-  complianceAudit: Array<{ answers: Record<string, boolean>; audited_at: string }> | null;
+  complianceAudit: Array<{ answers: Record<string, any>; audited_at: string }> | null;
   violationNotices: Array<{ epi_decrease?: number | null; completed_at?: string | null }> | null;
 }
 
@@ -486,14 +525,18 @@ export async function calculateKpiScoresWithQueryDeps(
     operationalOdooData.attendances,
   );
 
-  const css = calcCss(userData.cssAudits, from, to);
   const wrs = calcWrs(userData.peerEvaluations, from, to);
   const pcs: KpiBreakdown['pcs'] = { score: null, impact: 0 }; // Not yet implemented
 
-  const productivityRate = calcComplianceRate(userData.complianceAudit, 'productivity_rate', from, to);
-  const uniformRate = calcComplianceRate(userData.complianceAudit, 'uniform', from, to);
-  const hygieneRate = calcComplianceRate(userData.complianceAudit, 'hygiene', from, to);
-  const sopRate = calcComplianceRate(userData.complianceAudit, 'sop', from, to);
+  const productivityRate = calcComplianceRate(userData.complianceAudit, 'scc_productivity_rate', from, to);
+  const uniformRate = calcComplianceRate(userData.complianceAudit, 'scc_uniform_compliance', from, to);
+  const hygieneRate = calcComplianceRate(userData.complianceAudit, 'scc_hygiene_compliance', from, to);
+  const sopRate = calcComplianceRate(userData.complianceAudit, 'scc_sop_compliance', from, to);
+
+  const customerInteractionScore = calcAverageScore(userData.complianceAudit, 'scc_customer_interaction', from, to);
+  const cashieringScore = calcAverageScore(userData.complianceAudit, 'scc_cashiering', from, to);
+  const suggestiveSellingScore = calcAverageScore(userData.complianceAudit, 'scc_suggestive_selling_and_upselling', from, to);
+  const serviceEfficiencyScore = calcAverageScore(userData.complianceAudit, 'scc_service_efficiency', from, to);
 
   const productivity: KpiBreakdown['productivity'] = {
     rate: productivityRate,
@@ -511,13 +554,28 @@ export async function calculateKpiScoresWithQueryDeps(
     rate: sopRate,
     impact: sopRate !== null ? sopImpact(sopRate) : 0,
   };
+  const customer_interaction: KpiBreakdown['customer_interaction'] = {
+    score: customerInteractionScore,
+    impact: customerInteractionScore !== null ? customerInteractionImpact(customerInteractionScore) : 0,
+  };
+  const cashiering: KpiBreakdown['cashiering'] = {
+    score: cashieringScore,
+    impact: cashieringScore !== null ? cashieringImpact(cashieringScore) : 0,
+  };
+  const suggestive_selling_and_upselling: KpiBreakdown['suggestive_selling_and_upselling'] = {
+    score: suggestiveSellingScore,
+    impact: suggestiveSellingScore !== null ? suggestiveSellingImpact(suggestiveSellingScore) : 0,
+  };
+  const service_efficiency: KpiBreakdown['service_efficiency'] = {
+    score: serviceEfficiencyScore,
+    impact: serviceEfficiencyScore !== null ? serviceEfficiencyImpact(serviceEfficiencyScore) : 0,
+  };
 
   const awards: KpiBreakdown['awards'] = { count: 0, impact: 0 }; // Awards system not yet built
 
   const violations = calcViolations(userData.violationNotices, from, to);
 
   const breakdown: KpiBreakdown = {
-    css,
     wrs,
     pcs,
     attendance: attendanceResult,
@@ -527,12 +585,15 @@ export async function calculateKpiScoresWithQueryDeps(
     uniform,
     hygiene,
     sop,
+    customer_interaction,
+    cashiering,
+    suggestive_selling_and_upselling,
+    service_efficiency,
     awards,
     violations,
   };
 
   const raw_delta =
-    css.impact +
     wrs.impact +
     pcs.impact +
     attendanceResult.impact +
@@ -542,6 +603,10 @@ export async function calculateKpiScoresWithQueryDeps(
     uniform.impact +
     hygiene.impact +
     sop.impact +
+    customer_interaction.impact +
+    cashiering.impact +
+    suggestive_selling_and_upselling.impact +
+    service_efficiency.impact +
     awards.impact +
     violations.impact;
 

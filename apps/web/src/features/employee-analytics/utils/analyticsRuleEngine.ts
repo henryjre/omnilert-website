@@ -134,6 +134,34 @@ export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
     highMin: 100,
     midMin: 90,
   },
+  "customer-interaction": {
+    id: "customer-interaction",
+    label: "Customer Interaction",
+    kind: "likert",
+    highMin: 4.0,
+    midMin: 3.6,
+  },
+  "cashiering": {
+    id: "cashiering",
+    label: "Cashiering",
+    kind: "likert",
+    highMin: 4.0,
+    midMin: 3.6,
+  },
+  "suggestive-selling-and-upselling": {
+    id: "suggestive-selling-and-upselling",
+    label: "Suggestive Selling & Upselling",
+    kind: "likert",
+    highMin: 4.0,
+    midMin: 3.6,
+  },
+  "service-efficiency": {
+    id: "service-efficiency",
+    label: "Service Efficiency",
+    kind: "likert",
+    highMin: 4.0,
+    midMin: 3.6,
+  },
 };
 
 const NORMALIZATION_MAX: Record<MetricKind, number> = {

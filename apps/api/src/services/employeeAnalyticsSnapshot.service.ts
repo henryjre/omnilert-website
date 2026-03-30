@@ -1,5 +1,6 @@
 import { db } from '../config/database.js';
 import { logger } from '../utils/logger.js';
+import type { CronJobNotificationStats } from '@omnilert/shared';
 import { calculateKpiScores, type KpiBreakdown, type UserKpiData } from './epiCalculation.service.js';
 import { getOdooEmployeeIdsByWebsiteKey } from './odooQuery.service.js';
 
@@ -26,7 +27,10 @@ interface SnapshotUserRow {
 }
 
 export interface RollingMetricSnapshotValues {
-  customerServiceScore: number | null;
+  customerInteraction: number | null;
+  cashiering: number | null;
+  suggestiveSellingAndUpselling: number | null;
+  serviceEfficiency: number | null;
   workplaceRelationsScore: number | null;
   attendanceRate: number | null;
   punctualityRate: number | null;
@@ -162,7 +166,10 @@ export function getRollingWindowForSnapshotDate(snapshotDateYmd: string): Rollin
 
 export function mapBreakdownToRollingMetricSnapshot(breakdown: KpiBreakdown): RollingMetricSnapshotValues {
   return {
-    customerServiceScore: breakdown.css.score,
+    customerInteraction: breakdown.customer_interaction.score,
+    cashiering: breakdown.cashiering.score,
+    suggestiveSellingAndUpselling: breakdown.suggestive_selling_and_upselling.score,
+    serviceEfficiency: breakdown.service_efficiency.score,
     workplaceRelationsScore: breakdown.wrs.score,
     attendanceRate: breakdown.attendance.rate,
     punctualityRate: breakdown.punctuality.rate,
@@ -280,7 +287,7 @@ async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKp
   };
 }
 
-export async function runDailyEmployeeRollingMetricSnapshot(input?: { scheduledFor?: Date }): Promise<void> {
+export async function runDailyEmployeeRollingMetricSnapshot(input?: { scheduledFor?: Date }): Promise<Partial<CronJobNotificationStats>> {
   const scheduledFor = input?.scheduledFor ?? new Date();
   const snapshotDate = getSnapshotDateForScheduledRun(scheduledFor);
   const { windowStartDate, windowEndDate } = getRollingWindowForSnapshotDate(snapshotDate);
@@ -301,6 +308,9 @@ export async function runDailyEmployeeRollingMetricSnapshot(input?: { scheduledF
   );
 
   const users = await fetchSnapshotUsers();
+  let succeeded = 0;
+  let failed = 0;
+
   for (const user of users) {
     try {
       const kpiData = await fetchUserKpiData(user.id, user.user_key);
@@ -318,7 +328,10 @@ export async function runDailyEmployeeRollingMetricSnapshot(input?: { scheduledF
           snapshot_date: snapshotDate,
           window_start_date: windowStartDate,
           window_end_date: windowEndDate,
-          customer_service_score: values.customerServiceScore,
+          customer_interaction: values.customerInteraction,
+          cashiering: values.cashiering,
+          suggestive_selling_and_upselling: values.suggestiveSellingAndUpselling,
+          service_efficiency: values.serviceEfficiency,
           workplace_relations_score: values.workplaceRelationsScore,
           attendance_rate: values.attendanceRate,
           punctuality_rate: values.punctualityRate,
@@ -340,7 +353,10 @@ export async function runDailyEmployeeRollingMetricSnapshot(input?: { scheduledF
         .merge({
           window_start_date: windowStartDate,
           window_end_date: windowEndDate,
-          customer_service_score: values.customerServiceScore,
+          customer_interaction: values.customerInteraction,
+          cashiering: values.cashiering,
+          suggestive_selling_and_upselling: values.suggestiveSellingAndUpselling,
+          service_efficiency: values.serviceEfficiency,
           workplace_relations_score: values.workplaceRelationsScore,
           attendance_rate: values.attendanceRate,
           punctuality_rate: values.punctualityRate,
@@ -357,12 +373,21 @@ export async function runDailyEmployeeRollingMetricSnapshot(input?: { scheduledF
           calculation_version: SNAPSHOT_CALCULATION_VERSION,
           updated_at: generatedAt,
         });
+      succeeded += 1;
     } catch (error) {
+      failed += 1;
       logger.error({ err: error, userId: user.id, snapshotDate }, 'Failed to persist employee analytics metric snapshot');
     }
   }
 
   logger.info({ snapshotDate, processedUsers: users.length }, 'Employee analytics rolling snapshot completed');
+
+  return {
+    processed: users.length,
+    succeeded,
+    failed,
+    skipped: 0,
+  };
 }
 
 export async function getEmployeeMetricDailySnapshots(input: {
@@ -383,7 +408,10 @@ export async function getEmployeeMetricDailySnapshots(input: {
       's.snapshot_date as snapshotDate',
       's.window_start_date as windowStartDate',
       's.window_end_date as windowEndDate',
-      's.customer_service_score as customerServiceScore',
+      's.customer_interaction as customerInteraction',
+      's.cashiering as cashiering',
+      's.suggestive_selling_and_upselling as suggestiveSellingAndUpselling',
+      's.service_efficiency as serviceEfficiency',
       's.workplace_relations_score as workplaceRelationsScore',
       's.attendance_rate as attendanceRate',
       's.punctuality_rate as punctualityRate',

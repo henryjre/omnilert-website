@@ -6,6 +6,7 @@ import { sendWeeklyEpiEmail, sendManagerEpiSummaryEmail } from './mail.service.j
 import { runDailyEmployeeRollingMetricSnapshot } from './employeeAnalyticsSnapshot.service.js';
 import { getOdooEmployeeIdsByWebsiteKey } from './odooQuery.service.js';
 import { notifyCronJobRun } from './cronNotification.service.js';
+import type { CronJobNotificationStats } from '@omnilert/shared';
 
 const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
 const THIRTY_DAY_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
@@ -15,7 +16,7 @@ const STALE_RUN_THRESHOLD_MS = 6 * 60 * 60 * 1000;
 const WEEKLY_EPI_JOB_NAME = 'epi-weekly-snapshot';
 const MONTHLY_EPI_JOB_NAME = 'epi-monthly-snapshot';
 const EMPLOYEE_METRIC_DAILY_JOB_NAME = 'employee-metric-daily-snapshot';
-const WEEKLY_EPI_CRON = '0 17 * * 0';
+const WEEKLY_EPI_CRON = '0 5 * * 0';
 const MONTHLY_EPI_CRON = '0 4 1 * *';
 const EMPLOYEE_METRIC_DAILY_CRON = '30 3 * * *';
 
@@ -162,7 +163,7 @@ interface ScheduledSnapshotJob {
   expression: string;
   schedule: ParsedCronExpression;
   handle: NodeJS.Timeout | null;
-  runner: (input: { scheduledFor: Date }) => Promise<void>;
+  runner: (input: { scheduledFor: Date }) => Promise<Partial<CronJobNotificationStats> | null>;
 }
 
 const scheduledJobs: ScheduledSnapshotJob[] = [
@@ -513,7 +514,7 @@ async function runScheduledJob(job: ScheduledSnapshotJob, scheduledFor: Date, so
 
   const startedAt = new Date();
   try {
-    await job.runner({ scheduledFor });
+    const stats = await job.runner({ scheduledFor });
     const finishedAt = new Date();
     await markScheduledJobRunSuccess(job.name, scheduledFor);
     logger.info({ jobName: job.name, scheduledForKey }, 'Completed EPI snapshot job');
@@ -530,7 +531,7 @@ async function runScheduledJob(job: ScheduledSnapshotJob, scheduledFor: Date, so
       status: 'success',
       message: 'Completed EPI snapshot job',
       errorMessage: null,
-      stats: null,
+      stats,
     });
   } catch (error) {
     const finishedAt = new Date();
@@ -637,7 +638,7 @@ async function getWeeklyEligibleServiceCrewUsers(referenceDate: Date = new Date(
     .orderBy('u.id') as Promise<MasterUserRow[]>;
 }
 
-export async function runWeeklyEpiSnapshot(input?: { scheduledFor?: Date }): Promise<void> {
+export async function runWeeklyEpiSnapshot(input?: { scheduledFor?: Date }): Promise<Partial<CronJobNotificationStats>> {
   const scheduledFor = input?.scheduledFor ?? new Date();
   const snapshotDate = formatManilaDate(scheduledFor);
 
@@ -646,6 +647,8 @@ export async function runWeeklyEpiSnapshot(input?: { scheduledFor?: Date }): Pro
   const masterDb = db.getDb();
   const users = await getWeeklyEligibleServiceCrewUsers(scheduledFor);
   const reportDataList: EpiReportData[] = [];
+  let succeeded = 0;
+  let failed = 0;
 
   logger.info({ snapshotDate, count: users.length }, 'EPI weekly snapshot: processing users');
 
@@ -703,7 +706,9 @@ export async function runWeeklyEpiSnapshot(input?: { scheduledFor?: Date }): Pro
           reportDate: snapshotDate,
         });
       }
+      succeeded += 1;
     } catch (error) {
+      failed += 1;
       logger.error({ err: error, userId: user.id, snapshotDate }, 'EPI weekly snapshot failed for user');
     }
   }
@@ -775,9 +780,16 @@ export async function runWeeklyEpiSnapshot(input?: { scheduledFor?: Date }): Pro
   }
 
   logger.info({ snapshotDate, processed: reportDataList.length }, 'EPI weekly snapshot completed');
+
+  return {
+    processed: users.length,
+    succeeded,
+    failed,
+    skipped: 0,
+  };
 }
 
-export async function runMonthlyEpiSnapshot(input?: { scheduledFor?: Date }): Promise<void> {
+export async function runMonthlyEpiSnapshot(input?: { scheduledFor?: Date }): Promise<Partial<CronJobNotificationStats>> {
   const scheduledFor = input?.scheduledFor ?? new Date();
   const snapshotDate = getPreviousMonthDateString(scheduledFor);
 
@@ -785,6 +797,8 @@ export async function runMonthlyEpiSnapshot(input?: { scheduledFor?: Date }): Pr
 
   const masterDb = db.getDb();
   const users = await getActiveServiceCrewUsers();
+  let succeeded = 0;
+  let failed = 0;
 
   for (const user of users) {
     try {
@@ -812,12 +826,21 @@ export async function runMonthlyEpiSnapshot(input?: { scheduledFor?: Date }): Pr
           ),
           updated_at: new Date(),
         });
+      succeeded += 1;
     } catch (error) {
+      failed += 1;
       logger.error({ err: error, userId: user.id, snapshotDate }, 'EPI monthly snapshot failed for user');
     }
   }
 
   logger.info({ snapshotDate, processed: users.length }, 'EPI monthly snapshot completed');
+
+  return {
+    processed: users.length,
+    succeeded,
+    failed,
+    skipped: 0,
+  };
 }
 
 export async function initEpiSnapshotCrons(): Promise<void> {

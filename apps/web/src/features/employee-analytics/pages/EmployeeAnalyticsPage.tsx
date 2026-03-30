@@ -1,4 +1,4 @@
-﻿import {
+import {
   BarChart2,
   TrendingUp,
   Trophy,
@@ -405,6 +405,10 @@ const BRANCH_AVERAGES = {
   'uniform-compliance': 98.8,
   'hygiene-compliance': 96.5,
   'sop-compliance': 95.2,
+  'customer-interaction': 4.2,
+  'cashiering': 4.3,
+  'suggestive-selling-and-upselling': 4.1,
+  'service-efficiency': 4.2,
 };
 
 const METRIC_BENCHMARKS: Record<string, number> = {
@@ -490,6 +494,10 @@ const getPersonalizedStats = (userName: string) => {
           'uniform-compliance': readLatest('uniform-compliance'),
           'hygiene-compliance': readLatest('hygiene-compliance'),
           'sop-compliance': readLatest('sop-compliance'),
+          'customer-interaction': readLatest('customer-interaction'),
+          'cashiering': readLatest('cashiering'),
+          'suggestive-selling-and-upselling': readLatest('suggestive-selling-and-upselling'),
+          'service-efficiency': readLatest('service-efficiency'),
         },
       };
     }
@@ -501,14 +509,18 @@ const getPersonalizedStats = (userName: string) => {
         metrics: {
           'workplace-relations': 0,
           'professional-conduct': 0,
-        'attendance-rate': 0,
-        'punctuality-rate': 0,
-        'productivity-rate': 0,
-        'average-order-value': 0,
-        'uniform-compliance': 0,
-        'hygiene-compliance': 0,
-        'sop-compliance': 0,
-      },
+          'attendance-rate': 0,
+          'punctuality-rate': 0,
+          'productivity-rate': 0,
+          'average-order-value': 0,
+          'uniform-compliance': 0,
+          'hygiene-compliance': 0,
+          'sop-compliance': 0,
+          'customer-interaction': 0,
+          'cashiering': 0,
+          'suggestive-selling-and-upselling': 0,
+          'service-efficiency': 0,
+        },
     };
   }
 
@@ -538,6 +550,10 @@ const getPersonalizedStats = (userName: string) => {
       'uniform-compliance': Math.min(100, getVal(BRANCH_AVERAGES['uniform-compliance'], 5)),
       'hygiene-compliance': Math.min(100, getVal(BRANCH_AVERAGES['hygiene-compliance'], 10)),
       'sop-compliance': Math.min(100, getVal(BRANCH_AVERAGES['sop-compliance'], 15)),
+      'customer-interaction': getLikert(BRANCH_AVERAGES['customer-interaction']),
+      'cashiering': getLikert(BRANCH_AVERAGES['cashiering']),
+      'suggestive-selling-and-upselling': getLikert(BRANCH_AVERAGES['suggestive-selling-and-upselling']),
+      'service-efficiency': getLikert(BRANCH_AVERAGES['service-efficiency']),
     }
   };
 };
@@ -564,6 +580,10 @@ const METRICS: Array<{ id: EmployeeAnalyticsMetricId; label: string; supported: 
   { id: 'uniform-compliance', label: 'Uniform Compliance', supported: true },
   { id: 'hygiene-compliance', label: 'Hygiene Compliance', supported: true },
   { id: 'sop-compliance', label: 'SOP Compliance', supported: true },
+  { id: 'customer-interaction', label: 'Customer Interaction', supported: true },
+  { id: 'cashiering', label: 'Cashiering', supported: true },
+  { id: 'suggestive-selling-and-upselling', label: 'Suggestive Selling & Upselling', supported: true },
+  { id: 'service-efficiency', label: 'Service Efficiency', supported: true },
 ];
 
 function coerceLegacyMetricSelection<T extends string | null>(metricId: T): T | 'workplace-relations' {
@@ -1031,7 +1051,10 @@ function buildRadarDataset(userName: string, selection: AnalyticsRangeSelection)
       .replace(' Rate', '')
       .replace(' Compliance', '')
       .replace('Professional Conduct', 'Prof. Conduct')
-      .replace('Workplace Relations', 'Workplace Rel.');
+      .replace('Workplace Relations', 'Workplace Rel.')
+      .replace('Customer Interaction', 'Cust. Interaction')
+      .replace('Suggestive Selling & Upselling', 'Selling & Upsell')
+      .replace('Service Efficiency', 'Srv. Efficiency');
     if (!metric.supported || metric.id === 'professional-conduct') {
       return { subject: label, A: 0, fullMark: 100 };
     }
@@ -2347,6 +2370,10 @@ const GLOBAL_AVERAGES: Record<string, number> = {
   'Uniform': 97.3,
   'Hygiene': 95.0,
   'SOP': 93.8,
+  'Customer Interaction': 4.2,
+  'Cashiering': 4.3,
+  'Suggestive Selling': 4.1,
+  'Efficiency': 4.2,
 };
 
 const TOTAL_EMPLOYEES = 85;
@@ -2436,6 +2463,42 @@ const METRIC_DETAIL_CONFIGS: Record<EmployeeAnalyticsMetricId, MetricDetailConfi
       { key: 'result', label: 'Result' },
     ],
     formula: 'Passed SOP checks / total checks',
+  },
+  'customer-interaction': {
+    columns: [
+      { key: 'completedAt', label: 'Date' },
+      { key: 'branchName', label: 'Branch' },
+      { key: 'auditorName', label: 'Auditor' },
+      { key: 'result', label: 'Score' },
+    ],
+    formula: 'Average of Customer Interaction audit scores',
+  },
+  'cashiering': {
+    columns: [
+      { key: 'completedAt', label: 'Date' },
+      { key: 'branchName', label: 'Branch' },
+      { key: 'auditorName', label: 'Auditor' },
+      { key: 'result', label: 'Score' },
+    ],
+    formula: 'Average of Cashiering audit scores',
+  },
+  'suggestive-selling-and-upselling': {
+    columns: [
+      { key: 'completedAt', label: 'Date' },
+      { key: 'branchName', label: 'Branch' },
+      { key: 'auditorName', label: 'Auditor' },
+      { key: 'result', label: 'Score' },
+    ],
+    formula: 'Average of Suggestive Selling & Upselling audit scores',
+  },
+  'service-efficiency': {
+    columns: [
+      { key: 'completedAt', label: 'Date' },
+      { key: 'branchName', label: 'Branch' },
+      { key: 'auditorName', label: 'Auditor' },
+      { key: 'result', label: 'Score' },
+    ],
+    formula: 'Average of Service Efficiency audit scores',
   },
 };
 
@@ -3923,6 +3986,10 @@ const METRIC_LABELS: Record<string, string> = {
   'uniform-compliance': 'Uniform Compliance',
   'hygiene-compliance': 'Hygiene Compliance',
   'sop-compliance': 'SOP Compliance',
+  'customer-interaction': 'Customer Interaction',
+  'cashiering': 'Cashiering',
+  'suggestive-selling-and-upselling': 'Suggestive Selling & Upselling',
+  'service-efficiency': 'Service Efficiency',
 };
 
 function formatMetricDisplay(metricId: string, value: number, fractionDigits = 1): string {
@@ -4857,11 +4924,16 @@ const METRIC_ICONS: Record<string, React.ReactNode> = {
   'uniform-compliance': <Check className="h-3.5 w-3.5" />,
   'hygiene-compliance': <Check className="h-3.5 w-3.5" />,
   'sop-compliance': <Target className="h-3.5 w-3.5" />,
+  'customer-interaction': <Users className="h-3.5 w-3.5" />,
+  'cashiering': <Activity className="h-3.5 w-3.5" />,
+  'suggestive-selling-and-upselling': <TrendingUp className="h-3.5 w-3.5" />,
+  'service-efficiency': <Activity className="h-3.5 w-3.5" />,
 };
 
 function getMetricCategory(id: string): string {
   if (['workplace-relations', 'professional-conduct'].includes(id)) return 'Core Performance';
   if (['attendance-rate', 'punctuality-rate', 'productivity-rate', 'average-order-value'].includes(id)) return 'Operational';
+  if (['customer-interaction', 'cashiering', 'suggestive-selling-and-upselling', 'service-efficiency'].includes(id)) return 'Customer Service';
   return 'Compliance';
 }
 
@@ -4869,6 +4941,7 @@ const METRIC_CATEGORY_COLORS: Record<string, string> = {
   'Core Performance': 'bg-blue-500',
   'Operational': 'bg-violet-500',
   'Compliance': 'bg-emerald-500',
+  'Customer Service': 'bg-rose-500',
 };
 
 function MetricSelect({

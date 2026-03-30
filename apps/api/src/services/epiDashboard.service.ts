@@ -307,7 +307,7 @@ function breakdownToCriteria(kpi: KpiBreakdown | null | undefined): DashboardCri
   if (!kpi) return createEmptyCriteria();
 
   return {
-    sqaaScore: kpi.css.score,
+    sqaaScore: null,
     workplaceRelationsScore: kpi.wrs.score,
     professionalConductScore: kpi.pcs.score,
     productivityRate: kpi.productivity.rate,

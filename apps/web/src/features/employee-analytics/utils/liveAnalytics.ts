@@ -17,10 +17,13 @@ export const SUPPORTED_ROLLING_METRIC_IDS: readonly RollingMetricId[] = [
   'uniform-compliance',
   'hygiene-compliance',
   'sop-compliance',
+  'customer-interaction',
+  'cashiering',
+  'suggestive-selling-and-upselling',
+  'service-efficiency',
 ] as const;
 
 type SnapshotMetricField =
-  | 'customerServiceScore'
   | 'workplaceRelationsScore'
   | 'attendanceRate'
   | 'punctualityRate'
@@ -29,6 +32,10 @@ type SnapshotMetricField =
   | 'uniformComplianceRate'
   | 'hygieneComplianceRate'
   | 'sopComplianceRate'
+  | 'customerInteractionScore'
+  | 'cashieringScore'
+  | 'suggestiveSellingAndUpsellingScore'
+  | 'serviceEfficiencyScore'
   | 'epiScore';
 
 const SNAPSHOT_METRIC_FIELD_BY_ID: Record<Exclude<EmployeeAnalyticsMetricId, 'professional-conduct'> | 'epi-score', SnapshotMetricField> = {
@@ -40,11 +47,14 @@ const SNAPSHOT_METRIC_FIELD_BY_ID: Record<Exclude<EmployeeAnalyticsMetricId, 'pr
   'uniform-compliance': 'uniformComplianceRate',
   'hygiene-compliance': 'hygieneComplianceRate',
   'sop-compliance': 'sopComplianceRate',
+  'customer-interaction': 'customerInteractionScore',
+  'cashiering': 'cashieringScore',
+  'suggestive-selling-and-upselling': 'suggestiveSellingAndUpsellingScore',
+  'service-efficiency': 'serviceEfficiencyScore',
   'epi-score': 'epiScore',
 };
 
 export interface NormalizedEmployeeMetricDailySnapshot extends Omit<EmployeeMetricDailySnapshot,
-  | 'customerServiceScore'
   | 'workplaceRelationsScore'
   | 'attendanceRate'
   | 'punctualityRate'
@@ -54,11 +64,14 @@ export interface NormalizedEmployeeMetricDailySnapshot extends Omit<EmployeeMetr
   | 'uniformComplianceRate'
   | 'hygieneComplianceRate'
   | 'sopComplianceRate'
+  | 'customerInteractionScore'
+  | 'cashieringScore'
+  | 'suggestiveSellingAndUpsellingScore'
+  | 'serviceEfficiencyScore'
   | 'epiScore'
   | 'awardsCount'
   | 'violationsCount'
 > {
-  customerServiceScore: number | null;
   workplaceRelationsScore: number | null;
   attendanceRate: number | null;
   punctualityRate: number | null;
@@ -68,6 +81,10 @@ export interface NormalizedEmployeeMetricDailySnapshot extends Omit<EmployeeMetr
   uniformComplianceRate: number | null;
   hygieneComplianceRate: number | null;
   sopComplianceRate: number | null;
+  customerInteractionScore: number | null;
+  cashieringScore: number | null;
+  suggestiveSellingAndUpsellingScore: number | null;
+  serviceEfficiencyScore: number | null;
   epiScore: number | null;
   awardsCount: number;
   violationsCount: number;
@@ -165,7 +182,6 @@ export function normalizeSnapshotRows(rows: EmployeeMetricDailySnapshot[]): Norm
     snapshotDate: normalizeYmd(row.snapshotDate),
     windowStartDate: normalizeYmd(row.windowStartDate),
     windowEndDate: normalizeYmd(row.windowEndDate),
-    customerServiceScore: toNumber(row.customerServiceScore),
     workplaceRelationsScore: toNumber(row.workplaceRelationsScore),
     attendanceRate: toNumber(row.attendanceRate),
     punctualityRate: toNumber(row.punctualityRate),
@@ -175,6 +191,10 @@ export function normalizeSnapshotRows(rows: EmployeeMetricDailySnapshot[]): Norm
     uniformComplianceRate: toNumber(row.uniformComplianceRate),
     hygieneComplianceRate: toNumber(row.hygieneComplianceRate),
     sopComplianceRate: toNumber(row.sopComplianceRate),
+    customerInteractionScore: toNumber(row.customerInteractionScore),
+    cashieringScore: toNumber(row.cashieringScore),
+    suggestiveSellingAndUpsellingScore: toNumber(row.suggestiveSellingAndUpsellingScore),
+    serviceEfficiencyScore: toNumber(row.serviceEfficiencyScore),
     epiScore: toNumber(row.epiScore),
     awardsCount: toInteger(row.awardsCount),
     violationsCount: toInteger(row.violationsCount),

@@ -1,6 +1,8 @@
+import type { CronJobNotificationStats } from '@omnilert/shared';
+
 export type ServiceCrewCctvRunOutcome =
-  | { status: 'success' }
-  | { status: 'skipped'; reason?: string | null };
+  | { status: 'success'; stats?: Partial<CronJobNotificationStats> | null }
+  | { status: 'skipped'; reason?: string | null; stats?: Partial<CronJobNotificationStats> | null };
 
 interface ServiceCrewCctvOccurrenceExecutorDeps {
   jobName: string;
@@ -19,6 +21,7 @@ interface ServiceCrewCctvOccurrenceExecutorDeps {
     finishedAt: Date;
     message: string;
     errorMessage?: string | null;
+    stats?: Partial<CronJobNotificationStats> | null;
   }) => Promise<void>;
   logger: {
     info: (context: Record<string, unknown>, message: string) => void;
@@ -78,6 +81,7 @@ export function createServiceCrewCctvOccurrenceExecutor(
               startedAt,
               finishedAt,
               message: 'Completed service crew cctv cron occurrence',
+              stats: outcome.stats ?? null,
             });
           } catch (notifyError) {
             deps.logger.error(
@@ -113,6 +117,7 @@ export function createServiceCrewCctvOccurrenceExecutor(
             finishedAt,
             message: 'Service crew cctv cron occurrence failed',
             errorMessage: error instanceof Error ? error.message : String(error),
+            stats: { processed: 1, succeeded: 0, failed: 1, skipped: 0 },
           });
         } catch (notifyError) {
           deps.logger.error(

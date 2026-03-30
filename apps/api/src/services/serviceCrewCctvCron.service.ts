@@ -264,12 +264,20 @@ export async function runServiceCrewCctvCron(): Promise<ServiceCrewCctvRunOutcom
       (attendance) => !DISABLED_AUDIT_ODOO_COMPANY_IDS.has(Number(attendance.company_id)),
     );
     if (eligibleAttendances.length === 0) {
-      return { status: 'skipped', reason: 'No eligible active attendances found' };
+      return {
+        status: 'skipped',
+        reason: 'No eligible active attendances found',
+        stats: { processed: 0, succeeded: 0, failed: 0, skipped: 0 },
+      };
     }
 
     const chosen = eligibleAttendances[Math.floor(Math.random() * eligibleAttendances.length)];
     if (!chosen) {
-      return { status: 'skipped', reason: 'No eligible attendance could be chosen' };
+      return {
+        status: 'skipped',
+        reason: 'No eligible attendance could be chosen',
+        stats: { processed: 0, succeeded: 0, failed: 0, skipped: 0 },
+      };
     }
 
     const company = await resolveCompanyByOdooBranchId(chosen.company_id);
@@ -286,7 +294,11 @@ export async function runServiceCrewCctvCron(): Promise<ServiceCrewCctvRunOutcom
       .first('id');
 
     if (!branch) {
-      return { status: 'skipped', reason: 'No active tenant branch was available for service crew cctv audit creation' };
+      return {
+        status: 'skipped',
+        reason: 'No active tenant branch was available for service crew cctv audit creation',
+        stats: { processed: 1, succeeded: 0, failed: 0, skipped: 1 },
+      };
     }
 
     if (!mappedBranch) {
@@ -320,7 +332,10 @@ export async function runServiceCrewCctvCron(): Promise<ServiceCrewCctvRunOutcom
 
     emitStoreAuditEvent(String(company.id), 'store-audit:new', audit);
 
-    return { status: 'success' };
+    return {
+      status: 'success',
+      stats: { processed: 1, succeeded: 1, failed: 0, skipped: 0 },
+    };
   } catch (error) {
     logger.error({ err: error }, 'Service crew cctv cron failed');
     throw error;
@@ -348,7 +363,7 @@ const executeServiceCrewCctvOccurrence = createServiceCrewCctvOccurrenceExecutor
       status: result.status,
       message: result.message,
       errorMessage: result.errorMessage ?? null,
-      stats: null,
+      stats: result.stats ?? null,
     });
   },
   logger,

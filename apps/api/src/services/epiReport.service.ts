@@ -120,7 +120,10 @@ export async function generateEpiReportPdf(data: EpiReportData): Promise<Buffer>
     let rowY = tableStartY + 20;
 
     const rows: Array<[string, string, number]> = [
-      ['Customer Service Score (CSS)', scoreText(kpi.css.score), kpi.css.impact],
+      ['Customer Interaction', scoreText(kpi.customer_interaction.score), kpi.customer_interaction.impact],
+      ['Cashiering', scoreText(kpi.cashiering.score), kpi.cashiering.impact],
+      ['Suggestive Selling & Upselling', scoreText(kpi.suggestive_selling_and_upselling.score), kpi.suggestive_selling_and_upselling.impact],
+      ['Service Efficiency', scoreText(kpi.service_efficiency.score), kpi.service_efficiency.impact],
       ['Workplace Relations Score (WRS)', scoreText(kpi.wrs.score), kpi.wrs.impact],
       ['Professional Conduct Score (PCS)', scoreText(kpi.pcs.score), kpi.pcs.impact],
       ['Attendance Rate', rateText(kpi.attendance.rate), kpi.attendance.impact],

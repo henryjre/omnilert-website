@@ -37,7 +37,10 @@ test('getRollingWindowForSnapshotDate returns inclusive 30-day range', () => {
 
 test('mapBreakdownToRollingMetricSnapshot returns rolling metrics plus branch AOV benchmark', () => {
   const snapshot = mapBreakdownToRollingMetricSnapshot({
-    css: { score: 4.5, impact: 2 },
+    customer_interaction: { score: 4.5, impact: 0 },
+    cashiering: { score: 4.5, impact: 0 },
+    suggestive_selling_and_upselling: { score: 4.5, impact: 0 },
+    service_efficiency: { score: 4.5, impact: 0 },
     wrs: { score: 4.1, impact: 0.5 },
     pcs: { score: 4.2, impact: 0 },
     attendance: { rate: 98.5, impact: 1 },
@@ -52,7 +55,10 @@ test('mapBreakdownToRollingMetricSnapshot returns rolling metrics plus branch AO
   });
 
   assert.deepEqual(snapshot, {
-    customerServiceScore: 4.5,
+    customerInteraction: 4.5,
+    cashiering: 4.5,
+    suggestiveSellingAndUpselling: 4.5,
+    serviceEfficiency: 4.5,
     workplaceRelationsScore: 4.1,
     attendanceRate: 98.5,
     punctualityRate: 96.2,
