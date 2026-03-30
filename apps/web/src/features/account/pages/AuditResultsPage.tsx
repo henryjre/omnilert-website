@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import type {
   AccountAuditResultDetail,
   AccountAuditResultListItem,
@@ -33,13 +34,15 @@ function formatDate(value: string | null): string {
 export function AuditResultsPage() {
   const { error: showErrorToast } = useAppToast();
   const { selectedBranchIds } = useBranchStore();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialId = searchParams.get('id');
 
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<AccountAuditResultListItem[]>([]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
   const [total, setTotal] = useState(0);
-  const [selectedAuditId, setSelectedAuditId] = useState<string | null>(null);
+  const [selectedAuditId, setSelectedAuditId] = useState<string | null>(initialId);
   const [selectedAudit, setSelectedAudit] = useState<AccountAuditResultDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
@@ -137,6 +140,21 @@ export function AuditResultsPage() {
       active = false;
     };
   }, [selectedAuditId, showErrorToast]);
+
+  // Sync selectedAuditId to URL search params
+  useEffect(() => {
+    if (selectedAuditId) {
+      setSearchParams((prev) => {
+        prev.set('id', selectedAuditId);
+        return prev;
+      }, { replace: true });
+    } else {
+      setSearchParams((prev) => {
+        prev.delete('id');
+        return prev;
+      }, { replace: true });
+    }
+  }, [selectedAuditId, setSearchParams]);
 
   const currentPage = paginationState.page;
   const totalPages = paginationState.totalPages;

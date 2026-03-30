@@ -137,8 +137,8 @@
                     <!-- Gradient Header -->
                     <tr>
                         <td class="header">
-                            <div class="company-name">{{company.name}}</div>
-                            <h1 class="audit-title">Audit Completion</h1>
+                            <div class="company-name">{{ $json.body.company.name }}</div>
+                            <h1 class="audit-title">Audit Receipt</h1>
                             <div class="status-badge">Completed</div>
                         </td>
                     </tr>
@@ -150,7 +150,7 @@
                                 <tr>
                                     <td>
                                         <p style="font-size: 16px; color: #4b5563; margin-top: 0; margin-bottom: 24px;">
-                                            Hello <strong>{{recipient.full_name}}</strong>, your audit has been successfully processed. Below are the details of the session.
+                                            Hello <strong>{{ $json.body.recipient.full_name }}</strong>, your audit has been successfully processed. Below are the details of the audit
                                         </p>
                                     </td>
                                 </tr>
@@ -162,11 +162,13 @@
                                             <tr>
                                                 <td width="50%" valign="top">
                                                     <div class="section-label">Audit ID</div>
-                                                    <div class="data-value">#{{audit.id}}</div>
+                                                    <div class="data-value">
+                                                        <a href="{{ $json.body.base_url }}/account/audit-results?id={{ $json.body.audit.id }}" style="text-decoration: none; color: #2563eb;">#{{ $json.body.audit.id }}</a>
+                                                    </div>
                                                 </td>
                                                 <td width="50%" valign="top">
                                                     <div class="section-label">Type</div>
-                                                    <div class="data-value">{{audit.type_label}}</div>
+                                                    <div class="data-value">{{ $json.body.audit.type_label }}</div>
                                                 </td>
                                             </tr>
                                             
@@ -174,11 +176,11 @@
                                             <tr>
                                                 <td width="50%" valign="top">
                                                     <div class="section-label">Branch</div>
-                                                    <div class="data-value">{{branch.name}}</div>
+                                                    <div class="data-value">{{ $json.body.branch.name }}</div>
                                                 </td>
                                                 <td width="50%" valign="top">
                                                     <div class="section-label">Source Reference</div>
-                                                    <div class="data-value">{{audit.source_reference}}</div>
+                                                    <div class="data-value">{{ $json.body.audit.source_reference }}</div>
                                                 </td>
                                             </tr>
                                             
@@ -190,11 +192,11 @@
                                             <tr>
                                                 <td width="50%" valign="top">
                                                     <div class="section-label">Date Observed</div>
-                                                    <div class="data-value">{{audit.observed_at}}</div>
+                                                    <div class="data-value">{{ DateTime.fromISO($json.body.audit.observed_at).toFormat("LLL dd, yyyy 'at' h:mm a") }}</div>
                                                 </td>
                                                 <td width="50%" valign="top">
                                                     <div class="section-label">Date Completed</div>
-                                                    <div class="data-value">{{audit.completed_at}}</div>
+                                                    <div class="data-value">{{ DateTime.fromISO($json.body.audit.completed_at).toFormat("LLL dd, yyyy 'at' h:mm a") }}</div>
                                                 </td>
                                             </tr>
                                             
@@ -206,8 +208,8 @@
                                             <tr>
                                                 <td colspan="2">
                                                     <div class="section-label">Audited Employee</div>
-                                                    <div class="data-value" style="margin-bottom: 4px;">{{recipient.full_name}}</div>
-                                                    <div style="font-size: 13px; color: #6b7280;">{{recipient.email}}</div>
+                                                    <div class="data-value" style="margin-bottom: 4px;">{{ $json.body.recipient.full_name }}</div>
+                                                    <div style="font-size: 13px; color: #6b7280;">{{ $json.body.recipient.email }}</div>
                                                 </td>
                                             </tr>
                                         </table>
@@ -220,9 +222,19 @@
                                         <div class="section-label">Audit Summary</div>
                                         <div style="background-color: #f9fafb; border-left: 4px solid #2563eb; padding: 16px; margin-top: 8px; border-radius: 4px;">
                                             <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #374151; font-weight: 500;">
-                                                {{summary.result_line}}
+                                                {{ $json.body.summary.result_line }}
                                             </p>
                                         </div>
+                                    </td>
+                                </tr>
+
+                                <!-- Deep Link Button -->
+                                <tr>
+                                    <td style="padding-top: 30px; text-align: center;">
+                                        <a href="{{ $json.body.base_url }}/account/audit-results?id={{ $json.body.audit.id }}" 
+                                           style="background-color: #2563eb; color: #ffffff; padding: 14px 28px; border-radius: 10px; text-decoration: none; font-weight: 700; display: inline-block; font-size: 15px; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);">
+                                            View Full Audit Details
+                                        </a>
                                     </td>
                                 </tr>
                                 
@@ -247,7 +259,7 @@
                 <table width="600" border="0" cellspacing="0" cellpadding="0">
                     <tr>
                         <td style="padding: 24px; text-align: center; color: #9ca3af; font-size: 11px;">
-                            &copy; 2026 Omnilert Website. All rights reserved.
+                            &copy; 2026 Omnilert. All rights reserved.
                         </td>
                     </tr>
                 </table>
