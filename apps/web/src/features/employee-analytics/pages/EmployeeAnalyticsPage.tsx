@@ -27,6 +27,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { api } from '@/shared/services/api.client';
 import { ViewToggle, type ViewOption } from '@/shared/components/ui/ViewToggle';
 import {
   getHeroZoneLabel,
@@ -622,6 +623,12 @@ function buildPersonalKeyInsights(
 }
 
 const HERO_ZONE_ORDER: readonly HeroEpiZone[] = ['red', 'amber', 'green', 'blue'];
+const FIXED_SCORE_BANDS: ReadonlyArray<{ zone: HeroEpiZone; minPct: number; maxPct: number }> = [
+  { zone: 'red', minPct: 0, maxPct: 59 },
+  { zone: 'amber', minPct: 60, maxPct: 74 },
+  { zone: 'green', minPct: 75, maxPct: 89 },
+  { zone: 'blue', minPct: 90, maxPct: 100 },
+];
 
 const HERO_ZONE_DISTRIBUTION_STYLE: Record<HeroEpiZone, { fill: string; shortLabel: string }> = {
   red: { fill: '#ef4444', shortLabel: 'Critical Deficit' },
@@ -630,26 +637,47 @@ const HERO_ZONE_DISTRIBUTION_STYLE: Record<HeroEpiZone, { fill: string; shortLab
   blue: { fill: '#3b82f6', shortLabel: 'Exceptional' },
 };
 
-function getMetricMinBound(metricId: string | null): number {
-  if (!metricId) return 0;
-  return getMetricKind(metricId) === 'likert' ? 1 : 0;
+function roundToOneDecimal(value: number): number {
+  return Math.round(value * 10) / 10;
 }
 
-function getMetricMaxBound(metricId: string | null): number {
-  if (!metricId) return 100;
-  if (metricId === 'average-order-value') return Number.POSITIVE_INFINITY;
-  return getMetricScaleMax(metricId) || 100;
+function roundBandBoundary(metricId: string | null, value: number): number {
+  if (metricId && getMetricKind(metricId) === 'likert') {
+    return Math.round(value * 100) / 100;
+  }
+  return roundToOneDecimal(value);
 }
 
-function clampMetricValue(metricId: string | null, value: number): number {
-  const min = getMetricMinBound(metricId);
-  const max = getMetricMaxBound(metricId);
-  const boundedLow = Math.max(min, value);
-  return Number.isFinite(max) ? Math.min(max, boundedLow) : boundedLow;
+function getDistributionCap(metricId: string | null): number | null {
+  if (!metricId || metricId === 'average-order-value') {
+    return null;
+  }
+  return getMetricKind(metricId) === 'likert' ? 5 : 100;
+}
+
+function getDistributionStep(metricId: string | null): number {
+  return metricId && getMetricKind(metricId) === 'likert' ? 0.01 : 0.1;
+}
+
+function getDistributionThresholds(globalAverage: number, metricId: string | null): {
+  baseline: number;
+  redUpper: number;
+  blueLower: number;
+  cap: number | null;
+} {
+  const cap = getDistributionCap(metricId);
+  const rawBaseline = Number.isFinite(globalAverage) && globalAverage > 0 ? globalAverage : 0;
+  const baseline = cap === null ? rawBaseline : Math.min(Math.max(rawBaseline, 0), cap);
+  const redUpper = baseline - (baseline * 0.25);
+  const blueLower = cap === null
+    ? baseline + (baseline * 0.5)
+    : baseline + ((cap - baseline) * 0.5);
+
+  return { baseline, redUpper, blueLower, cap };
 }
 
 function formatBandValue(metricId: string | null, value: number): string {
-  const rounded = Math.round(value * 10) / 10;
+  const rounded = roundBandBoundary(metricId, value);
   if (!metricId) {
     return rounded.toFixed(1);
   }
@@ -659,31 +687,147 @@ function formatBandValue(metricId: string | null, value: number): string {
   }
 
   if (getMetricKind(metricId) === 'likert') {
-    return `${rounded.toFixed(2)}/5`;
+    return rounded.toFixed(2);
   }
 
   return `${rounded.toFixed(1)}%`;
 }
 
+function formatClosedBand(metricId: string | null, start: number, end: number): string {
+  const startRounded = roundBandBoundary(metricId, start);
+  const endRounded = roundBandBoundary(metricId, end);
+  if (endRounded === startRounded) {
+    return formatBandValue(metricId, startRounded);
+  }
+  if (endRounded < startRounded) {
+    return formatBandValue(metricId, startRounded);
+  }
+  return `${formatBandValue(metricId, startRounded)}–${formatBandValue(metricId, endRounded)}`;
+}
+
+function resolveDistributionZone(value: number, globalAverage: number, metricId: string | null): HeroEpiZone {
+  const { baseline, redUpper, blueLower, cap } = getDistributionThresholds(globalAverage, metricId);
+  const step = getDistributionStep(metricId);
+
+  if (value <= redUpper) return 'red';
+  if (value < baseline) return 'amber';
+  if (cap === null) {
+    return value <= blueLower ? 'green' : 'blue';
+  }
+  if (blueLower >= cap - (step / 2)) {
+    return 'green';
+  }
+  return value < blueLower ? 'green' : 'blue';
+}
+
+function getFixedDistributionMaxScore(metricId: string): number | null {
+  const kind = getMetricKind(metricId);
+  if (kind === 'percentage') return 100;
+  if (kind === 'likert') return getMetricScaleMax(metricId) || 5;
+  const scaleMax = getMetricScaleMax(metricId);
+  if (Number.isFinite(scaleMax) && scaleMax > 1) return scaleMax;
+  return null;
+}
+
+function normalizeScoreToPercent(score: number, maxScore: number): number {
+  if (!Number.isFinite(maxScore) || maxScore <= 0) return 0;
+  const pct = (score / maxScore) * 100;
+  if (!Number.isFinite(pct)) return 0;
+  return Math.max(0, Math.min(100, pct));
+}
+
+function resolveFixedBandZoneByPercent(percent: number): HeroEpiZone {
+  if (percent < 60) return 'red';
+  if (percent < 75) return 'amber';
+  if (percent < 90) return 'green';
+  return 'blue';
+}
+
+function buildFixedMetricScoreDistributionFromValues(
+  values: number[],
+  metricId: string,
+  maxScore: number,
+): {
+  distribution: Array<{ range: string; count: number; fill: string }>;
+  dominantEmployeeCount: number;
+  dominantSharePct: number;
+  dominantBandLabel: string;
+  dominantZone: HeroEpiZone;
+  totalEmployees: number;
+} {
+  const counts: Record<HeroEpiZone, number> = {
+    red: 0,
+    amber: 0,
+    green: 0,
+    blue: 0,
+  };
+
+  for (const value of values) {
+    const pct = normalizeScoreToPercent(value, maxScore);
+    const zone = resolveFixedBandZoneByPercent(pct);
+    counts[zone] += 1;
+  }
+
+  const labels = FIXED_SCORE_BANDS.reduce<Record<HeroEpiZone, string>>(
+    (acc, band) => {
+      const minValue = (band.minPct / 100) * maxScore;
+      const maxValue = (band.maxPct / 100) * maxScore;
+      acc[band.zone] = formatClosedBand(metricId, minValue, maxValue);
+      return acc;
+    },
+    { red: '', amber: '', green: '', blue: '' },
+  );
+
+  const bins = HERO_ZONE_ORDER.map((zone) => ({
+    zone,
+    range: labels[zone],
+    count: counts[zone],
+    fill: HERO_ZONE_DISTRIBUTION_STYLE[zone].fill,
+  }));
+  const totalEmployees = bins.reduce((sum, bin) => sum + bin.count, 0);
+  const dominant = bins.reduce((best, current) => (current.count > best.count ? current : best), bins[0]);
+
+  return {
+    distribution: bins.map((bin) => ({ range: bin.range, count: bin.count, fill: bin.fill })),
+    dominantEmployeeCount: dominant.count,
+    dominantSharePct: totalEmployees > 0 ? Math.round((dominant.count / totalEmployees) * 100) : 0,
+    dominantBandLabel: dominant.range,
+    dominantZone: dominant.zone,
+    totalEmployees,
+  };
+}
+
 function getValueEquivalentBandLabels(globalAverage: number, metricId: string | null): Record<HeroEpiZone, string> {
-  if (!Number.isFinite(globalAverage) || globalAverage <= 0) {
+  const { baseline, redUpper, blueLower, cap } = getDistributionThresholds(globalAverage, metricId);
+  const step = getDistributionStep(metricId);
+  const amberLower = redUpper + step;
+  const amberUpper = baseline - step;
+  const greenLower = baseline;
+
+  if (cap === null) {
     return {
-      red: '≤−25%',
-      amber: '−25%–0%',
-      green: '0%–+50%',
-      blue: '>+50%',
+      red: formatClosedBand(metricId, 0, redUpper),
+      amber: formatClosedBand(metricId, amberLower, amberUpper),
+      green: formatClosedBand(metricId, greenLower, blueLower),
+      blue: `>${formatBandValue(metricId, blueLower)}`,
     };
   }
 
-  const minus25 = clampMetricValue(metricId, globalAverage * 0.75);
-  const neutral = clampMetricValue(metricId, globalAverage);
-  const plus50 = clampMetricValue(metricId, globalAverage * 1.5);
+  if (blueLower >= cap - (step / 2)) {
+    return {
+      red: formatClosedBand(metricId, 0, redUpper),
+      amber: formatClosedBand(metricId, amberLower, amberUpper),
+      green: formatClosedBand(metricId, greenLower, cap),
+      blue: `>${formatBandValue(metricId, cap)}`,
+    };
+  }
 
+  const greenUpper = blueLower - step;
   return {
-    red: `≤${formatBandValue(metricId, minus25)}`,
-    amber: `${formatBandValue(metricId, minus25)}–${formatBandValue(metricId, neutral)}`,
-    green: `${formatBandValue(metricId, neutral)}–${formatBandValue(metricId, plus50)}`,
-    blue: `>${formatBandValue(metricId, plus50)}`,
+    red: formatClosedBand(metricId, 0, redUpper),
+    amber: formatClosedBand(metricId, amberLower, amberUpper),
+    green: formatClosedBand(metricId, greenLower, greenUpper),
+    blue: formatClosedBand(metricId, blueLower, cap),
   };
 }
 
@@ -707,10 +851,7 @@ function buildHeroDistributionFromValues(
   };
 
   for (const value of values) {
-    const { zone } = resolveHeroEpiComparison({
-      userEpiScore: value,
-      globalAverageEpi: globalAverage,
-    });
+    const zone = resolveDistributionZone(value, globalAverage, metricId);
     counts[zone] += 1;
   }
 
@@ -977,6 +1118,24 @@ function getMetricHeroVsGlobalDistribution(
   }
 
   const employees = getMetricEmployeeRows(dataset, metricId as EmployeeAnalyticsMetricId);
+  const fixedMaxScore = getFixedDistributionMaxScore(metricId);
+  if (fixedMaxScore !== null) {
+    const distribution = buildFixedMetricScoreDistributionFromValues(
+      employees.map((row) => row.value),
+      metricId,
+      fixedMaxScore,
+    );
+
+    return {
+      bins: distribution.distribution,
+      totalEmployees: distribution.totalEmployees,
+      dominantZone: distribution.dominantZone,
+      dominantEmployeeCount: distribution.dominantEmployeeCount,
+      dominantSharePct: distribution.dominantSharePct,
+      dominantBandLabel: distribution.dominantBandLabel,
+    };
+  }
+
   const latestGlobalAvg =
     getLatestGlobalMetricAverage(dataset, metricId as Exclude<EmployeeAnalyticsMetricId, 'professional-conduct'>)
     ?? globalTarget;
@@ -3279,6 +3438,7 @@ function MetricsDistributionCard({
                   tick={{ fill: '#9ca3af', fontSize: 11, fontWeight: 600 }}
                 />
                 <YAxis
+                  allowDecimals={false}
                   axisLine={false}
                   tickLine={false}
                   tick={{ fill: '#9ca3af', fontSize: 11, fontWeight: 600 }}
@@ -4457,6 +4617,7 @@ function MetricDistributionCard({
   metricId: string;
   analyticsRange: AnalyticsRangeSelection;
 }) {
+  const fixedBandMode = getFixedDistributionMaxScore(metricId) !== null;
   const metricDistribution = useMemo(
     () =>
       getMetricHeroVsGlobalDistribution(
@@ -4470,13 +4631,16 @@ function MetricDistributionCard({
   );
   const { bins: distributionData, totalEmployees, dominantZone, dominantEmployeeCount, dominantSharePct, dominantBandLabel } =
     metricDistribution;
+  const subtitle = fixedBandMode
+    ? `${totalEmployees} employees · Fixed score bands`
+    : `${totalEmployees} employees · vs Global Avg ${METRIC_LABELS[metricId] ?? ''}`;
 
   return (
     <motion.div custom={5} variants={cardVariants} initial="hidden" animate="visible" className="h-full min-w-0 w-full">
       <AnalyticsCard
         icon={<Users className="h-4 w-4" />}
         title="Score distribution"
-        subtitle={`${totalEmployees} employees · vs Global Avg ${METRIC_LABELS[metricId] ?? ''}`}
+        subtitle={subtitle}
       >
         <div className="flex flex-col flex-1 gap-4 px-3 py-4 sm:p-5">
           <div className="h-[200px] w-full min-w-0">
@@ -4490,6 +4654,7 @@ function MetricDistributionCard({
                   tick={{ fill: '#9ca3af', fontSize: 11, fontWeight: 600 }}
                 />
                 <YAxis
+                  allowDecimals={false}
                   axisLine={false}
                   tickLine={false}
                   tick={{ fill: '#9ca3af', fontSize: 11, fontWeight: 600 }}
@@ -4979,6 +5144,43 @@ interface EmployeeAnalyticsPageProps {
   isLoading?: boolean;
 }
 
+interface EmployeeProfileSummary {
+  work_information?: {
+    department_name?: string | null;
+    resident_branch?: {
+      branch_name?: string | null;
+    } | null;
+    date_started?: string | null;
+  } | null;
+}
+
+function formatTenureFromDateStarted(value: string | null | undefined): string {
+  if (!value) return '—';
+  const dateStarted = new Date(value);
+  if (Number.isNaN(dateStarted.getTime())) return '—';
+
+  const startUtc = Date.UTC(dateStarted.getFullYear(), dateStarted.getMonth(), dateStarted.getDate());
+  const now = new Date();
+  const nowUtc = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const elapsedDays = Math.max(0, Math.floor((nowUtc - startUtc) / (1000 * 60 * 60 * 24)));
+  if (elapsedDays <= 30) {
+    const unit = elapsedDays === 1 ? 'Day' : 'Days';
+    return `${elapsedDays} ${unit}`;
+  }
+
+  const elapsedMonths = elapsedDays / 30.4375;
+  if (elapsedMonths <= 12) {
+    const roundedMonths = Math.round(elapsedMonths * 10) / 10;
+    const unit = roundedMonths === 1 ? 'Month' : 'Months';
+    return `${roundedMonths.toFixed(1)} ${unit}`;
+  }
+
+  const elapsedYears = elapsedDays / 365.2425;
+  const roundedYears = Math.round(elapsedYears * 10) / 10;
+  const unit = roundedYears === 1 ? 'Year' : 'Years';
+  return `${roundedYears.toFixed(1)} ${unit}`;
+}
+
 export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPageProps) {
   const [activeView, setActiveView] = useState<AnalyticsView>('general');
   const [selectedUser, setSelectedUser] = useState<UserEntry | null>(null);
@@ -5003,6 +5205,27 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
     [analyticsRange, metricSnapshotsQuery.data],
   );
   setActiveLiveDataset(liveDataset);
+  const selectedEmployeeProfileQuery = useQuery({
+    queryKey: ['employee-analytics', 'employee-profile-summary', selectedUser?.id ?? null],
+    enabled: Boolean(activeView === 'employee' && selectedUser?.id && liveDataset.users.length > 0),
+    staleTime: 60_000,
+    queryFn: async () => {
+      const userId = selectedUser?.id;
+      if (!userId) return null;
+
+      const res = await api.get<{ success?: boolean; data?: EmployeeProfileSummary }>(`/employee-profiles/${userId}`);
+      return res.data?.data ?? null;
+    },
+  });
+  const selectedEmployeeMeta = useMemo(() => {
+    const workInfo = selectedEmployeeProfileQuery.data?.work_information;
+
+    return [
+      { label: 'Department', value: workInfo?.department_name?.trim() || 'None Assigned' },
+      { label: 'Branch', value: workInfo?.resident_branch?.branch_name?.trim() || 'None Assigned' },
+      { label: 'Tenure', value: formatTenureFromDateStarted(workInfo?.date_started) },
+    ];
+  }, [selectedEmployeeProfileQuery.data]);
   const { stickyRef: employeeHeaderRef, isStuck: isEmployeeHeaderStuck } = useStickyHeaderState(
     activeView,
     activeView === "employee",
@@ -5212,11 +5435,7 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
                       animate={{ opacity: 1, x: 0 }}
                       className="grid grid-cols-3 gap-3 sm:flex sm:items-center sm:gap-6 text-sm border-t border-gray-100 pt-3 sm:border-t-0 sm:pt-0 sm:border-l sm:border-gray-100 sm:pl-6"
                     >
-                      {[
-                        { label: "Department", value: "Operations" },
-                        { label: "Branch", value: "Manila North" },
-                        { label: "Tenure", value: "2.4 Years" },
-                      ].map((info) => (
+                      {selectedEmployeeMeta.map((info) => (
                         <div key={info.label} className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2">
                           <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{info.label}</span>
                           <span className="text-xs sm:text-sm font-bold text-gray-700">{info.value}</span>

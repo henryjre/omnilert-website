@@ -19,6 +19,7 @@ import {
   buildMetricInsights as buildMetricRuleInsights,
   formatInsightsPeriodSubtitle as formatRuleInsightsPeriodSubtitle,
   getMetricKind,
+  getMetricScaleMax,
   mapEmployeeInsightsToCardRows,
   mapGlobalInsightsToCardRows,
   mapMetricInsightsToCardRows,
@@ -200,44 +201,122 @@ const EPI_VS_GLOBAL_ZONE_STYLE: Record<HeroEpiZone, { fill: string; shortLabel: 
  * Axis labels for hero vs global bands (same % thresholds as `resolveHeroEpiComparison`).
  * @param labelMetricId `null` = EPI headline (green upper capped at 100). Otherwise metric id (AOV uses ₱ labels).
  */
+function roundToOneDecimal(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+function roundBandBoundary(metricId: string | null, value: number): number {
+  if (metricId && getMetricKind(metricId) === "likert") {
+    return Math.round(value * 100) / 100;
+  }
+  return roundToOneDecimal(value);
+}
+
+function getDistributionCap(metricId: string | null): number | null {
+  if (!metricId || metricId === "average-order-value") {
+    return null;
+  }
+  return getMetricKind(metricId) === "likert" ? 5 : 100;
+}
+
+function getDistributionStep(metricId: string | null): number {
+  return metricId && getMetricKind(metricId) === "likert" ? 0.01 : 0.1;
+}
+
+function getDistributionThresholds(globalAvg: number, metricId: string | null): {
+  baseline: number;
+  redUpper: number;
+  blueLower: number;
+  cap: number | null;
+} {
+  const cap = getDistributionCap(metricId);
+  const rawBaseline = Number.isFinite(globalAvg) && globalAvg > 0 ? globalAvg : 0;
+  const baseline = cap === null ? rawBaseline : Math.min(Math.max(rawBaseline, 0), cap);
+  const redUpper = baseline - (baseline * 0.25);
+  const blueLower = cap === null
+    ? baseline + (baseline * 0.5)
+    : baseline + ((cap - baseline) * 0.5);
+
+  return { baseline, redUpper, blueLower, cap };
+}
+
+function formatDistributionBandValue(metricId: string | null, value: number): string {
+  const rounded = roundBandBoundary(metricId, value);
+  if (!metricId) {
+    return rounded.toFixed(1);
+  }
+  if (metricId === "average-order-value") {
+    return `PHP ${rounded.toFixed(1)}`;
+  }
+  if (getMetricKind(metricId) === "likert") {
+    return rounded.toFixed(2);
+  }
+  return `${rounded.toFixed(1)}%`;
+}
+
+function formatClosedDistributionBand(metricId: string | null, start: number, end: number): string {
+  const startRounded = roundBandBoundary(metricId, start);
+  const endRounded = roundBandBoundary(metricId, end);
+  if (endRounded === startRounded) {
+    return formatDistributionBandValue(metricId, startRounded);
+  }
+  if (endRounded < startRounded) {
+    return formatDistributionBandValue(metricId, startRounded);
+  }
+  return `${formatDistributionBandValue(metricId, startRounded)} - ${formatDistributionBandValue(metricId, endRounded)}`;
+}
+
+function resolveDistributionZone(value: number, globalAvg: number, metricId: string | null): HeroEpiZone {
+  const { baseline, redUpper, blueLower, cap } = getDistributionThresholds(globalAvg, metricId);
+  const step = getDistributionStep(metricId);
+
+  if (value <= redUpper) return "red";
+  if (value < baseline) return "amber";
+  if (cap === null) {
+    return value <= blueLower ? "green" : "blue";
+  }
+  if (blueLower >= cap - (step / 2)) {
+    return "green";
+  }
+  return value < blueLower ? "green" : "blue";
+}
+
 function heroVsGlobalDistributionBinLabels(
   globalAvg: number,
   labelMetricId: string | null,
 ): Record<HeroEpiZone, string> {
-  if (!Number.isFinite(globalAvg) || globalAvg <= 0) {
+  const { baseline, redUpper, blueLower, cap } = getDistributionThresholds(globalAvg, labelMetricId);
+  const step = getDistributionStep(labelMetricId);
+  const amberLower = redUpper + step;
+  const amberUpper = baseline - step;
+  const greenLower = baseline;
+
+  if (cap === null) {
     return {
-      red: "≤−25%",
-      amber: "−25%–0%",
-      green: "0–+50%",
-      blue: ">+50%",
+      red: formatClosedDistributionBand(labelMetricId, 0, redUpper),
+      amber: formatClosedDistributionBand(labelMetricId, amberLower, amberUpper),
+      green: formatClosedDistributionBand(labelMetricId, greenLower, blueLower),
+      blue: `>${formatDistributionBandValue(labelMetricId, blueLower)}`,
     };
   }
-  const fmt = (v: number): string => (Math.round(v * 10) / 10).toFixed(1);
-  const atMinus25Pct = globalAvg * 0.75;
-  const atPlus50Pct = globalAvg * 1.5;
-  const isAov = labelMetricId === "average-order-value";
-  const greenHigh =
-    labelMetricId === null
-      ? Math.min(100, atPlus50Pct)
-      : isAov
-        ? atPlus50Pct
-        : Math.min(100, atPlus50Pct);
-  if (isAov) {
+
+  if (blueLower >= cap - (step / 2)) {
     return {
-      red: `≤₱${fmt(atMinus25Pct)}`,
-      amber: `₱${fmt(atMinus25Pct)}–₱${fmt(globalAvg)}`,
-      green: `₱${fmt(globalAvg)}–₱${fmt(greenHigh)}`,
-      blue: `>₱${fmt(atPlus50Pct)}`,
+      red: formatClosedDistributionBand(labelMetricId, 0, redUpper),
+      amber: formatClosedDistributionBand(labelMetricId, amberLower, amberUpper),
+      green: formatClosedDistributionBand(labelMetricId, greenLower, cap),
+      blue: `>${formatDistributionBandValue(labelMetricId, cap)}`,
     };
   }
+
+  const greenUpper = blueLower - step;
   return {
-    red: `≤${fmt(atMinus25Pct)}`,
-    amber: `${fmt(atMinus25Pct)}–${fmt(globalAvg)}`,
-    green: `${fmt(globalAvg)}–${fmt(greenHigh)}`,
-    blue: `>${fmt(atPlus50Pct)}`,
+    red: formatClosedDistributionBand(labelMetricId, 0, redUpper),
+    amber: formatClosedDistributionBand(labelMetricId, amberLower, amberUpper),
+    green: formatClosedDistributionBand(labelMetricId, greenLower, greenUpper),
+    blue: formatClosedDistributionBand(labelMetricId, blueLower, cap),
   };
 }
-
 /**
  * Buckets each employee's EPI vs the global EPI average using `resolveHeroEpiComparison`
  * (percent change = ((user − global) / global) × 100).
@@ -806,9 +885,40 @@ export interface MetricHeroVsGlobalDistribution {
   dominantBandLabel: string;
 }
 
+const FIXED_SCORE_BANDS: ReadonlyArray<{ zone: HeroEpiZone; minPct: number; maxPct: number }> = [
+  { zone: "red", minPct: 0, maxPct: 59 },
+  { zone: "amber", minPct: 60, maxPct: 74 },
+  { zone: "green", minPct: 75, maxPct: 89 },
+  { zone: "blue", minPct: 90, maxPct: 100 },
+];
+
+function getFixedMetricDistributionMaxScore(metricId: string): number | null {
+  const kind = getMetricKind(metricId);
+  if (kind === "percentage") return 100;
+  if (kind === "likert") return getMetricScaleMax(metricId) || 5;
+  const scaleMax = getMetricScaleMax(metricId);
+  if (Number.isFinite(scaleMax) && scaleMax > 1) return scaleMax;
+  return null;
+}
+
+function normalizeScoreToPercent(score: number, maxScore: number): number {
+  if (!Number.isFinite(maxScore) || maxScore <= 0) return 0;
+  const pct = (score / maxScore) * 100;
+  if (!Number.isFinite(pct)) return 0;
+  return Math.max(0, Math.min(100, pct));
+}
+
+function resolveFixedBandZoneByPercent(percent: number): HeroEpiZone {
+  if (percent < 60) return "red";
+  if (percent < 75) return "amber";
+  if (percent < 90) return "green";
+  return "blue";
+}
+
 /**
- * Buckets each employee's metric value vs the global average for that metric (mock), using
- * `resolveHeroEpiComparison` percent bands on ((user − global) / global) × 100.
+ * Buckets each employee's metric value into fixed normalized bands:
+ * 0-59, 60-74, 75-89, 90-100 (via (score/maxScore)*100 for supported metric types).
+ * Metrics without a defined max score fall back to global-average comparison bands.
  */
 export function getMetricHeroVsGlobalDistribution(
   metricId: string,
@@ -819,6 +929,7 @@ export function getMetricHeroVsGlobalDistribution(
 ): MetricHeroVsGlobalDistribution {
   const globalMetricAvg = perturbMetricGlobalTarget(metricId, branchAverageBase, selection);
   const employees = getMetricAllEmployeeData(metricId, selection, roster, getBaseMetricValue);
+  const fixedMaxScore = getFixedMetricDistributionMaxScore(metricId);
 
   const counts: Record<HeroEpiZone, number> = {
     red: 0,
@@ -826,15 +937,32 @@ export function getMetricHeroVsGlobalDistribution(
     green: 0,
     blue: 0,
   };
-  for (const row of employees) {
-    const { zone } = resolveHeroEpiComparison({
-      userEpiScore: row.value,
-      globalAverageEpi: globalMetricAvg,
-    });
-    counts[zone] += 1;
+
+  let rangeLabels: Record<HeroEpiZone, string>;
+  if (fixedMaxScore !== null) {
+    for (const row of employees) {
+      const pct = normalizeScoreToPercent(row.value, fixedMaxScore);
+      const zone = resolveFixedBandZoneByPercent(pct);
+      counts[zone] += 1;
+    }
+
+    rangeLabels = FIXED_SCORE_BANDS.reduce<Record<HeroEpiZone, string>>(
+      (acc, band) => {
+        const minValue = (band.minPct / 100) * fixedMaxScore;
+        const maxValue = (band.maxPct / 100) * fixedMaxScore;
+        acc[band.zone] = formatClosedDistributionBand(metricId, minValue, maxValue);
+        return acc;
+      },
+      { red: "", amber: "", green: "", blue: "" },
+    );
+  } else {
+    for (const row of employees) {
+      const zone = resolveDistributionZone(row.value, globalMetricAvg, metricId);
+      counts[zone] += 1;
+    }
+    rangeLabels = heroVsGlobalDistributionBinLabels(globalMetricAvg, metricId);
   }
 
-  const rangeLabels = heroVsGlobalDistributionBinLabels(globalMetricAvg, metricId);
   const bins: DistributionBin[] = EPI_VS_GLOBAL_ZONE_ORDER.map((z) => ({
     range: rangeLabels[z],
     count: counts[z],
