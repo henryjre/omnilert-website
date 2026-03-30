@@ -71,6 +71,9 @@ const complianceCompleteSchema = z.object({
 });
 
 const completeAuditSchema = z.union([cssCompleteSchema, complianceCompleteSchema]);
+const rejectAuditSchema = z.object({
+  reason: z.string().trim().min(1),
+});
 const editMessageSchema = z.object({
   content: z.string().trim().min(1),
 });
@@ -105,6 +108,12 @@ router.post(
   requirePermission(PERMISSIONS.STORE_AUDIT_MANAGE),
   validateBody(completeAuditSchema),
   storeAuditController.completeAudit,
+);
+router.post(
+  '/:id/reject',
+  requirePermission(PERMISSIONS.STORE_AUDIT_MANAGE),
+  validateBody(rejectAuditSchema),
+  storeAuditController.rejectAudit,
 );
 
 export default router;

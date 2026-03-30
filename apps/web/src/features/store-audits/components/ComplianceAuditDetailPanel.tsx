@@ -16,6 +16,7 @@ import {
   Sparkles,
   Trash2,
   X,
+  XCircle,
 } from 'lucide-react';
 import { ImagePreviewModal } from '@/features/case-reports/components/ImagePreviewModal';
 import { normalizeFileForUpload } from '@/shared/utils/fileUpload';
@@ -197,17 +198,20 @@ export function ComplianceAuditDetailPanel({
   currentUserId,
   canProcess,
   canComplete,
+  canReject,
   canRequestVN,
   actionLoading,
   panelError,
   onProcess,
   onComplete,
+  onReject,
   onRequestVN,
 }: {
   audit: StoreAudit;
   currentUserId: string | null;
   canProcess: boolean;
   canComplete: boolean;
+  canReject?: boolean;
   canRequestVN?: boolean;
   actionLoading: boolean;
   panelError: string;
@@ -218,6 +222,7 @@ export function ComplianceAuditDetailPanel({
     hygiene: boolean;
     sop: boolean;
   }) => void;
+  onReject?: () => void;
   onRequestVN?: () => void;
 }) {
   const navigate = useNavigate();
@@ -327,7 +332,7 @@ export function ComplianceAuditDetailPanel({
   useEffect(() => {
     setCurrentTime(new Date());
 
-    if (audit.status === 'completed') return undefined;
+    if (audit.status === 'completed' || audit.status === 'rejected') return undefined;
 
     let intervalId: number | null = null;
     const timeoutId = window.setTimeout(() => {
@@ -344,6 +349,15 @@ export function ComplianceAuditDetailPanel({
       }
     };
   }, [audit.completed_at, audit.comp_check_in_time, audit.id, audit.status]);
+
+  useEffect(() => {
+    if (audit.status !== 'completed' && audit.status !== 'rejected') return;
+    try {
+      localStorage.removeItem(draftKey);
+    } catch {
+      // ignore
+    }
+  }, [audit.status, draftKey]);
 
   const allAnswered = Object.values(answers).every((value) => value !== null);
   const positiveCount = getPositiveAnswerCount(answers);
@@ -363,6 +377,37 @@ export function ComplianceAuditDetailPanel({
     () => completedMediaAttachments.filter((attachment) => isImageAttachment(attachment) || isVideoAttachment(attachment)),
     [completedMediaAttachments],
   );
+  const hasMonetaryReward = Number(audit.monetary_reward ?? 0) > 0;
+  const moneyFormatter = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' });
+  const pendingAuditDetailRows = [
+    { label: 'Company', value: audit.company?.name || '—' },
+    { label: 'Branch', value: audit.branch_name || '—' },
+    { label: 'Employee', value: audit.comp_employee_name || '—' },
+    { label: 'Created', value: formatDateTime(audit.created_at) },
+    ...(timing.kind === 'active'
+      ? [
+          { label: 'Active Since', value: formatDateTime(timing.activeSince) },
+          { label: 'Minutes Active', value: timing.durationText ?? '—' },
+        ]
+      : [
+          { label: 'Audit Duration', value: timing.durationText ?? '—' },
+        ]),
+    ...(hasMonetaryReward
+      ? [
+          {
+            label: 'Audit Reward',
+            value: moneyFormatter.format(Number(audit.monetary_reward ?? 0)),
+          },
+        ]
+      : []),
+  ];
+  const completedAuditDetailRows = [
+    { label: 'Company', value: audit.company?.name || '—' },
+    { label: 'Branch', value: audit.branch_name || '—' },
+    { label: 'Employee', value: audit.comp_employee_name || '—' },
+    { label: 'Created', value: formatDateTime(audit.created_at) },
+    { label: 'Duration', value: timing.durationText ?? '—' },
+  ];
 
   const openPreview = useCallback((attachment: StoreAuditAttachment, source: StoreAuditAttachment[]) => {
     const mediaItems = toPreviewItems(source);
@@ -371,6 +416,26 @@ export function ComplianceAuditDetailPanel({
       setPreviewMedia({ items: mediaItems, index });
     }
   }, []);
+
+  const renderAuditDetailsSection = (
+    rows: Array<{ label: string; value: string }>,
+    sectionClassName: string,
+  ) => (
+    <div className={sectionClassName}>
+      <div className="mb-3 flex items-center gap-2">
+        <ClipboardList className="h-4 w-4 text-gray-400" />
+        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Audit Details</p>
+      </div>
+      <dl className="divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white">
+        {rows.map(({ label, value }) => (
+          <div key={label} className="flex items-baseline gap-4 px-4 py-2.5">
+            <dt className="w-28 shrink-0 text-xs text-gray-500">{label}</dt>
+            <dd className="min-w-0 flex-1 text-sm font-medium text-gray-900">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
 
   const handleFileChange = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
@@ -708,34 +773,7 @@ export function ComplianceAuditDetailPanel({
 
         {/* ── PENDING STATE ──────────────────────────────────────────── */}
         {audit.status === 'pending' && (
-          <div className="px-6 py-5">
-            <div className="mb-3 flex items-center gap-2">
-              <ClipboardList className="h-4 w-4 text-gray-400" />
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Audit Details</p>
-            </div>
-            <dl className="divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white">
-              {[
-                { label: 'Company', value: audit.company?.name || '—' },
-                { label: 'Branch', value: audit.branch_name || '—' },
-                { label: 'Employee', value: audit.comp_employee_name || '—' },
-                { label: 'Created', value: formatDateTime(audit.created_at) },
-                ...(timing.kind === 'active'
-                  ? [
-                      { label: 'Active Since', value: formatDateTime(timing.activeSince) },
-                      { label: 'Minutes Active', value: timing.durationText ?? '—' },
-                    ]
-                  : [
-                      { label: 'Audit Duration', value: timing.durationText ?? '—' },
-                    ]
-                ),
-              ].map(({ label, value }) => (
-                <div key={label} className="flex items-baseline gap-4 px-4 py-2.5">
-                  <dt className="w-28 shrink-0 text-xs text-gray-500">{label}</dt>
-                  <dd className="min-w-0 flex-1 text-sm font-medium text-gray-900">{value}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
+          renderAuditDetailsSection(pendingAuditDetailRows, 'px-6 py-5')
         )}
 
         {/* ── PROCESSING STATE ───────────────────────────────────────── */}
@@ -773,6 +811,8 @@ export function ComplianceAuditDetailPanel({
                 </div>
               </div>
             </div>
+
+            {renderAuditDetailsSection(pendingAuditDetailRows, 'border-b border-gray-200 px-6 py-5')}
 
             {/* Scoring section */}
             {canComplete && (
@@ -900,6 +940,79 @@ export function ComplianceAuditDetailPanel({
           </div>
         )}
 
+        {audit.status === 'rejected' && (
+          <div className="space-y-0">
+            <div className="border-b border-red-100 bg-red-50 px-6 py-5">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100">
+                  <XCircle className="h-5 w-5 text-red-600" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-red-900">Audit Rejected</p>
+                  <p className="mt-0.5 text-xs text-red-700">{formatDateTime(audit.rejected_at ?? null)}</p>
+                  {audit.auditor_name && (
+                    <p className="mt-0.5 text-xs text-red-700">by {audit.auditor_name}</p>
+                  )}
+                </div>
+                {hasMonetaryReward && (
+                  <div className="shrink-0 rounded-lg bg-red-100 px-3 py-1.5 text-right">
+                    <div className="flex items-center gap-1 text-xs text-red-700">
+                      <Banknote className="h-3.5 w-3.5" />
+                      <span>Rate</span>
+                    </div>
+                    <p className="text-sm font-bold text-red-800">
+                      {moneyFormatter.format(Number(audit.monetary_reward ?? 0))}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {renderAuditDetailsSection(completedAuditDetailRows, 'border-b border-gray-200 px-6 py-5')}
+
+            <div className="border-b border-gray-200 px-6 py-5">
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-4">
+                <div className="flex items-start gap-3">
+                  <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+                  <div>
+                    <p className="text-sm font-semibold text-red-900">Rejection Reason</p>
+                    <p className="mt-1 whitespace-pre-wrap text-sm text-red-800">
+                      {audit.rejection_reason || 'No rejection reason recorded.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="border-b border-gray-200 px-6 py-5">
+              <div className="mb-3 flex items-center gap-2">
+                <ClipboardCheck className="h-4 w-4 text-gray-400" />
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Audit Notes</p>
+              </div>
+              {renderMessageTrail(true)}
+            </div>
+
+            {mediaOnlyAttachments.length > 0 && (
+              <div className="border-b border-gray-200 px-6 py-5">
+                <div className="mb-3 flex items-center gap-2">
+                  <Paperclip className="h-4 w-4 text-gray-400" />
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Media Attachments</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {mediaOnlyAttachments.map((attachment) => (
+                    <div key={attachment.id} className="space-y-1">
+                      {renderAttachment(attachment, mediaOnlyAttachments, 'gallery')}
+                      <p className="truncate text-xs text-gray-400" title={attachment.file_name}>
+                        {attachment.file_name}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ── COMPLETED STATE ────────────────────────────────────────── */}
         {audit.status === 'completed' && (
           <div className="space-y-0">
@@ -930,27 +1043,7 @@ export function ComplianceAuditDetailPanel({
               </div>
             </div>
 
-            {/* Audit details */}
-            <div className="border-b border-gray-200 px-6 py-5">
-              <div className="mb-3 flex items-center gap-2">
-                <ClipboardList className="h-4 w-4 text-gray-400" />
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Audit Details</p>
-              </div>
-              <dl className="divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white">
-                {[
-                  { label: 'Company', value: audit.company?.name || '—' },
-                  { label: 'Branch', value: audit.branch_name || '—' },
-                  { label: 'Employee', value: audit.comp_employee_name || '—' },
-                  { label: 'Created', value: formatDateTime(audit.created_at) },
-                  { label: 'Duration', value: timing.durationText ?? '—' },
-                ].map(({ label, value }) => (
-                  <div key={label} className="flex items-baseline gap-4 px-4 py-2.5">
-                    <dt className="w-28 shrink-0 text-xs text-gray-500">{label}</dt>
-                    <dd className="min-w-0 flex-1 text-sm font-medium text-gray-900">{value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
+            {renderAuditDetailsSection(completedAuditDetailRows, 'border-b border-gray-200 px-6 py-5')}
 
             {/* Scorecard */}
             <div className="border-b border-gray-200 px-6 py-5">
@@ -1064,27 +1157,44 @@ export function ComplianceAuditDetailPanel({
           </Button>
         )}
 
-        {audit.status === 'processing' && canComplete && (
-          <Button
-            className="w-full"
-            variant="success"
-            onClick={() => {
-              if (!allAnswered || !hasVisibleMessages) return;
-              try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
-              onComplete({
-                productivity_rate: Boolean(answers.productivity_rate),
-                uniform: Boolean(answers.uniform),
-                hygiene: Boolean(answers.hygiene),
-                sop: Boolean(answers.sop),
-              });
-            }}
-            disabled={actionLoading || messagesLoading || !allAnswered || !hasVisibleMessages}
-          >
-            <span className="inline-flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4" />
-              {actionLoading ? 'Completing…' : 'Complete Audit'}
-            </span>
-          </Button>
+        {audit.status === 'processing' && (canComplete || canReject) && (
+          <div className="flex gap-3">
+            {canReject && (
+              <Button className="flex-1" variant="danger" onClick={onReject} disabled={actionLoading || !onReject}>
+                <span className="inline-flex items-center gap-2">
+                  <XCircle className="h-4 w-4" />
+                  Reject Audit
+                </span>
+              </Button>
+            )}
+
+            {canComplete && (
+              <Button
+                className="flex-1"
+                variant="success"
+                onClick={() => {
+                  if (!allAnswered || !hasVisibleMessages) return;
+                  try {
+                    localStorage.removeItem(draftKey);
+                  } catch {
+                    // ignore
+                  }
+                  onComplete({
+                    productivity_rate: Boolean(answers.productivity_rate),
+                    uniform: Boolean(answers.uniform),
+                    hygiene: Boolean(answers.hygiene),
+                    sop: Boolean(answers.sop),
+                  });
+                }}
+                disabled={actionLoading || messagesLoading || !allAnswered || !hasVisibleMessages}
+              >
+                <span className="inline-flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4" />
+                  {actionLoading ? 'Completing…' : 'Complete Audit'}
+                </span>
+              </Button>
+            )}
+          </div>
         )}
 
         {audit.status === 'completed' && canRequestVN && (

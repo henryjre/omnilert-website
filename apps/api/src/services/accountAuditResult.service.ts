@@ -17,7 +17,7 @@ type AuditRowSource = {
   company_slug: string;
   id: string;
   type: StoreAuditType;
-  status: 'pending' | 'processing' | 'completed';
+  status: 'pending' | 'processing' | 'completed' | 'rejected';
   branch_id: string;
   branch_name: string | null;
   completed_at: string | Date | null;

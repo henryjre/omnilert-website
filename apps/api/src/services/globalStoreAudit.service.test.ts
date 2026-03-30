@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { db } from '../config/database.js';
 
 process.env.JWT_SECRET ??= 'test-jwt-secret-12345';
 process.env.JWT_REFRESH_SECRET ??= 'test-jwt-refresh-secret';
@@ -14,6 +13,7 @@ process.env.OPENAI_API_KEY ??= 'test-openai-key';
 process.env.OPENAI_ORGANIZATION_ID ??= 'test-openai-org';
 process.env.OPENAI_PROJECT_ID ??= 'test-openai-project';
 
+const { db } = await import('../config/database.js');
 const {
   createGlobalStoreAuditService,
 } = await import('./globalStoreAudit.service.js');
@@ -32,6 +32,8 @@ function createAuditRow(
     auditor_user_id: null,
     monetary_reward: '150.00',
     completed_at: null,
+    rejected_at: null,
+    rejection_reason: null,
     processing_started_at: null,
     vn_requested: false,
     linked_vn_id: null,
@@ -76,6 +78,7 @@ test('listStoreAudits returns enriched items with company metadata and global pr
           company_id: 'company-a',
           company_name: 'Alpha Foods',
           company_slug: 'alpha-foods',
+          branch_id: '',
         }),
         createAuditRow({
           id: 'audit-comp',
@@ -83,6 +86,7 @@ test('listStoreAudits returns enriched items with company metadata and global pr
           company_id: 'company-b',
           company_name: 'Beta Retail',
           company_slug: 'beta-retail',
+          branch_id: '',
           css_odoo_order_id: null,
           css_cashier_name: null,
           comp_odoo_employee_id: 55,
@@ -103,6 +107,9 @@ test('listStoreAudits returns enriched items with company metadata and global pr
     },
     deleteStoreAuditMessage: async () => undefined,
     processStoreAudit: async () => {
+      throw new Error('not used');
+    },
+    rejectStoreAudit: async () => {
       throw new Error('not used');
     },
     completeStoreAudit: async () => {
@@ -155,6 +162,9 @@ test('processAudit resolves company context and delegates to processStoreAudit d
       calls.push(`process:${auditId}:${userId}:${companyId}`);
       return processedRow as any;
     },
+    rejectStoreAudit: async () => {
+      throw new Error('not used');
+    },
     completeStoreAudit: async () => {
       throw new Error('not used');
     },
@@ -187,6 +197,9 @@ test('processAudit throws 404 if audit company context cannot be resolved', asyn
     processStoreAudit: async () => {
       throw new Error('should not be called');
     },
+    rejectStoreAudit: async () => {
+      throw new Error('not used');
+    },
     completeStoreAudit: async () => {
       throw new Error('not used');
     },
@@ -194,6 +207,92 @@ test('processAudit throws 404 if audit company context cannot be resolved', asyn
 
   await assert.rejects(
     () => service.processAudit({ auditId: 'nonexistent', userId: 'auditor-1' }),
+    /store audit not found/i,
+  );
+});
+
+test('rejectAudit resolves company context and delegates to rejectStoreAudit dep', async () => {
+  const calls: string[] = [];
+  const rejectedRow = createAuditRow({
+    id: 'audit-rejected',
+    status: 'rejected',
+    auditor_user_id: 'auditor-1',
+    processing_started_at: '2026-03-22T03:00:00.000Z',
+    rejected_at: '2026-03-22T03:10:00.000Z',
+    rejection_reason: 'Evidence was insufficient.',
+  });
+
+  const service = createGlobalStoreAuditService({
+    listStoreAuditRows: async () => ({ total: 0, rows: [] }),
+    getProcessingAuditIdByUser: async () => null,
+    getAuditById: async (auditId) => (auditId === 'audit-rejected' ? rejectedRow : null),
+    resolveAuditCompanyContext: async (auditId) => (
+      auditId === 'audit-rejected'
+        ? { companyId: 'company-a', companySlug: 'alpha-foods', companyStorageRoot: 'alpha-foods-dev' }
+        : null
+    ),
+    listStoreAuditMessages: async () => [],
+    sendStoreAuditMessage: async () => {
+      throw new Error('not used');
+    },
+    editStoreAuditMessage: async () => {
+      throw new Error('not used');
+    },
+    deleteStoreAuditMessage: async () => undefined,
+    processStoreAudit: async () => {
+      throw new Error('not used');
+    },
+    rejectStoreAudit: async ({ auditId, userId, companyId, reason }) => {
+      calls.push(`reject:${auditId}:${userId}:${companyId}:${reason}`);
+      return rejectedRow as any;
+    },
+    completeStoreAudit: async () => {
+      throw new Error('not used');
+    },
+  });
+
+  const audit = await service.rejectAudit({
+    auditId: 'audit-rejected',
+    userId: 'auditor-1',
+    reason: 'Evidence was insufficient.',
+  });
+
+  assert.deepEqual(calls, ['reject:audit-rejected:auditor-1:company-a:Evidence was insufficient.']);
+  assert.equal(audit.status, 'rejected');
+  assert.equal(audit.rejection_reason, 'Evidence was insufficient.');
+});
+
+test('rejectAudit throws 404 if audit company context cannot be resolved', async () => {
+  const service = createGlobalStoreAuditService({
+    listStoreAuditRows: async () => ({ total: 0, rows: [] }),
+    getProcessingAuditIdByUser: async () => null,
+    getAuditById: async () => null,
+    resolveAuditCompanyContext: async () => null,
+    listStoreAuditMessages: async () => [],
+    sendStoreAuditMessage: async () => {
+      throw new Error('not used');
+    },
+    editStoreAuditMessage: async () => {
+      throw new Error('not used');
+    },
+    deleteStoreAuditMessage: async () => undefined,
+    processStoreAudit: async () => {
+      throw new Error('not used');
+    },
+    rejectStoreAudit: async () => {
+      throw new Error('should not be called');
+    },
+    completeStoreAudit: async () => {
+      throw new Error('not used');
+    },
+  });
+
+  await assert.rejects(
+    () => service.rejectAudit({
+      auditId: 'nonexistent',
+      userId: 'auditor-1',
+      reason: 'Evidence was insufficient.',
+    }),
     /store audit not found/i,
   );
 });

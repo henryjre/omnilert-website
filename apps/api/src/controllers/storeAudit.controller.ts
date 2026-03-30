@@ -13,7 +13,7 @@ export async function list(req: Request, res: Response, next: NextFunction) {
     const data = await storeAuditService.listStoreAudits({
       userId: req.user!.sub,
       type: req.query.type as 'customer_service' | 'compliance' | 'all' | undefined,
-      status: req.query.status as 'pending' | 'processing' | 'completed' | undefined,
+      status: req.query.status as 'pending' | 'processing' | 'completed' | 'rejected' | undefined,
       page: req.query.page ? Number(req.query.page) : undefined,
       pageSize: req.query.pageSize ? Number(req.query.pageSize) : undefined,
     });
@@ -52,6 +52,19 @@ export async function completeAudit(req: Request, res: Response, next: NextFunct
       auditId: req.params.id as string,
       userId: req.user!.sub,
       payload: req.body,
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function rejectAudit(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await storeAuditService.rejectAudit({
+      auditId: req.params.id as string,
+      userId: req.user!.sub,
+      reason: String(req.body.reason ?? ''),
     });
     res.json({ success: true, data });
   } catch (error) {

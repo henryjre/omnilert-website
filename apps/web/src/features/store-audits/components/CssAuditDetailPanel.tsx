@@ -22,6 +22,7 @@ import {
   Star,
   Trash2,
   X,
+  XCircle,
 } from 'lucide-react';
 import { ImagePreviewModal } from '@/features/case-reports/components/ImagePreviewModal';
 import { normalizeFileForUpload } from '@/shared/utils/fileUpload';
@@ -213,22 +214,26 @@ export function CssAuditDetailPanel({
   currentUserId,
   canProcess,
   canComplete,
+  canReject,
   canRequestVN,
   actionLoading,
   panelError,
   onProcess,
   onComplete,
+  onReject,
   onRequestVN,
 }: {
   audit: StoreAudit;
   currentUserId: string | null;
   canProcess: boolean;
   canComplete: boolean;
+  canReject?: boolean;
   canRequestVN?: boolean;
   actionLoading: boolean;
   panelError: string;
   onProcess: () => void;
   onComplete: (payload: { criteria_scores: CssCriteriaScores }) => void;
+  onReject?: () => void;
   onRequestVN?: () => void;
 }) {
   const navigate = useNavigate();
@@ -331,6 +336,31 @@ export function CssAuditDetailPanel({
     : null;
 
   const orderLines = Array.isArray(audit.css_order_lines) ? audit.css_order_lines : [];
+  const baseAuditDetailRows = [
+    { label: 'Company', value: audit.company?.name || '—' },
+    { label: 'Branch', value: audit.branch_name || '—' },
+    { label: 'Session', value: audit.css_session_name || '—' },
+    { label: 'Reference', value: audit.css_pos_reference || '—' },
+    { label: 'Order Date', value: formatDateTime(audit.css_date_order) },
+    { label: 'Cashier', value: audit.css_cashier_name || '—' },
+    {
+      label: 'Amount Total',
+      value: new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(audit.css_amount_total ?? 0)),
+    },
+  ];
+  const pendingAuditDetailRows = [
+    ...baseAuditDetailRows,
+    ...(Number(audit.monetary_reward ?? 0) > 0
+      ? [
+          {
+            label: 'Audit Reward',
+            value: new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(
+              Number(audit.monetary_reward ?? 0),
+            ),
+          },
+        ]
+      : []),
+  ];
   const visibleMessages = useMemo(() => messages.filter((message) => !message.is_deleted), [messages]);
   const hasVisibleMessages = visibleMessages.length > 0;
   const canMutateMessages = audit.status === 'processing' && canComplete;
@@ -350,6 +380,61 @@ export function CssAuditDetailPanel({
       setPreviewMedia({ items: mediaItems, index });
     }
   }, []);
+
+  const renderAuditDetailsSection = (
+    rows: Array<{ label: string; value: string }>,
+    sectionClassName: string,
+  ) => (
+    <div className={sectionClassName}>
+      <div className="mb-3 flex items-center gap-2">
+        <ClipboardList className="h-4 w-4 text-gray-400" />
+        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Audit Details</p>
+      </div>
+      <dl className="divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white">
+        {rows.map(({ label, value }) => (
+          <div key={label} className="flex items-baseline gap-4 px-4 py-2.5">
+            <dt className="w-28 shrink-0 text-xs text-gray-500">{label}</dt>
+            <dd className="min-w-0 flex-1 text-sm font-medium text-gray-900">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+
+  const renderOrderLinesSection = (sectionClassName: string) => {
+    if (orderLines.length === 0) return null;
+
+    return (
+      <div className={sectionClassName}>
+        <div className="mb-3 flex items-center gap-2">
+          <Receipt className="h-4 w-4 text-gray-400" />
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Order Lines</p>
+        </div>
+        <div className="overflow-x-auto rounded-xl border border-gray-200">
+          <table className="w-full text-xs">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-3 py-2.5 text-left font-medium text-gray-500">Product</th>
+                <th className="px-3 py-2.5 text-right font-medium text-gray-500">Qty</th>
+                <th className="px-3 py-2.5 text-right font-medium text-gray-500">Unit Price</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {orderLines.map((line, index) => (
+                <tr key={`${line.product_name}-${index}`} className="hover:bg-gray-50">
+                  <td className="px-3 py-2 text-gray-900">{line.product_name}</td>
+                  <td className="px-3 py-2 text-right text-gray-700">{line.qty}</td>
+                  <td className="px-3 py-2 text-right font-medium text-gray-900">
+                    {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(line.price_unit))}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
 
   const handleFileChange = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
@@ -690,64 +775,8 @@ export function CssAuditDetailPanel({
         {/* ── PENDING STATE ──────────────────────────────────────────── */}
         {audit.status === 'pending' && (
           <div className="space-y-0">
-            {/* Audit details section */}
-            <div className="px-6 py-5">
-              <div className="mb-3 flex items-center gap-2">
-                <ClipboardList className="h-4 w-4 text-gray-400" />
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Audit Details</p>
-              </div>
-              <dl className="divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white">
-                {[
-                  { label: 'Company', value: audit.company?.name || '—' },
-                  { label: 'Branch', value: audit.branch_name || '—' },
-                  { label: 'Session', value: audit.css_session_name || '—' },
-                  { label: 'Reference', value: audit.css_pos_reference || '—' },
-                  { label: 'Order Date', value: formatDateTime(audit.css_date_order) },
-                  { label: 'Cashier', value: audit.css_cashier_name || '—' },
-                  {
-                    label: 'Amount Total',
-                    value: new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(audit.css_amount_total ?? 0)),
-                  },
-                ].map(({ label, value }) => (
-                  <div key={label} className="flex items-baseline gap-4 px-4 py-2.5">
-                    <dt className="w-28 shrink-0 text-xs text-gray-500">{label}</dt>
-                    <dd className="min-w-0 flex-1 text-sm font-medium text-gray-900">{value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
-
-            {/* Order lines */}
-            {orderLines.length > 0 && (
-              <div className="px-6 pb-5">
-                <div className="mb-3 flex items-center gap-2">
-                  <Receipt className="h-4 w-4 text-gray-400" />
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Order Lines</p>
-                </div>
-                <div className="overflow-x-auto rounded-xl border border-gray-200">
-                  <table className="w-full text-xs">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-3 py-2.5 text-left font-medium text-gray-500">Product</th>
-                        <th className="px-3 py-2.5 text-right font-medium text-gray-500">Qty</th>
-                        <th className="px-3 py-2.5 text-right font-medium text-gray-500">Unit Price</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {orderLines.map((line, index) => (
-                        <tr key={`${line.product_name}-${index}`} className="hover:bg-gray-50">
-                          <td className="px-3 py-2 text-gray-900">{line.product_name}</td>
-                          <td className="px-3 py-2 text-right text-gray-700">{line.qty}</td>
-                          <td className="px-3 py-2 text-right font-medium text-gray-900">
-                            {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(line.price_unit))}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
+            {renderAuditDetailsSection(pendingAuditDetailRows, 'px-6 py-5')}
+            {renderOrderLinesSection('px-6 pb-5')}
           </div>
         )}
 
@@ -777,6 +806,11 @@ export function CssAuditDetailPanel({
                   </div>
                 )}
               </div>
+            </div>
+
+            <div className="border-b border-gray-200">
+              {renderAuditDetailsSection(pendingAuditDetailRows, 'px-6 py-5')}
+              {renderOrderLinesSection('px-6 pb-5')}
             </div>
 
             {/* Scoring section */}
@@ -900,6 +934,86 @@ export function CssAuditDetailPanel({
         )}
 
         {/* ── COMPLETED STATE ────────────────────────────────────────── */}
+        {audit.status === 'rejected' && (
+          <div className="space-y-0">
+            <div className="border-b border-red-100 bg-red-50 px-6 py-5">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100">
+                  <XCircle className="h-5 w-5 text-red-600" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-red-900">Audit Rejected</p>
+                  <p className="mt-0.5 text-xs text-red-700">{formatDateTime(audit.rejected_at ?? null)}</p>
+                  {audit.auditor_name && (
+                    <p className="mt-0.5 text-xs text-red-700">by {audit.auditor_name}</p>
+                  )}
+                </div>
+                {Number(audit.monetary_reward ?? 0) > 0 && (
+                  <div className="shrink-0 rounded-lg bg-red-100 px-3 py-1.5 text-right">
+                    <div className="flex items-center gap-1 text-xs text-red-700">
+                      <Banknote className="h-3.5 w-3.5" />
+                      <span>Rate</span>
+                    </div>
+                    <p className="text-sm font-bold text-red-800">
+                      {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(audit.monetary_reward ?? 0))}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="border-b border-gray-200">
+              {renderAuditDetailsSection(baseAuditDetailRows, 'px-6 py-5')}
+              {renderOrderLinesSection('px-6 pb-5')}
+            </div>
+
+            <div className="border-b border-gray-200 px-6 py-5">
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-4">
+                <div className="flex items-start gap-3">
+                  <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+                  <div>
+                    <p className="text-sm font-semibold text-red-900">Rejection Reason</p>
+                    <p className="mt-1 whitespace-pre-wrap text-sm text-red-800">
+                      {audit.rejection_reason || 'No rejection reason recorded.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="border-b border-gray-200 px-6 py-5">
+              <div className="mb-3 flex items-center gap-2">
+                <ClipboardCheck className="h-4 w-4 text-gray-400" />
+                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Audit Notes</p>
+              </div>
+              {messages.length > 0 ? (
+                renderMessageTrail(true)
+              ) : (
+                <p className="whitespace-pre-wrap text-sm text-gray-700">{audit.css_audit_log || '—'}</p>
+              )}
+            </div>
+
+            {mediaOnlyAttachments.length > 0 && (
+              <div className="border-b border-gray-200 px-6 py-5">
+                <div className="mb-3 flex items-center gap-2">
+                  <Paperclip className="h-4 w-4 text-gray-400" />
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Media Attachments</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {mediaOnlyAttachments.map((attachment) => (
+                    <div key={attachment.id} className="space-y-1">
+                      {renderAttachment(attachment, mediaOnlyAttachments, 'gallery')}
+                      <p className="truncate text-xs text-gray-400" title={attachment.file_name}>
+                        {attachment.file_name}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {audit.status === 'completed' && (
           <div className="space-y-0">
             {/* Receipt header */}
@@ -929,55 +1043,10 @@ export function CssAuditDetailPanel({
               </div>
             </div>
 
-            {/* Order details (CSS) */}
-            {orderLines.length > 0 && (
-              <div className="border-b border-gray-200 px-6 py-5">
-                <div className="mb-3 flex items-center gap-2">
-                  <Receipt className="h-4 w-4 text-gray-400" />
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Order Details</p>
-                </div>
-                <dl className="mb-3 divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white">
-                  {[
-                    { label: 'Company', value: audit.company?.name || '—' },
-                    { label: 'Branch', value: audit.branch_name || '—' },
-                    { label: 'Reference', value: audit.css_pos_reference || '—' },
-                    { label: 'Order Date', value: formatDateTime(audit.css_date_order) },
-                    { label: 'Cashier', value: audit.css_cashier_name || '—' },
-                    {
-                      label: 'Amount Total',
-                      value: new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(audit.css_amount_total ?? 0)),
-                    },
-                  ].map(({ label, value }) => (
-                    <div key={label} className="flex items-baseline gap-4 px-4 py-2.5">
-                      <dt className="w-28 shrink-0 text-xs text-gray-500">{label}</dt>
-                      <dd className="min-w-0 flex-1 text-sm font-medium text-gray-900">{value}</dd>
-                    </div>
-                  ))}
-                </dl>
-                <div className="overflow-x-auto rounded-xl border border-gray-200">
-                  <table className="w-full text-xs">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-3 py-2.5 text-left font-medium text-gray-500">Product</th>
-                        <th className="px-3 py-2.5 text-right font-medium text-gray-500">Qty</th>
-                        <th className="px-3 py-2.5 text-right font-medium text-gray-500">Unit Price</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {orderLines.map((line, index) => (
-                        <tr key={`${line.product_name}-${index}`} className="hover:bg-gray-50">
-                          <td className="px-3 py-2 text-gray-900">{line.product_name}</td>
-                          <td className="px-3 py-2 text-right text-gray-700">{line.qty}</td>
-                          <td className="px-3 py-2 text-right font-medium text-gray-900">
-                            {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(line.price_unit))}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
+            <div className="border-b border-gray-200">
+              {renderAuditDetailsSection(baseAuditDetailRows, 'px-6 py-5')}
+              {renderOrderLinesSection('px-6 pb-5')}
+            </div>
 
             {/* Scorecard */}
             <div className="border-b border-gray-200 px-6 py-5">
@@ -1091,26 +1160,39 @@ export function CssAuditDetailPanel({
           </Button>
         )}
 
-        {audit.status === 'processing' && canComplete && (
-          <Button
-            className="w-full"
-            variant="success"
-            onClick={() => {
-              if (!allScored || !hasVisibleMessages) return;
-              try {
-                localStorage.removeItem(draftKey);
-              } catch {
-                // ignore
-              }
-              onComplete({ criteria_scores: criteriaScores as CssCriteriaScores });
-            }}
-            disabled={actionLoading || messagesLoading || !allScored || !hasVisibleMessages}
-          >
-            <span className="inline-flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4" />
-              {actionLoading ? 'Completing…' : 'Complete Audit'}
-            </span>
-          </Button>
+        {audit.status === 'processing' && (canComplete || canReject) && (
+          <div className="flex gap-3">
+            {canReject && (
+              <Button className="flex-1" variant="danger" onClick={onReject} disabled={actionLoading || !onReject}>
+                <span className="inline-flex items-center gap-2">
+                  <XCircle className="h-4 w-4" />
+                  Reject Audit
+                </span>
+              </Button>
+            )}
+
+            {canComplete && (
+              <Button
+                className="flex-1"
+                variant="success"
+                onClick={() => {
+                  if (!allScored || !hasVisibleMessages) return;
+                  try {
+                    localStorage.removeItem(draftKey);
+                  } catch {
+                    // ignore
+                  }
+                  onComplete({ criteria_scores: criteriaScores as CssCriteriaScores });
+                }}
+                disabled={actionLoading || messagesLoading || !allScored || !hasVisibleMessages}
+              >
+                <span className="inline-flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4" />
+                  {actionLoading ? 'Completing�' : 'Complete Audit'}
+                </span>
+              </Button>
+            )}
+          </div>
         )}
 
         {audit.status === 'completed' && canRequestVN && (

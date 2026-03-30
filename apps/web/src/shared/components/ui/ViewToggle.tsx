@@ -6,6 +6,9 @@ export interface ViewOption<T extends string = string> {
   id: T;
   label: React.ReactNode;
   icon: LucideIcon;
+  activeClassName?: string;
+  activeIndicatorClassName?: string;
+  inactiveClassName?: string;
 }
 
 interface ViewToggleProps<T extends string = string> {
@@ -28,13 +31,16 @@ export function ViewToggle<T extends string = string>({
       {options.map((option) => {
         const isActive = activeId === option.id;
         const Icon = option.icon;
+        const activeClassName = option.activeClassName ?? 'text-primary-600';
+        const activeIndicatorClassName = option.activeIndicatorClassName ?? 'bg-primary-600';
+        const inactiveClassName = option.inactiveClassName ?? 'text-gray-500 hover:text-gray-700';
         return (
           <button
             key={option.id}
             type="button"
             onClick={() => onChange(option.id)}
             className={`relative flex flex-1 items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors sm:flex-none ${
-              isActive ? 'text-primary-600' : 'text-gray-500 hover:text-gray-700'
+              isActive ? activeClassName : inactiveClassName
             }`}
           >
             <Icon className="h-4 w-4" />
@@ -42,7 +48,7 @@ export function ViewToggle<T extends string = string>({
             {isActive && (
               <motion.div
                 layoutId={layoutId}
-                className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary-600"
+                className={`absolute bottom-0 left-0 right-0 h-0.5 ${activeIndicatorClassName}`}
                 transition={{ type: 'spring', bounce: 0, duration: 0.3 }}
               />
             )}
