@@ -57,8 +57,28 @@ type AuditReportSections = {
   coaching_recommendations: string[];
 };
 
+type ServiceCrewCctvAuditReportSections = {
+  general_audit_report: string[];
+  compliance_audit_report: string[];
+  customer_service_audit_report: string[];
+  audit_trail_findings: string[];
+  strengths: string[];
+  risks: string[];
+  coaching_recommendations: string[];
+};
+
 const EMPTY_AUDIT_REPORT_SECTIONS: AuditReportSections = {
   criteria_summary: ['Insufficient evidence from provided criteria.'],
+  audit_trail_findings: ['Insufficient evidence from provided audit trail.'],
+  strengths: ['No clear strengths evidenced in the provided data.'],
+  risks: ['No material risks evidenced in the provided data.'],
+  coaching_recommendations: ['No coaching recommendation can be made without stronger evidence.'],
+};
+
+const EMPTY_SERVICE_CREW_CCTV_AUDIT_REPORT_SECTIONS: ServiceCrewCctvAuditReportSections = {
+  general_audit_report: ['Insufficient evidence from the provided audit criteria.'],
+  compliance_audit_report: ['Insufficient evidence from the provided compliance criteria.'],
+  customer_service_audit_report: ['Insufficient evidence from the provided customer service criteria.'],
   audit_trail_findings: ['Insufficient evidence from provided audit trail.'],
   strengths: ['No clear strengths evidenced in the provided data.'],
   risks: ['No material risks evidenced in the provided data.'],
@@ -94,7 +114,6 @@ function normalizeRow(row: any): StoreAuditRow {
     css_order_lines: parseJsonField(row.css_order_lines, null),
     css_payments: parseJsonField(row.css_payments, null),
     css_criteria_scores: parseJsonField(row.css_criteria_scores, null),
-    comp_extra_fields: parseJsonField(row.comp_extra_fields, null),
   };
 }
 
@@ -105,14 +124,20 @@ async function enrichAuditRows(rows: any[]): Promise<StoreAuditRow[]> {
   const auditorIds = [
     ...new Set(rows.map((row) => row.auditor_user_id).filter(Boolean)),
   ] as string[];
+  const auditedUserIds = [
+    ...new Set(rows.map((row) => row.audited_user_id).filter(Boolean)),
+  ] as string[];
   const auditIds = rows.map((row) => row.id) as string[];
 
-  const [branches, auditors, linkedVns] = await Promise.all([
+  const [branches, auditors, auditedUsers, linkedVns] = await Promise.all([
     branchIds.length > 0
       ? db.getDb()('branches').whereIn('id', branchIds).select('id', 'name')
       : Promise.resolve([]),
     auditorIds.length > 0
       ? db.getDb()('users').whereIn('id', auditorIds).select('id', 'first_name', 'last_name')
+      : Promise.resolve([]),
+    auditedUserIds.length > 0
+      ? db.getDb()('users').whereIn('id', auditedUserIds).select('id', 'avatar_url')
       : Promise.resolve([]),
     db.getDb()('violation_notices')
       .whereIn('source_store_audit_id', auditIds)
@@ -129,6 +154,9 @@ async function enrichAuditRows(rows: any[]): Promise<StoreAuditRow[]> {
       `${auditor.first_name} ${auditor.last_name}`.trim(),
     ]),
   );
+  const auditedUserAvatarMap = new Map(
+    auditedUsers.map((user: any) => [user.id as string, (user.avatar_url as string | null) ?? null]),
+  );
   const vnMap = new Map(
     linkedVns.map((vn: any) => [vn.source_store_audit_id as string, vn.id as string]),
   );
@@ -141,6 +169,8 @@ async function enrichAuditRows(rows: any[]): Promise<StoreAuditRow[]> {
       auditor_name:
         normalized.auditor_name ??
         (normalized.auditor_user_id ? (auditorMap.get(normalized.auditor_user_id) ?? null) : null),
+      audited_user_avatar_url:
+        normalized.audited_user_id ? (auditedUserAvatarMap.get(normalized.audited_user_id) ?? null) : null,
       linked_vn_id: vnMap.get(normalized.id) ?? null,
     };
   });
@@ -176,32 +206,71 @@ async function analyzeCssAudit(
   });
 }
 
-async function analyzeComplianceAudit(
+async function analyzeServiceCrewCctvAudit(
   auditLog: string,
-  answers: {
-    productivity_rate: boolean;
-    uniform: boolean;
-    hygiene: boolean;
-    sop: boolean;
+  criteria: {
+    productivity_rate: boolean | null;
+    uniform_compliance: boolean | null;
+    hygiene_compliance: boolean | null;
+    sop_compliance: boolean | null;
+    customer_interaction: number;
+    cashiering: number;
+    suggestive_selling_and_upselling: number;
+    service_efficiency: number;
   },
 ): Promise<string> {
-  const labels: Array<{ key: keyof typeof answers; label: string }> = [
-    { key: 'productivity_rate', label: 'Productivity Rate' },
-    { key: 'uniform', label: 'Uniform Compliance' },
-    { key: 'hygiene', label: 'Hygiene Compliance' },
-    { key: 'sop', label: 'SOP Compliance' },
-  ];
+  const formatTriState = (value: boolean | null): string => {
+    if (value === true) return 'Yes';
+    if (value === false) return 'No';
+    return 'Not Auditable';
+  };
 
-  const answersPreamble = labels
-    .map(({ key, label }) => `- ${label}: ${answers[key] ? 'Yes' : 'No'}`)
+  const complianceAnswers = [
+    ['Productivity Rate', formatTriState(criteria.productivity_rate)],
+    ['Uniform Compliance', formatTriState(criteria.uniform_compliance)],
+    ['Hygiene Compliance', formatTriState(criteria.hygiene_compliance)],
+    ['SOP Compliance', formatTriState(criteria.sop_compliance)],
+  ]
+    .map(([label, value]) => `- ${label}: ${value}`)
     .join('\n');
 
-  const userContent = `Compliance Answers:\n${answersPreamble}\n\nAudit Log:\n${auditLog}`;
-  return analyzeAuditWithAI({
-    systemPrompt:
-      'You summarize compliance audits for retail/food-service operations. Return concise actionable findings, strengths, risks, and coaching recommendations.',
-    userContent,
-  });
+  const customerServiceRatings = [
+    [
+      'Customer Interaction',
+      `${criteria.customer_interaction}/5`,
+      'Greeting, eye contact, attentive listening, respectful engagement',
+    ],
+    [
+      'Cashiering',
+      `${criteria.cashiering}/5`,
+      'Accurate order/payment handling, proper POS flow, receipt confirmation',
+    ],
+    [
+      'Suggestive Selling and Upselling',
+      `${criteria.suggestive_selling_and_upselling}/5`,
+      'Relevant add-on offers, confident recommendations, natural timing',
+    ],
+    [
+      'Service Efficiency',
+      `${criteria.service_efficiency}/5`,
+      'Steady pace, organized workflow, minimal idle time, smooth service handoff',
+    ],
+  ]
+    .map(([label, value, description]) => `- ${label}: ${value} (${description})`)
+    .join('\n');
+
+  const userContent = [
+    'Compliance Criteria:',
+    complianceAnswers,
+    '',
+    'Customer Service Criteria:',
+    customerServiceRatings,
+    '',
+    'Audit Log:',
+    auditLog,
+  ].join('\n');
+
+  return analyzeServiceCrewCctvAuditWithAI(userContent);
 }
 
 async function analyzeAuditWithAI(input: {
@@ -321,6 +390,133 @@ function parseAuditReportSections(rawText: string): AuditReportSections {
   };
 }
 
+async function analyzeServiceCrewCctvAuditWithAI(userContent: string): Promise<string> {
+  const systemPrompt = [
+    'You summarize service crew CCTV audits for retail/food-service operations.',
+    'You must consistently produce a General Audit Report, a Compliance Audit Report, a Customer Service Audit Report, and then the existing Audit Trail Findings, Strengths, Risks, and Coaching Recommendations.',
+    '',
+    'You are a neutral, data-driven audit analyst for a retail/food-service operation.',
+    'Audit notes may be written in English, Filipino, Tagalog, Taglish, shorthand, or contain typos.',
+    'Interpret these conservatively and faithfully; do not assume intent beyond what is stated.',
+    'If audit notes contradict the provided criteria, surface the discrepancy explicitly.',
+    'If evidence is weak, ambiguous, or missing, state "Insufficient evidence" rather than speculating.',
+    '',
+    'Return STRICT JSON only with these exact keys:',
+    '- general_audit_report (array of strings)',
+    '- compliance_audit_report (array of strings)',
+    '- customer_service_audit_report (array of strings)',
+    '- audit_trail_findings (array of strings)',
+    '- strengths (array of strings)',
+    '- risks (array of strings)',
+    '- coaching_recommendations (array of strings)',
+    '',
+    'Rules:',
+    '- Every item must be directly supported by the provided data.',
+    '- Tone must be unbiased, factual, and professional.',
+    '- No markdown, no extra keys, no preamble or wrapper text.',
+  ].join('\n');
+
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+      'OpenAI-Organization': env.OPENAI_ORGANIZATION_ID,
+      'OpenAI-Project': env.OPENAI_PROJECT_ID,
+    },
+    body: JSON.stringify({
+      model: 'gpt-4.1',
+      max_output_tokens: 1800,
+      input: [
+        {
+          role: 'system',
+          content: systemPrompt,
+        },
+        {
+          role: 'user',
+          content: userContent,
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new AppError(502, `AI report generation failed: ${text}`);
+  }
+
+  const payload = (await response.json()) as {
+    output_text?: string;
+    output?: Array<{
+      content?: Array<{ type?: string; text?: string }>;
+    }>;
+  };
+
+  const rawText = extractAIOutputText(payload);
+  const parsed = parseServiceCrewCctvAuditReportSections(rawText);
+  return formatServiceCrewCctvAuditReportSections(parsed);
+}
+
+function parseServiceCrewCctvAuditReportSections(rawText: string): ServiceCrewCctvAuditReportSections {
+  const parsed = parseJsonObject(rawText);
+  if (!parsed || typeof parsed !== 'object') {
+    return {
+      ...EMPTY_SERVICE_CREW_CCTV_AUDIT_REPORT_SECTIONS,
+      general_audit_report: [
+        rawText.trim() || EMPTY_SERVICE_CREW_CCTV_AUDIT_REPORT_SECTIONS.general_audit_report[0],
+      ],
+    };
+  }
+
+  const obj = parsed as Record<string, unknown>;
+  return {
+    general_audit_report: sanitizeStringArray(
+      obj.general_audit_report,
+      EMPTY_SERVICE_CREW_CCTV_AUDIT_REPORT_SECTIONS.general_audit_report[0],
+    ),
+    compliance_audit_report: sanitizeStringArray(
+      obj.compliance_audit_report,
+      EMPTY_SERVICE_CREW_CCTV_AUDIT_REPORT_SECTIONS.compliance_audit_report[0],
+    ),
+    customer_service_audit_report: sanitizeStringArray(
+      obj.customer_service_audit_report,
+      EMPTY_SERVICE_CREW_CCTV_AUDIT_REPORT_SECTIONS.customer_service_audit_report[0],
+    ),
+    audit_trail_findings: sanitizeStringArray(
+      obj.audit_trail_findings,
+      EMPTY_SERVICE_CREW_CCTV_AUDIT_REPORT_SECTIONS.audit_trail_findings[0],
+    ),
+    strengths: sanitizeStringArray(
+      obj.strengths,
+      EMPTY_SERVICE_CREW_CCTV_AUDIT_REPORT_SECTIONS.strengths[0],
+    ),
+    risks: sanitizeStringArray(obj.risks, EMPTY_SERVICE_CREW_CCTV_AUDIT_REPORT_SECTIONS.risks[0]),
+    coaching_recommendations: sanitizeStringArray(
+      obj.coaching_recommendations,
+      EMPTY_SERVICE_CREW_CCTV_AUDIT_REPORT_SECTIONS.coaching_recommendations[0],
+    ),
+  };
+}
+
+function formatServiceCrewCctvAuditReportSections(
+  sections: ServiceCrewCctvAuditReportSections,
+): string {
+  const toLines = (title: string, items: string[]) =>
+    [`**${title}**`, ...items.map((item) => `- ${item}`), ''].join('\n');
+
+  return [
+    toLines('General Audit Report', sections.general_audit_report),
+    toLines('Compliance Audit Report', sections.compliance_audit_report),
+    toLines('Customer Service Audit Report', sections.customer_service_audit_report),
+    toLines('Audit Trail Findings', sections.audit_trail_findings),
+    toLines('Strengths', sections.strengths),
+    toLines('Risks', sections.risks),
+    toLines('Coaching Recommendations', sections.coaching_recommendations),
+  ]
+    .join('\n')
+    .trim();
+}
+
 function parseJsonObject(rawText: string): unknown {
   try {
     return JSON.parse(rawText);
@@ -378,7 +574,7 @@ async function getStoreAuditOrThrow(auditId: string): Promise<any> {
 }
 
 function assertStoreAuditMessagesSupported(audit: any): void {
-  if (audit.type !== 'customer_service' && audit.type !== 'compliance') {
+  if (audit.type !== 'customer_service' && audit.type !== 'service_crew_cctv') {
     throw new AppError(409, 'Audit messages are not supported for this store audit type');
   }
 }
@@ -797,10 +993,14 @@ export async function completeStoreAudit(input: {
         criteria_scores: CssCriteriaScores;
       }
     | {
-        productivity_rate: boolean;
-        uniform: boolean;
-        hygiene: boolean;
-        sop: boolean;
+        productivity_rate: boolean | null;
+        uniform_compliance: boolean | null;
+        hygiene_compliance: boolean | null;
+        sop_compliance: boolean | null;
+        customer_interaction: number;
+        cashiering: number;
+        suggestive_selling_and_upselling: number;
+        service_efficiency: number;
       };
 }): Promise<StoreAuditRow> {
   const audit = await db.getDb()('store_audits').where({ id: input.auditId }).first();
@@ -878,39 +1078,47 @@ export async function completeStoreAudit(input: {
       }
     }
   } else {
-    const compPayload = input.payload as {
-      productivity_rate: boolean;
-      uniform: boolean;
-      hygiene: boolean;
-      sop: boolean;
+    const sccPayload = input.payload as {
+      productivity_rate: boolean | null;
+      uniform_compliance: boolean | null;
+      hygiene_compliance: boolean | null;
+      sop_compliance: boolean | null;
+      customer_interaction: number;
+      cashiering: number;
+      suggestive_selling_and_upselling: number;
+      service_efficiency: number;
     };
     const messages = await buildStoreAuditMessageList(input.auditId);
     const visibleMessages = messages.filter((message) => !message.is_deleted);
     if (visibleMessages.length === 0) {
       throw new AppError(
         400,
-        'At least one audit message is required before completing this compliance audit',
+        'At least one audit message is required before completing this service crew cctv audit',
       );
     }
     const generatedAuditLog = buildAuditMessageTranscript(visibleMessages);
-    const aiReport = await analyzeComplianceAudit(generatedAuditLog, compPayload);
+    const aiReport = await analyzeServiceCrewCctvAudit(generatedAuditLog, sccPayload);
     [updated] = await db.getDb()('store_audits')
       .where({ id: input.auditId })
       .update({
         status: 'completed',
-        comp_productivity_rate: compPayload.productivity_rate,
-        comp_uniform: compPayload.uniform,
-        comp_hygiene: compPayload.hygiene,
-        comp_sop: compPayload.sop,
-        comp_ai_report: aiReport,
+        scc_productivity_rate: sccPayload.productivity_rate,
+        scc_uniform_compliance: sccPayload.uniform_compliance,
+        scc_hygiene_compliance: sccPayload.hygiene_compliance,
+        scc_sop_compliance: sccPayload.sop_compliance,
+        scc_customer_interaction: sccPayload.customer_interaction,
+        scc_cashiering: sccPayload.cashiering,
+        scc_suggestive_selling_and_upselling: sccPayload.suggestive_selling_and_upselling,
+        scc_service_efficiency: sccPayload.service_efficiency,
+        scc_ai_report: aiReport,
         ...completedTimestamps,
       })
       .returning('*');
 
-    if (audit.audited_user_id || audit.audited_user_key || audit.comp_odoo_employee_id) {
+    if (audit.audited_user_id || audit.audited_user_key || audit.scc_odoo_employee_id) {
       const monetaryReward = Number(audit.monetary_reward ?? 0);
       if (monetaryReward > 0) {
-        const description = `Compliance Audit ${input.auditId} - ${formatDescriptionTimestamp(completedAt)}`;
+        const description = `Service Crew CCTV Audit ${input.auditId} - ${formatDescriptionTimestamp(completedAt)}`;
         await createSalaryAttachmentForAuditor(description, monetaryReward);
       }
     }

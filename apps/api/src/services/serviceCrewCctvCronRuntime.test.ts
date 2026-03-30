@@ -1,18 +1,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  createComplianceOccurrenceExecutor,
-  type ComplianceRunOutcome,
-} from './complianceCronRuntime.js';
+  createServiceCrewCctvOccurrenceExecutor,
+  type ServiceCrewCctvRunOutcome,
+} from './serviceCrewCctvCronRuntime.js';
 
-test('createComplianceOccurrenceExecutor skips when another worker already claimed the hour', async () => {
+test('createServiceCrewCctvOccurrenceExecutor skips when another worker already claimed the hour', async () => {
   const calls: string[] = [];
-  const execute = createComplianceOccurrenceExecutor({
-    jobName: 'compliance_hourly_audit',
+  const execute = createServiceCrewCctvOccurrenceExecutor({
+    jobName: 'service_crew_cctv_hourly_audit',
     claimOccurrence: async () => false,
-    runComplianceJob: async () => {
+    runServiceCrewCctvJob: async () => {
       calls.push('run');
-      return { status: 'success' } satisfies ComplianceRunOutcome;
+      return { status: 'success' } satisfies ServiceCrewCctvRunOutcome;
     },
     markSuccess: async () => {
       calls.push('success');
@@ -39,13 +39,13 @@ test('createComplianceOccurrenceExecutor skips when another worker already claim
   assert.deepEqual(calls, []);
 });
 
-test('createComplianceOccurrenceExecutor marks success when an audit is created', async () => {
+test('createServiceCrewCctvOccurrenceExecutor marks success when an audit is created', async () => {
   const calls: string[] = [];
   const notifications: string[] = [];
-  const execute = createComplianceOccurrenceExecutor({
-    jobName: 'compliance_hourly_audit',
+  const execute = createServiceCrewCctvOccurrenceExecutor({
+    jobName: 'service_crew_cctv_hourly_audit',
     claimOccurrence: async () => true,
-    runComplianceJob: async () => ({ status: 'success' }),
+    runServiceCrewCctvJob: async () => ({ status: 'success' }),
     markSuccess: async () => {
       calls.push('success');
     },
@@ -75,13 +75,13 @@ test('createComplianceOccurrenceExecutor marks success when an audit is created'
   assert.deepEqual(notifications, ['success']);
 });
 
-test('createComplianceOccurrenceExecutor marks skipped when the occurrence is consumed without an audit', async () => {
+test('createServiceCrewCctvOccurrenceExecutor marks skipped when the occurrence is consumed without an audit', async () => {
   const skippedReasons: Array<string | null | undefined> = [];
   let notificationCount = 0;
-  const execute = createComplianceOccurrenceExecutor({
-    jobName: 'compliance_hourly_audit',
+  const execute = createServiceCrewCctvOccurrenceExecutor({
+    jobName: 'service_crew_cctv_hourly_audit',
     claimOccurrence: async () => true,
-    runComplianceJob: async () => ({ status: 'skipped', reason: 'No eligible attendance' }),
+    runServiceCrewCctvJob: async () => ({ status: 'skipped', reason: 'No eligible attendance' }),
     markSuccess: async () => undefined,
     markSkipped: async (_scheduledFor, reason) => {
       skippedReasons.push(reason);
@@ -107,13 +107,13 @@ test('createComplianceOccurrenceExecutor marks skipped when the occurrence is co
   assert.equal(notificationCount, 0);
 });
 
-test('createComplianceOccurrenceExecutor marks failures when the compliance run throws', async () => {
+test('createServiceCrewCctvOccurrenceExecutor marks failures when the SCC run throws', async () => {
   const failures: string[] = [];
   const notifications: string[] = [];
-  const execute = createComplianceOccurrenceExecutor({
-    jobName: 'compliance_hourly_audit',
+  const execute = createServiceCrewCctvOccurrenceExecutor({
+    jobName: 'service_crew_cctv_hourly_audit',
     claimOccurrence: async () => true,
-    runComplianceJob: async () => {
+    runServiceCrewCctvJob: async () => {
       throw new Error('boom');
     },
     markSuccess: async () => undefined,

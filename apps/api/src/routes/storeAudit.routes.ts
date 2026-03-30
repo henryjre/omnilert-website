@@ -63,14 +63,18 @@ const cssCompleteSchema = z.object({
   criteria_scores: cssCriteriaScoresSchema,
 });
 
-const complianceCompleteSchema = z.object({
-  productivity_rate: z.boolean(),
-  uniform: z.boolean(),
-  hygiene: z.boolean(),
-  sop: z.boolean(),
+const serviceCrewCctvCompleteSchema = z.object({
+  productivity_rate: z.boolean().nullable(),
+  uniform_compliance: z.boolean().nullable(),
+  hygiene_compliance: z.boolean().nullable(),
+  sop_compliance: z.boolean().nullable(),
+  customer_interaction: z.number().int().min(1).max(5),
+  cashiering: z.number().int().min(1).max(5),
+  suggestive_selling_and_upselling: z.number().int().min(1).max(5),
+  service_efficiency: z.number().int().min(1).max(5),
 });
 
-const completeAuditSchema = z.union([cssCompleteSchema, complianceCompleteSchema]);
+const completeAuditSchema = z.union([cssCompleteSchema, serviceCrewCctvCompleteSchema]);
 const rejectAuditSchema = z.object({
   reason: z.string().trim().min(1),
 });

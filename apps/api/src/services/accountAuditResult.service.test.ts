@@ -23,7 +23,7 @@ function createAuditRow(
     company_name: string;
     company_slug: string;
     id: string;
-    type: 'customer_service' | 'compliance';
+    type: 'customer_service' | 'service_crew_cctv';
     status: 'completed' | 'pending';
     branch_id: string;
     branch_name: string | null;
@@ -43,13 +43,17 @@ function createAuditRow(
     } | null;
     css_ai_report: string | null;
     css_audit_log: string | null;
-    comp_odoo_employee_id: number | null;
-    comp_check_in_time: string | null;
-    comp_productivity_rate: boolean | null;
-    comp_uniform: boolean | null;
-    comp_hygiene: boolean | null;
-    comp_sop: boolean | null;
-    comp_ai_report: string | null;
+    scc_odoo_employee_id: number | null;
+    scc_employee_name: string | null;
+    scc_productivity_rate: boolean | null;
+    scc_uniform_compliance: boolean | null;
+    scc_hygiene_compliance: boolean | null;
+    scc_sop_compliance: boolean | null;
+    scc_customer_interaction: number | null;
+    scc_cashiering: number | null;
+    scc_suggestive_selling_and_upselling: number | null;
+    scc_service_efficiency: number | null;
+    scc_ai_report: string | null;
     auditor_user_id: string | null;
     auditor_name: string | null;
     monetary_reward: string;
@@ -62,7 +66,7 @@ function createAuditRow(
     company_name: overrides.company_name ?? 'Alpha Foods',
     company_slug: overrides.company_slug ?? 'alpha-foods',
     id: overrides.id ?? 'audit-1',
-    type: overrides.type ?? 'customer_service',
+    type: overrides.type ?? 'service_crew_cctv',
     status: overrides.status ?? 'completed',
     branch_id: overrides.branch_id ?? 'branch-1',
     branch_name: overrides.branch_name ?? 'Main Branch',
@@ -82,13 +86,18 @@ function createAuditRow(
     },
     css_ai_report: overrides.css_ai_report ?? 'Strong service recovery.',
     css_audit_log: overrides.css_audit_log ?? 'Observer note',
-    comp_odoo_employee_id: overrides.comp_odoo_employee_id ?? 88,
-    comp_check_in_time: overrides.comp_check_in_time ?? '2026-03-21T08:30:00.000Z',
-    comp_productivity_rate: overrides.comp_productivity_rate ?? true,
-    comp_uniform: overrides.comp_uniform ?? true,
-    comp_hygiene: overrides.comp_hygiene ?? false,
-    comp_sop: overrides.comp_sop ?? true,
-    comp_ai_report: overrides.comp_ai_report ?? 'Follow SOP reminders.',
+    scc_odoo_employee_id: overrides.scc_odoo_employee_id ?? 88,
+    scc_employee_name: overrides.scc_employee_name ?? 'Service Crew',
+    scc_productivity_rate: overrides.scc_productivity_rate ?? true,
+    scc_uniform_compliance: overrides.scc_uniform_compliance ?? true,
+    scc_hygiene_compliance: overrides.scc_hygiene_compliance ?? null,
+    scc_sop_compliance: overrides.scc_sop_compliance ?? false,
+    scc_customer_interaction: overrides.scc_customer_interaction ?? 4,
+    scc_cashiering: overrides.scc_cashiering ?? 5,
+    scc_suggestive_selling_and_upselling:
+      overrides.scc_suggestive_selling_and_upselling ?? 3,
+    scc_service_efficiency: overrides.scc_service_efficiency ?? 4,
+    scc_ai_report: overrides.scc_ai_report ?? 'Needs tighter SOP coaching.',
     auditor_user_id: overrides.auditor_user_id ?? 'auditor-1',
     auditor_name: overrides.auditor_name ?? 'Secret Auditor',
     monetary_reward: overrides.monetary_reward ?? '250.00',
@@ -129,7 +138,7 @@ function createMessage(
     user_id: overrides.user_id ?? 'auditor-1',
     user_name: overrides.user_name ?? 'Secret Auditor',
     user_avatar: overrides.user_avatar ?? 'https://example.com/avatar.jpg',
-    content: overrides.content ?? 'Cashier greeted within 5 seconds.',
+    content: overrides.content ?? 'Crew member greeted the customer and kept the line moving.',
     is_deleted: overrides.is_deleted ?? false,
     deleted_by: overrides.deleted_by ?? null,
     created_at: overrides.created_at ?? '2026-03-21T09:20:00.000Z',
@@ -151,8 +160,14 @@ function createMessage(
   };
 }
 
-test('listAccountAuditResults returns only owned completed audits with normalized summaries', async () => {
+test('listAccountAuditResults returns only owned completed SCC audits with text summaries', async () => {
   const rows = [
+    createAuditRow({
+      id: 'scc-owned',
+      type: 'service_crew_cctv',
+      scc_odoo_employee_id: 88,
+      completed_at: '2026-03-21T11:00:00.000Z',
+    }),
     createAuditRow({
       id: 'css-owned',
       type: 'customer_service',
@@ -160,28 +175,16 @@ test('listAccountAuditResults returns only owned completed audits with normalize
       completed_at: '2026-03-21T12:00:00.000Z',
     }),
     createAuditRow({
-      id: 'comp-owned',
-      type: 'compliance',
-      comp_odoo_employee_id: 88,
-      completed_at: '2026-03-21T11:00:00.000Z',
-    }),
-    createAuditRow({
-      id: 'css-other-user',
-      type: 'customer_service',
-      css_cashier_user_key: 'user-key-2',
+      id: 'scc-other-user',
+      type: 'service_crew_cctv',
+      scc_odoo_employee_id: 99,
       completed_at: '2026-03-21T13:00:00.000Z',
     }),
     createAuditRow({
-      id: 'comp-other-user',
-      type: 'compliance',
-      comp_odoo_employee_id: 99,
-      completed_at: '2026-03-21T14:00:00.000Z',
-    }),
-    createAuditRow({
       id: 'pending-owned',
-      type: 'customer_service',
+      type: 'service_crew_cctv',
       status: 'pending',
-      css_cashier_user_key: 'user-key-1',
+      scc_odoo_employee_id: 88,
       completed_at: null,
     }),
   ];
@@ -205,10 +208,16 @@ test('listAccountAuditResults returns only owned completed audits with normalize
     pageSize: 10,
   });
 
-  assert.equal(result.total, 2);
-  assert.deepEqual(result.items.map((item) => item.id), ['css-owned', 'comp-owned']);
-  assert.equal(result.items[0]?.summary.result_line, 'Overall score: 4.2 / 5');
-  assert.equal(result.items[1]?.summary.result_line, 'Passed checks: 3 / 4');
+  assert.equal(result.total, 1);
+  assert.deepEqual(result.items.map((item) => item.id), ['scc-owned']);
+  assert.equal(result.items[0]?.type, 'service_crew_cctv');
+  assert.equal(
+    result.items[0]?.summary.result_line,
+    'Status: Completed. Includes compliance checks and customer service ratings.',
+  );
+  assert.equal(result.items[0]?.summary.overall_value, null);
+  assert.equal(result.items[0]?.summary.overall_max, null);
+  assert.equal(result.items[0]?.summary.overall_unit, 'text');
   assert.deepEqual(result.items[0]?.company, {
     id: 'company-1',
     name: 'Alpha Foods',
@@ -216,28 +225,28 @@ test('listAccountAuditResults returns only owned completed audits with normalize
   });
 });
 
-test('listAccountAuditResults prefers audited_user_id ownership and keeps legacy fallback support', async () => {
+test('listAccountAuditResults keeps canonical ownership and drops CSS fallback branches', async () => {
   const rows = [
     createAuditRow({
       id: 'owned-by-audited-id',
+      type: 'service_crew_cctv',
+      audited_user_id: 'viewer-1',
+      audited_user_key: 'user-key-1',
+      scc_odoo_employee_id: 999,
+    }),
+    createAuditRow({
+      id: 'owned-by-employee-id',
+      type: 'service_crew_cctv',
+      audited_user_id: null,
+      audited_user_key: null,
+      scc_odoo_employee_id: 88,
+    }),
+    createAuditRow({
+      id: 'css-legacy-owned',
       type: 'customer_service',
       audited_user_id: 'viewer-1',
       audited_user_key: 'user-key-1',
-      css_cashier_user_key: 'different-legacy-key',
-    }),
-    createAuditRow({
-      id: 'owned-by-legacy-fallback',
-      type: 'customer_service',
-      audited_user_id: null,
-      audited_user_key: null,
       css_cashier_user_key: 'user-key-1',
-    }),
-    createAuditRow({
-      id: 'not-owned',
-      type: 'customer_service',
-      audited_user_id: 'other-user',
-      audited_user_key: 'user-key-other',
-      css_cashier_user_key: 'user-key-other',
     }),
   ];
 
@@ -245,7 +254,7 @@ test('listAccountAuditResults prefers audited_user_id ownership and keeps legacy
     resolveViewerIdentity: async () => ({
       userId: 'viewer-1',
       userKey: 'user-key-1',
-      employeeIds: [],
+      employeeIds: [88],
     }),
     listCompletedAuditRows: async () => rows,
     getAuditRowById: async () => null,
@@ -258,20 +267,20 @@ test('listAccountAuditResults prefers audited_user_id ownership and keeps legacy
     pageSize: 10,
   });
 
-  assert.deepEqual(result.items.map((item) => item.id), ['owned-by-audited-id', 'owned-by-legacy-fallback']);
+  assert.deepEqual(result.items.map((item) => item.id), ['owned-by-audited-id', 'owned-by-employee-id']);
 });
 
-test('getAccountAuditResultById returns a sanitized read-only detail payload', async () => {
+test('getAccountAuditResultById returns a sanitized SCC-only detail payload', async () => {
   const audit = createAuditRow({
     id: 'audit-safe',
-    type: 'customer_service',
-    css_cashier_user_key: 'user-key-1',
+    type: 'service_crew_cctv',
+    scc_odoo_employee_id: 88,
   });
   const service = createAccountAuditResultService({
     resolveViewerIdentity: async () => ({
       userId: 'viewer-1',
       userKey: 'user-key-1',
-      employeeIds: [],
+      employeeIds: [88],
     }),
     listCompletedAuditRows: async () => [],
     getAuditRowById: async ({ auditId }) => (auditId === 'audit-safe' ? audit : null),
@@ -291,24 +300,29 @@ test('getAccountAuditResultById returns a sanitized read-only detail payload', a
   });
 
   assert.equal(result.id, 'audit-safe');
+  assert.equal(result.type, 'service_crew_cctv');
   assert.equal(result.audit_trail.length, 1);
-  assert.equal(result.audit_trail[0]?.content, 'Cashier greeted within 5 seconds.');
+  assert.equal(result.audit_trail[0]?.content, 'Crew member greeted the customer and kept the line moving.');
   assert.equal(result.audit_trail[0]?.attachments[0]?.file_name, 'audit-photo.jpg');
-  assert.equal(result.ai_report, 'Strong service recovery.');
+  assert.equal(result.ai_report, 'Needs tighter SOP coaching.');
   assert.deepEqual(result.company, {
     id: 'company-1',
     name: 'Alpha Foods',
     slug: 'alpha-foods',
   });
-  assert.deepEqual(result.css_result, {
-    criteria_scores: {
-      greeting: 4,
-      order_accuracy: 5,
-      suggestive_selling: 4,
-      service_efficiency: 4,
-      professionalism: 4,
+  assert.deepEqual(result.scc_result, {
+    compliance_criteria: {
+      productivity_rate: true,
+      uniform_compliance: true,
+      hygiene_compliance: null,
+      sop_compliance: false,
     },
-    overall_rating: 4.2,
+    customer_service_criteria: {
+      customer_interaction: 4,
+      cashiering: 5,
+      suggestive_selling_and_upselling: 3,
+      service_efficiency: 4,
+    },
   });
 
   const serialized = JSON.stringify(result);
@@ -317,9 +331,10 @@ test('getAccountAuditResultById returns a sanitized read-only detail payload', a
   assert.doesNotMatch(serialized, /monetary_reward/);
   assert.doesNotMatch(serialized, /uploaded_by/);
   assert.doesNotMatch(serialized, /linked_vn_id/);
+  assert.doesNotMatch(serialized, /css_result/);
 });
 
-test('getAccountAuditResultById rejects audits not owned by the viewer', async () => {
+test('getAccountAuditResultById rejects CSS audits and audits not owned by the viewer', async () => {
   const service = createAccountAuditResultService({
     resolveViewerIdentity: async () => ({
       userId: 'viewer-1',
@@ -327,14 +342,32 @@ test('getAccountAuditResultById rejects audits not owned by the viewer', async (
       employeeIds: [88],
     }),
     listCompletedAuditRows: async () => [],
-    getAuditRowById: async () =>
-      createAuditRow({
+    getAuditRowById: async ({ auditId }) => {
+      if (auditId === 'css-audit') {
+        return createAuditRow({
+          id: 'css-audit',
+          type: 'customer_service',
+          css_cashier_user_key: 'user-key-1',
+        });
+      }
+
+      return createAuditRow({
         id: 'audit-other',
-        type: 'customer_service',
-        css_cashier_user_key: 'user-key-2',
-      }),
+        type: 'service_crew_cctv',
+        scc_odoo_employee_id: 99,
+      });
+    },
     listAuditMessages: async () => [],
   });
+
+  await assert.rejects(
+    () =>
+      service.getAccountAuditResultById({
+        userId: 'viewer-1',
+        auditId: 'css-audit',
+      }),
+    /Audit result not found/,
+  );
 
   await assert.rejects(
     () =>

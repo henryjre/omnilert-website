@@ -13,27 +13,27 @@ const {
   AccountAuditResultDetailPanel,
 } = await import('../src/features/account/components/AccountAuditResultDetailPanel');
 
-const cssAudit = {
-  id: 'audit-css-1',
-  type: 'customer_service' as const,
-  type_label: 'Customer Service Audit' as const,
+const sccAudit = {
+  id: 'audit-scc-1',
+  type: 'service_crew_cctv' as const,
+  type_label: 'Service Crew CCTV Audit' as const,
   branch: {
     id: 'branch-1',
     name: 'Main Branch',
   },
   completed_at: '2026-03-21T10:00:00.000Z',
-  observed_at: '2026-03-21T09:15:00.000Z',
+  observed_at: '2026-03-21T08:30:00.000Z',
   summary: {
-    result_line: 'Overall score: 4.2 / 5',
-    overall_value: 4.2,
-    overall_max: 5,
-    overall_unit: 'rating' as const,
+    result_line: 'Completed with 4 compliance checks and 4 customer service ratings.',
+    overall_value: null,
+    overall_max: null,
+    overall_unit: 'text' as const,
   },
-  ai_report: 'Strong service recovery.',
+  ai_report: 'General Audit Report\nStrong service recovery.',
   audit_trail: [
     {
       id: 'trail-1',
-      content: 'Cashier greeted within 5 seconds.',
+      content: 'Crew member stayed attentive during the rush.',
       created_at: '2026-03-21T09:20:00.000Z',
       attachments: [
         {
@@ -47,104 +47,77 @@ const cssAudit = {
       ],
     },
   ],
-  css_result: {
-    criteria_scores: {
-      greeting: 4,
-      order_accuracy: 5,
-      suggestive_selling: 4,
-      service_efficiency: 4,
-      professionalism: 4,
-    },
-    overall_rating: 4.2,
-  },
-  compliance_result: null,
-};
-
-const complianceAudit = {
-  id: 'audit-comp-1',
-  type: 'compliance' as const,
-  type_label: 'Compliance Audit' as const,
-  branch: {
-    id: 'branch-1',
-    name: 'Main Branch',
-  },
-  completed_at: '2026-03-21T10:00:00.000Z',
-  observed_at: '2026-03-21T08:30:00.000Z',
-  summary: {
-    result_line: 'Passed checks: 3 / 4',
-    overall_value: 3,
-    overall_max: 4,
-    overall_unit: 'checks' as const,
-  },
-  ai_report: 'Follow SOP reminders.',
-  audit_trail: [],
-  css_result: null,
-  compliance_result: {
-    checks: {
+  scc_result: {
+    compliance_criteria: {
       productivity_rate: true,
-      uniform: true,
-      hygiene: false,
-      sop: true,
+      uniform_compliance: true,
+      hygiene_compliance: false,
+      sop_compliance: null,
     },
-    passed_count: 3,
-    total_checks: 4 as const,
+    customer_service_criteria: {
+      customer_interaction: 4,
+      cashiering: 5,
+      suggestive_selling_and_upselling: 4,
+      service_efficiency: 4,
+    },
   },
 };
 
-test('AuditResultsPageContent matches the store-audits shell without status tabs', () => {
+test('AuditResultsPageContent shows the SCC-only results shell', () => {
   const markup = renderToStaticMarkup(
     <AuditResultsPageContent
       loading={false}
-      items={[cssAudit, complianceAudit]}
-      total={2}
-      category="all"
+      items={[sccAudit]}
+      total={1}
       selectedAuditId={null}
       currentPage={1}
       totalPages={3}
-      onCategoryChange={() => undefined}
       onSelectAudit={() => undefined}
-      onPrevious={() => undefined}
-      onNext={() => undefined}
+      onPageChange={() => undefined}
     />,
   );
 
-  assert.match(markup, />Audit Results</);
-  assert.match(markup, />All Categories</);
-  assert.match(markup, />Customer Service Audit</);
-  assert.match(markup, />Compliance Audit</);
-  assert.match(markup, /Page 1 of 3/);
+  assert.match(markup, /My Audit Results/);
+  assert.match(markup, /Service Crew CCTV Audit/);
+  assert.match(markup, /Go to previous page/);
+  assert.match(markup, /Go to next page/);
+  assert.match(markup, /aria-current="page"/);
+  assert.match(markup, /Go to page 1/);
+  assert.doesNotMatch(markup, />All Categories</);
   assert.doesNotMatch(markup, />pending</i);
   assert.doesNotMatch(markup, />processing</i);
   assert.doesNotMatch(markup, />completed</i);
 });
 
-test('AccountAuditResultCard omits auditor and reward metadata', () => {
+test('AccountAuditResultCard keeps summary text and omits auditor and reward metadata', () => {
   const markup = renderToStaticMarkup(
     <AccountAuditResultCard
-      audit={cssAudit}
+      audit={sccAudit as any}
       selected={false}
       onSelect={() => undefined}
     />,
   );
 
   assert.match(markup, /Main Branch/);
-  assert.match(markup, /Overall score: 4.2 \/ 5/);
+  assert.match(markup, /Completed with 4 compliance checks and 4 customer service ratings\./);
   assert.doesNotMatch(markup, /Auditor:/);
-  assert.doesNotMatch(markup, /Rate:/);
+  assert.doesNotMatch(markup, /Audit Reward/);
+  assert.doesNotMatch(markup, /Monetary Reward/);
 });
 
-test('AccountAuditResultDetailPanel is read-only and anonymous while keeping audit content', () => {
-  const markup = renderToStaticMarkup(<AccountAuditResultDetailPanel audit={cssAudit} />);
+test('AccountAuditResultDetailPanel is read-only and renders SCC sections', () => {
+  const markup = renderToStaticMarkup(<AccountAuditResultDetailPanel audit={sccAudit as any} />);
 
-  assert.match(markup, /Criteria Scores/);
-  assert.match(markup, /Overall Average/);
+  assert.match(markup, /Compliance Criteria/);
+  assert.match(markup, /Customer Service Criteria/);
   assert.match(markup, /Audit Trail/);
-  assert.match(markup, /Cashier greeted within 5 seconds\./);
+  assert.match(markup, /Crew member stayed attentive during the rush\./);
   assert.match(markup, /audit-photo\.jpg/);
   assert.match(markup, /AI Report/);
   assert.match(markup, /Strong service recovery\./);
   assert.doesNotMatch(markup, /Auditor/);
-  assert.doesNotMatch(markup, /Rate/);
+  assert.doesNotMatch(markup, /Audit Reward/);
+  assert.doesNotMatch(markup, /Monetary Reward/);
   assert.doesNotMatch(markup, /Process/);
   assert.doesNotMatch(markup, /Audit Complete/);
   assert.doesNotMatch(markup, /Send Message/);

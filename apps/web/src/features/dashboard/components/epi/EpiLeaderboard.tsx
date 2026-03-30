@@ -193,7 +193,6 @@ function ExpandedMetricsLoading() {
       <div>
         <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">Performance Scores</p>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <LoadingMetric label="Customer Service" />
           <LoadingMetric label="Workplace Relations" />
           <LoadingMetric label="Professional Conduct" />
         </div>
@@ -282,9 +281,6 @@ function ExpandedMetrics({
       <div>
         <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">Performance Scores</p>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {criteria.sqaaScore !== null
-            ? <MetricBar label="Customer Service" value={criteria.sqaaScore} max={5} format={`${criteria.sqaaScore.toFixed(1)}/5`} />
-            : <NullMetric label="Customer Service" />}
           {criteria.workplaceRelationsScore !== null
             ? <MetricBar label="Workplace Relations" value={criteria.workplaceRelationsScore} max={5} format={`${criteria.workplaceRelationsScore.toFixed(1)}/5`} />
             : <NullMetric label="Workplace Relations" />}

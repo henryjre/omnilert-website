@@ -3,7 +3,6 @@ import type {
   AccountAuditResultDetail,
   AccountAuditResultListItem,
   ListAccountAuditResultsResponse,
-  StoreAuditType,
 } from '@omnilert/shared';
 import { GitBranch, X } from 'lucide-react';
 import { Spinner } from '../../../shared/components/ui/Spinner';
@@ -14,7 +13,6 @@ import { resolveStoreAuditPaginationState } from '../../store-audits/pages/store
 import { AuditResultsPageContent } from '../components/AuditResultsPageContent';
 import { AccountAuditResultDetailPanel } from '../components/AccountAuditResultDetailPanel';
 
-type CategoryTab = 'all' | StoreAuditType;
 const PAGE_SIZE = 10;
 
 function formatDate(value: string | null): string {
@@ -37,7 +35,6 @@ export function AuditResultsPage() {
   const { selectedBranchIds } = useBranchStore();
 
   const [loading, setLoading] = useState(true);
-  const [category, setCategory] = useState<CategoryTab>('all');
   const [items, setItems] = useState<AccountAuditResultListItem[]>([]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
@@ -59,7 +56,6 @@ export function AuditResultsPage() {
       try {
         const response = await api.get('/account/audit-results', {
           params: {
-            type: category === 'all' ? undefined : category,
             branchIds: selectedBranchIds.length > 0 ? selectedBranchIds.join(',') : undefined,
             page,
             pageSize: PAGE_SIZE,
@@ -102,13 +98,13 @@ export function AuditResultsPage() {
     return () => {
       active = false;
     };
-  }, [category, page, selectedBranchIds, showErrorToast]);
+  }, [page, selectedBranchIds, showErrorToast]);
 
-  /** Reset to page 1 when category or branch selection changes. */
+  /** Reset to page 1 when branch selection changes. */
   useEffect(() => {
     setPage(1);
     setSelectedAuditId(null);
-  }, [category, selectedBranchIds]);
+  }, [selectedBranchIds]);
 
   useEffect(() => {
     if (!selectedAuditId) {
@@ -151,15 +147,9 @@ export function AuditResultsPage() {
         loading={loading}
         items={items}
         total={total}
-        category={category}
         selectedAuditId={selectedAuditId}
         currentPage={currentPage}
         totalPages={totalPages}
-        onCategoryChange={(nextCategory) => {
-          setCategory(nextCategory);
-          setPage(1);
-          setSelectedAuditId(null);
-        }}
         onSelectAudit={(auditId) => {
           setSelectedAuditId(auditId);
         }}

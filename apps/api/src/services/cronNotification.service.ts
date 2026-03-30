@@ -9,7 +9,7 @@ import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 
 const SUCCESS_NOTIFICATION_JOB_NAMES = new Set<string>([
-  'compliance_hourly_audit',
+  'service_crew_cctv_hourly_audit',
   'epi-weekly-snapshot',
   'epi-monthly-snapshot',
   'employee-metric-daily-snapshot',

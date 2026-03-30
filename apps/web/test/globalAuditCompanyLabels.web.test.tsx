@@ -7,8 +7,8 @@ const {
   CssAuditCard,
 } = await import('../src/features/store-audits/components/CssAuditCard');
 const {
-  ComplianceAuditCard,
-} = await import('../src/features/store-audits/components/ComplianceAuditCard');
+  ServiceCrewCctvAuditCard,
+} = await import('../src/features/store-audits/components/ServiceCrewCctvAuditCard');
 const {
   AccountAuditResultCard,
 } = await import('../src/features/account/components/AccountAuditResultCard');
@@ -31,6 +31,8 @@ const cssAudit = {
   auditor_name: null,
   monetary_reward: '150.00',
   completed_at: null,
+  rejected_at: null,
+  rejection_reason: null,
   processing_started_at: null,
   vn_requested: false,
   linked_vn_id: null,
@@ -44,6 +46,7 @@ const cssAudit = {
   css_cashier_user_key: 'user-key-1',
   audited_user_id: null,
   audited_user_key: 'user-key-1',
+  audited_user_avatar_url: null,
   css_date_order: '2026-03-22T01:10:00.000Z',
   css_amount_total: '399.00',
   css_order_lines: [],
@@ -52,21 +55,23 @@ const cssAudit = {
   css_criteria_scores: null,
   css_audit_log: null,
   css_ai_report: null,
-  comp_odoo_employee_id: null,
-  comp_employee_name: null,
-  comp_check_in_time: null,
-  comp_extra_fields: null,
-  comp_productivity_rate: null,
-  comp_uniform: null,
-  comp_hygiene: null,
-  comp_sop: null,
-  comp_ai_report: null,
+  scc_odoo_employee_id: null,
+  scc_employee_name: null,
+  scc_productivity_rate: null,
+  scc_uniform_compliance: null,
+  scc_hygiene_compliance: null,
+  scc_sop_compliance: null,
+  scc_customer_interaction: null,
+  scc_cashiering: null,
+  scc_suggestive_selling_and_upselling: null,
+  scc_service_efficiency: null,
+  scc_ai_report: null,
 };
 
-const complianceAudit = {
+const sccAudit = {
   ...cssAudit,
-  id: 'audit-comp-1',
-  type: 'compliance' as const,
+  id: 'audit-scc-1',
+  type: 'service_crew_cctv' as const,
   company: {
     id: 'company-b',
     name: 'Beta Retail',
@@ -75,19 +80,15 @@ const complianceAudit = {
   css_odoo_order_id: null,
   css_cashier_name: null,
   css_cashier_user_key: null,
-  audited_user_id: null,
-  audited_user_key: null,
-  css_date_order: null,
-  css_amount_total: null,
-  comp_odoo_employee_id: 99,
-  comp_employee_name: 'Employee Two',
-  comp_check_in_time: '2026-03-22T02:00:00.000Z',
+  audited_user_key: 'employee-key-99',
+  scc_odoo_employee_id: 99,
+  scc_employee_name: 'Employee Two',
 };
 
 const accountAudit = {
   id: 'audit-result-1',
-  type: 'customer_service' as const,
-  type_label: 'Customer Service Audit' as const,
+  type: 'service_crew_cctv' as const,
+  type_label: 'Service Crew CCTV Audit' as const,
   company: {
     id: 'company-a',
     name: 'Alpha Foods',
@@ -100,41 +101,44 @@ const accountAudit = {
   completed_at: '2026-03-22T03:00:00.000Z',
   observed_at: '2026-03-22T02:45:00.000Z',
   summary: {
-    result_line: 'Overall score: 4.2 / 5',
-    overall_value: 4.2,
-    overall_max: 5,
-    overall_unit: 'rating' as const,
+    result_line: 'Completed with 4 compliance checks and 4 customer service ratings.',
+    overall_value: null,
+    overall_max: null,
+    overall_unit: 'text' as const,
   },
-  ai_report: 'Strong service recovery.',
+  ai_report: 'General Audit Report\nStrong service awareness.',
   audit_trail: [],
-  css_result: {
-    criteria_scores: {
-      greeting: 4,
-      order_accuracy: 5,
-      suggestive_selling: 4,
-      service_efficiency: 4,
-      professionalism: 4,
+  scc_result: {
+    compliance_criteria: {
+      productivity_rate: true,
+      uniform_compliance: true,
+      hygiene_compliance: false,
+      sop_compliance: null,
     },
-    overall_rating: 4.2,
+    customer_service_criteria: {
+      customer_interaction: 4,
+      cashiering: 5,
+      suggestive_selling_and_upselling: 4,
+      service_efficiency: 4,
+    },
   },
-  compliance_result: null,
 };
 
 test('store audit cards render company context alongside branch context', () => {
   const cssMarkup = renderToStaticMarkup(
     <CssAuditCard audit={cssAudit as any} selected={false} onSelect={() => undefined} />,
   );
-  const complianceMarkup = renderToStaticMarkup(
-    <ComplianceAuditCard audit={complianceAudit as any} selected={false} onSelect={() => undefined} />,
+  const sccMarkup = renderToStaticMarkup(
+    <ServiceCrewCctvAuditCard audit={sccAudit as any} selected={false} onSelect={() => undefined} />,
   );
 
   assert.match(cssMarkup, /Alpha Foods/);
   assert.match(cssMarkup, /Main Branch/);
-  assert.match(complianceMarkup, /Beta Retail/);
-  assert.match(complianceMarkup, /Main Branch/);
+  assert.match(sccMarkup, /Beta Retail/);
+  assert.match(sccMarkup, /Main Branch/);
 });
 
-test('account audit results render company context in both card and detail views', () => {
+test('account audit results keep company context in the card and SCC detail view', () => {
   const cardMarkup = renderToStaticMarkup(
     <AccountAuditResultCard audit={accountAudit as any} selected={false} onSelect={() => undefined} />,
   );
@@ -145,5 +149,6 @@ test('account audit results render company context in both card and detail views
   assert.match(cardMarkup, /Alpha Foods/);
   assert.match(cardMarkup, /Main Branch/);
   assert.match(detailMarkup, /Alpha Foods/);
-  assert.match(detailMarkup, /Main Branch/);
+  assert.match(detailMarkup, /Audit Time/);
+  assert.match(detailMarkup, /Completed/);
 });

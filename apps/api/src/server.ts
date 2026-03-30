@@ -4,7 +4,7 @@ import { initializeSocket } from './config/socket.js';
 import { env } from './config/env.js';
 import { db } from './config/database.js';
 import { initAttendanceQueue, stopAttendanceQueue } from './services/attendanceQueue.service.js';
-import { initComplianceCron, stopComplianceCron } from './services/complianceCron.service.js';
+import { initServiceCrewCctvCron, stopServiceCrewCctvCron } from './services/serviceCrewCctvCron.service.js';
 import { initPeerEvaluationQueue, stopPeerEvaluationQueue } from './services/peerEvaluationQueue.service.js';
 import { initPeerEvaluationCron, stopPeerEvaluationCron } from './services/peerEvaluationCron.service.js';
 import { initEpiSnapshotCrons, stopEpiSnapshotCrons } from './services/epiSnapshotCron.service.js';
@@ -35,9 +35,9 @@ async function shutdown(signal: string): Promise<void> {
   }
 
   try {
-    await stopComplianceCron();
+    await stopServiceCrewCctvCron();
   } catch (error) {
-    logger.error({ err: error }, 'Failed to stop compliance cron');
+    logger.error({ err: error }, 'Failed to stop service crew cctv cron');
   }
 
   try {
@@ -74,7 +74,7 @@ async function bootstrap(): Promise<void> {
   initializeSocket(server);
 
   await initAttendanceQueue();
-  await initComplianceCron();
+  await initServiceCrewCctvCron();
   await initPeerEvaluationQueue();
   initPeerEvaluationCron();
   await initEpiSnapshotCrons();

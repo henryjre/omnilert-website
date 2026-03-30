@@ -24,9 +24,9 @@ import { useBranchStore } from '@/shared/store/branchStore';
 import { getGroupedUsers } from '@/features/violation-notices/services/violationNotice.api';
 import { RequestVNModal } from '@/features/violation-notices/components/RequestVNModal';
 import { CssAuditCard } from '../components/CssAuditCard';
-import { ComplianceAuditCard } from '../components/ComplianceAuditCard';
+import { ServiceCrewCctvAuditCard } from '../components/ServiceCrewCctvAuditCard';
 import { CssAuditDetailPanel } from '../components/CssAuditDetailPanel';
-import { ComplianceAuditDetailPanel } from '../components/ComplianceAuditDetailPanel';
+import { ServiceCrewCctvAuditDetailPanel } from '../components/ServiceCrewCctvAuditDetailPanel';
 import { Pagination } from '../../../shared/components/ui/Pagination';
 import { resolveStoreAuditPaginationState } from './storeAuditPagination';
 import { AuditorRewardCard } from '../components/AuditorRewardCard';
@@ -58,6 +58,34 @@ const STATUS_TABS: ViewOption<StoreAuditStatus>[] = [
     activeIndicatorClassName: 'bg-red-500',
   },
 ];
+
+function getAuditStatusMeta(status: StoreAuditStatus) {
+  switch (status) {
+    case 'processing':
+      return { label: 'Processing', text: 'text-amber-600' };
+    case 'completed':
+      return { label: 'Completed', text: 'text-green-600' };
+    case 'rejected':
+      return { label: 'Rejected', text: 'text-red-600' };
+    case 'pending':
+    default:
+      return { label: 'Pending', text: 'text-slate-600' };
+  }
+}
+
+function normalizeAuditedEmployeeName(name: string | null | undefined): string | null {
+  const trimmed = name?.trim();
+  if (!trimmed) return null;
+
+  const parts = trimmed.split('-');
+  if (parts.length < 2) return trimmed;
+
+  const prefix = parts[0]?.trim() ?? '';
+  const normalizedName = parts.slice(1).join('-').trim();
+  if (!normalizedName) return trimmed;
+
+  return /\d/.test(prefix) ? normalizedName : trimmed;
+}
 
 function StoreAuditsSkeleton() {
   return (
@@ -135,7 +163,7 @@ export function StoreAuditsPage() {
   const [rejectReason, setRejectReason] = useState('');
   const [groupedUsers, setGroupedUsers] = useState<GroupedUsersResponse | null>(null);
   const [loadingGroupedUsers, setLoadingGroupedUsers] = useState(false);
-  const [pendingCounts, setPendingCounts] = useState<{ all: number; customer_service: number; compliance: number }>({ all: 0, customer_service: 0, compliance: 0 });
+  const [pendingCounts, setPendingCounts] = useState<{ all: number; customer_service: number; service_crew_cctv: number }>({ all: 0, customer_service: 0, service_crew_cctv: 0 });
 
   const paginationState = useMemo(
     () => resolveStoreAuditPaginationState({ page, pageSize, total }),
@@ -147,6 +175,7 @@ export function StoreAuditsPage() {
       ?? (selectedAuditFallback?.id === selectedAuditId ? selectedAuditFallback : null),
     [audits, selectedAuditFallback, selectedAuditId],
   );
+  const selectedAuditStatusMeta = selectedAudit ? getAuditStatusMeta(selectedAudit.status) : null;
   const syncSelectedAudit = useCallback((audit: StoreAudit, nextStatus: StoreAuditStatus = audit.status) => {
     setSelectedAuditId(audit.id);
     setSelectedAuditFallback(audit);
@@ -161,7 +190,7 @@ export function StoreAuditsPage() {
   const clearAuditDraft = useCallback((audit: StoreAudit) => {
     const draftKey = audit.type === 'customer_service'
       ? `css-audit-draft-${audit.id}`
-      : `compliance-audit-draft-${audit.id}`;
+      : `service-crew-cctv-audit-draft-${audit.id}`;
     try {
       localStorage.removeItem(draftKey);
     } catch {
@@ -221,7 +250,7 @@ export function StoreAuditsPage() {
       setPendingCounts({
         all: visible.length,
         customer_service: visible.filter((a) => a.type === 'customer_service').length,
-        compliance: visible.filter((a) => a.type === 'compliance').length,
+        service_crew_cctv: visible.filter((a) => a.type === 'service_crew_cctv').length,
       });
     } catch {
       // silently ignore — counts are supplementary
@@ -365,7 +394,16 @@ export function StoreAuditsPage() {
     auditId: string,
     payload:
       | { criteria_scores: CssCriteriaScores }
-      | { productivity_rate: boolean; uniform: boolean; hygiene: boolean; sop: boolean },
+      | {
+          productivity_rate: boolean | null;
+          uniform_compliance: boolean | null;
+          hygiene_compliance: boolean | null;
+          sop_compliance: boolean | null;
+          customer_interaction: number;
+          cashiering: number;
+          suggestive_selling_and_upselling: number;
+          service_efficiency: number;
+        },
   ) => {
     setActionLoading(true);
     try {
@@ -421,12 +459,12 @@ export function StoreAuditsPage() {
     ? 'all audits'
     : category === 'customer_service'
       ? 'customer service audits'
-      : 'compliance audits';
+      : 'service crew CCTV audits';
   const activeCategoryLabel = category === 'all'
     ? 'All Categories'
     : category === 'customer_service'
       ? 'Customer Service'
-      : 'Compliance';
+      : 'Service Crew CCTV';
 
   /** Client-side branch filter — mirrors the CashRequestsTab pattern */
   const selectedBranchIdSet = useMemo(() => new Set(selectedBranchIds), [selectedBranchIds]);
@@ -471,7 +509,7 @@ export function StoreAuditsPage() {
               options={([
                 { id: 'all', label: 'All Categories', icon: LayoutGrid },
                 { id: 'customer_service', label: 'Customer Service', icon: Star },
-                { id: 'compliance', label: 'Compliance', icon: ShieldCheck },
+                { id: 'service_crew_cctv', label: 'Service Crew CCTV', icon: ShieldCheck },
               ] as const).map((tab) => ({
                 ...tab,
                 label: (
@@ -522,7 +560,7 @@ export function StoreAuditsPage() {
             options={([
               { id: 'all', label: 'All Categories', icon: LayoutGrid },
               { id: 'customer_service', label: 'Customer Service', icon: Star },
-              { id: 'compliance', label: 'Compliance', icon: ShieldCheck },
+              { id: 'service_crew_cctv', label: 'Service Crew CCTV', icon: ShieldCheck },
             ] as const).map((tab) => ({
               ...tab,
               label: (
@@ -565,7 +603,7 @@ export function StoreAuditsPage() {
             <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3.5">
               {category === 'customer_service'
                 ? <Star className="h-4 w-4 shrink-0 text-gray-300" />
-                : category === 'compliance'
+                : category === 'service_crew_cctv'
                   ? <ShieldCheck className="h-4 w-4 shrink-0 text-gray-300" />
                   : <ClipboardList className="h-4 w-4 shrink-0 text-gray-300" />
               }
@@ -585,7 +623,7 @@ export function StoreAuditsPage() {
                       onSelect={() => setSelectedAuditId(audit.id)}
                     />
                   ) : (
-                    <ComplianceAuditCard
+                    <ServiceCrewCctvAuditCard
                       key={audit.id}
                       audit={audit}
                       selected={audit.id === selectedAuditId}
@@ -622,18 +660,20 @@ export function StoreAuditsPage() {
           selectedAudit ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
-        {selectedAudit && (
-          <div className="flex h-full flex-col">
-            <div className="flex items-start justify-between border-b border-gray-200 px-6 py-4">
-              <div>
-                <p className="text-lg font-semibold text-gray-900">
-                  {selectedAudit.type === 'customer_service' ? 'Customer Service Audit' : 'Compliance Audit'}
-                </p>
-                <p className="text-xs text-gray-400">
-                  {selectedAudit.branch_name || selectedAudit.company?.name || selectedAudit.id}
-                </p>
-              </div>
-              <button
+            {selectedAudit && (
+              <div className="flex h-full flex-col">
+                <div className="flex items-start justify-between border-b border-gray-200 px-6 py-4">
+                  <div>
+                    <p className="text-lg font-semibold text-gray-900">
+                      {selectedAudit.type === 'customer_service' ? 'Customer Service Audit' : 'Service Crew CCTV Audit'}
+                    </p>
+                    <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-gray-400">
+                      <span>{selectedAudit.branch_name || selectedAudit.company?.name || selectedAudit.id}</span>
+                      <span aria-hidden="true">&bull;</span>
+                      <span className={selectedAuditStatusMeta?.text}>{selectedAuditStatusMeta?.label}</span>
+                    </p>
+                  </div>
+                  <button
                 type="button"
                 onClick={() => setSelectedAuditId(null)}
                 className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
@@ -667,7 +707,7 @@ export function StoreAuditsPage() {
                   onRequestVN={() => setShowRequestVNModal(true)}
                 />
               ) : (
-                <ComplianceAuditDetailPanel
+                <ServiceCrewCctvAuditDetailPanel
                   audit={selectedAudit}
                   currentUserId={currentUserId}
                   canProcess={canClaimAudit && selectedAudit.status === 'pending'}
@@ -703,7 +743,7 @@ export function StoreAuditsPage() {
           groupedUsers={groupedUsers}
           loadingUsers={loadingGroupedUsers}
           sourceStoreAuditId={selectedAudit.id}
-          sourceLabel={`Store Audit — ${selectedAudit.type === 'customer_service' ? 'CSS' : 'Compliance'} — ${selectedAudit.company?.name || 'Unknown Company'} / ${selectedAudit.branch_name || selectedAudit.id}`}
+          sourceLabel={`Store Audit — ${selectedAudit.type === 'customer_service' ? 'CSS' : 'SCC'} — ${selectedAudit.company?.name || 'Unknown Company'} / ${selectedAudit.branch_name || selectedAudit.id}`}
         />
       )}
 
@@ -721,14 +761,14 @@ export function StoreAuditsPage() {
               </p>
             </div>
             <div className="space-y-4 px-5 py-4">
-              <div>
-                <p className="text-sm font-medium text-gray-800">
-                  {selectedAudit.type === 'customer_service'
-                    ? selectedAudit.css_cashier_name || 'Customer Service Audit'
-                    : selectedAudit.comp_employee_name || 'Compliance Audit'}
-                </p>
-                <p className="mt-0.5 text-xs text-gray-500">
-                  {selectedAudit.branch_name || selectedAudit.company?.name || selectedAudit.id}
+                  <div>
+                    <p className="text-sm font-medium text-gray-800">
+                      {selectedAudit.type === 'customer_service'
+                        ? selectedAudit.css_cashier_name || 'Customer Service Audit'
+                        : normalizeAuditedEmployeeName(selectedAudit.scc_employee_name) || 'Service Crew CCTV Audit'}
+                    </p>
+                    <p className="mt-0.5 text-xs text-gray-500">
+                      {selectedAudit.branch_name || selectedAudit.company?.name || selectedAudit.id}
                 </p>
               </div>
               <textarea
@@ -764,3 +804,5 @@ export function StoreAuditsPage() {
     </>
   );
 }
+
+

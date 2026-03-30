@@ -55,15 +55,18 @@ function createAuditRow(
     css_criteria_scores: null,
     css_audit_log: null,
     css_ai_report: null,
-    comp_odoo_employee_id: null,
-    comp_employee_name: null,
-    comp_check_in_time: null,
-    comp_extra_fields: null,
-    comp_productivity_rate: null,
-    comp_uniform: null,
-    comp_hygiene: null,
-    comp_sop: null,
-    comp_ai_report: null,
+    audited_user_avatar_url: null,
+    scc_odoo_employee_id: null,
+    scc_employee_name: null,
+    scc_productivity_rate: null,
+    scc_uniform_compliance: null,
+    scc_hygiene_compliance: null,
+    scc_sop_compliance: null,
+    scc_customer_interaction: null,
+    scc_cashiering: null,
+    scc_suggestive_selling_and_upselling: null,
+    scc_service_efficiency: null,
+    scc_ai_report: null,
     ...overrides,
   };
 }
@@ -81,21 +84,20 @@ test('listStoreAudits returns enriched items with company metadata and global pr
           branch_id: '',
         }),
         createAuditRow({
-          id: 'audit-comp',
-          type: 'compliance',
+          id: 'audit-scc',
+          type: 'service_crew_cctv',
           company_id: 'company-b',
           company_name: 'Beta Retail',
           company_slug: 'beta-retail',
           branch_id: '',
           css_odoo_order_id: null,
           css_cashier_name: null,
-          comp_odoo_employee_id: 55,
-          comp_employee_name: 'Employee Two',
-          comp_check_in_time: '2026-03-22T02:00:00.000Z',
+          scc_odoo_employee_id: 55,
+          scc_employee_name: 'Employee Two',
         }),
       ],
     }),
-    getProcessingAuditIdByUser: async () => 'audit-comp',
+    getProcessingAuditIdByUser: async () => 'audit-scc',
     getAuditById: async () => null,
     resolveAuditCompanyContext: async () => null,
     listStoreAuditMessages: async () => [],
@@ -126,10 +128,10 @@ test('listStoreAudits returns enriched items with company metadata and global pr
   });
 
   assert.equal(result.total, 2);
-  assert.equal(result.processingAuditId, 'audit-comp');
+  assert.equal(result.processingAuditId, 'audit-scc');
   assert.equal(result.items[0]?.company?.id, 'company-a');
-  assert.equal(result.items[1]?.comp_employee_name, 'Employee Two');
-  assert.equal(result.items[1]?.type, 'compliance');
+  assert.equal(result.items[1]?.scc_employee_name, 'Employee Two');
+  assert.equal(result.items[1]?.type, 'service_crew_cctv');
 });
 
 test('processAudit resolves company context and delegates to processStoreAudit dep', async () => {

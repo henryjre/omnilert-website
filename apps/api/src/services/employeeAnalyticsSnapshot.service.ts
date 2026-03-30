@@ -225,7 +225,7 @@ async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKp
         dbConn.raw('wrs_effective_at::text'),
       ),
     dbConn('store_audits')
-      .where({ type: 'compliance', status: 'completed' })
+      .where({ type: 'service_crew_cctv', status: 'completed' })
       .andWhere((ownedQuery) => {
         ownedQuery.where('audited_user_id', userId)
           .orWhere((canonicalKeyQuery) => {
@@ -239,15 +239,15 @@ async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKp
             legacyQuery
               .whereNull('audited_user_id')
               .whereNull('audited_user_key')
-              .whereIn('comp_odoo_employee_id', odooEmployeeIds);
+              .whereIn('scc_odoo_employee_id', odooEmployeeIds);
           });
         }
       })
       .select(
-        'comp_productivity_rate',
-        'comp_uniform',
-        'comp_hygiene',
-        'comp_sop',
+        'scc_productivity_rate',
+        'scc_uniform_compliance',
+        'scc_hygiene_compliance',
+        'scc_sop_compliance',
         dbConn.raw('completed_at::text as audited_at'),
       ),
     dbConn('violation_notices')
@@ -261,10 +261,10 @@ async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKp
   const complianceAudit = complianceAuditRows.length
     ? complianceAuditRows.map((row: any) => ({
         answers: {
-          productivity_rate: row.comp_productivity_rate ?? false,
-          uniform: row.comp_uniform ?? false,
-          hygiene: row.comp_hygiene ?? false,
-          sop: row.comp_sop ?? false,
+          productivity_rate: row.scc_productivity_rate ?? false,
+          uniform: row.scc_uniform_compliance ?? false,
+          hygiene: row.scc_hygiene_compliance ?? false,
+          sop: row.scc_sop_compliance ?? false,
         },
         audited_at: row.audited_at,
       }))

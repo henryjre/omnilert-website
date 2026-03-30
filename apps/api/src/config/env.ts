@@ -53,7 +53,7 @@ const envSchema = z.object({
   DISCORD_BOT_CRON_WEBHOOK_URL: z.string().url().optional(),
   DISCORD_BOT_CRON_WEBHOOK_TOKEN: z.string().optional(),
   DISCORD_BOT_CRON_WEBHOOK_TIMEOUT_MS: z.coerce.number().int().min(1).default(5000),
-  COMPLIANCE_CRON_ENABLED: z.preprocess((value) => {
+  SERVICE_CREW_CCTV_CRON_ENABLED: z.preprocess((value) => {
     if (typeof value === 'boolean') return value;
     if (typeof value === 'string') {
       const normalized = value.trim().toLowerCase();

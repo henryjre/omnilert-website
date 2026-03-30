@@ -5,13 +5,13 @@ import { getActiveAttendances, getEmployeeWebsiteKeyByEmployeeId } from './odoo.
 import { emitStoreAuditEvent } from './storeAuditRealtime.service.js';
 import { resolveCompanyByOdooBranchId, resolveUserIdByUserKey } from './webhook.service.js';
 import {
-  COMPLIANCE_HOURLY_JOB_NAME,
-  getComplianceSchedulingDecision,
-} from './complianceCronScheduler.js';
+  SERVICE_CREW_CCTV_HOURLY_JOB_NAME,
+  getServiceCrewCctvSchedulingDecision,
+} from './serviceCrewCctvCronScheduler.js';
 import {
-  createComplianceOccurrenceExecutor,
-  type ComplianceRunOutcome,
-} from './complianceCronRuntime.js';
+  createServiceCrewCctvOccurrenceExecutor,
+  type ServiceCrewCctvRunOutcome,
+} from './serviceCrewCctvCronRuntime.js';
 import { notifyCronJobRun } from './cronNotification.service.js';
 
 let scheduledHandle: NodeJS.Timeout | null = null;
@@ -93,7 +93,7 @@ async function getScheduledRunRow(scheduledFor: Date): Promise<ScheduledJobRunRo
   const scheduledForKey = formatScheduledForKey(scheduledFor);
   const row = await masterDb('scheduled_job_runs')
     .where({
-      job_name: COMPLIANCE_HOURLY_JOB_NAME,
+      job_name: SERVICE_CREW_CCTV_HOURLY_JOB_NAME,
       scheduled_for_key: scheduledForKey,
     })
     .first('id', 'status', 'attempt_count', 'started_at');
@@ -101,7 +101,7 @@ async function getScheduledRunRow(scheduledFor: Date): Promise<ScheduledJobRunRo
   return (row as ScheduledJobRunRow | undefined) ?? null;
 }
 
-async function claimComplianceOccurrence(scheduledFor: Date): Promise<boolean> {
+async function claimServiceCrewCctvOccurrence(scheduledFor: Date): Promise<boolean> {
   const masterDb = db.getDb();
   const scheduledForKey = formatScheduledForKey(scheduledFor);
   const scheduledForManila = formatManilaDateTime(scheduledFor);
@@ -109,14 +109,14 @@ async function claimComplianceOccurrence(scheduledFor: Date): Promise<boolean> {
 
   return masterDb.transaction(async (trx) => {
     let existing = await trx('scheduled_job_runs')
-      .where({ job_name: COMPLIANCE_HOURLY_JOB_NAME, scheduled_for_key: scheduledForKey })
+      .where({ job_name: SERVICE_CREW_CCTV_HOURLY_JOB_NAME, scheduled_for_key: scheduledForKey })
       .forUpdate()
       .first() as ScheduledJobRunRow | undefined;
 
     if (!existing) {
       const inserted = await trx('scheduled_job_runs')
         .insert({
-          job_name: COMPLIANCE_HOURLY_JOB_NAME,
+          job_name: SERVICE_CREW_CCTV_HOURLY_JOB_NAME,
           scheduled_for_key: scheduledForKey,
           scheduled_for_manila: scheduledForManila,
           status: 'running',
@@ -136,7 +136,7 @@ async function claimComplianceOccurrence(scheduledFor: Date): Promise<boolean> {
       }
 
       existing = await trx('scheduled_job_runs')
-        .where({ job_name: COMPLIANCE_HOURLY_JOB_NAME, scheduled_for_key: scheduledForKey })
+        .where({ job_name: SERVICE_CREW_CCTV_HOURLY_JOB_NAME, scheduled_for_key: scheduledForKey })
         .forUpdate()
         .first() as ScheduledJobRunRow | undefined;
     }
@@ -145,8 +145,8 @@ async function claimComplianceOccurrence(scheduledFor: Date): Promise<boolean> {
 
     const startedAt = existing.started_at ? new Date(existing.started_at) : null;
     const isStaleRunning =
-      existing.status === 'running' &&
-      (!startedAt || now.getTime() - startedAt.getTime() > STALE_RUN_THRESHOLD_MS);
+      existing.status === 'running'
+      && (!startedAt || now.getTime() - startedAt.getTime() > STALE_RUN_THRESHOLD_MS);
 
     if (!isStaleRunning) {
       return false;
@@ -167,13 +167,13 @@ async function claimComplianceOccurrence(scheduledFor: Date): Promise<boolean> {
   });
 }
 
-async function markComplianceOccurrenceSuccess(scheduledFor: Date): Promise<void> {
+async function markServiceCrewCctvOccurrenceSuccess(scheduledFor: Date): Promise<void> {
   const masterDb = db.getDb();
   const now = new Date();
 
   await masterDb('scheduled_job_runs')
     .where({
-      job_name: COMPLIANCE_HOURLY_JOB_NAME,
+      job_name: SERVICE_CREW_CCTV_HOURLY_JOB_NAME,
       scheduled_for_key: formatScheduledForKey(scheduledFor),
     })
     .update({
@@ -184,7 +184,7 @@ async function markComplianceOccurrenceSuccess(scheduledFor: Date): Promise<void
     });
 }
 
-async function markComplianceOccurrenceSkipped(
+async function markServiceCrewCctvOccurrenceSkipped(
   scheduledFor: Date,
   reason?: string | null,
 ): Promise<void> {
@@ -193,7 +193,7 @@ async function markComplianceOccurrenceSkipped(
   const scheduledForKey = formatScheduledForKey(scheduledFor);
   const updated = await masterDb('scheduled_job_runs')
     .where({
-      job_name: COMPLIANCE_HOURLY_JOB_NAME,
+      job_name: SERVICE_CREW_CCTV_HOURLY_JOB_NAME,
       scheduled_for_key: scheduledForKey,
     })
     .update({
@@ -207,7 +207,7 @@ async function markComplianceOccurrenceSkipped(
 
   await masterDb('scheduled_job_runs')
     .insert({
-      job_name: COMPLIANCE_HOURLY_JOB_NAME,
+      job_name: SERVICE_CREW_CCTV_HOURLY_JOB_NAME,
       scheduled_for_key: scheduledForKey,
       scheduled_for_manila: formatManilaDateTime(scheduledFor),
       status: 'skipped',
@@ -233,17 +233,20 @@ async function ensureMissedOccurrenceSkipped(
 ): Promise<void> {
   const existing = await getScheduledRunRow(scheduledFor);
   if (existing) return;
-  await markComplianceOccurrenceSkipped(scheduledFor, reason);
+  await markServiceCrewCctvOccurrenceSkipped(scheduledFor, reason);
 }
 
-async function markComplianceOccurrenceFailure(scheduledFor: Date, error: unknown): Promise<void> {
+async function markServiceCrewCctvOccurrenceFailure(
+  scheduledFor: Date,
+  error: unknown,
+): Promise<void> {
   const masterDb = db.getDb();
   const now = new Date();
   const errorMessage = error instanceof Error ? error.message : String(error);
 
   await masterDb('scheduled_job_runs')
     .where({
-      job_name: COMPLIANCE_HOURLY_JOB_NAME,
+      job_name: SERVICE_CREW_CCTV_HOURLY_JOB_NAME,
       scheduled_for_key: formatScheduledForKey(scheduledFor),
     })
     .update({
@@ -254,7 +257,7 @@ async function markComplianceOccurrenceFailure(scheduledFor: Date, error: unknow
     });
 }
 
-export async function runComplianceCron(): Promise<ComplianceRunOutcome> {
+export async function runServiceCrewCctvCron(): Promise<ServiceCrewCctvRunOutcome> {
   try {
     const attendances = await getActiveAttendances();
     const eligibleAttendances = attendances.filter(
@@ -270,8 +273,6 @@ export async function runComplianceCron(): Promise<ComplianceRunOutcome> {
     }
 
     const company = await resolveCompanyByOdooBranchId(chosen.company_id);
-    // single DB
-
     const mappedBranch = await db.getDb()('branches')
       .where({
         odoo_branch_id: String(chosen.company_id),
@@ -285,13 +286,13 @@ export async function runComplianceCron(): Promise<ComplianceRunOutcome> {
       .first('id');
 
     if (!branch) {
-      return { status: 'skipped', reason: 'No active tenant branch was available for compliance audit creation' };
+      return { status: 'skipped', reason: 'No active tenant branch was available for service crew cctv audit creation' };
     }
 
     if (!mappedBranch) {
       logger.warn(
         { companyId: company.id, odooBranchId: chosen.company_id },
-        'Compliance cron could not map Odoo branch to tenant branch; using fallback branch',
+        'Service crew cctv cron could not map Odoo branch to tenant branch; using fallback branch',
       );
     }
 
@@ -300,21 +301,20 @@ export async function runComplianceCron(): Promise<ComplianceRunOutcome> {
       ? await resolveUserIdByUserKey(auditedUserKey)
       : null;
 
+    const now = new Date();
     const [audit] = await db.getDb()('store_audits')
       .insert({
         company_id: company.id,
-        type: 'compliance',
+        type: 'service_crew_cctv',
         status: 'pending',
         branch_id: branch.id,
         monetary_reward: randomReward(),
-        comp_odoo_employee_id: chosen.employee_id,
-        comp_employee_name: chosen.employee_name,
+        scc_odoo_employee_id: chosen.employee_id,
+        scc_employee_name: chosen.employee_name,
         audited_user_id: auditedUserId,
         audited_user_key: auditedUserKey,
-        comp_check_in_time: new Date(`${chosen.check_in.replace(' ', 'T')}Z`),
-        comp_extra_fields: JSON.stringify(chosen.raw),
-        created_at: new Date(),
-        updated_at: new Date(),
+        created_at: now,
+        updated_at: now,
       })
       .returning('*');
 
@@ -322,22 +322,22 @@ export async function runComplianceCron(): Promise<ComplianceRunOutcome> {
 
     return { status: 'success' };
   } catch (error) {
-    logger.error({ err: error }, 'Compliance cron failed');
+    logger.error({ err: error }, 'Service crew cctv cron failed');
     throw error;
   }
 }
 
-const executeComplianceOccurrence = createComplianceOccurrenceExecutor({
-  jobName: COMPLIANCE_HOURLY_JOB_NAME,
-  claimOccurrence: claimComplianceOccurrence,
-  runComplianceJob: runComplianceCron,
-  markSuccess: markComplianceOccurrenceSuccess,
-  markSkipped: markComplianceOccurrenceSkipped,
-  markFailure: markComplianceOccurrenceFailure,
+const executeServiceCrewCctvOccurrence = createServiceCrewCctvOccurrenceExecutor({
+  jobName: SERVICE_CREW_CCTV_HOURLY_JOB_NAME,
+  claimOccurrence: claimServiceCrewCctvOccurrence,
+  runServiceCrewCctvJob: runServiceCrewCctvCron,
+  markSuccess: markServiceCrewCctvOccurrenceSuccess,
+  markSkipped: markServiceCrewCctvOccurrenceSkipped,
+  markFailure: markServiceCrewCctvOccurrenceFailure,
   notifyResult: async (result) => {
     await notifyCronJobRun({
-      jobName: COMPLIANCE_HOURLY_JOB_NAME,
-      jobFamily: 'compliance',
+      jobName: SERVICE_CREW_CCTV_HOURLY_JOB_NAME,
+      jobFamily: 'service_crew_cctv',
       schedule: 'hourly@deterministic-minute',
       source: result.source,
       scheduledForKey: result.scheduledForKey,
@@ -356,26 +356,26 @@ const executeComplianceOccurrence = createComplianceOccurrenceExecutor({
   formatScheduledForManila: formatManilaDateTime,
 });
 
-async function scheduleNextComplianceOccurrence(now: Date = new Date()): Promise<void> {
+async function scheduleNextServiceCrewCctvOccurrence(now: Date = new Date()): Promise<void> {
   if (!initialized) return;
 
-  const decision = getComplianceSchedulingDecision(now, COMPLIANCE_HOURLY_JOB_NAME);
+  const decision = getServiceCrewCctvSchedulingDecision(now, SERVICE_CREW_CCTV_HOURLY_JOB_NAME);
 
   if (decision.skipCurrentHour) {
     await ensureMissedOccurrenceSkipped(
       decision.currentOccurrence.scheduledFor,
-      'Compliance cron missed its selected minute while the scheduler was offline',
+      'Service crew cctv cron missed its selected minute while the scheduler was offline',
     );
   }
 
   const nextOccurrence = decision.nextOccurrenceToSchedule;
   scheduleTimeoutUntil(nextOccurrence.scheduledFor, () => {
-    void executeComplianceOccurrence({
+    void executeServiceCrewCctvOccurrence({
       scheduledFor: nextOccurrence.scheduledFor,
       source: 'scheduled',
     }).finally(() => {
       if (initialized) {
-        void scheduleNextComplianceOccurrence();
+        void scheduleNextServiceCrewCctvOccurrence();
       }
     });
   });
@@ -386,15 +386,15 @@ async function scheduleNextComplianceOccurrence(now: Date = new Date()): Promise
       scheduledMinute: nextOccurrence.scheduledMinute,
       nextRunManila: formatManilaDateTime(nextOccurrence.scheduledFor),
     },
-    'Scheduled compliance cron occurrence',
+    'Scheduled service crew cctv cron occurrence',
   );
 }
 
-export async function initComplianceCron(): Promise<void> {
-  if (!env.COMPLIANCE_CRON_ENABLED) {
+export async function initServiceCrewCctvCron(): Promise<void> {
+  if (!env.SERVICE_CREW_CCTV_CRON_ENABLED) {
     initialized = false;
     clearScheduledHandle();
-    logger.info('Compliance cron disabled by COMPLIANCE_CRON_ENABLED=false');
+    logger.info('Service crew cctv cron disabled by SERVICE_CREW_CCTV_CRON_ENABLED=false');
     return;
   }
 
@@ -402,7 +402,7 @@ export async function initComplianceCron(): Promise<void> {
   initialized = true;
 
   try {
-    await scheduleNextComplianceOccurrence();
+    await scheduleNextServiceCrewCctvOccurrence();
   } catch (error) {
     initialized = false;
     clearScheduledHandle();
@@ -410,7 +410,7 @@ export async function initComplianceCron(): Promise<void> {
   }
 }
 
-export async function stopComplianceCron(): Promise<void> {
+export async function stopServiceCrewCctvCron(): Promise<void> {
   initialized = false;
   clearScheduledHandle();
 }

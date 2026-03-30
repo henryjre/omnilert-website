@@ -29,7 +29,7 @@ import { authenticate } from '../middleware/auth.js';
 import { resolveCompany } from '../middleware/companyResolver.js';
 import { requirePermission } from '../middleware/rbac.js';
 import { PERMISSIONS } from '@omnilert/shared';
-import { runComplianceCron } from '../services/complianceCron.service.js';
+import { runServiceCrewCctvCron } from '../services/serviceCrewCctvCron.service.js';
 
 const router = Router();
 
@@ -40,8 +40,8 @@ router.get('/health', (_req, res) => {
 
 // Dev-only: manual cron triggers
 if (process.env.NODE_ENV !== 'production') {
-  router.post('/dev/trigger/compliance-cron', (_req, res) => {
-    void runComplianceCron();
+  router.post('/dev/trigger/service-crew-cctv-cron', (_req, res) => {
+    void runServiceCrewCctvCron();
     res.json({ triggered: true });
   });
 }

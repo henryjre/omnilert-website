@@ -12,18 +12,18 @@ process.env.ODOO_PASSWORD ??= 'test-odoo-password';
 process.env.OPENAI_API_KEY ??= 'test-openai-key';
 process.env.OPENAI_ORGANIZATION_ID ??= 'test-openai-org';
 process.env.OPENAI_PROJECT_ID ??= 'test-openai-project';
-process.env.COMPLIANCE_CRON_ENABLED = 'false';
+process.env.SERVICE_CREW_CCTV_CRON_ENABLED = 'false';
 
 const {
-  COMPLIANCE_HOURLY_JOB_NAME,
-  getComplianceOccurrenceForHour,
-} = await import('./complianceCronScheduler.js');
-const { initComplianceCron, stopComplianceCron } = await import('./complianceCron.service.js');
+  SERVICE_CREW_CCTV_HOURLY_JOB_NAME,
+  getServiceCrewCctvOccurrenceForHour,
+} = await import('./serviceCrewCctvCronScheduler.js');
+const { initServiceCrewCctvCron, stopServiceCrewCctvCron } = await import('./serviceCrewCctvCron.service.js');
 
-test('initComplianceCron skips scheduling when disabled by env', async () => {
-  const occurrence = getComplianceOccurrenceForHour(
+test('initServiceCrewCctvCron skips scheduling when disabled by env', async () => {
+  const occurrence = getServiceCrewCctvOccurrenceForHour(
     new Date('2026-03-21T03:00:00.000Z'),
-    COMPLIANCE_HOURLY_JOB_NAME,
+    SERVICE_CREW_CCTV_HOURLY_JOB_NAME,
   );
   const frozenNow = new Date(occurrence.scheduledFor.getTime() - 60_000);
   const originalDate = globalThis.Date;
@@ -53,10 +53,10 @@ test('initComplianceCron skips scheduling when disabled by env', async () => {
   globalThis.clearTimeout = ((() => undefined) as typeof globalThis.clearTimeout);
 
   try {
-    await initComplianceCron();
+    await initServiceCrewCctvCron();
     assert.deepEqual(scheduledDelays, []);
   } finally {
-    await stopComplianceCron();
+    await stopServiceCrewCctvCron();
     globalThis.Date = originalDate;
     globalThis.setTimeout = originalSetTimeout;
     globalThis.clearTimeout = originalClearTimeout;

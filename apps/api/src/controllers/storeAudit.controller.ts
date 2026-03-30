@@ -12,7 +12,7 @@ export async function list(req: Request, res: Response, next: NextFunction) {
   try {
     const data = await storeAuditService.listStoreAudits({
       userId: req.user!.sub,
-      type: req.query.type as 'customer_service' | 'compliance' | 'all' | undefined,
+      type: req.query.type as 'customer_service' | 'service_crew_cctv' | 'all' | undefined,
       status: req.query.status as 'pending' | 'processing' | 'completed' | 'rejected' | undefined,
       page: req.query.page ? Number(req.query.page) : undefined,
       pageSize: req.query.pageSize ? Number(req.query.pageSize) : undefined,

@@ -134,7 +134,6 @@ export interface RadarDatum {
 }
 
 const RADAR_METRICS: { id: string; label: string }[] = [
-  { id: "customer-service", label: "Customer Service Score" },
   { id: "workplace-relations", label: "Workplace Relations Score" },
   { id: "professional-conduct", label: "Professional Conduct Score" },
   { id: "attendance-rate", label: "Attendance Rate" },

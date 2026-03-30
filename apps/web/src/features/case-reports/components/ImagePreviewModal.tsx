@@ -143,5 +143,9 @@ export function ImagePreviewModal({ items, index, onIndexChange, onClose }: Imag
     </AnimatePresence>
   );
 
+  if (typeof document === "undefined") {
+    return null;
+  }
+
   return createPortal(modalContent, document.body);
 }

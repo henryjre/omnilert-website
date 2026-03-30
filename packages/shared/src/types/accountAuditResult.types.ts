@@ -1,7 +1,5 @@
-import type { CssCriteriaScores, StoreAuditType } from './storeAudit.types.js';
-
-export type AccountAuditResultUnit = 'rating' | 'checks';
-export type AccountAuditResultTypeLabel = 'Customer Service Audit' | 'Compliance Audit';
+export type AccountAuditResultUnit = 'text';
+export type AccountAuditResultTypeLabel = 'Service Crew CCTV Audit';
 
 export interface AccountAuditResultBranch {
   id: string;
@@ -16,8 +14,8 @@ export interface AccountAuditResultCompany {
 
 export interface AccountAuditResultSummary {
   result_line: string;
-  overall_value: number;
-  overall_max: number;
+  overall_value: number | null;
+  overall_max: number | null;
   overall_unit: AccountAuditResultUnit;
 }
 
@@ -37,25 +35,24 @@ export interface AccountAuditTrailEntry {
   attachments: AccountAuditResultAttachment[];
 }
 
-export interface AccountCssAuditResult {
-  criteria_scores: CssCriteriaScores | null;
-  overall_rating: number | null;
-}
-
-export interface AccountComplianceAuditResult {
-  checks: {
+export interface AccountServiceCrewCctvAuditResult {
+  compliance_criteria: {
     productivity_rate: boolean | null;
-    uniform: boolean | null;
-    hygiene: boolean | null;
-    sop: boolean | null;
+    uniform_compliance: boolean | null;
+    hygiene_compliance: boolean | null;
+    sop_compliance: boolean | null;
   };
-  passed_count: number;
-  total_checks: 4;
+  customer_service_criteria: {
+    customer_interaction: number | null;
+    cashiering: number | null;
+    suggestive_selling_and_upselling: number | null;
+    service_efficiency: number | null;
+  };
 }
 
 export interface AccountAuditResultListItem {
   id: string;
-  type: StoreAuditType;
+  type: 'service_crew_cctv';
   type_label: AccountAuditResultTypeLabel;
   company: AccountAuditResultCompany;
   branch: AccountAuditResultBranch;
@@ -67,8 +64,7 @@ export interface AccountAuditResultListItem {
 export interface AccountAuditResultDetail extends AccountAuditResultListItem {
   ai_report: string | null;
   audit_trail: AccountAuditTrailEntry[];
-  css_result: AccountCssAuditResult | null;
-  compliance_result: AccountComplianceAuditResult | null;
+  scc_result: AccountServiceCrewCctvAuditResult;
 }
 
 export interface ListAccountAuditResultsResponse {

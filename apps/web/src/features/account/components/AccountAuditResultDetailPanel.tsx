@@ -5,12 +5,14 @@ import type {
 } from '@omnilert/shared';
 import { motion } from 'framer-motion';
 import {
-  Building2, Calendar, Check, ExternalLink, FileText,
-  ShieldCheck, Sparkles, Star, X as XIcon,
+  Building2,
+  Calendar,
+  ExternalLink,
+  FileText,
+  ShieldCheck,
+  Sparkles,
 } from 'lucide-react';
 import { ImagePreviewModal } from '../../case-reports/components/ImagePreviewModal';
-
-// ─── Formatters ───────────────────────────────────────────────────────────────
 
 function formatDateTime(value: string | null): string {
   if (!value) return '-';
@@ -64,42 +66,6 @@ function formatFileSize(bytes: number): string {
   return `${value >= 10 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`;
 }
 
-// ─── Motivational helpers ─────────────────────────────────────────────────────
-
-function cssMotivation(score: number): { headline: string; sub: string } {
-  if (score >= 4.5) return { headline: "Outstanding Performance!", sub: "You're setting the gold standard for customer service." };
-  if (score >= 4.0) return { headline: "Excellent Work!",          sub: "Your dedication really shows in your scores."           };
-  if (score >= 3.0) return { headline: "Good Job!",                sub: "A few more tweaks and you'll be at the top."            };
-  if (score >= 2.0) return { headline: "Room to Grow",             sub: "Focus on the highlighted areas below."                  };
-  return               { headline: "Keep Practicing",          sub: "Every improvement starts with awareness. You've got this." };
-}
-
-function complianceMotivation(passed: number, total: number): { headline: string; sub: string } {
-  if (passed === total)    return { headline: "Perfect Compliance!", sub: "Full marks — you're the benchmark for the team."  };
-  if (passed >= total - 1) return { headline: "Almost There!",       sub: "Just one more check to hit a perfect score."      };
-  if (passed >= total / 2) return { headline: "Halfway Compliant",   sub: "You're making progress. Let's close the gap."     };
-  if (passed > 0)          return { headline: "Needs Attention",     sub: "Several areas require your focus."                };
-  return                   { headline: "Needs Improvement",      sub: "Let's build better habits together."                 };
-}
-
-function criteriaColor(score: number | string): string {
-  const n = Number(score);
-  if (!Number.isFinite(n)) return 'bg-gray-200';
-  if (n >= 4) return 'bg-green-500';
-  if (n >= 3) return 'bg-amber-400';
-  return 'bg-red-400';
-}
-
-function criteriaTextColor(score: number | string): string {
-  const n = Number(score);
-  if (!Number.isFinite(n)) return 'text-gray-400';
-  if (n >= 4) return 'text-green-700';
-  if (n >= 3) return 'text-amber-600';
-  return 'text-red-600';
-}
-
-// ─── Markdown renderer ────────────────────────────────────────────────────────
-
 function MarkdownReport({ text }: { text: string }) {
   const lines = text.split('\n');
   const elements: React.ReactNode[] = [];
@@ -110,6 +76,7 @@ function MarkdownReport({ text }: { text: string }) {
       elements.push(<div key={key++} className="h-2" />);
       continue;
     }
+
     const isBullet = /^[-*]\s/.test(line);
     const content = isBullet ? line.replace(/^[-*]\s/, '') : line;
     const renderInline = (raw: string): React.ReactNode[] =>
@@ -130,10 +97,9 @@ function MarkdownReport({ text }: { text: string }) {
       elements.push(<p key={key++} className="text-sm text-gray-700">{renderInline(content)}</p>);
     }
   }
+
   return <div className="space-y-0.5">{elements}</div>;
 }
-
-// ─── Attachment helpers ───────────────────────────────────────────────────────
 
 function isImageAttachment(a: AccountAuditResultAttachment): boolean {
   if (a.content_type?.startsWith('image/')) return true;
@@ -151,305 +117,53 @@ function toPreviewItems(attachments: AccountAuditResultAttachment[]) {
     .map((a) => ({ url: a.file_url, fileName: a.file_name }));
 }
 
-// ─── Animation variants ───────────────────────────────────────────────────────
-
 const fadeUp = {
   hidden: { opacity: 0, y: 16 },
-  show:   { opacity: 1, y: 0,  transition: { duration: 0.35, ease: 'easeOut' as const } },
+  show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' as const } },
 };
 
 const staggerContainer = {
   hidden: {},
-  show:   { transition: { staggerChildren: 0.07 } },
+  show: { transition: { staggerChildren: 0.07 } },
 };
 
-const scaleIn = {
-  hidden: { opacity: 0, scale: 0.85 },
-  show:   { opacity: 1, scale: 1,   transition: { type: 'spring' as const, damping: 18, stiffness: 260 } },
-};
-
-// ─── CSS Hero ─────────────────────────────────────────────────────────────────
-
-function CssHero({ audit }: { audit: AccountAuditResultDetail }) {
-  const { css_result, company, observed_at, completed_at } = audit;
-  const score = Number(css_result?.overall_rating ?? 0);
-  const { headline, sub } = cssMotivation(score);
-
-  return (
-    <motion.div
-      variants={fadeUp}
-      className="rounded-2xl bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 p-5"
-    >
-      <div className="flex items-start gap-5">
-        {/* Score bubble */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.5 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ type: 'spring', damping: 14, stiffness: 200, delay: 0.1 }}
-          className="flex shrink-0 flex-col items-center justify-center rounded-2xl bg-amber-400 px-4 py-3 text-white shadow-md"
-        >
-          <span className="text-4xl font-extrabold leading-none">
-            {Number.isFinite(score) ? score.toFixed(1) : '-'}
-          </span>
-          <span className="mt-0.5 text-xs font-semibold opacity-80">out of 5</span>
-        </motion.div>
-
-        {/* Motivation + stars */}
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <Sparkles className="h-4 w-4 shrink-0 text-amber-500" />
-            <p className="text-base font-bold text-amber-800">{headline}</p>
-          </div>
-          <p className="mt-0.5 text-sm text-amber-700/80">{sub}</p>
-
-          {/* Stars */}
-          <motion.div
-            className="mt-2.5 flex items-center gap-0.5"
-            variants={staggerContainer}
-            initial="hidden"
-            animate="show"
-          >
-            {Array.from({ length: 5 }, (_, i) => (
-              <motion.div key={i} variants={scaleIn}>
-                <Star
-                  className={`h-5 w-5 transition-colors ${
-                    i < Math.floor(score)
-                      ? 'fill-amber-400 text-amber-400'
-                      : i < score
-                        ? 'fill-amber-200 text-amber-300'
-                        : 'fill-gray-100 text-gray-200'
-                  }`}
-                />
-              </motion.div>
-            ))}
-          </motion.div>
-        </div>
-      </div>
-
-      {/* Meta row */}
-      <div className="mt-3.5 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-amber-100 pt-3 text-xs text-amber-700/70">
-        {company?.name && (
-          <span className="flex items-center gap-1">
-            <Building2 className="h-3 w-3" />
-            {company.name}
-          </span>
-        )}
-        {observed_at && (
-          <span className="flex items-center gap-1">
-            <Calendar className="h-3 w-3" />
-            Observed {formatShortDate(observed_at)}
-          </span>
-        )}
-        <span className="flex items-center gap-1">
-          <Calendar className="h-3 w-3" />
-          Completed {formatShortDate(completed_at)}
-        </span>
-      </div>
-    </motion.div>
-  );
+function renderTriState(value: boolean | null) {
+  if (value === true) {
+    return { label: 'Yes', className: 'bg-green-50 text-green-700 ring-green-200' };
+  }
+  if (value === false) {
+    return { label: 'No', className: 'bg-red-50 text-red-700 ring-red-200' };
+  }
+  return { label: 'Not Auditable', className: 'bg-gray-100 text-gray-600 ring-gray-200' };
 }
 
-// ─── Compliance Hero ──────────────────────────────────────────────────────────
-
-function ComplianceHero({ audit }: { audit: AccountAuditResultDetail }) {
-  const { compliance_result, company, completed_at } = audit;
-  const passed = compliance_result?.passed_count ?? 0;
-  const total  = compliance_result?.total_checks ?? 4;
-  const { headline, sub } = complianceMotivation(passed, total);
-  const allPassed = passed === total;
-
-  return (
-    <motion.div
-      variants={fadeUp}
-      className="rounded-2xl bg-gradient-to-br from-blue-50 via-indigo-50 to-sky-50 p-5"
-    >
-      <div className="flex items-start gap-5">
-        {/* Score bubble */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.5 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ type: 'spring', damping: 14, stiffness: 200, delay: 0.1 }}
-          className={`flex shrink-0 flex-col items-center justify-center rounded-2xl px-4 py-3 text-white shadow-md ${
-            allPassed ? 'bg-green-500' : passed >= total / 2 ? 'bg-blue-500' : 'bg-orange-400'
-          }`}
-        >
-          <span className="text-4xl font-extrabold leading-none">{passed}</span>
-          <span className="mt-0.5 text-xs font-semibold opacity-80">of {total}</span>
-        </motion.div>
-
-        {/* Motivation */}
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <ShieldCheck className="h-4 w-4 shrink-0 text-blue-500" />
-            <p className="text-base font-bold text-blue-800">{headline}</p>
-          </div>
-          <p className="mt-0.5 text-sm text-blue-700/80">{sub}</p>
-
-          {/* Mini progress dots */}
-          <motion.div
-            className="mt-2.5 flex items-center gap-1.5"
-            variants={staggerContainer}
-            initial="hidden"
-            animate="show"
-          >
-            {Array.from({ length: total }, (_, i) => (
-              <motion.div
-                key={i}
-                variants={scaleIn}
-                className={`h-3 w-3 rounded-full ${i < passed ? 'bg-blue-500' : 'bg-blue-100'}`}
-              />
-            ))}
-          </motion.div>
-        </div>
-      </div>
-
-      {/* Meta row */}
-      <div className="mt-3.5 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-blue-100 pt-3 text-xs text-blue-700/70">
-        {company?.name && (
-          <span className="flex items-center gap-1">
-            <Building2 className="h-3 w-3" />
-            {company.name}
-          </span>
-        )}
-        <span className="flex items-center gap-1">
-          <Calendar className="h-3 w-3" />
-          Completed {formatShortDate(completed_at)}
-        </span>
-      </div>
-    </motion.div>
-  );
+function ratingFill(value: number | null) {
+  if (!value) return '0%';
+  return `${Math.max(0, Math.min(100, (value / 5) * 100))}%`;
 }
 
-// ─── CSS Criteria Scores ──────────────────────────────────────────────────────
-
-function CssCriteria({ audit }: { audit: AccountAuditResultDetail }) {
-  const { css_result } = audit;
-  if (!css_result) return null;
-
-  const criteria = [
-    { key: 'greeting',           label: 'Greeting & First Impression',          value: css_result.criteria_scores?.greeting           },
-    { key: 'order_accuracy',     label: 'Order Accuracy & Confirmation',         value: css_result.criteria_scores?.order_accuracy     },
-    { key: 'suggestive_selling', label: 'Suggestive Selling / Revenue Initiative', value: css_result.criteria_scores?.suggestive_selling },
-    { key: 'service_efficiency', label: 'Service Efficiency & Flow',             value: css_result.criteria_scores?.service_efficiency },
-    { key: 'professionalism',    label: 'Professionalism & Closing Experience',  value: css_result.criteria_scores?.professionalism    },
-  ];
-
-  return (
-    <motion.section variants={fadeUp} className="space-y-3">
-      <div className="flex items-center gap-2">
-        <Star className="h-4 w-4 text-amber-500" />
-        <p className="text-sm font-semibold text-gray-900">Criteria Breakdown</p>
-      </div>
-
-      <motion.div
-        className="space-y-3"
-        variants={staggerContainer}
-        initial="hidden"
-        animate="show"
-      >
-        {criteria.map(({ key, label, value }) => {
-          const numValue = value != null ? Number(value) : null;
-          const pct = numValue != null ? (numValue / 5) * 100 : 0;
-
-          return (
-            <motion.div key={key} variants={fadeUp} className="space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-gray-600">{label}</span>
-                <span className={`text-xs font-bold ${numValue != null ? criteriaTextColor(numValue) : 'text-gray-400'}`}>
-                  {numValue != null ? `${numValue} / 5` : '— / 5'}
-                </span>
-              </div>
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
-                <motion.div
-                  className={`h-full rounded-full ${numValue != null ? criteriaColor(numValue) : 'bg-gray-200'}`}
-                  initial={{ width: 0 }}
-                  animate={{ width: `${pct}%` }}
-                  transition={{ duration: 0.7, ease: 'easeOut', delay: 0.1 }}
-                />
-              </div>
-            </motion.div>
-          );
-        })}
-      </motion.div>
-    </motion.section>
-  );
-}
-
-// ─── Compliance Check Grid ────────────────────────────────────────────────────
-
-function ComplianceChecks({ audit }: { audit: AccountAuditResultDetail }) {
-  const { compliance_result } = audit;
-  if (!compliance_result) return null;
-
-  const checks = [
-    { key: 'productivity_rate', label: 'Productivity Rate', value: compliance_result.checks.productivity_rate },
-    { key: 'uniform',           label: 'Uniform',           value: compliance_result.checks.uniform           },
-    { key: 'hygiene',           label: 'Hygiene',           value: compliance_result.checks.hygiene           },
-    { key: 'sop',               label: 'SOP',               value: compliance_result.checks.sop               },
-  ];
-
-  return (
-    <motion.section variants={fadeUp} className="space-y-3">
-      <div className="flex items-center gap-2">
-        <ShieldCheck className="h-4 w-4 text-blue-500" />
-        <p className="text-sm font-semibold text-gray-900">Compliance Checks</p>
-      </div>
-
-      <motion.div
-        className="grid grid-cols-2 gap-2"
-        variants={staggerContainer}
-        initial="hidden"
-        animate="show"
-      >
-        {checks.map(({ key, label, value }) => {
-          const passed = value === true;
-          const failed = value === false;
-          return (
-            <motion.div
-              key={key}
-              variants={scaleIn}
-              className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${
-                passed
-                  ? 'border-green-200 bg-green-50'
-                  : failed
-                    ? 'border-red-200 bg-red-50'
-                    : 'border-gray-200 bg-gray-50'
-              }`}
-            >
-              <div
-                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
-                  passed
-                    ? 'bg-green-500 text-white'
-                    : failed
-                      ? 'bg-red-400 text-white'
-                      : 'bg-gray-300 text-white'
-                }`}
-              >
-                {passed ? (
-                  <Check className="h-4 w-4" strokeWidth={3} />
-                ) : failed ? (
-                  <XIcon className="h-4 w-4" strokeWidth={3} />
-                ) : (
-                  <span className="text-xs">-</span>
-                )}
-              </div>
-              <div>
-                <p className={`text-xs font-semibold ${passed ? 'text-green-800' : failed ? 'text-red-700' : 'text-gray-500'}`}>
-                  {label}
-                </p>
-                <p className={`text-[11px] ${passed ? 'text-green-600' : failed ? 'text-red-500' : 'text-gray-400'}`}>
-                  {passed ? 'Passed' : failed ? 'Not Met' : 'No Data'}
-                </p>
-              </div>
-            </motion.div>
-          );
-        })}
-      </motion.div>
-    </motion.section>
-  );
-}
-
-// ─── Main component ───────────────────────────────────────────────────────────
+const customerServiceCriteria = [
+  {
+    key: 'customer_interaction',
+    label: 'Customer Interaction',
+    description: 'Greeting, eye contact, attentive listening, respectful engagement',
+  },
+  {
+    key: 'cashiering',
+    label: 'Cashiering',
+    description: 'Accurate order/payment handling, proper POS flow, receipt confirmation',
+  },
+  {
+    key: 'suggestive_selling_and_upselling',
+    label: 'Suggestive Selling and Upselling',
+    description: 'Relevant add-on offers, confident recommendations, natural timing',
+  },
+  {
+    key: 'service_efficiency',
+    label: 'Service Efficiency',
+    description: 'Steady pace, organized workflow, minimal idle time, smooth service handoff',
+  },
+] as const;
 
 export function AccountAuditResultDetailPanel({ audit }: { audit: AccountAuditResultDetail }) {
   const [previewMedia, setPreviewMedia] = useState<{
@@ -473,7 +187,30 @@ export function AccountAuditResultDetailPanel({ audit }: { audit: AccountAuditRe
     [],
   );
 
-  const isCss = audit.type === 'customer_service';
+  const complianceCriteria = [
+    {
+      key: 'productivity_rate',
+      label: 'Productivity Rate',
+      value: audit.scc_result.compliance_criteria.productivity_rate,
+    },
+    {
+      key: 'uniform_compliance',
+      label: 'Uniform Compliance',
+      value: audit.scc_result.compliance_criteria.uniform_compliance,
+    },
+    {
+      key: 'hygiene_compliance',
+      label: 'Hygiene Compliance',
+      value: audit.scc_result.compliance_criteria.hygiene_compliance,
+    },
+    {
+      key: 'sop_compliance',
+      label: 'SOP Compliance',
+      value: audit.scc_result.compliance_criteria.sop_compliance,
+    },
+  ];
+
+  const customerServiceValues = audit.scc_result.customer_service_criteria;
 
   return (
     <>
@@ -483,25 +220,94 @@ export function AccountAuditResultDetailPanel({ audit }: { audit: AccountAuditRe
         initial="hidden"
         animate="show"
       >
-        {/* Hero scorecard */}
-        {isCss ? (
-          <CssHero audit={audit} />
-        ) : (
-          <ComplianceHero audit={audit} />
-        )}
+        <motion.section
+          variants={fadeUp}
+          className="rounded-2xl bg-gradient-to-br from-blue-50 via-sky-50 to-cyan-50 p-5"
+        >
+          <div className="flex items-start gap-4">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-md">
+              <ShieldCheck className="h-7 w-7" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-base font-bold text-blue-900">{audit.type_label}</p>
+              <p className="mt-1 text-sm text-blue-800/80">{audit.summary.result_line}</p>
+              <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-blue-800/70">
+                {audit.company?.name && (
+                  <span className="flex items-center gap-1">
+                    <Building2 className="h-3 w-3" />
+                    {audit.company.name}
+                  </span>
+                )}
+                {audit.observed_at && (
+                  <span className="flex items-center gap-1">
+                    <Calendar className="h-3 w-3" />
+                    Audit Time {formatShortDate(audit.observed_at)}
+                  </span>
+                )}
+                <span className="flex items-center gap-1">
+                  <Calendar className="h-3 w-3" />
+                  Completed {formatShortDate(audit.completed_at)}
+                </span>
+              </div>
+            </div>
+          </div>
+        </motion.section>
 
-        {/* Criteria breakdown (CSS only) */}
-        <CssCriteria audit={audit} />
+        <motion.section variants={fadeUp} className="space-y-3">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-blue-500" />
+            <p className="text-sm font-semibold text-gray-900">Compliance Criteria</p>
+          </div>
+          <div className="grid gap-3">
+            {complianceCriteria.map((criterion) => {
+              const state = renderTriState(criterion.value);
+              return (
+                <div
+                  key={criterion.key}
+                  className="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3"
+                >
+                  <p className="text-sm font-medium text-gray-900">{criterion.label}</p>
+                  <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${state.className}`}>
+                    {state.label}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </motion.section>
 
-        {/* Compliance check grid */}
-        <ComplianceChecks audit={audit} />
+        <motion.section variants={fadeUp} className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-amber-500" />
+            <p className="text-sm font-semibold text-gray-900">Customer Service Criteria</p>
+          </div>
+          <div className="grid gap-3">
+            {customerServiceCriteria.map((criterion) => {
+              const value = customerServiceValues[criterion.key];
+              return (
+                <div key={criterion.key} className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-gray-900">{criterion.label}</p>
+                    <span className="text-xs font-semibold text-amber-700">{value ?? '-'} / 5</span>
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500">{criterion.description}</p>
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-amber-100">
+                    <div
+                      className="h-full rounded-full bg-amber-400 transition-all"
+                      style={{ width: ratingFill(value) }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </motion.section>
 
-        {/* AI Report */}
         {audit.ai_report && (
           <motion.section variants={fadeUp} className="space-y-3">
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-violet-500" />
-              <p className="text-sm font-semibold text-gray-900">AI Insights</p>
+              <p className="text-sm font-semibold text-gray-900">AI Report</p>
             </div>
             <div className="rounded-xl border border-violet-100 bg-violet-50/60 px-4 py-3.5">
               <MarkdownReport text={audit.ai_report} />
@@ -509,7 +315,6 @@ export function AccountAuditResultDetailPanel({ audit }: { audit: AccountAuditRe
           </motion.section>
         )}
 
-        {/* Audit Trail */}
         {audit.audit_trail.length > 0 && (
           <motion.section variants={fadeUp} className="space-y-3">
             <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Audit Trail</p>
@@ -569,8 +374,7 @@ export function AccountAuditResultDetailPanel({ audit }: { audit: AccountAuditRe
           </motion.section>
         )}
 
-        {/* Media grid (only shown when trail entries don't already display them inline) */}
-        {mediaAttachments.length > 0 && audit.audit_trail.every((e) => e.attachments.length === 0) && (
+        {mediaAttachments.length > 0 && audit.audit_trail.every((entry) => entry.attachments.length === 0) && (
           <motion.section variants={fadeUp} className="space-y-3">
             <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Media</p>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -589,7 +393,6 @@ export function AccountAuditResultDetailPanel({ audit }: { audit: AccountAuditRe
           </motion.section>
         )}
 
-        {/* Timestamps footer */}
         <motion.div
           variants={fadeUp}
           className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-xs text-gray-400"
@@ -597,7 +400,7 @@ export function AccountAuditResultDetailPanel({ audit }: { audit: AccountAuditRe
           {audit.observed_at && (
             <span className="flex items-center gap-1">
               <Calendar className="h-3 w-3" />
-              Observed {formatDateTime(audit.observed_at)}
+              Audit Time {formatDateTime(audit.observed_at)}
             </span>
           )}
           <span className="flex items-center gap-1">

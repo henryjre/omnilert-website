@@ -29,7 +29,7 @@ function formatDate(value: string | null): string {
   });
 }
 
-export function ComplianceAuditCard({
+export function ServiceCrewCctvAuditCard({
   audit,
   selected,
   onSelect,
@@ -48,15 +48,14 @@ export function ComplianceAuditCard({
         selected ? 'border-primary-400 ring-2 ring-primary-200' : 'border-gray-200'
       }`}
     >
-      {/* Top: type badge + employee name + status */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-1.5 py-0.5 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-200">
             <ShieldCheck className="h-3 w-3" />
-            Compliance
+            Service Crew CCTV
           </span>
           <p className="mt-1 truncate font-semibold text-gray-900">
-            {audit.comp_employee_name || '—'}
+            {audit.scc_employee_name || '—'}
           </p>
         </div>
         <Badge variant={statusVariant(audit.status)} className="shrink-0">
@@ -64,7 +63,6 @@ export function ComplianceAuditCard({
         </Badge>
       </div>
 
-      {/* Metadata */}
       <div className="mt-1.5 min-w-0 space-y-0.5">
         {audit.company?.name && (
           <p className="truncate text-xs text-gray-500">{audit.company.name}</p>
@@ -77,10 +75,8 @@ export function ComplianceAuditCard({
         )}
       </div>
 
-      {/* Spacer */}
       <div className="flex-1" />
 
-      {/* Footer */}
       <div className="mt-3 flex items-end justify-between gap-2 border-t border-gray-100 pt-2.5">
         <p className="text-xs text-gray-400">{formatDate(audit.created_at)}</p>
         <div className="flex shrink-0 items-center gap-2">
