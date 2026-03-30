@@ -1,3 +1,4 @@
+import { env } from '../config/env.js';
 import { db } from '../config/database.js';
 import { logger } from '../utils/logger.js';
 import { getActiveAttendances, getEmployeeWebsiteKeyByEmployeeId } from './odoo.service.js';
@@ -390,6 +391,13 @@ async function scheduleNextComplianceOccurrence(now: Date = new Date()): Promise
 }
 
 export async function initComplianceCron(): Promise<void> {
+  if (!env.COMPLIANCE_CRON_ENABLED) {
+    initialized = false;
+    clearScheduledHandle();
+    logger.info('Compliance cron disabled by COMPLIANCE_CRON_ENABLED=false');
+    return;
+  }
+
   if (initialized) return;
   initialized = true;
 

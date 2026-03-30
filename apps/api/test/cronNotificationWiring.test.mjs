@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-test('env config and example include cron webhook settings', () => {
+test('env config and example include cron webhook and compliance toggle settings', () => {
   const envConfigFile = new URL('../src/config/env.ts', import.meta.url);
   const envExampleFile = new URL('../.env.example', import.meta.url);
   const envConfigSource = readFileSync(envConfigFile, 'utf8');
@@ -11,10 +11,14 @@ test('env config and example include cron webhook settings', () => {
   assert.match(envConfigSource, /DISCORD_BOT_CRON_WEBHOOK_URL:\s*z\.string\(\)\.url\(\)\.optional\(\)/);
   assert.match(envConfigSource, /DISCORD_BOT_CRON_WEBHOOK_TOKEN:\s*z\.string\(\)\.optional\(\)/);
   assert.match(envConfigSource, /DISCORD_BOT_CRON_WEBHOOK_TIMEOUT_MS:\s*z\.coerce\.number\(\)\.int\(\)\.min\(1\)\.default\(5000\)/);
+  assert.match(envConfigSource, /COMPLIANCE_CRON_ENABLED:/);
+  assert.match(envConfigSource, /COMPLIANCE_CRON_ENABLED:[\s\S]*z\.boolean\(\)/);
+  assert.match(envConfigSource, /COMPLIANCE_CRON_ENABLED:[\s\S]*default\(true\)/);
 
   assert.match(envExampleSource, /DISCORD_BOT_CRON_WEBHOOK_URL=/);
   assert.match(envExampleSource, /DISCORD_BOT_CRON_WEBHOOK_TOKEN=/);
   assert.match(envExampleSource, /DISCORD_BOT_CRON_WEBHOOK_TIMEOUT_MS=5000/);
+  assert.match(envExampleSource, /COMPLIANCE_CRON_ENABLED=true/);
 });
 
 test('compliance cron wires shared cron notifier for success and failure events', () => {
