@@ -164,7 +164,11 @@ export const router = createBrowserRouter([
           },
           {
             path: 'employee-analytics',
-            element: <EmployeeAnalyticsPage />,
+            element: (
+              <PermissionGuard permission={PERMISSIONS.ANALYTICS_VIEW_EMPLOYEE_ANALYTICS}>
+                <EmployeeAnalyticsPage />
+              </PermissionGuard>
+            ),
           },
           {
             path: 'store-audits',

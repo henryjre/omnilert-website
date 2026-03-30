@@ -187,12 +187,16 @@ export function Sidebar({ className = '' }: SidebarProps) {
           My Settings
         </AnimatedNavLink>
 
-        <div className="my-2 border-t border-gray-200" />
-        {categoryLabel('Analytics')}
-        <AnimatedNavLink to="/employee-analytics" className={linkClass}>
-          <BarChart2 className="h-5 w-5" />
-          Employee Analytics
-        </AnimatedNavLink>
+        {hasPermission(PERMISSIONS.ANALYTICS_VIEW_EMPLOYEE_ANALYTICS) && (
+          <>
+            <div className="my-2 border-t border-gray-200" />
+            {categoryLabel('Analytics')}
+            <AnimatedNavLink to="/employee-analytics" className={linkClass}>
+              <BarChart2 className="h-5 w-5" />
+              Employee Analytics
+            </AnimatedNavLink>
+          </>
+        )}
 
         {/* Management */}
         {hasAnyPermission(
