@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence } from 'framer-motion';
 import { ViewToggle } from '@/shared/components/ui/ViewToggle';
+import type { ViewOption } from '@/shared/components/ui/ViewToggle';
 import { useSearchParams } from 'react-router-dom';
 import type {
   CssCriteriaScores,
@@ -10,12 +12,13 @@ import type {
   ListStoreAuditsResponse,
 } from '@omnilert/shared';
 import { PERMISSIONS } from '@omnilert/shared';
-import { CheckCircle, ClipboardList, Clock, LayoutGrid, Loader2, ShieldCheck, Star, X } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import { CheckCircle, ClipboardList, Clock, LayoutGrid, Loader2, ShieldCheck, Star, X, XCircle } from 'lucide-react';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useSocket } from '@/shared/hooks/useSocket';
 import { useAppToast } from '@/shared/hooks/useAppToast';
 import { api } from '@/shared/services/api.client';
+import { Button } from '@/shared/components/ui/Button';
+import { AnimatedModal } from '@/shared/components/ui/AnimatedModal';
 import { useAuthStore } from '@/features/auth/store/authSlice';
 import { useBranchStore } from '@/shared/store/branchStore';
 import { getGroupedUsers } from '@/features/violation-notices/services/violationNotice.api';
@@ -26,14 +29,34 @@ import { CssAuditDetailPanel } from '../components/CssAuditDetailPanel';
 import { ComplianceAuditDetailPanel } from '../components/ComplianceAuditDetailPanel';
 import { Pagination } from '../../../shared/components/ui/Pagination';
 import { resolveStoreAuditPaginationState } from './storeAuditPagination';
+import { AuditorRewardCard } from '../components/AuditorRewardCard';
 
 type CategoryTab = 'all' | StoreAuditType;
 const PAGE_SIZE = 10;
 
-const STATUS_TABS: { id: StoreAuditStatus; label: string; icon: LucideIcon }[] = [
+const STATUS_TABS: ViewOption<StoreAuditStatus>[] = [
   { id: 'pending', label: 'Pending', icon: Clock },
-  { id: 'processing', label: 'Processing', icon: Loader2 },
-  { id: 'completed', label: 'Completed', icon: CheckCircle },
+  {
+    id: 'processing',
+    label: 'Processing',
+    icon: Loader2,
+    activeClassName: 'text-amber-600',
+    activeIndicatorClassName: 'bg-amber-500',
+  },
+  {
+    id: 'completed',
+    label: 'Completed',
+    icon: CheckCircle,
+    activeClassName: 'text-green-600',
+    activeIndicatorClassName: 'bg-green-500',
+  },
+  {
+    id: 'rejected',
+    label: 'Rejected',
+    icon: XCircle,
+    activeClassName: 'text-red-600',
+    activeIndicatorClassName: 'bg-red-500',
+  },
 ];
 
 function StoreAuditsSkeleton() {
@@ -108,6 +131,8 @@ export function StoreAuditsPage() {
   );
   const [selectedAuditFallback, setSelectedAuditFallback] = useState<StoreAudit | null>(null);
   const [showRequestVNModal, setShowRequestVNModal] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
   const [groupedUsers, setGroupedUsers] = useState<GroupedUsersResponse | null>(null);
   const [loadingGroupedUsers, setLoadingGroupedUsers] = useState(false);
   const [pendingCounts, setPendingCounts] = useState<{ all: number; customer_service: number; compliance: number }>({ all: 0, customer_service: 0, compliance: 0 });
@@ -122,6 +147,27 @@ export function StoreAuditsPage() {
       ?? (selectedAuditFallback?.id === selectedAuditId ? selectedAuditFallback : null),
     [audits, selectedAuditFallback, selectedAuditId],
   );
+  const syncSelectedAudit = useCallback((audit: StoreAudit, nextStatus: StoreAuditStatus = audit.status) => {
+    setSelectedAuditId(audit.id);
+    setSelectedAuditFallback(audit);
+    setAudits((prev) => prev.map((item) => (item.id === audit.id ? audit : item)));
+    setPage(1);
+    setStatus(nextStatus);
+  }, []);
+  const closeRejectModal = useCallback(() => {
+    setShowRejectModal(false);
+    setRejectReason('');
+  }, []);
+  const clearAuditDraft = useCallback((audit: StoreAudit) => {
+    const draftKey = audit.type === 'customer_service'
+      ? `css-audit-draft-${audit.id}`
+      : `compliance-audit-draft-${audit.id}`;
+    try {
+      localStorage.removeItem(draftKey);
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const fetchAudits = useCallback(async (options?: { silent?: boolean }) => {
     if (!options?.silent) setLoading(true);
@@ -202,6 +248,7 @@ export function StoreAuditsPage() {
     if (pageAudit) {
       initialAuditIdRef.current = null;
       setSelectedAuditFallback(pageAudit);
+      setStatus(pageAudit.status);
       return;
     }
 
@@ -218,7 +265,9 @@ export function StoreAuditsPage() {
     void api.get(`/store-audits/${selectedAuditId}`)
       .then((response) => {
         if (!active) return;
-        setSelectedAuditFallback(response.data.data as StoreAudit);
+        const audit = response.data.data as StoreAudit;
+        setSelectedAuditFallback(audit);
+        setStatus(audit.status);
       })
       .catch(() => {
         if (!active) return;
@@ -259,6 +308,12 @@ export function StoreAuditsPage() {
   }, [canRequestVN, selectedAudit, showRequestVNModal]);
 
   useEffect(() => {
+    if (!selectedAudit || selectedAudit.status !== 'processing') {
+      closeRejectModal();
+    }
+  }, [closeRejectModal, selectedAudit]);
+
+  useEffect(() => {
     if (!socket) return;
 
     const refresh = () => {
@@ -294,9 +349,10 @@ export function StoreAuditsPage() {
   const handleProcess = async (auditId: string) => {
     setActionLoading(true);
     try {
-      await api.post(`/store-audits/${auditId}/process`);
+      const response = await api.post(`/store-audits/${auditId}/process`);
+      const updatedAudit = response.data.data as StoreAudit;
+      syncSelectedAudit(updatedAudit, 'processing');
       showSuccessToast('Audit moved to processing.');
-      await fetchAudits({ silent: true });
       void fetchPendingCounts();
     } catch (err: any) {
       showErrorToast(err.response?.data?.error || 'Failed to process audit');
@@ -313,12 +369,31 @@ export function StoreAuditsPage() {
   ) => {
     setActionLoading(true);
     try {
-      await api.post(`/store-audits/${auditId}/complete`, payload);
+      const response = await api.post(`/store-audits/${auditId}/complete`, payload);
+      const updatedAudit = response.data.data as StoreAudit;
+      clearAuditDraft(updatedAudit);
+      syncSelectedAudit(updatedAudit, 'completed');
       showSuccessToast('Audit completed successfully.');
-      await fetchAudits({ silent: true });
       void fetchPendingCounts();
     } catch (err: any) {
       showErrorToast(err.response?.data?.error || 'Failed to complete audit');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleReject = async (auditId: string, reason: string) => {
+    setActionLoading(true);
+    try {
+      const response = await api.post(`/store-audits/${auditId}/reject`, { reason });
+      const updatedAudit = response.data.data as StoreAudit;
+      clearAuditDraft(updatedAudit);
+      syncSelectedAudit(updatedAudit, 'rejected');
+      closeRejectModal();
+      showSuccessToast('Audit rejected.');
+      void fetchPendingCounts();
+    } catch (err: any) {
+      showErrorToast(err.response?.data?.error || 'Failed to reject audit');
     } finally {
       setActionLoading(false);
     }
@@ -365,52 +440,122 @@ export function StoreAuditsPage() {
   return (
     <>
       <div className="space-y-5">
-        {/* Header */}
-        <div>
-          <div className="flex items-center gap-2">
-            <ClipboardList className="h-6 w-6 text-primary-600" />
-            <h1 className="text-2xl font-bold text-gray-900">Store Audits</h1>
+        {/* Mobile: reward card full-width before tabs */}
+        <div className="sm:hidden space-y-5">
+          <div>
+            <div className="flex items-center gap-2">
+              <ClipboardList className="h-6 w-6 text-primary-600" />
+              <h1 className="text-2xl font-bold text-gray-900">Store Audits</h1>
+            </div>
+            <p className="mt-0.5 text-sm font-medium text-primary-600">{activeCategoryLabel}</p>
           </div>
-          <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">{activeCategoryLabel}</p>
+          <AuditorRewardCard
+            totalEarnings={0}
+            auditsCompleted={0}
+            ratePerAudit={0}
+          />
         </div>
 
-        <ViewToggle
-          options={([
-            { id: 'all', label: 'All Categories', icon: LayoutGrid },
-            { id: 'customer_service', label: 'Customer Service', icon: Star },
-            { id: 'compliance', label: 'Compliance', icon: ShieldCheck },
-          ] as const).map((tab) => ({
-            ...tab,
-            label: (
+        {/* Desktop: header + tabs on left, card on right */}
+        <div className="hidden sm:flex sm:gap-6 sm:items-start">
+          {/* Left column — header + tabs */}
+          <div className="min-w-0 flex-1 space-y-5">
+            <div>
               <div className="flex items-center gap-2">
-                <span>{tab.label}</span>
-                {pendingCounts[tab.id] > 0 && (
-                  <span className="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary-600 px-1 text-[9px] font-bold text-white">
-                    {pendingCounts[tab.id]}
-                  </span>
-                )}
+                <ClipboardList className="h-6 w-6 text-primary-600" />
+                <h1 className="text-2xl font-bold text-gray-900">Store Audits</h1>
               </div>
-            ),
-          }))}
-          activeId={category}
-          onChange={(id) => {
-            setCategory(id);
-            setPage(1);
-            setSelectedAuditId(null);
-          }}
-          layoutId="store-audit-category-tabs"
-        />
+            </div>
 
-        <ViewToggle
-          options={STATUS_TABS}
-          activeId={status}
-          onChange={(id) => {
-            setStatus(id);
-            setPage(1);
-            setSelectedAuditId(null);
-          }}
-          layoutId="store-audit-status-tabs"
-        />
+            <ViewToggle
+              options={([
+                { id: 'all', label: 'All Categories', icon: LayoutGrid },
+                { id: 'customer_service', label: 'Customer Service', icon: Star },
+                { id: 'compliance', label: 'Compliance', icon: ShieldCheck },
+              ] as const).map((tab) => ({
+                ...tab,
+                label: (
+                  <div className="flex items-center gap-2">
+                    <span>{tab.label}</span>
+                    {pendingCounts[tab.id] > 0 && (
+                      <span className="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary-600 px-1 text-[9px] font-bold text-white">
+                        {pendingCounts[tab.id]}
+                      </span>
+                    )}
+                  </div>
+                ),
+              }))}
+              activeId={category}
+              onChange={(id) => {
+                setCategory(id);
+                setPage(1);
+                setSelectedAuditId(null);
+              }}
+              layoutId="store-audit-category-tabs"
+            />
+
+            <ViewToggle
+              options={STATUS_TABS}
+              activeId={status}
+              onChange={(id) => {
+                setStatus(id);
+                setPage(1);
+                setSelectedAuditId(null);
+              }}
+              layoutId="store-audit-status-tabs"
+            />
+          </div>
+
+          {/* Right column — reward card */}
+          <div className="w-[280px] flex-shrink-0">
+            <AuditorRewardCard
+              totalEarnings={0}
+              auditsCompleted={0}
+              ratePerAudit={0}
+              />
+          </div>
+        </div>
+
+        {/* Mobile-only tabs (below reward card) */}
+        <div className="sm:hidden space-y-5">
+          <ViewToggle
+            options={([
+              { id: 'all', label: 'All Categories', icon: LayoutGrid },
+              { id: 'customer_service', label: 'Customer Service', icon: Star },
+              { id: 'compliance', label: 'Compliance', icon: ShieldCheck },
+            ] as const).map((tab) => ({
+              ...tab,
+              label: (
+                <div className="flex items-center gap-2">
+                  <span>{tab.label}</span>
+                  {pendingCounts[tab.id] > 0 && (
+                    <span className="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary-600 px-1 text-[9px] font-bold text-white">
+                      {pendingCounts[tab.id]}
+                    </span>
+                  )}
+                </div>
+              ),
+            }))}
+            activeId={category}
+            onChange={(id) => {
+              setCategory(id);
+              setPage(1);
+              setSelectedAuditId(null);
+            }}
+            layoutId="store-audit-category-tabs-mobile"
+          />
+
+          <ViewToggle
+            options={STATUS_TABS}
+            activeId={status}
+            onChange={(id) => {
+              setStatus(id);
+              setPage(1);
+              setSelectedAuditId(null);
+            }}
+            layoutId="store-audit-status-tabs-mobile"
+          />
+        </div>
 
         {/* Content */}
         <div className="space-y-4">
@@ -508,11 +653,17 @@ export function StoreAuditsPage() {
                     && selectedAudit.status === 'processing'
                     && selectedAudit.auditor_user_id === currentUserId
                   }
+                  canReject={
+                    canProcessAudit
+                    && selectedAudit.status === 'processing'
+                    && selectedAudit.auditor_user_id === currentUserId
+                  }
                   canRequestVN={canRequestVN && selectedAudit.status === 'completed' && !selectedAudit.vn_requested}
                   actionLoading={actionLoading}
                   panelError=""
                   onProcess={() => void handleProcess(selectedAudit.id)}
                   onComplete={(payload) => void handleComplete(selectedAudit.id, payload)}
+                  onReject={() => setShowRejectModal(true)}
                   onRequestVN={() => setShowRequestVNModal(true)}
                 />
               ) : (
@@ -525,11 +676,17 @@ export function StoreAuditsPage() {
                     && selectedAudit.status === 'processing'
                     && selectedAudit.auditor_user_id === currentUserId
                   }
+                  canReject={
+                    canProcessAudit
+                    && selectedAudit.status === 'processing'
+                    && selectedAudit.auditor_user_id === currentUserId
+                  }
                   canRequestVN={canRequestVN && selectedAudit.status === 'completed' && !selectedAudit.vn_requested}
                   actionLoading={actionLoading}
                   panelError=""
                   onProcess={() => void handleProcess(selectedAudit.id)}
                   onComplete={(payload) => void handleComplete(selectedAudit.id, payload)}
+                  onReject={() => setShowRejectModal(true)}
                   onRequestVN={() => setShowRequestVNModal(true)}
                 />
               )}
@@ -549,6 +706,61 @@ export function StoreAuditsPage() {
           sourceLabel={`Store Audit — ${selectedAudit.type === 'customer_service' ? 'CSS' : 'Compliance'} — ${selectedAudit.company?.name || 'Unknown Company'} / ${selectedAudit.branch_name || selectedAudit.id}`}
         />
       )}
+
+      <AnimatePresence>
+        {showRejectModal && selectedAudit && (
+          <AnimatedModal
+            maxWidth="max-w-md"
+            zIndexClass="z-[60]"
+            onBackdropClick={actionLoading ? undefined : closeRejectModal}
+          >
+            <div className="border-b border-gray-200 px-5 py-4">
+              <p className="font-semibold text-gray-900">Reject Audit</p>
+              <p className="mt-1 text-sm text-gray-500">
+                This will move the audit to the rejected tab and keep it read-only.
+              </p>
+            </div>
+            <div className="space-y-4 px-5 py-4">
+              <div>
+                <p className="text-sm font-medium text-gray-800">
+                  {selectedAudit.type === 'customer_service'
+                    ? selectedAudit.css_cashier_name || 'Customer Service Audit'
+                    : selectedAudit.comp_employee_name || 'Compliance Audit'}
+                </p>
+                <p className="mt-0.5 text-xs text-gray-500">
+                  {selectedAudit.branch_name || selectedAudit.company?.name || selectedAudit.id}
+                </p>
+              </div>
+              <textarea
+                rows={4}
+                value={rejectReason}
+                onChange={(event) => setRejectReason(event.target.value)}
+                placeholder="Reason for rejection..."
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                disabled={actionLoading}
+              />
+            </div>
+            <div className="flex gap-3 border-t border-gray-200 px-5 py-4">
+              <Button
+                className="flex-1"
+                variant="danger"
+                disabled={actionLoading || !rejectReason.trim()}
+                onClick={() => void handleReject(selectedAudit.id, rejectReason.trim())}
+              >
+                {actionLoading ? 'Rejecting…' : 'Confirm Reject'}
+              </Button>
+              <Button
+                className="flex-1"
+                variant="secondary"
+                disabled={actionLoading}
+                onClick={closeRejectModal}
+              >
+                Cancel
+              </Button>
+            </div>
+          </AnimatedModal>
+        )}
+      </AnimatePresence>
     </>
   );
 }

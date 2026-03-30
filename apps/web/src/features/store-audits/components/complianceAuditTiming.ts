@@ -9,6 +9,10 @@ export type ComplianceAuditPanelTiming =
   | {
       kind: 'completed';
       durationText: string | null;
+    }
+  | {
+      kind: 'rejected';
+      durationText: string | null;
     };
 
 function parseValidDate(value: string | null | undefined): Date | null {
@@ -43,7 +47,7 @@ export function formatElapsedMinutes(totalMinutes: number): string {
 export function resolveComplianceAuditPanelTiming(
   audit: Pick<
     StoreAudit,
-    'status' | 'comp_check_in_time' | 'processing_started_at' | 'completed_at'
+    'status' | 'comp_check_in_time' | 'processing_started_at' | 'completed_at' | 'rejected_at'
   >,
   now: Date = new Date(),
 ): ComplianceAuditPanelTiming {
@@ -54,6 +58,17 @@ export function resolveComplianceAuditPanelTiming(
 
     return {
       kind: 'completed',
+      durationText: elapsedMinutes === null ? null : formatElapsedMinutes(elapsedMinutes),
+    };
+  }
+
+  if (audit.status === 'rejected') {
+    const processingStartedAt = parseValidDate(audit.processing_started_at);
+    const rejectedAt = parseValidDate(audit.rejected_at);
+    const elapsedMinutes = getElapsedMinutes(processingStartedAt, rejectedAt);
+
+    return {
+      kind: 'rejected',
       durationText: elapsedMinutes === null ? null : formatElapsedMinutes(elapsedMinutes),
     };
   }

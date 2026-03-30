@@ -18,3 +18,17 @@ export function buildCompletedStoreAuditTimestamps(completedAt: Date = new Date(
     updated_at: completedAt,
   };
 }
+
+export function buildRejectedStoreAuditUpdate(input: {
+  reason: string;
+  rejectedAt?: Date;
+}) {
+  const rejectedAt = input.rejectedAt ?? new Date();
+
+  return {
+    status: 'rejected' as const,
+    rejection_reason: input.reason,
+    rejected_at: rejectedAt,
+    updated_at: rejectedAt,
+  };
+}

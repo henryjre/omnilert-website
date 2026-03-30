@@ -4,6 +4,7 @@ import { Badge } from '@/shared/components/ui/Badge';
 
 function statusVariant(status: StoreAudit['status']) {
   if (status === 'completed') return 'success' as const;
+  if (status === 'rejected') return 'danger' as const;
   if (status === 'processing') return 'info' as const;
   return 'warning' as const;
 }

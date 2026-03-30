@@ -18,6 +18,7 @@ import { notifyCompletedStoreAudit } from './storeAuditWebhook.service.js';
 import {
   buildCompletedStoreAuditTimestamps,
   buildProcessStoreAuditClaimUpdate,
+  buildRejectedStoreAuditUpdate,
 } from './storeAuditTiming.service.js';
 
 type StoreAuditRow = StoreAudit & {
@@ -492,6 +493,13 @@ export async function listStoreAudits(input: {
       ];
     }
 
+    if (input.status === 'rejected') {
+      return [
+        { column: 'rejected_at', order: 'desc' as const, nulls: 'last' as const },
+        { column: 'created_at', order: 'desc' as const },
+      ];
+    }
+
     if (input.status === 'processing') {
       return [
         { column: 'updated_at', order: 'desc' as const },
@@ -746,6 +754,37 @@ export async function processStoreAudit(input: {
     auditor_user_id: input.userId,
     auditor_name: enriched.auditor_name ?? null,
   });
+  return enriched;
+}
+
+export async function rejectStoreAudit(input: {
+  auditId: string;
+  userId: string;
+  companyId: string;
+  reason: string;
+}): Promise<StoreAuditRow> {
+  const audit = await db.getDb()('store_audits').where({ id: input.auditId }).first();
+  if (!audit) throw new AppError(404, 'Store audit not found');
+  if (audit.status !== 'processing' || audit.auditor_user_id !== input.userId) {
+    throw new AppError(403, 'You can only reject your own processing audit');
+  }
+
+  const trimmedReason = input.reason.trim();
+  if (!trimmedReason) {
+    throw new AppError(400, 'Rejection reason is required');
+  }
+
+  const rejectedUpdate = buildRejectedStoreAuditUpdate({
+    reason: trimmedReason,
+  });
+
+  const [updated] = await db.getDb()('store_audits')
+    .where({ id: input.auditId })
+    .update(rejectedUpdate)
+    .returning('*');
+
+  const [enriched] = await enrichAuditRows([updated]);
+  emitStoreAuditEvent(input.companyId, 'store-audit:updated', { id: input.auditId });
   return enriched;
 }
 

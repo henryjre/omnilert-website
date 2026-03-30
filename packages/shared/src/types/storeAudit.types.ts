@@ -7,7 +7,7 @@ export interface CssCriteriaScores {
   service_efficiency: number; // 1-5
   professionalism: number;    // 1-5
 }
-export type StoreAuditStatus = 'pending' | 'processing' | 'completed';
+export type StoreAuditStatus = 'pending' | 'processing' | 'completed' | 'rejected';
 
 export interface StoreAuditOrderLine {
   product_name: string;
@@ -65,6 +65,8 @@ export interface StoreAudit {
   auditor_name?: string | null;
   monetary_reward: string;
   completed_at: string | null;
+  rejected_at: string | null;
+  rejection_reason: string | null;
   processing_started_at: string | null;
   vn_requested: boolean;
   linked_vn_id: string | null;

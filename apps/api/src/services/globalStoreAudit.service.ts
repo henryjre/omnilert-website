@@ -115,6 +115,12 @@ type GlobalStoreAuditServiceDeps = {
     userId: string;
     companyId: string;
   }) => Promise<StoreAudit>;
+  rejectStoreAudit: (input: {
+    auditId: string;
+    userId: string;
+    companyId: string;
+    reason: string;
+  }) => Promise<StoreAudit>;
   completeStoreAudit: (input: {
     auditId: string;
     userId: string;
@@ -151,6 +157,12 @@ async function defaultListStoreAuditRows(input: {
     if (input.status === 'completed') {
       return [
         { column: 'store_audits.completed_at', order: 'desc' as const, nulls: 'last' as const },
+        { column: 'store_audits.created_at', order: 'desc' as const },
+      ];
+    }
+    if (input.status === 'rejected') {
+      return [
+        { column: 'store_audits.rejected_at', order: 'desc' as const, nulls: 'last' as const },
         { column: 'store_audits.created_at', order: 'desc' as const },
       ];
     }
@@ -264,6 +276,16 @@ async function defaultProcessStoreAudit(input: {
   return mod.processStoreAudit(input);
 }
 
+async function defaultRejectStoreAudit(input: {
+  auditId: string;
+  userId: string;
+  companyId: string;
+  reason: string;
+}): Promise<StoreAudit> {
+  const mod = await import('./storeAudit.service.js');
+  return mod.rejectStoreAudit(input);
+}
+
 async function defaultCompleteStoreAudit(input: {
   auditId: string;
   userId: string;
@@ -289,6 +311,7 @@ export function createGlobalStoreAuditService(
     editStoreAuditMessage: overrides.editStoreAuditMessage ?? defaultEditStoreAuditMessage,
     deleteStoreAuditMessage: overrides.deleteStoreAuditMessage ?? defaultDeleteStoreAuditMessage,
     processStoreAudit: overrides.processStoreAudit ?? defaultProcessStoreAudit,
+    rejectStoreAudit: overrides.rejectStoreAudit ?? defaultRejectStoreAudit,
     completeStoreAudit: overrides.completeStoreAudit ?? defaultCompleteStoreAudit,
   };
 
@@ -411,6 +434,21 @@ export function createGlobalStoreAuditService(
         payload: input.payload,
       });
     },
+
+    async rejectAudit(input: {
+      auditId: string;
+      userId: string;
+      reason: string;
+    }): Promise<StoreAudit> {
+      const context = await deps.resolveAuditCompanyContext(input.auditId);
+      if (!context) throw new AppError(404, 'Store audit not found');
+      return deps.rejectStoreAudit({
+        auditId: input.auditId,
+        userId: input.userId,
+        companyId: context.companyId,
+        reason: input.reason,
+      });
+    },
   };
 }
 
@@ -424,3 +462,4 @@ export const editStoreAuditMessage = globalStoreAuditService.editMessage;
 export const deleteStoreAuditMessage = globalStoreAuditService.deleteMessage;
 export const processAudit = globalStoreAuditService.processAudit;
 export const completeAudit = globalStoreAuditService.completeAudit;
+export const rejectAudit = globalStoreAuditService.rejectAudit;
