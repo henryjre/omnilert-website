@@ -5,7 +5,7 @@ import { AnimatedModal } from '@/shared/components/ui/AnimatedModal';
 import { Button } from '@/shared/components/ui/Button';
 import { Input } from '@/shared/components/ui/Input';
 import { api } from '@/shared/services/api.client';
-import { normalizeFileForUpload } from '@/shared/utils/fileUpload';
+import { compressImageForUpload, normalizeFileForUpload } from '@/shared/utils/fileUpload';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useAppToast } from '@/shared/hooks/useAppToast';
 import { useAuthStore } from '@/features/auth/store/authSlice';
@@ -250,6 +250,58 @@ function parseRequestedChanges(raw: unknown): Record<string, unknown> {
   }
   if (typeof raw === 'object') return raw as Record<string, unknown>;
   return {};
+}
+
+function getApiErrorMessage(err: unknown, fallback: string): string {
+  if (typeof err === 'string' && err.trim()) return err;
+  if (err instanceof Error && err.message.trim()) return err.message;
+  if (!err || typeof err !== 'object') return fallback;
+
+  const maybeResponse = 'response' in err
+    ? (err as { response?: { status?: number; data?: unknown } }).response
+    : undefined;
+  const maybeData = maybeResponse?.data;
+
+  if (maybeData && typeof maybeData === 'object') {
+    const maybeError = 'error' in maybeData ? maybeData.error : undefined;
+    if (typeof maybeError === 'string' && maybeError.trim()) return maybeError;
+
+    const maybeMessage = 'message' in maybeData ? maybeData.message : undefined;
+    if (typeof maybeMessage === 'string' && maybeMessage.trim()) return maybeMessage;
+  }
+
+  if (typeof maybeData === 'string' && maybeData.trim()) {
+    if (maybeData.includes('<html') || maybeData.includes('<!doctype html')) {
+      return maybeResponse?.status === 413
+        ? 'Upload failed because the file is too large for the production gateway.'
+        : fallback;
+    }
+    return maybeData;
+  }
+
+  if (maybeResponse?.status === 413) {
+    return 'Upload failed because the file is too large for the production gateway.';
+  }
+
+  return fallback;
+}
+
+function isPayloadTooLargeError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+
+  const maybeResponse = 'response' in err
+    ? (err as { response?: { status?: number } }).response
+    : undefined;
+  if (maybeResponse?.status === 413) return true;
+
+  const msg = getApiErrorMessage(err, '').toLowerCase();
+  return (
+    msg.includes('payload too large')
+    || msg.includes('request entity too large')
+    || msg.includes('content too large')
+    || msg.includes('entity too large')
+    || msg.includes('file too large')
+  );
 }
 
 function normalizeProfileCompareValue(key: string, value: unknown): string {
@@ -844,12 +896,15 @@ export function EmploymentTab() {
       showErrorToast('You do not have permission to edit your profile.');
       return;
     }
-    setUploadingValidId(true);
-    try {
+
+    const uploadValidIdDocument = async (document: File): Promise<string | null> => {
       const formData = new FormData();
-      formData.append('document', file);
+      formData.append('document', document);
       const res = await api.post('/account/valid-id', formData);
-      const nextValidIdUrl = res.data.data.validIdUrl || null;
+      return res.data.data.validIdUrl || null;
+    };
+
+    const applyValidIdUpload = async (nextValidIdUrl: string | null) => {
       setValidIdUrl(nextValidIdUrl);
       setProfile((prev) => (prev
         ? {
@@ -863,9 +918,29 @@ export function EmploymentTab() {
       if (canSubmitEmployeeRequirements) {
         await fetchRequirements();
       }
+    };
+
+    setUploadingValidId(true);
+    try {
+      const nextValidIdUrl = await uploadValidIdDocument(file);
+      await applyValidIdUpload(nextValidIdUrl);
       showSuccessToast('Valid ID uploaded successfully.');
-    } catch (err: any) {
-      showErrorToast(err.response?.data?.error || 'Failed to upload valid ID');
+    } catch (err: unknown) {
+      if (isPayloadTooLargeError(err) && file.type.startsWith('image/')) {
+        try {
+          const optimized = await compressImageForUpload(file, { maxBytes: 900 * 1024 });
+          if (optimized.size < file.size) {
+            const nextValidIdUrl = await uploadValidIdDocument(optimized);
+            await applyValidIdUpload(nextValidIdUrl);
+            showSuccessToast('Valid ID uploaded successfully after optimizing the image size.');
+            return;
+          }
+        } catch (retryErr: unknown) {
+          showErrorToast(getApiErrorMessage(retryErr, 'Failed to upload valid ID'));
+          return;
+        }
+      }
+      showErrorToast(getApiErrorMessage(err, 'Failed to upload valid ID'));
     } finally {
       setUploadingValidId(false);
     }
