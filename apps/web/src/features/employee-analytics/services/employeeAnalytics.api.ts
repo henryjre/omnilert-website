@@ -1,7 +1,6 @@
 import { api } from '@/shared/services/api.client';
 
 export type RollingMetricId =
-  | 'customer-service'
   | 'workplace-relations'
   | 'attendance-rate'
   | 'punctuality-rate'

@@ -420,7 +420,7 @@ export async function getAuditResults(req: Request, res: Response, next: NextFun
 
     const data = await listAccountAuditResults({
       userId: req.user!.sub,
-      type: req.query.type as 'customer_service' | 'compliance' | 'all' | undefined,
+      type: req.query.type as 'service_crew_cctv' | 'all' | undefined,
       branchIds: branchIds.length > 0 ? branchIds : undefined,
       page: req.query.page ? Number(req.query.page) : undefined,
       pageSize: req.query.pageSize ? Number(req.query.pageSize) : undefined,

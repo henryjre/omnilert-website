@@ -71,13 +71,6 @@ export interface MetricInsightsInput {
 }
 
 export const METRIC_DEFINITIONS: Record<string, MetricDefinition> = {
-  "customer-service": {
-    id: "customer-service",
-    label: "Customer Service Score",
-    kind: "likert",
-    highMin: 4.2,
-    midMin: 3.8,
-  },
   "workplace-relations": {
     id: "workplace-relations",
     label: "Workplace Relations Score",

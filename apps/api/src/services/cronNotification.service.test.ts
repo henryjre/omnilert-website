@@ -41,8 +41,8 @@ test('buildCronJobNotificationPayload produces the universal success payload sha
     environment: 'production',
     sentAt: new Date('2026-03-30T00:27:01.300Z'),
     run: {
-      jobName: 'compliance_hourly_audit',
-      jobFamily: 'compliance',
+      jobName: 'service_crew_cctv_hourly_audit',
+      jobFamily: 'service_crew_cctv',
       schedule: 'hourly@deterministic-minute',
       source: 'scheduled',
       scheduledForKey: '2026-03-30T08:27',
@@ -51,7 +51,7 @@ test('buildCronJobNotificationPayload produces the universal success payload sha
       finishedAt: new Date('2026-03-30T00:27:01.241Z'),
       attempt: 1,
       status: 'success',
-      message: 'Completed compliance cron occurrence',
+      message: 'Completed service crew cctv cron occurrence',
       errorMessage: null,
       stats: null,
     },
@@ -63,13 +63,13 @@ test('buildCronJobNotificationPayload produces the universal success payload sha
     environment: 'production',
     sent_at: '2026-03-30T00:27:01.300Z',
     job: {
-      name: 'compliance_hourly_audit',
-      family: 'compliance',
+      name: 'service_crew_cctv_hourly_audit',
+      family: 'service_crew_cctv',
       schedule: 'hourly@deterministic-minute',
       trigger: 'scheduled',
     },
     run: {
-      id: 'compliance_hourly_audit:scheduled:2026-03-30T08:27',
+      id: 'service_crew_cctv_hourly_audit:scheduled:2026-03-30T08:27',
       scheduled_for_key: '2026-03-30T08:27',
       scheduled_for_manila: '2026-03-30 08:27:00',
       source: 'scheduled',
@@ -80,7 +80,7 @@ test('buildCronJobNotificationPayload produces the universal success payload sha
     },
     result: {
       status: 'success',
-      message: 'Completed compliance cron occurrence',
+      message: 'Completed service crew cctv cron occurrence',
       error_message: null,
     },
     stats: {
@@ -99,7 +99,7 @@ test('shouldSendCronJobNotification enforces production-only and status/source p
   assert.deepEqual(
     shouldSendCronJobNotification({
       environment: 'development',
-      jobName: 'compliance_hourly_audit',
+      jobName: 'service_crew_cctv_hourly_audit',
       source: 'scheduled',
       status: 'success',
     }),
@@ -129,7 +129,7 @@ test('shouldSendCronJobNotification enforces production-only and status/source p
   assert.deepEqual(
     shouldSendCronJobNotification({
       environment: 'production',
-      jobName: 'compliance_hourly_audit',
+      jobName: 'service_crew_cctv_hourly_audit',
       source: 'scheduled',
       status: 'success',
     }),
@@ -166,8 +166,8 @@ test('createCronJobNotifier posts JSON with bearer authorization', async () => {
   });
 
   const result = await notifier({
-    jobName: 'compliance_hourly_audit',
-    jobFamily: 'compliance',
+    jobName: 'service_crew_cctv_hourly_audit',
+    jobFamily: 'service_crew_cctv',
     schedule: 'hourly@deterministic-minute',
     source: 'scheduled',
     scheduledForKey: '2026-03-30T08:27',
@@ -176,7 +176,7 @@ test('createCronJobNotifier posts JSON with bearer authorization', async () => {
     finishedAt: new Date('2026-03-30T00:27:01.241Z'),
     attempt: 1,
     status: 'success',
-    message: 'Completed compliance cron occurrence',
+    message: 'Completed service crew cctv cron occurrence',
     errorMessage: null,
     stats: null,
   });
@@ -205,8 +205,8 @@ test('createCronJobNotifier skips when webhook configuration is missing', async 
   });
 
   const result = await notifier({
-    jobName: 'compliance_hourly_audit',
-    jobFamily: 'compliance',
+    jobName: 'service_crew_cctv_hourly_audit',
+    jobFamily: 'service_crew_cctv',
     schedule: 'hourly@deterministic-minute',
     source: 'scheduled',
     scheduledForKey: '2026-03-30T08:27',
@@ -215,7 +215,7 @@ test('createCronJobNotifier skips when webhook configuration is missing', async 
     finishedAt: new Date('2026-03-30T00:27:01.241Z'),
     attempt: 1,
     status: 'success',
-    message: 'Completed compliance cron occurrence',
+    message: 'Completed service crew cctv cron occurrence',
     errorMessage: null,
     stats: null,
   });

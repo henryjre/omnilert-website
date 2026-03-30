@@ -18,6 +18,7 @@ type StoreAuditWebhookAudit = Pick<
   | 'status'
   | 'branch_id'
   | 'completed_at'
+  | 'created_at'
   | 'css_date_order'
   | 'css_pos_reference'
   | 'css_odoo_order_id'
@@ -27,13 +28,16 @@ type StoreAuditWebhookAudit = Pick<
   | 'audited_user_key'
   | 'css_cashier_user_key'
   | 'css_star_rating'
-  | 'comp_check_in_time'
-  | 'comp_odoo_employee_id'
-  | 'comp_employee_name'
-  | 'comp_productivity_rate'
-  | 'comp_uniform'
-  | 'comp_hygiene'
-  | 'comp_sop'
+  | 'scc_odoo_employee_id'
+  | 'scc_employee_name'
+  | 'scc_productivity_rate'
+  | 'scc_uniform_compliance'
+  | 'scc_hygiene_compliance'
+  | 'scc_sop_compliance'
+  | 'scc_customer_interaction'
+  | 'scc_cashiering'
+  | 'scc_suggestive_selling_and_upselling'
+  | 'scc_service_efficiency'
 > & {
   branch_name?: string | null;
 };
@@ -48,7 +52,7 @@ type NotifyCompletedStoreAuditInput = {
 
 type StoreAuditResultsWebhookNotifierDeps = {
   webhookUrl: string;
-  resolveComplianceWebsiteUserKey: (odooEmployeeId: number) => Promise<string | null>;
+  resolveServiceCrewCctvWebsiteUserKey: (odooEmployeeId: number) => Promise<string | null>;
   findUserById: (
     userId: string,
     audit: StoreAuditWebhookAudit,
@@ -66,21 +70,12 @@ type StoreAuditResultsWebhookNotifierDeps = {
 };
 
 function formatAuditTypeLabel(type: StoreAudit['type']): AuditResultsWebhookPayload['audit']['type_label'] {
-  return type === 'customer_service' ? 'Customer Service Audit' : 'Compliance Audit';
+  return type === 'customer_service' ? 'Customer Service Audit' : 'Service Crew CCTV Audit';
 }
 
 function formatCompactNumber(value: number): string {
   if (!Number.isFinite(value)) return '0';
   return value.toFixed(2).replace(/\.?0+$/, '');
-}
-
-function countPassedComplianceChecks(audit: StoreAuditWebhookAudit): number {
-  return [
-    audit.comp_productivity_rate,
-    audit.comp_uniform,
-    audit.comp_hygiene,
-    audit.comp_sop,
-  ].filter((value) => value === true).length;
 }
 
 export function buildAuditResultsWebhookPayload(input: {
@@ -122,8 +117,6 @@ export function buildAuditResultsWebhookPayload(input: {
     };
   }
 
-  const passedChecks = countPassedComplianceChecks(audit);
-
   return {
     event: 'store_audit.completed',
     version: 1,
@@ -138,18 +131,18 @@ export function buildAuditResultsWebhookPayload(input: {
       type: audit.type,
       type_label: formatAuditTypeLabel(audit.type),
       completed_at: String(audit.completed_at ?? ''),
-      observed_at: audit.comp_check_in_time,
+      observed_at: audit.created_at,
       source_type: 'attendance',
       source_reference:
-        audit.comp_odoo_employee_id !== null
-          ? `employee:${audit.comp_odoo_employee_id}`
+        audit.scc_odoo_employee_id !== null
+          ? `employee:${audit.scc_odoo_employee_id}`
           : `audit:${audit.id}`,
     },
     summary: {
-      result_line: `Passed checks: ${passedChecks} / 4`,
-      overall_value: passedChecks,
-      overall_max: 4,
-      overall_unit: 'checks',
+      result_line: 'Status: Completed. Includes compliance checks and customer service ratings.',
+      overall_value: null,
+      overall_max: null,
+      overall_unit: 'text',
     },
   };
 }
@@ -169,7 +162,7 @@ async function defaultFindUserByUserKey(
 
   const fullName = `${String(row.first_name ?? '').trim()} ${String(row.last_name ?? '').trim()}`.trim()
     || audit.css_cashier_name
-    || audit.comp_employee_name
+    || audit.scc_employee_name
     || email;
 
   return {
@@ -196,7 +189,7 @@ async function defaultFindUserById(
 
   const fullName = `${String(row.first_name ?? '').trim()} ${String(row.last_name ?? '').trim()}`.trim()
     || audit.css_cashier_name
-    || audit.comp_employee_name
+    || audit.scc_employee_name
     || email;
 
   return {
@@ -244,8 +237,8 @@ export function createStoreAuditResultsWebhookNotifier(
 ) {
   const deps: StoreAuditResultsWebhookNotifierDeps = {
     webhookUrl: overrides.webhookUrl ?? AUDIT_RESULTS_WEBHOOK_URL,
-    resolveComplianceWebsiteUserKey:
-      overrides.resolveComplianceWebsiteUserKey ?? getEmployeeWebsiteKeyByEmployeeId,
+    resolveServiceCrewCctvWebsiteUserKey:
+      overrides.resolveServiceCrewCctvWebsiteUserKey ?? getEmployeeWebsiteKeyByEmployeeId,
     findUserById: overrides.findUserById ?? defaultFindUserById,
     findUserByUserKey: overrides.findUserByUserKey ?? defaultFindUserByUserKey,
     findCompanyById: overrides.findCompanyById ?? defaultFindCompanyById,
@@ -270,8 +263,8 @@ export function createStoreAuditResultsWebhookNotifier(
     if (!recipient) {
       const legacyAuditedUserKey = input.audit.type === 'customer_service'
         ? String(input.audit.css_cashier_user_key ?? '').trim() || null
-        : input.audit.comp_odoo_employee_id !== null
-          ? await deps.resolveComplianceWebsiteUserKey(Number(input.audit.comp_odoo_employee_id))
+        : input.audit.scc_odoo_employee_id !== null
+          ? await deps.resolveServiceCrewCctvWebsiteUserKey(Number(input.audit.scc_odoo_employee_id))
           : null;
 
       if (legacyAuditedUserKey) {

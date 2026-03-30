@@ -46,7 +46,7 @@ export interface OdooPosOrderPayload {
 
 export type AuditResultsWebhookEvent = 'store_audit.completed';
 export type AuditResultsWebhookSourceType = 'pos_order' | 'attendance';
-export type AuditResultsWebhookOverallUnit = 'rating' | 'checks';
+export type AuditResultsWebhookOverallUnit = 'rating' | 'checks' | 'text';
 
 export interface AuditResultsWebhookRecipient {
   user_id: string;
@@ -67,8 +67,8 @@ export interface AuditResultsWebhookBranch {
 
 export interface AuditResultsWebhookAudit {
   id: string;
-  type: 'customer_service' | 'compliance';
-  type_label: 'Customer Service Audit' | 'Compliance Audit';
+  type: 'customer_service' | 'service_crew_cctv';
+  type_label: 'Customer Service Audit' | 'Service Crew CCTV Audit';
   completed_at: string;
   observed_at: string | null;
   source_type: AuditResultsWebhookSourceType;
@@ -77,8 +77,8 @@ export interface AuditResultsWebhookAudit {
 
 export interface AuditResultsWebhookSummary {
   result_line: string;
-  overall_value: number;
-  overall_max: number;
+  overall_value: number | null;
+  overall_max: number | null;
   overall_unit: AuditResultsWebhookOverallUnit;
 }
 
@@ -95,7 +95,7 @@ export interface AuditResultsWebhookPayload {
 export type CronJobNotificationEvent = 'cron_job.run';
 export type CronJobNotificationStatus = 'success' | 'failed';
 export type CronJobNotificationTrigger = 'scheduled' | 'startup' | 'manual';
-export type CronJobNotificationFamily = 'compliance' | 'epi_snapshot' | 'peer_evaluation_expiry';
+export type CronJobNotificationFamily = 'service_crew_cctv' | 'epi_snapshot' | 'peer_evaluation_expiry';
 
 export interface CronJobNotificationJob {
   name: string;

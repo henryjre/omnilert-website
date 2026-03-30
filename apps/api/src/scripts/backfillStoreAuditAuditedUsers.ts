@@ -1,9 +1,9 @@
 import { db } from '../config/database.js';
 import { getEmployeeWebsiteKeyByEmployeeId } from '../services/odoo.service.js';
 
-type ComplianceAuditRow = {
+type ServiceCrewCctvAuditRow = {
   id: string;
-  comp_odoo_employee_id: number | null;
+  scc_odoo_employee_id: number | null;
   audited_user_id: string | null;
   audited_user_key: string | null;
 };
@@ -37,19 +37,19 @@ function parseArgs(): { limit: number | null; dryRun: boolean } {
   return { limit, dryRun };
 }
 
-async function listCandidateRows(limit: number | null): Promise<ComplianceAuditRow[]> {
+async function listCandidateRows(limit: number | null): Promise<ServiceCrewCctvAuditRow[]> {
   const query = db.getDb()('store_audits')
-    .where({ type: 'compliance' })
+    .where({ type: 'service_crew_cctv' })
     .whereNull('audited_user_id')
-    .whereNotNull('comp_odoo_employee_id')
-    .select('id', 'comp_odoo_employee_id', 'audited_user_id', 'audited_user_key')
+    .whereNotNull('scc_odoo_employee_id')
+    .select('id', 'scc_odoo_employee_id', 'audited_user_id', 'audited_user_key')
     .orderBy('created_at', 'asc');
 
   if (limit !== null) {
     query.limit(limit);
   }
 
-  return query as Promise<ComplianceAuditRow[]>;
+  return query as Promise<ServiceCrewCctvAuditRow[]>;
 }
 
 async function resolveUserByWebsiteKey(userKey: string): Promise<{ id: string } | null> {
@@ -89,7 +89,7 @@ async function run(): Promise<void> {
     stats.scanned = rows.length;
 
     for (const row of rows) {
-      const employeeId = Number(row.comp_odoo_employee_id);
+      const employeeId = Number(row.scc_odoo_employee_id);
       if (!Number.isFinite(employeeId) || employeeId <= 0) {
         stats.skippedNoEmployeeId += 1;
         continue;
@@ -122,7 +122,7 @@ async function run(): Promise<void> {
       stats.updated += 1;
     }
 
-    console.log('Compliance audited-user backfill completed.');
+    console.log('Service Crew CCTV audited-user backfill completed.');
     console.log(JSON.stringify({
       dryRun,
       limit,
@@ -134,6 +134,6 @@ async function run(): Promise<void> {
 }
 
 run().catch((error) => {
-  console.error('Compliance audited-user backfill failed:', error);
+  console.error('Service Crew CCTV audited-user backfill failed:', error);
   process.exitCode = 1;
 });

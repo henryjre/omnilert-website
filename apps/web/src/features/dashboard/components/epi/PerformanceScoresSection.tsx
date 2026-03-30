@@ -75,24 +75,18 @@ export function PerformanceScoresSection({ criteria, wrsStatus }: PerformanceSco
   return (
     <div>
       <SectionLabel>Performance Scores</SectionLabel>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 items-stretch">
-        <StarTile
-          label="Customer Service Score"
-          score={criteria.sqaaScore}
-          subtext="Contributes to EPI"
-          delay={0}
-        />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 items-stretch">
         <StarTile
           label="Workplace Relations Score"
           score={criteria.workplaceRelationsScore}
           subtext={criteria.workplaceRelationsScore !== null ? wrsDelayedText : wrsEmptyText}
-          delay={0.15}
+          delay={0}
         />
         <StarTile
           label="Professional Conduct Score"
           score={criteria.professionalConductScore}
           subtext={criteria.professionalConductScore !== null ? 'Contributes to EPI' : 'Awaiting management evaluations'}
-          delay={0.3}
+          delay={0.15}
         />
       </div>
     </div>

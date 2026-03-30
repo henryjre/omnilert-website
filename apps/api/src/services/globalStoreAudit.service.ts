@@ -29,7 +29,6 @@ function normalizeAuditRow(row: any): StoreAudit {
     css_order_lines: parseJsonField(row.css_order_lines, null),
     css_payments: parseJsonField(row.css_payments, null),
     css_criteria_scores: parseJsonField(row.css_criteria_scores, null),
-    comp_extra_fields: parseJsonField(row.comp_extra_fields, null),
   };
 }
 
@@ -38,13 +37,17 @@ async function enrichAuditRows(rows: any[]): Promise<StoreAudit[]> {
 
   const branchIds = [...new Set(rows.map((r) => r.branch_id).filter(Boolean))] as string[];
   const auditorIds = [...new Set(rows.map((r) => r.auditor_user_id).filter(Boolean))] as string[];
+  const auditedUserIds = [...new Set(rows.map((r) => r.audited_user_id).filter(Boolean))] as string[];
 
-  const [branches, auditors] = await Promise.all([
+  const [branches, auditors, auditedUsers] = await Promise.all([
     branchIds.length > 0
       ? db.getDb()('branches').whereIn('id', branchIds).select('id', 'name')
       : Promise.resolve([]),
     auditorIds.length > 0
       ? hydrateUsersByIds(auditorIds, ['id', 'first_name', 'last_name'])
+      : Promise.resolve({} as Record<string, any>),
+    auditedUserIds.length > 0
+      ? hydrateUsersByIds(auditedUserIds, ['id', 'avatar_url'])
       : Promise.resolve({} as Record<string, any>),
   ]);
 
@@ -70,6 +73,10 @@ async function enrichAuditRows(rows: any[]): Promise<StoreAudit[]> {
       auditor_name: auditor
         ? `${auditor.first_name ?? ''} ${auditor.last_name ?? ''}`.trim() || null
         : null,
+      audited_user_avatar_url:
+        normalized.audited_user_id && auditedUsers[normalized.audited_user_id]
+          ? (auditedUsers[normalized.audited_user_id]?.avatar_url as string | null | undefined) ?? null
+          : null,
       company:
         companyId && companyName && companySlug
           ? { id: companyId, name: companyName, slug: companySlug }
@@ -127,7 +134,16 @@ type GlobalStoreAuditServiceDeps = {
     companyId: string;
     payload:
       | { criteria_scores: CssCriteriaScores }
-      | { productivity_rate: boolean; uniform: boolean; hygiene: boolean; sop: boolean };
+      | {
+        productivity_rate: boolean | null;
+        uniform_compliance: boolean | null;
+        hygiene_compliance: boolean | null;
+        sop_compliance: boolean | null;
+        customer_interaction: number;
+        cashiering: number;
+        suggestive_selling_and_upselling: number;
+        service_efficiency: number;
+      };
   }) => Promise<StoreAudit>;
 };
 
@@ -292,7 +308,16 @@ async function defaultCompleteStoreAudit(input: {
   companyId: string;
   payload:
     | { criteria_scores: CssCriteriaScores }
-    | { productivity_rate: boolean; uniform: boolean; hygiene: boolean; sop: boolean };
+    | {
+      productivity_rate: boolean | null;
+      uniform_compliance: boolean | null;
+      hygiene_compliance: boolean | null;
+      sop_compliance: boolean | null;
+      customer_interaction: number;
+      cashiering: number;
+      suggestive_selling_and_upselling: number;
+      service_efficiency: number;
+    };
 }): Promise<StoreAudit> {
   const mod = await import('./storeAudit.service.js');
   return mod.completeStoreAudit(input);
@@ -423,7 +448,16 @@ export function createGlobalStoreAuditService(
       userId: string;
       payload:
         | { criteria_scores: CssCriteriaScores }
-        | { productivity_rate: boolean; uniform: boolean; hygiene: boolean; sop: boolean };
+        | {
+          productivity_rate: boolean | null;
+          uniform_compliance: boolean | null;
+          hygiene_compliance: boolean | null;
+          sop_compliance: boolean | null;
+          customer_interaction: number;
+          cashiering: number;
+          suggestive_selling_and_upselling: number;
+          service_efficiency: number;
+        };
     }): Promise<StoreAudit> {
       const context = await deps.resolveAuditCompanyContext(input.auditId);
       if (!context) throw new AppError(404, 'Store audit not found');

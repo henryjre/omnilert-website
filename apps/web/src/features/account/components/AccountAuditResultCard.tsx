@@ -1,6 +1,6 @@
 import React from 'react';
 import type { AccountAuditResultListItem } from '@omnilert/shared';
-import { Building2, ChevronRight, GitBranch, ShieldCheck, Star } from 'lucide-react';
+import { Building2, ChevronRight, GitBranch, ShieldCheck } from 'lucide-react';
 
 function formatDate(value: string | null): string {
   if (!value) return '-';
@@ -26,12 +26,6 @@ export function AccountAuditResultCard({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const TypeIcon = audit.type === 'customer_service' ? Star : ShieldCheck;
-  const typeStyles = audit.type === 'customer_service'
-    ? 'bg-amber-50 text-amber-700 ring-amber-200'
-    : 'bg-blue-50 text-blue-700 ring-blue-200';
-  const typeLabel = audit.type === 'customer_service' ? 'CSS' : 'Compliance';
-
   return (
     <button
       type="button"
@@ -43,14 +37,11 @@ export function AccountAuditResultCard({
       }`}
     >
       <div className="flex items-center justify-between gap-3">
-        {/* Left: type badge + type label + branch + company */}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span
-              className={`inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset ${typeStyles}`}
-            >
-              <TypeIcon className="h-3 w-3" />
-              {typeLabel}
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-blue-50 px-1.5 py-0.5 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-200">
+              <ShieldCheck className="h-3 w-3" />
+              SCC
             </span>
             <p className="truncate text-sm font-semibold text-gray-900">{audit.type_label}</p>
           </div>
@@ -71,10 +62,9 @@ export function AccountAuditResultCard({
           <p className="mt-1 text-xs text-gray-400">{formatDate(audit.completed_at)}</p>
         </div>
 
-        {/* Right: result line + chevron */}
         <div className="flex shrink-0 items-center gap-2">
-          <p className="text-right text-sm font-semibold text-primary-700">
-            {audit.summary.result_line.replace('Overall score: ', '').replace('Passed checks: ', '')}
+          <p className="max-w-[220px] text-right text-sm font-semibold text-primary-700">
+            {audit.summary.result_line}
           </p>
           <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" />
         </div>

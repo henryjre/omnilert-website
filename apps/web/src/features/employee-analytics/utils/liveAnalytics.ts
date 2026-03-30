@@ -9,7 +9,6 @@ import {
 } from './analyticsRangeBuckets';
 
 export const SUPPORTED_ROLLING_METRIC_IDS: readonly RollingMetricId[] = [
-  'customer-service',
   'workplace-relations',
   'attendance-rate',
   'punctuality-rate',
@@ -33,7 +32,6 @@ type SnapshotMetricField =
   | 'epiScore';
 
 const SNAPSHOT_METRIC_FIELD_BY_ID: Record<Exclude<EmployeeAnalyticsMetricId, 'professional-conduct'> | 'epi-score', SnapshotMetricField> = {
-  'customer-service': 'customerServiceScore',
   'workplace-relations': 'workplaceRelationsScore',
   'attendance-rate': 'attendanceRate',
   'punctuality-rate': 'punctualityRate',

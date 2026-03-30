@@ -396,7 +396,6 @@ const BRANCH_AVERAGES = {
   epi: 85.4,
   awards: 8.2,
   violations: 1.4,
-  'customer-service': 4.2,
   'workplace-relations': 4.0,
   'professional-conduct': 4.2,
   'attendance-rate': 98.4,
@@ -482,7 +481,6 @@ const getPersonalizedStats = (userName: string) => {
         awards: totals.awards,
         violations: totals.violations,
         metrics: {
-          'customer-service': readLatest('customer-service'),
           'workplace-relations': readLatest('workplace-relations'),
           'professional-conduct': 0,
           'attendance-rate': readLatest('attendance-rate'),
@@ -495,15 +493,14 @@ const getPersonalizedStats = (userName: string) => {
         },
       };
     }
-    return {
-      epi: 0,
-      epiTrend: 0,
-      awards: 0,
-      violations: 0,
-      metrics: {
-        'customer-service': 0,
-        'workplace-relations': 0,
-        'professional-conduct': 0,
+      return {
+        epi: 0,
+        epiTrend: 0,
+        awards: 0,
+        violations: 0,
+        metrics: {
+          'workplace-relations': 0,
+          'professional-conduct': 0,
         'attendance-rate': 0,
         'punctuality-rate': 0,
         'productivity-rate': 0,
@@ -532,7 +529,6 @@ const getPersonalizedStats = (userName: string) => {
     awards: Math.floor(getVal(BRANCH_AVERAGES.awards, 10)),
     violations: Math.floor(Math.max(0, getVal(BRANCH_AVERAGES.violations, 4))),
     metrics: {
-      'customer-service': getLikert(BRANCH_AVERAGES['customer-service']),
       'workplace-relations': getLikert(BRANCH_AVERAGES['workplace-relations']),
       'professional-conduct': getLikert(BRANCH_AVERAGES['professional-conduct']),
       'attendance-rate': Math.min(100, getVal(BRANCH_AVERAGES['attendance-rate'], 5)),
@@ -559,7 +555,6 @@ function getBaseMetricValueForEmployee(employeeName: string, metricId: string): 
 }
 
 const METRICS: Array<{ id: EmployeeAnalyticsMetricId; label: string; supported: boolean }> = [
-  { id: 'customer-service', label: 'Customer Service Score', supported: true },
   { id: 'workplace-relations', label: 'Workplace Relations Score', supported: true },
   { id: 'professional-conduct', label: 'Professional Conduct Score', supported: false },
   { id: 'attendance-rate', label: 'Attendance Rate', supported: true },
@@ -570,6 +565,10 @@ const METRICS: Array<{ id: EmployeeAnalyticsMetricId; label: string; supported: 
   { id: 'hygiene-compliance', label: 'Hygiene Compliance', supported: true },
   { id: 'sop-compliance', label: 'SOP Compliance', supported: true },
 ];
+
+function coerceLegacyMetricSelection<T extends string | null>(metricId: T): T | 'workplace-relations' {
+  return (metricId === 'customer-service' ? 'workplace-relations' : metricId) as T | 'workplace-relations';
+}
 
 function hashRangeSeed(selection: AnalyticsRangeSelection): number {
   if (ACTIVE_LIVE_DATASET) {
@@ -1998,8 +1997,14 @@ function PersonalTrendCard({
   userName: string;
   analyticsRange: AnalyticsRangeSelection;
 }) {
-  const [selectedMetric, setSelectedMetric] = useState<string>(METRICS[0].id);
+  const [selectedMetric, setSelectedMetric] = useState<string>(coerceLegacyMetricSelection(METRICS[0].id));
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+
+  useEffect(() => {
+    if (selectedMetric === 'customer-service') {
+      setSelectedMetric('workplace-relations');
+    }
+  }, [selectedMetric]);
 
   const chartData = useMemo(
     () => buildPersonalMetricTrendRows(userName, selectedMetric, analyticsRange),
@@ -2334,7 +2339,6 @@ function PersonalRadarCard({
 // ─── Metric Detail Configs ───────────────────────────────────────────────────
 
 const GLOBAL_AVERAGES: Record<string, number> = {
-  'Customer Service': 4.1,
   'Workplace Relations': 3.9,
   'Professional Conduct': 0,
   'Attendance': 96.1,
@@ -2354,15 +2358,6 @@ interface MetricDetailConfig {
 }
 
 const METRIC_DETAIL_CONFIGS: Record<EmployeeAnalyticsMetricId, MetricDetailConfig> = {
-  'customer-service': {
-    columns: [
-      { key: 'completedAt', label: 'Date' },
-      { key: 'branchName', label: 'Branch' },
-      { key: 'auditorName', label: 'Auditor' },
-      { key: 'score', label: 'Score' },
-    ],
-    formula: 'Average of all customer-service evaluations in period',
-  },
   'workplace-relations': {
     columns: [
       { key: 'submittedAt', label: 'Submitted Date' },
@@ -2583,7 +2578,6 @@ function PersonalMetricsBreakdownCard({
         title: "Core Performance",
         icon: <BarChart2 className="h-3.5 w-3.5 text-blue-500" />,
         items: [
-          mk("Customer Service", "customer-service"),
           mk("Workplace Relations", "workplace-relations"),
           mk("Professional Conduct", "professional-conduct"),
         ],
@@ -2992,8 +2986,14 @@ function TrendAnalyticsCard({
   const [selectedUsers, setSelectedUsers] = useState<string[]>(
     ANALYTICS_USERS.length > 0 ? [ANALYTICS_USERS[0]] : [],
   );
-  const [selectedMetric, setSelectedMetric] = useState<string>(METRICS[0].id);
+  const [selectedMetric, setSelectedMetric] = useState<string>(coerceLegacyMetricSelection(METRICS[0].id));
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+
+  useEffect(() => {
+    if (selectedMetric === 'customer-service') {
+      setSelectedMetric('workplace-relations');
+    }
+  }, [selectedMetric]);
 
   const chartData = useMemo(
     () => buildTrendComparisonRows(analyticsRange, selectedUsers, selectedMetric),
@@ -3914,7 +3914,6 @@ function CompactUserSelect({
 // ─── Individual Metrics View Components ──────────────────────────────────────
 
 const METRIC_LABELS: Record<string, string> = {
-  'customer-service': 'Customer Service Score',
   'workplace-relations': 'Workplace Relations Score',
   'professional-conduct': 'Professional Conduct Score',
   'attendance-rate': 'Attendance Rate',
@@ -4849,7 +4848,6 @@ const ANALYTICS_VIEW_OPTIONS: ViewOption<AnalyticsView>[] = [
 // ─── Metric Select Dropdown (mirrors SingleUserSelect style) ────────────────
 
 const METRIC_ICONS: Record<string, React.ReactNode> = {
-  'customer-service': <Users className="h-3.5 w-3.5" />,
   'workplace-relations': <Users className="h-3.5 w-3.5" />,
   'professional-conduct': <Trophy className="h-3.5 w-3.5" />,
   'attendance-rate': <Calendar className="h-3.5 w-3.5" />,
@@ -4862,7 +4860,7 @@ const METRIC_ICONS: Record<string, React.ReactNode> = {
 };
 
 function getMetricCategory(id: string): string {
-  if (['customer-service', 'workplace-relations', 'professional-conduct'].includes(id)) return 'Core Performance';
+  if (['workplace-relations', 'professional-conduct'].includes(id)) return 'Core Performance';
   if (['attendance-rate', 'punctuality-rate', 'productivity-rate', 'average-order-value'].includes(id)) return 'Operational';
   return 'Compliance';
 }
@@ -5034,10 +5032,16 @@ function MetricsViewContent({
   periodLabel: string;
   analyticsRange: AnalyticsRangeSelection;
 }) {
-  const [selectedMetric, setSelectedMetric] = useState<string>(METRICS[0].id);
+  const [selectedMetric, setSelectedMetric] = useState<string>(coerceLegacyMetricSelection(METRICS[0].id));
   const selectedMetricMeta = METRICS.find((metric) => metric.id === selectedMetric);
   const selectedMetricSupported = selectedMetricMeta?.supported ?? true;
   const { stickyRef: metricsHeaderRef, isStuck: isMetricsHeaderStuck } = useStickyHeaderState(analyticsRange);
+
+  useEffect(() => {
+    if (selectedMetric === 'customer-service') {
+      setSelectedMetric('workplace-relations');
+    }
+  }, [selectedMetric]);
 
   return (
     <div className="space-y-6">

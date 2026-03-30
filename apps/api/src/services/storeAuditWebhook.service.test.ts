@@ -21,11 +21,12 @@ const {
 function createCompletedAudit(
   overrides: Partial<{
     id: string;
-    type: 'customer_service' | 'compliance';
+    type: 'customer_service' | 'service_crew_cctv';
     status: 'completed';
     branch_id: string;
     branch_name: string | null;
     completed_at: string;
+    created_at: string;
     css_date_order: string | null;
     css_pos_reference: string | null;
     css_odoo_order_id: number | null;
@@ -35,13 +36,16 @@ function createCompletedAudit(
     audited_user_key: string | null;
     css_cashier_user_key: string | null;
     css_star_rating: number | null;
-    comp_check_in_time: string | null;
-    comp_odoo_employee_id: number | null;
-    comp_employee_name: string | null;
-    comp_productivity_rate: boolean | null;
-    comp_uniform: boolean | null;
-    comp_hygiene: boolean | null;
-    comp_sop: boolean | null;
+    scc_odoo_employee_id: number | null;
+    scc_employee_name: string | null;
+    scc_productivity_rate: boolean | null;
+    scc_uniform_compliance: boolean | null;
+    scc_hygiene_compliance: boolean | null;
+    scc_sop_compliance: boolean | null;
+    scc_customer_interaction: number | null;
+    scc_cashiering: number | null;
+    scc_suggestive_selling_and_upselling: number | null;
+    scc_service_efficiency: number | null;
   }> = {},
 ) {
   return {
@@ -51,6 +55,7 @@ function createCompletedAudit(
     branch_id: overrides.branch_id ?? 'branch-1',
     branch_name: overrides.branch_name ?? 'Main Branch',
     completed_at: overrides.completed_at ?? '2026-03-21T10:00:00.000Z',
+    created_at: overrides.created_at ?? '2026-03-21T08:30:00.000Z',
     css_date_order: overrides.css_date_order ?? '2026-03-21T09:15:00.000Z',
     css_pos_reference: overrides.css_pos_reference ?? 'POS/000123',
     css_odoo_order_id: overrides.css_odoo_order_id ?? 123,
@@ -60,13 +65,17 @@ function createCompletedAudit(
     audited_user_key: overrides.audited_user_key ?? null,
     css_cashier_user_key: overrides.css_cashier_user_key ?? 'user-key-css',
     css_star_rating: overrides.css_star_rating ?? 4.2,
-    comp_check_in_time: overrides.comp_check_in_time ?? '2026-03-21T08:30:00.000Z',
-    comp_odoo_employee_id: overrides.comp_odoo_employee_id ?? 77,
-    comp_employee_name: overrides.comp_employee_name ?? 'Compliance Crew',
-    comp_productivity_rate: overrides.comp_productivity_rate ?? true,
-    comp_uniform: overrides.comp_uniform ?? true,
-    comp_hygiene: overrides.comp_hygiene ?? false,
-    comp_sop: overrides.comp_sop ?? true,
+    scc_odoo_employee_id: overrides.scc_odoo_employee_id ?? 77,
+    scc_employee_name: overrides.scc_employee_name ?? 'Service Crew',
+    scc_productivity_rate: overrides.scc_productivity_rate ?? true,
+    scc_uniform_compliance: overrides.scc_uniform_compliance ?? true,
+    scc_hygiene_compliance: overrides.scc_hygiene_compliance ?? null,
+    scc_sop_compliance: overrides.scc_sop_compliance ?? false,
+    scc_customer_interaction: overrides.scc_customer_interaction ?? 4,
+    scc_cashiering: overrides.scc_cashiering ?? 5,
+    scc_suggestive_selling_and_upselling:
+      overrides.scc_suggestive_selling_and_upselling ?? 3,
+    scc_service_efficiency: overrides.scc_service_efficiency ?? 4,
   };
 }
 
@@ -125,20 +134,24 @@ test('buildAuditResultsWebhookPayload creates the shared CSS payload shape', () 
   });
 });
 
-test('buildAuditResultsWebhookPayload creates the shared compliance payload shape', () => {
+test('buildAuditResultsWebhookPayload creates the shared SCC payload shape with text summary', () => {
   const payload = buildAuditResultsWebhookPayload({
     audit: createCompletedAudit({
-      type: 'compliance',
-      comp_odoo_employee_id: 88,
-      comp_check_in_time: '2026-03-21T08:30:00.000Z',
-      comp_productivity_rate: true,
-      comp_uniform: true,
-      comp_hygiene: false,
-      comp_sop: true,
+      type: 'service_crew_cctv',
+      created_at: '2026-03-21T08:30:00.000Z',
+      scc_odoo_employee_id: 88,
+      scc_productivity_rate: true,
+      scc_uniform_compliance: true,
+      scc_hygiene_compliance: null,
+      scc_sop_compliance: false,
+      scc_customer_interaction: 4,
+      scc_cashiering: 5,
+      scc_suggestive_selling_and_upselling: 3,
+      scc_service_efficiency: 4,
     }),
     recipient: {
       user_id: 'user-2',
-      user_key: 'user-key-comp',
+      user_key: 'user-key-scc',
       email: 'crew@example.com',
       full_name: 'John Doe',
     },
@@ -153,7 +166,7 @@ test('buildAuditResultsWebhookPayload creates the shared compliance payload shap
     version: 1,
     recipient: {
       user_id: 'user-2',
-      user_key: 'user-key-comp',
+      user_key: 'user-key-scc',
       email: 'crew@example.com',
       full_name: 'John Doe',
     },
@@ -167,18 +180,18 @@ test('buildAuditResultsWebhookPayload creates the shared compliance payload shap
     },
     audit: {
       id: 'audit-1',
-      type: 'compliance',
-      type_label: 'Compliance Audit',
+      type: 'service_crew_cctv',
+      type_label: 'Service Crew CCTV Audit',
       completed_at: '2026-03-21T10:00:00.000Z',
       observed_at: '2026-03-21T08:30:00.000Z',
       source_type: 'attendance',
       source_reference: 'employee:88',
     },
     summary: {
-      result_line: 'Passed checks: 3 / 4',
-      overall_value: 3,
-      overall_max: 4,
-      overall_unit: 'checks',
+      result_line: 'Status: Completed. Includes compliance checks and customer service ratings.',
+      overall_value: null,
+      overall_max: null,
+      overall_unit: 'text',
     },
   });
 });
@@ -201,7 +214,7 @@ test('buildAuditResultsWebhookPayload excludes auditor and raw-trail data', () =
   const serialized = JSON.stringify(payload);
   assert.doesNotMatch(serialized, /auditor/i);
   assert.doesNotMatch(serialized, /css_audit_log/i);
-  assert.doesNotMatch(serialized, /comp_ai_report/i);
+  assert.doesNotMatch(serialized, /scc_ai_report/i);
   assert.doesNotMatch(serialized, /attachment/i);
   assert.doesNotMatch(serialized, /message/i);
 });
@@ -211,7 +224,7 @@ test('createStoreAuditResultsWebhookNotifier skips delivery when recipient canno
   let sendCalls = 0;
   const notifyCompletedStoreAudit = createStoreAuditResultsWebhookNotifier({
     webhookUrl: 'https://example.com/webhook/audit_results',
-    resolveComplianceWebsiteUserKey: async () => null,
+    resolveServiceCrewCctvWebsiteUserKey: async () => null,
     findUserById: async () => null,
     findUserByUserKey: async () => null,
     findCompanyById: async () => ({ id: 'company-1', name: 'Omnilert Company' }),
@@ -250,11 +263,11 @@ test('createStoreAuditResultsWebhookNotifier logs webhook failures without block
   let sendCalls = 0;
   const notifyCompletedStoreAudit = createStoreAuditResultsWebhookNotifier({
     webhookUrl: 'https://example.com/webhook/audit_results',
-    resolveComplianceWebsiteUserKey: async () => 'user-key-comp',
+    resolveServiceCrewCctvWebsiteUserKey: async () => 'user-key-scc',
     findUserById: async () => null,
     findUserByUserKey: async () => ({
       user_id: 'user-2',
-      user_key: 'user-key-comp',
+      user_key: 'user-key-scc',
       email: 'crew@example.com',
       full_name: 'John Doe',
     }),
@@ -275,10 +288,10 @@ test('createStoreAuditResultsWebhookNotifier logs webhook failures without block
   const result = await notifyCompletedStoreAudit({
     companyId: 'company-1',
     audit: createCompletedAudit({
-      type: 'compliance',
+      type: 'service_crew_cctv',
       audited_user_id: null,
       audited_user_key: null,
-      comp_odoo_employee_id: 88,
+      scc_odoo_employee_id: 88,
     }),
   });
 
@@ -296,7 +309,7 @@ test('createStoreAuditResultsWebhookNotifier prefers canonical audited_user_id w
   let idLookupCalls = 0;
   const notifyCompletedStoreAudit = createStoreAuditResultsWebhookNotifier({
     webhookUrl: 'https://example.com/webhook/audit_results',
-    resolveComplianceWebsiteUserKey: async () => {
+    resolveServiceCrewCctvWebsiteUserKey: async () => {
       throw new Error('legacy resolver should not be used');
     },
     findUserById: async (userId) => {
@@ -326,7 +339,7 @@ test('createStoreAuditResultsWebhookNotifier prefers canonical audited_user_id w
   const result = await notifyCompletedStoreAudit({
     companyId: 'company-1',
     audit: createCompletedAudit({
-      type: 'customer_service',
+      type: 'service_crew_cctv',
       audited_user_id: 'user-42',
       audited_user_key: 'user-key-42',
     }),

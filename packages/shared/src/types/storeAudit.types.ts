@@ -1,4 +1,4 @@
-export type StoreAuditType = 'customer_service' | 'compliance';
+export type StoreAuditType = 'customer_service' | 'service_crew_cctv';
 
 export interface CssCriteriaScores {
   greeting: number;           // 1-5
@@ -81,6 +81,7 @@ export interface StoreAudit {
   css_cashier_user_key: string | null;
   audited_user_id: string | null;
   audited_user_key: string | null;
+  audited_user_avatar_url?: string | null;
   css_date_order: string | null;
   css_amount_total: string | null;
   css_order_lines: StoreAuditOrderLine[] | null;
@@ -90,15 +91,17 @@ export interface StoreAudit {
   css_audit_log: string | null;
   css_ai_report: string | null;
 
-  comp_odoo_employee_id: number | null;
-  comp_employee_name: string | null;
-  comp_check_in_time: string | null;
-  comp_extra_fields: Record<string, unknown> | null;
-  comp_productivity_rate: boolean | null;
-  comp_uniform: boolean | null;
-  comp_hygiene: boolean | null;
-  comp_sop: boolean | null;
-  comp_ai_report?: string | null;
+  scc_odoo_employee_id: number | null;
+  scc_employee_name: string | null;
+  scc_productivity_rate: boolean | null;
+  scc_uniform_compliance: boolean | null;
+  scc_hygiene_compliance: boolean | null;
+  scc_sop_compliance: boolean | null;
+  scc_customer_interaction: number | null;
+  scc_cashiering: number | null;
+  scc_suggestive_selling_and_upselling: number | null;
+  scc_service_efficiency: number | null;
+  scc_ai_report?: string | null;
 }
 
 export interface ListStoreAuditsResponse {

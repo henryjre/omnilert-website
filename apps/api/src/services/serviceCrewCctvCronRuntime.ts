@@ -1,11 +1,11 @@
-export type ComplianceRunOutcome =
+export type ServiceCrewCctvRunOutcome =
   | { status: 'success' }
   | { status: 'skipped'; reason?: string | null };
 
-interface ComplianceOccurrenceExecutorDeps {
+interface ServiceCrewCctvOccurrenceExecutorDeps {
   jobName: string;
   claimOccurrence: (scheduledFor: Date) => Promise<boolean>;
-  runComplianceJob: () => Promise<ComplianceRunOutcome>;
+  runServiceCrewCctvJob: () => Promise<ServiceCrewCctvRunOutcome>;
   markSuccess: (scheduledFor: Date) => Promise<void>;
   markSkipped: (scheduledFor: Date, reason?: string | null) => Promise<void>;
   markFailure: (scheduledFor: Date, error: unknown) => Promise<void>;
@@ -28,7 +28,9 @@ interface ComplianceOccurrenceExecutorDeps {
   formatScheduledForManila: (scheduledFor: Date) => string;
 }
 
-export function createComplianceOccurrenceExecutor(deps: ComplianceOccurrenceExecutorDeps) {
+export function createServiceCrewCctvOccurrenceExecutor(
+  deps: ServiceCrewCctvOccurrenceExecutorDeps,
+) {
   return async function executeOccurrence(input: {
     scheduledFor: Date;
     source: 'scheduled' | 'startup';
@@ -40,7 +42,7 @@ export function createComplianceOccurrenceExecutor(deps: ComplianceOccurrenceExe
     if (!claimed) {
       deps.logger.info(
         { jobName: deps.jobName, scheduledForKey, source: input.source },
-        'Skipping compliance cron occurrence; occurrence already claimed',
+        'Skipping service crew cctv cron occurrence; occurrence already claimed',
       );
       return;
     }
@@ -53,17 +55,17 @@ export function createComplianceOccurrenceExecutor(deps: ComplianceOccurrenceExe
         scheduledForManila,
         source: input.source,
       },
-      'Starting compliance cron occurrence',
+      'Starting service crew cctv cron occurrence',
     );
 
     try {
-      const outcome = await deps.runComplianceJob();
+      const outcome = await deps.runServiceCrewCctvJob();
       if (outcome.status === 'success') {
         const finishedAt = new Date();
         await deps.markSuccess(input.scheduledFor);
         deps.logger.info(
           { jobName: deps.jobName, scheduledForKey },
-          'Completed compliance cron occurrence',
+          'Completed service crew cctv cron occurrence',
         );
         if (deps.notifyResult) {
           try {
@@ -75,12 +77,12 @@ export function createComplianceOccurrenceExecutor(deps: ComplianceOccurrenceExe
               source: input.source,
               startedAt,
               finishedAt,
-              message: 'Completed compliance cron occurrence',
+              message: 'Completed service crew cctv cron occurrence',
             });
           } catch (notifyError) {
             deps.logger.error(
               { err: notifyError, jobName: deps.jobName, scheduledForKey },
-              'Failed to send compliance cron notification',
+              'Failed to send service crew cctv cron notification',
             );
           }
         }
@@ -90,14 +92,14 @@ export function createComplianceOccurrenceExecutor(deps: ComplianceOccurrenceExe
       await deps.markSkipped(input.scheduledFor, outcome.reason ?? null);
       deps.logger.info(
         { jobName: deps.jobName, scheduledForKey, reason: outcome.reason ?? null },
-        'Skipped compliance cron occurrence',
+        'Skipped service crew cctv cron occurrence',
       );
     } catch (error) {
       const finishedAt = new Date();
       await deps.markFailure(input.scheduledFor, error);
       deps.logger.error(
         { err: error, jobName: deps.jobName, scheduledForKey },
-        'Compliance cron occurrence failed',
+        'Service crew cctv cron occurrence failed',
       );
       if (deps.notifyResult) {
         try {
@@ -109,13 +111,13 @@ export function createComplianceOccurrenceExecutor(deps: ComplianceOccurrenceExe
             source: input.source,
             startedAt,
             finishedAt,
-            message: 'Compliance cron occurrence failed',
+            message: 'Service crew cctv cron occurrence failed',
             errorMessage: error instanceof Error ? error.message : String(error),
           });
         } catch (notifyError) {
           deps.logger.error(
             { err: notifyError, jobName: deps.jobName, scheduledForKey },
-            'Failed to send compliance cron notification',
+            'Failed to send service crew cctv cron notification',
           );
         }
       }

@@ -1,9 +1,8 @@
 import type { StoreAudit } from '@omnilert/shared';
 
-export type ComplianceAuditPanelTiming =
+export type ServiceCrewCctvAuditPanelTiming =
   | {
-      kind: 'active';
-      activeSince: string | null;
+      kind: 'processing';
       durationText: string | null;
     }
   | {
@@ -44,13 +43,13 @@ export function formatElapsedMinutes(totalMinutes: number): string {
   return `${hours} ${hourLabel} ${minutes} ${minuteLabel}`;
 }
 
-export function resolveComplianceAuditPanelTiming(
+export function resolveServiceCrewCctvAuditPanelTiming(
   audit: Pick<
     StoreAudit,
-    'status' | 'comp_check_in_time' | 'processing_started_at' | 'completed_at' | 'rejected_at'
+    'status' | 'processing_started_at' | 'completed_at' | 'rejected_at'
   >,
   now: Date = new Date(),
-): ComplianceAuditPanelTiming {
+): ServiceCrewCctvAuditPanelTiming {
   if (audit.status === 'completed') {
     const processingStartedAt = parseValidDate(audit.processing_started_at);
     const completedAt = parseValidDate(audit.completed_at);
@@ -73,12 +72,11 @@ export function resolveComplianceAuditPanelTiming(
     };
   }
 
-  const activeSince = parseValidDate(audit.comp_check_in_time);
-  const elapsedMinutes = getElapsedMinutes(activeSince, now);
+  const processingStartedAt = parseValidDate(audit.processing_started_at);
+  const elapsedMinutes = getElapsedMinutes(processingStartedAt, now);
 
   return {
-    kind: 'active',
-    activeSince: activeSince?.toISOString() ?? null,
+    kind: 'processing',
     durationText: elapsedMinutes === null ? null : formatElapsedMinutes(elapsedMinutes),
   };
 }

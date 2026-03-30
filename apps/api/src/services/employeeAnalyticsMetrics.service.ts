@@ -233,7 +233,11 @@ async function queryWorkplaceRelationsEvents(input: MetricEventQueryInput): Prom
 
 async function queryComplianceEvents(
   input: MetricEventQueryInput,
-  field: 'comp_productivity_rate' | 'comp_uniform' | 'comp_hygiene' | 'comp_sop',
+  field:
+    | 'scc_productivity_rate'
+    | 'scc_uniform_compliance'
+    | 'scc_hygiene_compliance'
+    | 'scc_sop_compliance',
 ): Promise<MetricEventQueryResult> {
   const { startYmd, endYmd } = normalizeRangeYmd(input.rangeStartYmd, input.rangeEndYmd);
   const start = toLocalStartDate(startYmd);
@@ -244,7 +248,7 @@ async function queryComplianceEvents(
     .leftJoin('branches as b', 'b.id', 'audits.branch_id')
     .leftJoin('users as auditor', 'auditor.id', 'audits.auditor_user_id')
     .where({
-      'audits.type': 'compliance',
+      'audits.type': 'service_crew_cctv',
       'audits.status': 'completed',
     })
     .andWhere((ownedQuery) => {
@@ -355,15 +359,15 @@ export async function getEmployeeMetricEventRows(input: MetricEventQueryInput): 
     case 'punctuality-rate':
       return queryPunctualityEvents(input);
     case 'productivity-rate':
-      return queryComplianceEvents(input, 'comp_productivity_rate');
+      return queryComplianceEvents(input, 'scc_productivity_rate');
     case 'average-order-value':
       return queryAovEvents(input);
     case 'uniform-compliance':
-      return queryComplianceEvents(input, 'comp_uniform');
+      return queryComplianceEvents(input, 'scc_uniform_compliance');
     case 'hygiene-compliance':
-      return queryComplianceEvents(input, 'comp_hygiene');
+      return queryComplianceEvents(input, 'scc_hygiene_compliance');
     case 'sop-compliance':
-      return queryComplianceEvents(input, 'comp_sop');
+      return queryComplianceEvents(input, 'scc_sop_compliance');
     default: {
       const _never: never = input.metricId;
       return _never;

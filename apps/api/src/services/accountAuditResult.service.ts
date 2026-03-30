@@ -3,7 +3,6 @@ import type {
   AccountAuditResultDetail,
   AccountAuditResultListItem,
   AccountAuditResultSummary,
-  CssCriteriaScores,
   ListAccountAuditResultsResponse,
   StoreAuditType,
 } from '@omnilert/shared';
@@ -24,19 +23,17 @@ type AuditRowSource = {
   created_at: string | Date;
   audited_user_id: string | null;
   audited_user_key: string | null;
-  css_cashier_user_key: string | null;
-  css_date_order: string | Date | null;
-  css_star_rating: number | null;
-  css_criteria_scores: CssCriteriaScores | string | null;
-  css_ai_report: string | null;
-  css_audit_log: string | null;
-  comp_odoo_employee_id: number | null;
-  comp_check_in_time: string | Date | null;
-  comp_productivity_rate: boolean | null;
-  comp_uniform: boolean | null;
-  comp_hygiene: boolean | null;
-  comp_sop: boolean | null;
-  comp_ai_report: string | null;
+  scc_odoo_employee_id: number | null;
+  scc_employee_name: string | null;
+  scc_productivity_rate: boolean | null;
+  scc_uniform_compliance: boolean | null;
+  scc_hygiene_compliance: boolean | null;
+  scc_sop_compliance: boolean | null;
+  scc_customer_interaction: number | null;
+  scc_cashiering: number | null;
+  scc_suggestive_selling_and_upselling: number | null;
+  scc_service_efficiency: number | null;
+  scc_ai_report: string | null;
 };
 
 type AuditMessageAttachmentSource = {
@@ -76,21 +73,7 @@ type AccountAuditResultServiceDeps = {
 };
 
 function formatAuditTypeLabel(type: StoreAuditType): AccountAuditResultListItem['type_label'] {
-  return type === 'customer_service' ? 'Customer Service Audit' : 'Compliance Audit';
-}
-
-function formatCompactNumber(value: number): string {
-  if (!Number.isFinite(value)) return '0';
-  return value.toFixed(2).replace(/\.?0+$/, '');
-}
-
-function countPassedComplianceChecks(row: AuditRowSource): number {
-  return [
-    row.comp_productivity_rate,
-    row.comp_uniform,
-    row.comp_hygiene,
-    row.comp_sop,
-  ].filter((value) => value === true).length;
+  return 'Service Crew CCTV Audit';
 }
 
 function toIsoString(value: string | Date | null | undefined): string | null {
@@ -100,42 +83,19 @@ function toIsoString(value: string | Date | null | undefined): string | null {
   return null;
 }
 
-function parseCriteriaScores(value: AuditRowSource['css_criteria_scores']): CssCriteriaScores | null {
-  if (!value) return null;
-  if (typeof value === 'string') {
-    try {
-      return JSON.parse(value) as CssCriteriaScores;
-    } catch {
-      return null;
-    }
-  }
-  return value;
-}
-
 function buildSummary(row: AuditRowSource): AccountAuditResultSummary {
-  if (row.type === 'customer_service') {
-    const overallValue = Number(row.css_star_rating ?? 0);
-    return {
-      result_line: `Overall score: ${formatCompactNumber(overallValue)} / 5`,
-      overall_value: overallValue,
-      overall_max: 5,
-      overall_unit: 'rating',
-    };
-  }
-
-  const passedChecks = countPassedComplianceChecks(row);
   return {
-    result_line: `Passed checks: ${passedChecks} / 4`,
-    overall_value: passedChecks,
-    overall_max: 4,
-    overall_unit: 'checks',
+    result_line: 'Status: Completed. Includes compliance checks and customer service ratings.',
+    overall_value: null,
+    overall_max: null,
+    overall_unit: 'text',
   };
 }
 
 function buildListItem(row: AuditRowSource): AccountAuditResultListItem {
   return {
     id: row.id,
-    type: row.type,
+    type: 'service_crew_cctv',
     type_label: formatAuditTypeLabel(row.type),
     company: {
       id: row.company_id,
@@ -147,10 +107,7 @@ function buildListItem(row: AuditRowSource): AccountAuditResultListItem {
       name: row.branch_name ?? 'Unknown Branch',
     },
     completed_at: String(toIsoString(row.completed_at) ?? toIsoString(row.created_at) ?? ''),
-    observed_at:
-      row.type === 'customer_service'
-        ? toIsoString(row.css_date_order)
-        : toIsoString(row.comp_check_in_time),
+    observed_at: toIsoString(row.created_at),
     summary: buildSummary(row),
   };
 }
@@ -181,49 +138,36 @@ function buildAuditTrail(row: AuditRowSource, messages: AuditMessageSource[]) {
     return visibleEntries;
   }
 
-  if (row.type === 'customer_service' && String(row.css_audit_log ?? '').trim()) {
-    return [
-      {
-        id: `audit-log-${row.id}`,
-        content: String(row.css_audit_log ?? '').trim(),
-        created_at: String(toIsoString(row.completed_at) ?? toIsoString(row.created_at) ?? ''),
-        attachments: [],
-      },
-    ];
-  }
-
   return [];
 }
 
 function buildDetail(row: AuditRowSource, messages: AuditMessageSource[]): AccountAuditResultDetail {
   return {
     ...buildListItem(row),
-    ai_report: row.type === 'customer_service' ? row.css_ai_report : row.comp_ai_report,
+    ai_report: row.scc_ai_report,
     audit_trail: buildAuditTrail(row, messages),
-    css_result:
-      row.type === 'customer_service'
-        ? {
-          criteria_scores: parseCriteriaScores(row.css_criteria_scores),
-          overall_rating: row.css_star_rating,
-        }
-        : null,
-    compliance_result:
-      row.type === 'compliance'
-        ? {
-          checks: {
-            productivity_rate: row.comp_productivity_rate,
-            uniform: row.comp_uniform,
-            hygiene: row.comp_hygiene,
-            sop: row.comp_sop,
-          },
-          passed_count: countPassedComplianceChecks(row),
-          total_checks: 4,
-        }
-        : null,
+    scc_result: {
+      compliance_criteria: {
+        productivity_rate: row.scc_productivity_rate,
+        uniform_compliance: row.scc_uniform_compliance,
+        hygiene_compliance: row.scc_hygiene_compliance,
+        sop_compliance: row.scc_sop_compliance,
+      },
+      customer_service_criteria: {
+        customer_interaction: row.scc_customer_interaction,
+        cashiering: row.scc_cashiering,
+        suggestive_selling_and_upselling: row.scc_suggestive_selling_and_upselling,
+        service_efficiency: row.scc_service_efficiency,
+      },
+    },
   };
 }
 
 function isOwnedByViewer(row: AuditRowSource, viewerIdentity: ViewerIdentity): boolean {
+  if (row.type !== 'service_crew_cctv') {
+    return false;
+  }
+
   if (row.audited_user_id && row.audited_user_id === viewerIdentity.userId) {
     return true;
   }
@@ -234,12 +178,8 @@ function isOwnedByViewer(row: AuditRowSource, viewerIdentity: ViewerIdentity): b
     return true;
   }
 
-  if (row.type === 'customer_service') {
-    return Boolean(normalizedUserKey) && normalizedUserKey === String(row.css_cashier_user_key ?? '').trim();
-  }
-
-  return row.comp_odoo_employee_id !== null
-    && viewerIdentity.employeeIds.includes(Number(row.comp_odoo_employee_id));
+  return row.scc_odoo_employee_id !== null
+    && viewerIdentity.employeeIds.includes(Number(row.scc_odoo_employee_id));
 }
 
 function sortCompletedRowsDesc(left: AuditRowSource, right: AuditRowSource): number {
@@ -273,6 +213,7 @@ async function defaultListCompletedAuditRows(input: {
     .join('companies as companies', 'audits.company_id', 'companies.id')
     .join('branches as branches', 'audits.branch_id', 'branches.id')
     .where('audits.status', 'completed')
+    .where('audits.type', 'service_crew_cctv')
     .select(
       'audits.company_id',
       'companies.name as company_name',
@@ -286,24 +227,18 @@ async function defaultListCompletedAuditRows(input: {
       'audits.created_at',
       'audits.audited_user_id',
       'audits.audited_user_key',
-      'audits.css_cashier_user_key',
-      'audits.css_date_order',
-      'audits.css_star_rating',
-      'audits.css_criteria_scores',
-      'audits.css_ai_report',
-      'audits.css_audit_log',
-      'audits.comp_odoo_employee_id',
-      'audits.comp_check_in_time',
-      'audits.comp_productivity_rate',
-      'audits.comp_uniform',
-      'audits.comp_hygiene',
-      'audits.comp_sop',
-      'audits.comp_ai_report',
+      'audits.scc_odoo_employee_id',
+      'audits.scc_employee_name',
+      'audits.scc_productivity_rate',
+      'audits.scc_uniform_compliance',
+      'audits.scc_hygiene_compliance',
+      'audits.scc_sop_compliance',
+      'audits.scc_customer_interaction',
+      'audits.scc_cashiering',
+      'audits.scc_suggestive_selling_and_upselling',
+      'audits.scc_service_efficiency',
+      'audits.scc_ai_report',
     );
-
-  if (input.type) {
-    query.andWhere('audits.type', input.type);
-  }
 
   return query as unknown as Promise<AuditRowSource[]>;
 }
@@ -328,19 +263,17 @@ async function defaultGetAuditRowById(input: {
       'audits.created_at',
       'audits.audited_user_id',
       'audits.audited_user_key',
-      'audits.css_cashier_user_key',
-      'audits.css_date_order',
-      'audits.css_star_rating',
-      'audits.css_criteria_scores',
-      'audits.css_ai_report',
-      'audits.css_audit_log',
-      'audits.comp_odoo_employee_id',
-      'audits.comp_check_in_time',
-      'audits.comp_productivity_rate',
-      'audits.comp_uniform',
-      'audits.comp_hygiene',
-      'audits.comp_sop',
-      'audits.comp_ai_report',
+      'audits.scc_odoo_employee_id',
+      'audits.scc_employee_name',
+      'audits.scc_productivity_rate',
+      'audits.scc_uniform_compliance',
+      'audits.scc_hygiene_compliance',
+      'audits.scc_sop_compliance',
+      'audits.scc_customer_interaction',
+      'audits.scc_cashiering',
+      'audits.scc_suggestive_selling_and_upselling',
+      'audits.scc_service_efficiency',
+      'audits.scc_ai_report',
     );
 
   return (row as AuditRowSource | undefined) ?? null;
@@ -415,10 +348,17 @@ export function createAccountAuditResultService(
     }): Promise<ListAccountAuditResultsResponse> {
       const page = Math.max(1, Number(input.page ?? 1));
       const pageSize = Math.min(100, Math.max(1, Number(input.pageSize ?? 10)));
+      if (input.type && input.type !== 'all' && input.type !== 'service_crew_cctv') {
+        return {
+          items: [],
+          page,
+          pageSize,
+          total: 0,
+        };
+      }
       const viewerIdentity = await deps.resolveViewerIdentity({ userId: input.userId });
       const rows = await deps.listCompletedAuditRows({
-        
-        type: input.type && input.type !== 'all' ? input.type : undefined,
+        type: 'service_crew_cctv',
       });
 
       const branchIdSet = input.branchIds && input.branchIds.length > 0
@@ -455,7 +395,12 @@ export function createAccountAuditResultService(
         auditId: input.auditId,
       });
 
-      if (!row || row.status !== 'completed' || !isOwnedByViewer(row, viewerIdentity)) {
+      if (
+        !row
+        || row.type !== 'service_crew_cctv'
+        || row.status !== 'completed'
+        || !isOwnedByViewer(row, viewerIdentity)
+      ) {
         throw new AppError(404, 'Audit result not found');
       }
 

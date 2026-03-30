@@ -1,19 +1,19 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  COMPLIANCE_HOURLY_JOB_NAME,
-  getComplianceOccurrenceForHour,
-  getComplianceSchedulingDecision,
-} from './complianceCronScheduler.js';
+  SERVICE_CREW_CCTV_HOURLY_JOB_NAME,
+  getServiceCrewCctvOccurrenceForHour,
+  getServiceCrewCctvSchedulingDecision,
+} from './serviceCrewCctvCronScheduler.js';
 
-test('getComplianceOccurrenceForHour returns a stable minute for the same Manila hour', () => {
-  const first = getComplianceOccurrenceForHour(
+test('getServiceCrewCctvOccurrenceForHour returns a stable minute for the same Manila hour', () => {
+  const first = getServiceCrewCctvOccurrenceForHour(
     new Date('2026-03-21T04:12:00.000Z'),
-    COMPLIANCE_HOURLY_JOB_NAME,
+    SERVICE_CREW_CCTV_HOURLY_JOB_NAME,
   );
-  const second = getComplianceOccurrenceForHour(
+  const second = getServiceCrewCctvOccurrenceForHour(
     new Date('2026-03-21T04:59:00.000Z'),
-    COMPLIANCE_HOURLY_JOB_NAME,
+    SERVICE_CREW_CCTV_HOURLY_JOB_NAME,
   );
 
   assert.equal(first.hourKey, '2026-03-21-12');
@@ -23,38 +23,38 @@ test('getComplianceOccurrenceForHour returns a stable minute for the same Manila
   assert.match(String(first.scheduledMinute), /^(?:[0-9]|[1-5][0-9])$/);
 });
 
-test('getComplianceOccurrenceForHour usually varies between Manila hours', () => {
-  const first = getComplianceOccurrenceForHour(
+test('getServiceCrewCctvOccurrenceForHour usually varies between Manila hours', () => {
+  const first = getServiceCrewCctvOccurrenceForHour(
     new Date('2026-03-21T04:12:00.000Z'),
-    COMPLIANCE_HOURLY_JOB_NAME,
+    SERVICE_CREW_CCTV_HOURLY_JOB_NAME,
   );
-  const second = getComplianceOccurrenceForHour(
+  const second = getServiceCrewCctvOccurrenceForHour(
     new Date('2026-03-21T05:12:00.000Z'),
-    COMPLIANCE_HOURLY_JOB_NAME,
+    SERVICE_CREW_CCTV_HOURLY_JOB_NAME,
   );
 
   assert.notEqual(first.hourKey, second.hourKey);
   assert.notEqual(first.scheduledMinute, second.scheduledMinute);
 });
 
-test('getComplianceSchedulingDecision schedules the current Manila hour before its selected minute', () => {
+test('getServiceCrewCctvSchedulingDecision schedules the current Manila hour before its selected minute', () => {
   const now = new Date('2026-03-21T03:00:00.000Z');
-  const current = getComplianceOccurrenceForHour(now, COMPLIANCE_HOURLY_JOB_NAME);
+  const current = getServiceCrewCctvOccurrenceForHour(now, SERVICE_CREW_CCTV_HOURLY_JOB_NAME);
   const safeNow = new Date(current.scheduledFor.getTime() - 60_000);
 
-  const decision = getComplianceSchedulingDecision(safeNow, COMPLIANCE_HOURLY_JOB_NAME);
+  const decision = getServiceCrewCctvSchedulingDecision(safeNow, SERVICE_CREW_CCTV_HOURLY_JOB_NAME);
 
   assert.equal(decision.scheduleCurrentHour, true);
   assert.equal(decision.skipCurrentHour, false);
   assert.equal(decision.nextOccurrenceToSchedule.hourKey, decision.currentOccurrence.hourKey);
 });
 
-test('getComplianceSchedulingDecision skips the current Manila hour after its selected minute', () => {
+test('getServiceCrewCctvSchedulingDecision skips the current Manila hour after its selected minute', () => {
   const now = new Date('2026-03-21T03:00:00.000Z');
-  const current = getComplianceOccurrenceForHour(now, COMPLIANCE_HOURLY_JOB_NAME);
+  const current = getServiceCrewCctvOccurrenceForHour(now, SERVICE_CREW_CCTV_HOURLY_JOB_NAME);
   const safeNow = new Date(current.scheduledFor.getTime() + 60_000);
 
-  const decision = getComplianceSchedulingDecision(safeNow, COMPLIANCE_HOURLY_JOB_NAME);
+  const decision = getServiceCrewCctvSchedulingDecision(safeNow, SERVICE_CREW_CCTV_HOURLY_JOB_NAME);
 
   assert.equal(decision.scheduleCurrentHour, false);
   assert.equal(decision.skipCurrentHour, true);
