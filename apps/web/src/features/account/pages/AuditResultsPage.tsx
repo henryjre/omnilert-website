@@ -210,8 +210,12 @@ export function AuditResultsPage() {
                   <p className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-500">
                     <GitBranch className="h-3 w-3 shrink-0" />
                     {selectedAudit.branch.name}
-                    <span className="text-gray-300">·</span>
-                    {formatDate(selectedAudit.completed_at)}
+                    {selectedAudit.company?.name && (
+                      <>
+                        <span className="text-gray-300">·</span>
+                        {selectedAudit.company.name}
+                      </>
+                    )}
                   </p>
                 )}
               </div>

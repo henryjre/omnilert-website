@@ -1,4 +1,4 @@
-﻿import { db } from "../config/database.js";
+import { db } from "../config/database.js";
 import { env } from "../config/env.js";
 import { logger } from "../utils/logger.js";
 
@@ -2825,43 +2825,47 @@ export async function getAllPayslipsForUser(
  * Calculates synthetic "pending" payslip stubs for the current month's
  * cutoff periods that do not yet exist in the provided existingPayslips list.
  *
- * Both the 1st and 2nd cutoff stubs are generated if missing; the 2nd cutoff
- * stub is placed first (it represents the latest period).
+ * visibility rules:
+ * 1. If current day <= 15: only evaluate 1st cutoff (1st-15th).
+ * 2. If current day > 15: evaluate 2nd cutoff (16th-End) and 1st cutoff (if missing).
+ * 3. Only show a stub if the employee has at least one work entry (attendance)
+ *    at that specific branch for that specific period.
  */
-export function calculatePendingPayslipStubs(
+export async function calculatePendingPayslipStubs(
   employees: Array<{ id: number; name?: string | null; company_id?: [number, string] | false }>,
   existingPayslips: Array<{ employee_id: number; company_id: number; date_from: string; date_to: string }>,
-): Array<{
-  id: string;
-  name: string;
-  date_from: string;
-  date_to: string;
-  odoo_state: string;
-  status: "pending";
-  company_id: number;
-  company_name: string;
-  employee_id: number;
-  employee_name: string;
-  cutoff: 1 | 2;
-  is_pending: true;
-}> {
+): Promise<PayslipListItem[]> {
+  const now = new Date();
+  const day = now.getDate();
   const range1 = getCurrentSemiMonthRange(1);
   const range2 = getCurrentSemiMonthRange(2);
 
-  const stubs: Array<{
-    id: string;
-    name: string;
-    date_from: string;
-    date_to: string;
-    odoo_state: string;
-    status: "pending";
-    company_id: number;
-    company_name: string;
-    employee_id: number;
-    employee_name: string;
-    cutoff: 1 | 2;
-    is_pending: true;
-  }> = [];
+  const targetCutoffs: Array<{ cutoff: 1 | 2; range: { date_from: string; date_to: string } }> = [
+    { cutoff: 1, range: range1 },
+  ];
+  // 2nd cutoff is only visible to the user from the 16th onwards
+  if (day > 15) {
+    targetCutoffs.push({ cutoff: 2, range: range2 });
+  }
+
+  const employeeIds = employees.map((e) => e.id);
+  if (employeeIds.length === 0) return [];
+
+  // Fetch all work entries for these employees for the entire month to check attendance
+  const workEntries = (await callOdooKw("hr.work.entry", "search_read", [], {
+    domain: [
+      ["employee_id", "in", employeeIds],
+      ["date_start", ">=", `${range1.date_from} 00:00:00`],
+      ["date_start", "<=", `${range2.date_to} 23:59:59`],
+    ],
+    fields: ["employee_id", "company_id", "date_start"],
+  })) as Array<{
+    employee_id: [number, string];
+    company_id: [number, string];
+    date_start: string;
+  }>;
+
+  const stubs: PayslipListItem[] = [];
 
   for (const employee of employees) {
     const companyField = employee.company_id;
@@ -2871,53 +2875,52 @@ export function calculatePendingPayslipStubs(
     const companyName = companyField[1];
     const employeeName = employee.name ?? "";
 
-    const hasCutoff = (dateFrom: string, dateTo: string): boolean =>
-      existingPayslips.some(
+    for (const target of targetCutoffs) {
+      // 1. Skip if a real payslip (Draft or Completed) already exists for this period
+      const hasReal = existingPayslips.some(
         (p) =>
           p.employee_id === employee.id &&
           p.company_id === companyId &&
-          p.date_from === dateFrom &&
-          p.date_to === dateTo,
+          p.date_from === target.range.date_from &&
+          p.date_to === target.range.date_to,
       );
+      if (hasReal) continue;
 
-    // 2nd cutoff stub (placed first — represents the latest period)
-    if (!hasCutoff(range2.date_from, range2.date_to)) {
-      stubs.push({
-        id: `pending-${companyId}-2`,
-        name: `${employeeName} | 2nd Cutoff Payslip`,
-        date_from: range2.date_from,
-        date_to: range2.date_to,
-        odoo_state: "",
-        status: "pending",
-        company_id: companyId,
-        company_name: companyName,
-        employee_id: employee.id,
-        employee_name: employeeName,
-        cutoff: 2,
-        is_pending: true,
+      // 2. Skip if the employee has no work entries for this specific cutoff at this branch
+      const hasAttendance = workEntries.some((we) => {
+        const weEmployeeId = Array.isArray(we.employee_id) ? we.employee_id[0] : we.employee_id;
+        const weCompanyId = Array.isArray(we.company_id) ? we.company_id[0] : we.company_id;
+        const weDate = we.date_start.split(" ")[0]; // YYYY-MM-DD
+
+        return (
+          weEmployeeId === employee.id &&
+          weCompanyId === companyId &&
+          weDate >= target.range.date_from &&
+          weDate <= target.range.date_to
+        );
       });
-    }
 
-    // 1st cutoff stub
-    if (!hasCutoff(range1.date_from, range1.date_to)) {
+      if (!hasAttendance) continue;
+
       stubs.push({
-        id: `pending-${companyId}-1`,
-        name: `${employeeName} | 1st Cutoff Payslip`,
-        date_from: range1.date_from,
-        date_to: range1.date_to,
+        id: `pending-${companyId}-${target.cutoff}`,
+        name: `${employeeName} | ${target.cutoff === 1 ? "1st" : "2nd"} Cutoff Payslip`,
+        date_from: target.range.date_from,
+        date_to: target.range.date_to,
         odoo_state: "",
         status: "pending",
         company_id: companyId,
         company_name: companyName,
         employee_id: employee.id,
         employee_name: employeeName,
-        cutoff: 1,
+        cutoff: target.cutoff,
         is_pending: true,
       });
     }
   }
 
-  return stubs;
+  // Sort: 2nd cutoff (latest) first
+  return stubs.sort((a, b) => b.cutoff - a.cutoff);
 }
 
 /**

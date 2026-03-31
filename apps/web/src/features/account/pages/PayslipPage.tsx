@@ -118,13 +118,18 @@ export function PayslipPage() {
   const filteredPayslips = useMemo<PayslipListItem[]>(() => {
     let result = allPayslips;
 
+    // Filter by branch
     if (selectedOdooCompanyIds.size > 0) {
       result = result.filter((p) => selectedOdooCompanyIds.has(p.company_id));
     }
 
+    // Filter by status
     if (statusFilter !== "all") {
       result = result.filter((p) => p.status === statusFilter);
     }
+
+    // Exclude payslips with 0 net pay
+    result = result.filter((p) => p.net_pay !== 0);
 
     return result;
   }, [allPayslips, selectedOdooCompanyIds, statusFilter]);

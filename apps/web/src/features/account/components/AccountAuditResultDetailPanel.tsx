@@ -5,7 +5,6 @@ import type {
 import { motion } from 'framer-motion';
 import {
   Award,
-  Building2,
   Calendar,
   CheckCircle2,
   Crown,
@@ -36,18 +35,6 @@ function formatDateTime(value: string | null): string {
     hour: 'numeric',
     minute: '2-digit',
     hour12: true,
-  }).format(parsed);
-}
-
-function formatShortDate(value: string | null): string {
-  if (!value) return '-';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return new Intl.DateTimeFormat('en-PH', {
-    timeZone: 'Asia/Manila',
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
   }).format(parsed);
 }
 
@@ -600,24 +587,6 @@ export function AccountAuditResultDetailPanel({ audit }: { audit: AccountAuditRe
               &ldquo;{theme.tagline}&rdquo;
             </p>
 
-            <div className={`mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs ${theme.heroSubtext} opacity-70`}>
-              {audit.company?.name && (
-                <span className="flex items-center gap-1">
-                  <Building2 className="h-3 w-3" />
-                  {audit.company.name}
-                </span>
-              )}
-              {audit.observed_at && (
-                <span className="flex items-center gap-1">
-                  <Calendar className="h-3 w-3" />
-                  {formatShortDate(audit.observed_at)}
-                </span>
-              )}
-              <span className="flex items-center gap-1">
-                <Calendar className="h-3 w-3" />
-                Completed {formatShortDate(audit.completed_at)}
-              </span>
-            </div>
           </div>
         </div>
 
@@ -639,32 +608,66 @@ export function AccountAuditResultDetailPanel({ audit }: { audit: AccountAuditRe
 
           <AchievementBanner passCount={compliancePassCount} total={complianceTotal} />
 
-          <div className="grid gap-2">
-            {complianceCriteria.map((criterion, i) => (
-              <motion.div
-                key={criterion.key}
-                initial={{ opacity: 0, x: -16 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.2 + i * 0.07, duration: 0.35, ease: 'easeOut' }}
-                className={`flex items-center justify-between rounded-xl border px-4 py-3 ${
-                  criterion.value === true
-                    ? 'border-emerald-200 bg-emerald-50/60'
-                    : criterion.value === false
-                      ? 'border-red-200 bg-red-50/50'
-                      : 'border-gray-200 bg-white'
-                }`}
-              >
-                <div className="flex items-center gap-2.5">
-                  {criterion.value === true && <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />}
-                  {criterion.value === false && <XCircle className="h-4 w-4 text-red-500 shrink-0" />}
-                  {criterion.value === null && <div className="h-4 w-4 shrink-0 rounded-full border-2 border-dashed border-gray-300" />}
-                  <p className={`text-sm font-medium ${criterion.value === false ? 'text-red-900' : 'text-gray-900'}`}>
+          <div className="grid grid-cols-2 gap-2">
+            {complianceCriteria.map((criterion, i) => {
+              const isPass = criterion.value === true;
+              const isFail = criterion.value === false;
+              return (
+                <motion.div
+                  key={criterion.key}
+                  initial={{ opacity: 0, scale: 0.85, y: 10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  transition={{ delay: 0.15 + i * 0.08, type: 'spring', stiffness: 280, damping: 22 }}
+                  className={`relative flex flex-col items-center gap-2.5 overflow-hidden rounded-2xl border px-3 py-4 text-center ${
+                    isPass
+                      ? 'border-emerald-200/80 bg-gradient-to-b from-emerald-50 to-white'
+                      : isFail
+                        ? 'border-red-200/80 bg-gradient-to-b from-red-50 to-white'
+                        : 'border-dashed border-gray-200 bg-gray-50/60'
+                  }`}
+                >
+                  {/* Top accent bar */}
+                  <div className={`absolute inset-x-0 top-0 h-0.5 ${
+                    isPass ? 'bg-emerald-400' : isFail ? 'bg-red-400' : 'bg-gray-200'
+                  }`} />
+
+                  {/* Status icon circle */}
+                  <motion.div
+                    initial={{ scale: 0.5, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ delay: 0.3 + i * 0.08, type: 'spring', stiffness: 400, damping: 18 }}
+                    className={`relative flex h-11 w-11 items-center justify-center rounded-full ${
+                      isPass ? 'bg-emerald-100' : isFail ? 'bg-red-100' : 'bg-gray-100'
+                    }`}
+                  >
+                    <div className={`absolute inset-0 rounded-full border-2 ${
+                      isPass ? 'border-emerald-300' : isFail ? 'border-red-300' : 'border-dashed border-gray-300'
+                    }`} />
+                    {isPass && <CheckCircle2 className="h-5 w-5 text-emerald-600" />}
+                    {isFail && <XCircle className="h-5 w-5 text-red-600" />}
+                    {criterion.value === null && <span className="text-base font-bold text-gray-300">–</span>}
+                  </motion.div>
+
+                  {/* Label */}
+                  <p className={`text-[11px] font-semibold leading-tight ${
+                    isFail ? 'text-red-900' : 'text-gray-800'
+                  }`}>
                     {criterion.label}
                   </p>
-                </div>
-                <ComplianceBadge value={criterion.value} />
-              </motion.div>
-            ))}
+
+                  {/* Status pill */}
+                  <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-widest ${
+                    isPass
+                      ? 'bg-emerald-600 text-white'
+                      : isFail
+                        ? 'bg-red-600 text-white'
+                        : 'bg-gray-200 text-gray-500'
+                  }`}>
+                    {isPass ? 'Pass' : isFail ? 'Fail' : 'N/A'}
+                  </span>
+                </motion.div>
+              );
+            })}
           </div>
         </motion.section>
       )}
@@ -763,12 +766,12 @@ export function AccountAuditResultDetailPanel({ audit }: { audit: AccountAuditRe
         </motion.section>
       )}
 
-      {/* ── AI Performance Insights ── */}
+      {/* ── Performance Insights ── */}
       {audit.ai_report && (
         <motion.section variants={fadeUp} className="space-y-3">
           <div className="flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-violet-500" />
-            <p className="text-sm font-bold text-gray-900 uppercase tracking-wide">AI Performance Insights</p>
+            <p className="text-sm font-bold text-gray-900 uppercase tracking-wide">Performance Insights</p>
           </div>
           <div className="rounded-xl border border-violet-100 bg-gradient-to-br from-violet-50/80 to-purple-50/40 px-4 py-3.5">
             <MarkdownReport text={audit.ai_report} />

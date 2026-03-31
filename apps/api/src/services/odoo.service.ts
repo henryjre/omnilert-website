@@ -1,6 +1,7 @@
 import { db } from "../config/database.js";
 import { env } from "../config/env.js";
 import { logger } from "../utils/logger.js";
+import { PayslipListItem } from "@omnilert/shared";
 
 /**
  * Gets the current semi-month range (for Philippines timezone)
@@ -8,11 +9,10 @@ import { logger } from "../utils/logger.js";
  * @param cutoff - Optional: 1 for 1st cutoff (1st-15th), 2 for 2nd cutoff (16th-last day). If not provided, uses current date to determine.
  * @returns date_from and date_to in YYYY-MM-DD format
  */
-export function getCurrentSemiMonthRange(cutoff?: number): { date_from: string; date_to: string } {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
-  const day = now.getDate();
+export function getCurrentSemiMonthRange(cutoff?: number, baseDate: Date = new Date()): { date_from: string; date_to: string } {
+  const year = baseDate.getFullYear();
+  const month = baseDate.getMonth() + 1;
+  const day = baseDate.getDate();
 
   // Determine which cutoff to use
   let cutoffValue: number;
@@ -371,36 +371,11 @@ export async function listEmployeeIdsByWebsiteUserKey(
 export async function getEmployeePayslipData(
   employeeId: number,
   companyId: number,
-  cutoff?: number
-): Promise<{
-  id: number;
-  name: string;
-  state: string;
-  employee_id: [number, string];
-  date_from: string;
-  date_to: string;
-  lines: Array<{
-    id: number;
-    name: string;
-    code: string;
-    category_id: [number, string];
-    total: number;
-    amount: number;
-    quantity: number;
-    rate: number;
-    sequence: number;
-  }>;
-  worked_days: Array<{
-    id: number;
-    name: string;
-    code: string;
-    number_of_days: number;
-    number_of_hours: number;
-    amount: number;
-  }>;
-} | null> {
+  cutoff?: number,
+  dateFrom?: string,
+): Promise<any> {
   try {
-    const { date_from, date_to } = getCurrentSemiMonthRange(cutoff);
+    const { date_from, date_to } = getCurrentSemiMonthRange(cutoff, dateFrom ? new Date(dateFrom) : new Date());
 
     // Search for existing payslip
     const slips = (await callOdooKw(
@@ -447,20 +422,6 @@ export async function getEmployeePayslipData(
 
     // Refresh from work entries
     await callOdooKw("hr.payslip", "action_refresh_from_work_entries", [[slipId]]);
-
-    // WORKAROUND: Odoo bug prevents re-computation unless a field like date_to is toggled.
-    // This triggers the onchange logic that refreshes salary rules correctly.
-    const originalDateTo = slip.date_to;
-    const d = new Date(originalDateTo);
-    d.setDate(d.getDate() - 1);
-    const tempDateTo = d.toISOString().split("T")[0];
-
-    await callOdooKw("hr.payslip", "write", [[slipId], { date_to: tempDateTo }]);
-    await callOdooKw("hr.payslip", "write", [[slipId], { date_to: originalDateTo }]);
-
-    // Refresh from work entries
-    await callOdooKw("hr.payslip", "action_refresh_from_work_entries"
-, [[slipId]]);
 
     // Compute the salary rule lines
     await callOdooKw("hr.payslip", "compute_sheet", [[slipId]]);
@@ -541,36 +502,11 @@ export async function createViewOnlyPayslip(
   employeeId: number,
   companyId: number,
   employeeName: string,
-  cutoff?: number
-): Promise<{
-  id: number;
-  name: string;
-  state: string;
-  employee_id: [number, string];
-  date_from: string;
-  date_to: string;
-  lines: Array<{
-    id: number;
-    name: string;
-    code: string;
-    category_id: [number, string];
-    total: number;
-    amount: number;
-    quantity: number;
-    rate: number;
-    sequence: number;
-  }>;
-  worked_days: Array<{
-    id: number;
-    name: string;
-    code: string;
-    number_of_days: number;
-    number_of_hours: number;
-    amount: number;
-  }>;
-}> {
+  cutoff?: number,
+  dateFrom?: string,
+): Promise<any> {
   try {
-    const { date_from, date_to } = getCurrentSemiMonthRange(cutoff);
+    const { date_from, date_to } = getCurrentSemiMonthRange(cutoff, dateFrom ? new Date(dateFrom) : new Date());
 
     // Create the payslip as off-cycle (no payslip_run_id)
     const slipId = (await callOdooKw("hr.payslip", "create", [
@@ -2839,43 +2775,74 @@ export async function getAllPayslipsForUser(
  * Calculates synthetic "pending" payslip stubs for the current month's
  * cutoff periods that do not yet exist in the provided existingPayslips list.
  *
- * Both the 1st and 2nd cutoff stubs are generated if missing; the 2nd cutoff
- * stub is placed first (it represents the latest period).
+ * visibility rules:
+ * 1. If current day <= 15: only evaluate 1st cutoff (1st-15th).
+ * 2. If current day > 15: evaluate 2nd cutoff (16th-End) and 1st cutoff (if missing).
+ * 3. Only show a stub if the employee has at least one work entry (attendance)
+ *    at that specific branch for that specific period.
  */
-export function calculatePendingPayslipStubs(
+export async function calculatePendingPayslipStubs(
   employees: Array<{ id: number; name?: string | null; company_id?: [number, string] | false }>,
   existingPayslips: Array<{ employee_id: number; company_id: number; date_from: string; date_to: string }>,
-): Array<{
-  id: string;
-  name: string;
-  date_from: string;
-  date_to: string;
-  odoo_state: string;
-  status: "pending";
-  company_id: number;
-  company_name: string;
-  employee_id: number;
-  employee_name: string;
-  cutoff: 1 | 2;
-  is_pending: true;
-}> {
-  const range1 = getCurrentSemiMonthRange(1);
-  const range2 = getCurrentSemiMonthRange(2);
+): Promise<PayslipListItem[]> {
+  const now = new Date();
+  const day = now.getDate();
 
-  const stubs: Array<{
-    id: string;
-    name: string;
-    date_from: string;
-    date_to: string;
-    odoo_state: string;
-    status: "pending";
-    company_id: number;
-    company_name: string;
-    employee_id: number;
-    employee_name: string;
-    cutoff: 1 | 2;
-    is_pending: true;
-  }> = [];
+  // Helper for semi-month range with month offset
+  const getSemiMonthRangeForBase = (cutoff: number, dateBase: Date) => {
+    const year = dateBase.getFullYear();
+    const month = dateBase.getMonth(); // 0-indexed
+    if (cutoff === 1) {
+      const from = new Date(year, month, 1);
+      const to = new Date(year, month, 15);
+      return {
+        date_from: `${from.getFullYear()}-${String(from.getMonth() + 1).padStart(2, "0")}-01`,
+        date_to: `${to.getFullYear()}-${String(to.getMonth() + 1).padStart(2, "0")}-15`,
+      };
+    } else {
+      const from = new Date(year, month, 16);
+      const to = new Date(year, month + 1, 0); // Last day of month
+      return {
+        date_from: `${from.getFullYear()}-${String(from.getMonth() + 1).padStart(2, "0")}-16`,
+        date_to: `${to.getFullYear()}-${String(to.getMonth() + 1).padStart(2, "0")}-${String(to.getDate()).padStart(2, "0")}`,
+      };
+    }
+  };
+
+  const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const targetCutoffs: Array<{ cutoff: 1 | 2; range: { date_from: string; date_to: string } }> = [];
+
+  // 1. Previous Month (Both cutoffs)
+  targetCutoffs.push({ cutoff: 1, range: getSemiMonthRangeForBase(1, prevMonth) });
+  targetCutoffs.push({ cutoff: 2, range: getSemiMonthRangeForBase(2, prevMonth) });
+
+  // 2. Current Month (Visibility rules)
+  targetCutoffs.push({ cutoff: 1, range: getSemiMonthRangeForBase(1, now) });
+  if (day > 15) {
+    targetCutoffs.push({ cutoff: 2, range: getSemiMonthRangeForBase(2, now) });
+  }
+
+  const employeeIds = employees.map((e) => e.id);
+  if (employeeIds.length === 0) return [];
+
+  // Look back 60 days to catch all relevant work entries
+  const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+  const searchStart = `${sixtyDaysAgo.getFullYear()}-${String(sixtyDaysAgo.getMonth() + 1).padStart(2, "0")}-${String(sixtyDaysAgo.getDate()).padStart(2, "0")}`;
+
+  // Fetch work entries for the entire relevant window
+  const workEntries = (await callOdooKw("hr.work.entry", "search_read", [], {
+    domain: [
+      ["employee_id", "in", employeeIds],
+      ["date", ">=", searchStart],
+    ],
+    fields: ["employee_id", "company_id", "date"],
+  })) as Array<{
+    employee_id: [number, string];
+    company_id: [number, string];
+    date: string;
+  }>;
+
+  const stubs: PayslipListItem[] = [];
 
   for (const employee of employees) {
     const companyField = employee.company_id;
@@ -2885,53 +2852,52 @@ export function calculatePendingPayslipStubs(
     const companyName = companyField[1];
     const employeeName = employee.name ?? "";
 
-    const hasCutoff = (dateFrom: string, dateTo: string): boolean =>
-      existingPayslips.some(
+    for (const target of targetCutoffs) {
+      // 1. Skip if a real payslip (Draft or Completed) already exists for this period
+      const hasReal = existingPayslips.some(
         (p) =>
           p.employee_id === employee.id &&
           p.company_id === companyId &&
-          p.date_from === dateFrom &&
-          p.date_to === dateTo,
+          p.date_from === target.range.date_from &&
+          p.date_to === target.range.date_to,
       );
+      if (hasReal) continue;
 
-    // 2nd cutoff stub (placed first — represents the latest period)
-    if (!hasCutoff(range2.date_from, range2.date_to)) {
-      stubs.push({
-        id: `pending-${companyId}-2`,
-        name: `${employeeName} | 2nd Cutoff Payslip`,
-        date_from: range2.date_from,
-        date_to: range2.date_to,
-        odoo_state: "",
-        status: "pending",
-        company_id: companyId,
-        company_name: companyName,
-        employee_id: employee.id,
-        employee_name: employeeName,
-        cutoff: 2,
-        is_pending: true,
+      // 2. Skip if the employee has no work entries for this specific cutoff at this branch
+      const hasAttendance = workEntries.some((we) => {
+        const weEmployeeId = Array.isArray(we.employee_id) ? we.employee_id[0] : we.employee_id;
+        const weCompanyId = Array.isArray(we.company_id) ? we.company_id[0] : we.company_id;
+        const weDate = we.date; // YYYY-MM-DD
+
+        return (
+          weEmployeeId === employee.id &&
+          weCompanyId === companyId &&
+          weDate >= target.range.date_from &&
+          weDate <= target.range.date_to
+        );
       });
-    }
 
-    // 1st cutoff stub
-    if (!hasCutoff(range1.date_from, range1.date_to)) {
+      if (!hasAttendance) continue;
+
       stubs.push({
-        id: `pending-${companyId}-1`,
-        name: `${employeeName} | 1st Cutoff Payslip`,
-        date_from: range1.date_from,
-        date_to: range1.date_to,
+        id: `pending-${companyId}:${target.range.date_from}:${target.cutoff}`,
+        name: `${employeeName} | ${target.cutoff === 1 ? "1st" : "2nd"} Cutoff Payslip`,
+        date_from: target.range.date_from,
+        date_to: target.range.date_to,
         odoo_state: "",
         status: "pending",
         company_id: companyId,
         company_name: companyName,
         employee_id: employee.id,
         employee_name: employeeName,
-        cutoff: 1,
+        cutoff: target.cutoff,
         is_pending: true,
       });
     }
   }
 
-  return stubs;
+  // Sort: newest (latest date_from) first
+  return stubs.sort((a, b) => b.date_from.localeCompare(a.date_from));
 }
 
 /**
@@ -2995,20 +2961,6 @@ export async function getPayslipDetailById(payslipId: number): Promise<{
     // payslip throws "The payslips should be in Draft or Waiting state."
     if (slip.state === "draft" || slip.state === "verify") {
       await callOdooKw("hr.payslip", "action_refresh_from_work_entries", [[payslipId]]);
-
-
-      // WORKAROUND: Odoo bug prevents re-computation unless a field like date_to is toggled.
-      // This triggers the onchange logic that refreshes salary rules correctly.
-      const originalDateTo = slip.date_to;
-      const d = new Date(originalDateTo);
-      d.setDate(d.getDate() - 1);
-      const tempDateTo = d.toISOString().split("T")[0];
-
-      await callOdooKw("hr.payslip", "write", [[payslipId], { date_to: tempDateTo }]);
-      await callOdooKw("hr.payslip", "write", [[payslipId], { date_to: originalDateTo }]);
-
-      await callOdooKw("hr.payslip", "action_refresh_from_work_entries", [[payslipId]]);
-
       await callOdooKw("hr.payslip", "compute_sheet", [[payslipId]]);
     }
 
@@ -3070,37 +3022,11 @@ export async function getOrCreatePendingPayslipDetail(
   companyId: number,
   employeeName: string,
   cutoff: 1 | 2,
-): Promise<{
-  id: number;
-  name: string;
-  state: string;
-  employee_id: [number, string];
-  date_from: string;
-  date_to: string;
-  lines: Array<{
-    id: number;
-    name: string;
-    code: string;
-    category_id: [number, string];
-    total: number;
-    amount: number;
-    quantity: number;
-    rate: number;
-    sequence: number;
-  }>;
-  worked_days: Array<{
-    id: number;
-    name: string;
-    code: string;
-    number_of_days: number;
-    number_of_hours: number;
-    amount: number;
-  }>;
-}> {
-  const existing = await getEmployeePayslipData(employeeId, companyId, cutoff);
+  dateFrom?: string,
+): Promise<any> {
+  const existing = await getEmployeePayslipData(employeeId, companyId, cutoff, dateFrom);
   if (existing) {
     return existing;
   }
-  return createViewOnlyPayslip(employeeId, companyId, employeeName, cutoff);
+  return createViewOnlyPayslip(employeeId, companyId, employeeName, cutoff, dateFrom);
 }
-

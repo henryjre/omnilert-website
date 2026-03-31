@@ -774,7 +774,7 @@ export async function getPayslipList(req: Request, res: Response, next: NextFunc
     // Pass the full realPayslips list to the stub calculator so it knows which
     // periods are already covered (including zero-pay ones), preventing
     // duplicate pending stubs for those periods.
-    const pendingStubs = calculatePendingPayslipStubs(
+    const pendingStubs = await calculatePendingPayslipStubs(
       employees,
       realPayslips.map((p) => ({
         employee_id: p.employee_id,
@@ -812,17 +812,32 @@ export async function getPayslipDetail(req: Request, res: Response, next: NextFu
     }
 
     if (payslipId.startsWith("pending-")) {
-      // Format: "pending-{companyId}-{cutoff}"
-      const parts = payslipId.split("-");
-      if (parts.length !== 3) {
-        throw new AppError(400, "Invalid pending payslip id format");
+      // New format: "pending-{companyId}:{date_from}:{cutoff}"
+      // Legacy format: "pending-{companyId}-{cutoff}"
+      let companyId: number;
+      let cutoff: 1 | 2;
+      let dateFrom: string | undefined;
+
+      if (payslipId.includes(":")) {
+        const parts = payslipId.split(":");
+        if (parts.length !== 3) {
+          throw new AppError(400, "Invalid pending payslip id format");
+        }
+        // parts[0] is "pending-{companyId}"
+        companyId = parseInt(parts[0].split("-")[1], 10);
+        dateFrom = parts[1];
+        cutoff = parseInt(parts[2], 10) as 1 | 2;
+      } else {
+        const parts = payslipId.split("-");
+        if (parts.length !== 3) {
+          throw new AppError(400, "Invalid pending payslip id format");
+        }
+        companyId = parseInt(parts[1], 10);
+        cutoff = parseInt(parts[2], 10) as 1 | 2;
       }
 
-      const companyId = parseInt(parts[1], 10);
-      const cutoff = parseInt(parts[2], 10) as 1 | 2;
-
       if (isNaN(companyId) || (cutoff !== 1 && cutoff !== 2)) {
-        throw new AppError(400, "Invalid pending payslip id");
+        throw new AppError(400, "Invalid pending payslip id values");
       }
 
       const currentUser = await masterDb("users").where({ id: userId }).select("user_key").first();
@@ -842,7 +857,7 @@ export async function getPayslipDetail(req: Request, res: Response, next: NextFu
 
       let payslip;
       try {
-        payslip = await getOrCreatePendingPayslipDetail(employee.id, companyId, employee.name, cutoff);
+        payslip = await getOrCreatePendingPayslipDetail(employee.id, companyId, employee.name, cutoff, dateFrom);
       } catch (createErr) {
         logger.error(`Failed to get/create pending payslip: ${createErr}`);
         res.json({ success: false, error: "Unable to generate payslip preview. The employee may not have an active contract." });
