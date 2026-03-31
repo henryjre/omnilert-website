@@ -16,7 +16,8 @@
       "Bash(rtk git:*)",
       "Bash(rtk vitest:*)",
       "Bash(rtk npx:*)",
-      "Bash(xargs grep:*)"
+      "Bash(xargs grep:*)",
+      "Bash(cd:*)"
     ]
   }
 }
