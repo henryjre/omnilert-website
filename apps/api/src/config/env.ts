@@ -24,7 +24,7 @@ const envSchema = z.object({
   SUPER_ADMIN_JWT_EXPIRES_IN: z.string().default('1h'),
 
   UPLOAD_DIR: z.string().default('./uploads'),
-  MAX_FILE_SIZE: z.coerce.number().default(10485760), // 10MB
+  MAX_FILE_SIZE: z.coerce.number().default(26214400), // 25MB
 
   // DigitalOcean Spaces (S3-compatible storage)
   DO_SPACES_ENDPOINT: z.string().optional(),

@@ -11,7 +11,7 @@ import { validateBody } from '../middleware/validateRequest.js';
 import * as storeAuditController from '../controllers/storeAudit.controller.js';
 
 const storage = multer.memoryStorage();
-const MAX_MESSAGE_FILE_SIZE = 50 * 1024 * 1024;
+const MAX_MESSAGE_FILE_SIZE = 25 * 1024 * 1024;
 const MAX_MESSAGE_FILE_COUNT = 10;
 
 const messageUpload = multer({
