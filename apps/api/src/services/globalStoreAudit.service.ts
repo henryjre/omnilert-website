@@ -139,10 +139,10 @@ type GlobalStoreAuditServiceDeps = {
         uniform_compliance: boolean | null;
         hygiene_compliance: boolean | null;
         sop_compliance: boolean | null;
-        customer_interaction: number;
-        cashiering: number;
-        suggestive_selling_and_upselling: number;
-        service_efficiency: number;
+        customer_interaction: number | null;
+        cashiering: number | null;
+        suggestive_selling_and_upselling: number | null;
+        service_efficiency: number | null;
       };
   }) => Promise<StoreAudit>;
   getAuditorStats: (input: { userId: string }) => Promise<{
@@ -317,10 +317,10 @@ async function defaultCompleteStoreAudit(input: {
       uniform_compliance: boolean | null;
       hygiene_compliance: boolean | null;
       sop_compliance: boolean | null;
-      customer_interaction: number;
-      cashiering: number;
-      suggestive_selling_and_upselling: number;
-      service_efficiency: number;
+      customer_interaction: number | null;
+      cashiering: number | null;
+      suggestive_selling_and_upselling: number | null;
+      service_efficiency: number | null;
     };
 }): Promise<StoreAudit> {
   const mod = await import('./storeAudit.service.js');
@@ -463,10 +463,10 @@ export function createGlobalStoreAuditService(
           uniform_compliance: boolean | null;
           hygiene_compliance: boolean | null;
           sop_compliance: boolean | null;
-          customer_interaction: number;
-          cashiering: number;
-          suggestive_selling_and_upselling: number;
-          service_efficiency: number;
+          customer_interaction: number | null;
+          cashiering: number | null;
+          suggestive_selling_and_upselling: number | null;
+          service_efficiency: number | null;
         };
     }): Promise<StoreAudit> {
       const context = await deps.resolveAuditCompanyContext(input.auditId);

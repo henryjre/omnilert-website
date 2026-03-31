@@ -68,10 +68,10 @@ const serviceCrewCctvCompleteSchema = z.object({
   uniform_compliance: z.boolean().nullable(),
   hygiene_compliance: z.boolean().nullable(),
   sop_compliance: z.boolean().nullable(),
-  customer_interaction: z.number().int().min(1).max(5),
-  cashiering: z.number().int().min(1).max(5),
-  suggestive_selling_and_upselling: z.number().int().min(1).max(5),
-  service_efficiency: z.number().int().min(1).max(5),
+  customer_interaction: z.number().int().min(1).max(5).nullable(),
+  cashiering: z.number().int().min(1).max(5).nullable(),
+  suggestive_selling_and_upselling: z.number().int().min(1).max(5).nullable(),
+  service_efficiency: z.number().int().min(1).max(5).nullable(),
 });
 
 const completeAuditSchema = z.union([cssCompleteSchema, serviceCrewCctvCompleteSchema]);

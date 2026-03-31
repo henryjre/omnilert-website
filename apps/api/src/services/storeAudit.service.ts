@@ -244,10 +244,10 @@ async function analyzeServiceCrewCctvAudit(
     uniform_compliance: boolean | null;
     hygiene_compliance: boolean | null;
     sop_compliance: boolean | null;
-    customer_interaction: number;
-    cashiering: number;
-    suggestive_selling_and_upselling: number;
-    service_efficiency: number;
+    customer_interaction: number | null;
+    cashiering: number | null;
+    suggestive_selling_and_upselling: number | null;
+    service_efficiency: number | null;
   },
 ): Promise<string> {
   const formatTriState = (value: boolean | null): string => {
@@ -268,22 +268,22 @@ async function analyzeServiceCrewCctvAudit(
   const customerServiceRatings = [
     [
       'Customer Interaction',
-      `${criteria.customer_interaction}/5`,
+      criteria.customer_interaction !== null ? `${criteria.customer_interaction}/5` : 'Not Auditable',
       'Greeting, eye contact, attentive listening, respectful engagement',
     ],
     [
       'Cashiering',
-      `${criteria.cashiering}/5`,
+      criteria.cashiering !== null ? `${criteria.cashiering}/5` : 'Not Auditable',
       'Accurate order/payment handling, proper POS flow, receipt confirmation',
     ],
     [
       'Suggestive Selling and Upselling',
-      `${criteria.suggestive_selling_and_upselling}/5`,
+      criteria.suggestive_selling_and_upselling !== null ? `${criteria.suggestive_selling_and_upselling}/5` : 'Not Auditable',
       'Relevant add-on offers, confident recommendations, natural timing',
     ],
     [
       'Service Efficiency',
-      `${criteria.service_efficiency}/5`,
+      criteria.service_efficiency !== null ? `${criteria.service_efficiency}/5` : 'Not Auditable',
       'Steady pace, organized workflow, minimal idle time, smooth service handoff',
     ],
   ]
@@ -1028,10 +1028,10 @@ export async function completeStoreAudit(input: {
         uniform_compliance: boolean | null;
         hygiene_compliance: boolean | null;
         sop_compliance: boolean | null;
-        customer_interaction: number;
-        cashiering: number;
-        suggestive_selling_and_upselling: number;
-        service_efficiency: number;
+        customer_interaction: number | null;
+        cashiering: number | null;
+        suggestive_selling_and_upselling: number | null;
+        service_efficiency: number | null;
       };
 }): Promise<StoreAuditRow> {
   const audit = await db.getDb()('store_audits').where({ id: input.auditId }).first();
@@ -1114,10 +1114,10 @@ export async function completeStoreAudit(input: {
       uniform_compliance: boolean | null;
       hygiene_compliance: boolean | null;
       sop_compliance: boolean | null;
-      customer_interaction: number;
-      cashiering: number;
-      suggestive_selling_and_upselling: number;
-      service_efficiency: number;
+      customer_interaction: number | null;
+      cashiering: number | null;
+      suggestive_selling_and_upselling: number | null;
+      service_efficiency: number | null;
     };
     const messages = await buildStoreAuditMessageList(input.auditId);
     const visibleMessages = messages.filter((message) => !message.is_deleted);
