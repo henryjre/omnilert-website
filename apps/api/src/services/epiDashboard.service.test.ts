@@ -83,6 +83,10 @@ function createCriteria(overrides: Partial<DashboardCriteria> = {}): DashboardCr
     uniformComplianceRate: 100,
     hygieneComplianceRate: 100,
     sopComplianceRate: 100,
+    customerInteractionScore: null,
+    cashieringScore: null,
+    suggestiveSellingUpsellingScore: null,
+    serviceEfficiencyScore: null,
     ...overrides,
   };
 }
