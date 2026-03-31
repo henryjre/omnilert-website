@@ -1962,9 +1962,18 @@ export async function createCssAudit(payload: {
   const auditedUserKey = typeof payload.x_website_key === 'string'
     ? payload.x_website_key.trim()
     : '';
+
   const auditedUserId = auditedUserKey
     ? await resolveUserIdByUserKey(auditedUserKey)
     : null;
+
+  if (!auditedUserId) {
+    logger.info(
+      { odooCompanyId: payload.company_id, posReference: payload.pos_reference, cashier: payload.cashier },
+      'Skipping CSS audit creation because the cashier is not a website user',
+    );
+    return;
+  }
 
   const record = {
     company_id: company.id,

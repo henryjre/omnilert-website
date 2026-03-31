@@ -30,6 +30,7 @@ import { Button } from '@/shared/components/ui/Button';
 import { useAppToast } from '@/shared/hooks/useAppToast';
 import { api } from '@/shared/services/api.client';
 import { StarRatingInput } from './StarRatingInput';
+import { normalizeAuditedEmployeeName } from '@/shared/utils/string';
 
 const CSS_CRITERIA: { key: keyof CssCriteriaScores; label: string; description: string }[] = [
   {
@@ -342,7 +343,7 @@ export function CssAuditDetailPanel({
     { label: 'Session', value: audit.css_session_name || '—' },
     { label: 'Reference', value: audit.css_pos_reference || '—' },
     { label: 'Order Date', value: formatDateTime(audit.css_date_order) },
-    { label: 'Cashier', value: audit.css_cashier_name || '—' },
+    { label: 'Cashier', value: normalizeAuditedEmployeeName(audit.css_cashier_name) || '—' },
     {
       label: 'Amount Total',
       value: new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(audit.css_amount_total ?? 0)),
@@ -795,7 +796,7 @@ export function CssAuditDetailPanel({
                     <span className="text-xs text-amber-700">In Progress</span>
                   </div>
                   <p className="mt-1 truncate font-semibold text-amber-900">
-                    {audit.css_cashier_name || '—'}
+                    {normalizeAuditedEmployeeName(audit.css_cashier_name) || '—'}
                   </p>
                   <p className="text-xs text-amber-700">{audit.branch_name || ''}</p>
                 </div>

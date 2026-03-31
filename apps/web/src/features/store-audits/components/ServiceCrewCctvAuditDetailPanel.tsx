@@ -30,6 +30,7 @@ import { api } from '@/shared/services/api.client';
 import { resolveServiceCrewCctvAuditPanelTiming } from './serviceCrewCctvAuditTiming';
 import { StarRatingInput } from './StarRatingInput';
 import { YesNoPill, type YesNoPillValue } from './YesNoPill';
+import { normalizeAuditedEmployeeName } from '@/shared/utils/string';
 
 function formatDateTime(value: string | null): string {
   if (!value) return '-';
@@ -71,19 +72,6 @@ function formatFileSize(bytes: number): string {
   return `${value >= 10 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`;
 }
 
-function normalizeAuditedEmployeeName(name: string | null | undefined): string | null {
-  const trimmed = name?.trim();
-  if (!trimmed) return null;
-
-  const parts = trimmed.split('-');
-  if (parts.length < 2) return trimmed;
-
-  const prefix = parts[0]?.trim() ?? '';
-  const normalizedName = parts.slice(1).join('-').trim();
-  if (!normalizedName) return trimmed;
-
-  return /\d/.test(prefix) ? normalizedName : trimmed;
-}
 
 function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/);

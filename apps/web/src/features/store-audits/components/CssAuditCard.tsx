@@ -1,3 +1,4 @@
+import { normalizeAuditedEmployeeName } from '@/shared/utils/string';
 import type { StoreAudit } from '@omnilert/shared';
 import { ChevronRight, Star } from 'lucide-react';
 import { Badge } from '@/shared/components/ui/Badge';
@@ -56,7 +57,7 @@ export function CssAuditCard({
             CSS
           </span>
           <p className="mt-1 truncate font-semibold text-gray-900">
-            {audit.css_cashier_name || '—'}
+            {normalizeAuditedEmployeeName(audit.css_cashier_name) || '—'}
           </p>
         </div>
         <Badge variant={statusVariant(audit.status)} className="shrink-0">

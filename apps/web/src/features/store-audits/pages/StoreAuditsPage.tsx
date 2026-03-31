@@ -23,6 +23,7 @@ import { useAuthStore } from '@/features/auth/store/authSlice';
 import { useBranchStore } from '@/shared/store/branchStore';
 import { getGroupedUsers } from '@/features/violation-notices/services/violationNotice.api';
 import { RequestVNModal } from '@/features/violation-notices/components/RequestVNModal';
+import { normalizeAuditedEmployeeName } from '@/shared/utils/string';
 import { CssAuditCard } from '../components/CssAuditCard';
 import { ServiceCrewCctvAuditCard } from '../components/ServiceCrewCctvAuditCard';
 import { CssAuditDetailPanel } from '../components/CssAuditDetailPanel';
@@ -73,19 +74,6 @@ function getAuditStatusMeta(status: StoreAuditStatus) {
   }
 }
 
-function normalizeAuditedEmployeeName(name: string | null | undefined): string | null {
-  const trimmed = name?.trim();
-  if (!trimmed) return null;
-
-  const parts = trimmed.split('-');
-  if (parts.length < 2) return trimmed;
-
-  const prefix = parts[0]?.trim() ?? '';
-  const normalizedName = parts.slice(1).join('-').trim();
-  if (!normalizedName) return trimmed;
-
-  return /\d/.test(prefix) ? normalizedName : trimmed;
-}
 
 function StoreAuditsSkeleton() {
   return (
@@ -789,7 +777,7 @@ export function StoreAuditsPage() {
                   <div>
                     <p className="text-sm font-medium text-gray-800">
                       {selectedAudit.type === 'customer_service'
-                        ? selectedAudit.css_cashier_name || 'Customer Service Audit'
+                        ? normalizeAuditedEmployeeName(selectedAudit.css_cashier_name) || 'Customer Service Audit'
                         : normalizeAuditedEmployeeName(selectedAudit.scc_employee_name) || 'Service Crew CCTV Audit'}
                     </p>
                     <p className="mt-0.5 text-xs text-gray-500">

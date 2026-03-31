@@ -258,83 +258,117 @@ async function markServiceCrewCctvOccurrenceFailure(
 }
 
 export async function runServiceCrewCctvCron(): Promise<ServiceCrewCctvRunOutcome> {
+  const MAX_AUDITS_PER_RUN = 2;
+  const stats = { processed: 0, succeeded: 0, failed: 0, skipped: 0 };
+
   try {
     const attendances = await getActiveAttendances();
     const eligibleAttendances = attendances.filter(
       (attendance) => !DISABLED_AUDIT_ODOO_COMPANY_IDS.has(Number(attendance.company_id)),
     );
+
     if (eligibleAttendances.length === 0) {
       return {
         status: 'skipped',
         reason: 'No eligible active attendances found',
-        stats: { processed: 0, succeeded: 0, failed: 0, skipped: 0 },
+        stats,
       };
     }
 
-    const chosen = eligibleAttendances[Math.floor(Math.random() * eligibleAttendances.length)];
-    if (!chosen) {
+    // Shuffle candidates to ensure randomness across the whole list
+    const candidates = [...eligibleAttendances].sort(() => Math.random() - 0.5);
+    const pickedEmployeeIds = new Set<string>();
+
+    for (const chosen of candidates) {
+      if (stats.succeeded >= MAX_AUDITS_PER_RUN) break;
+      if (pickedEmployeeIds.has(String(chosen.employee_id))) continue;
+
+      stats.processed += 1;
+
+      try {
+        const company = await resolveCompanyByOdooBranchId(chosen.company_id);
+        const mappedBranch = await db.getDb()('branches')
+          .where({
+            odoo_branch_id: String(chosen.company_id),
+            is_active: true,
+          })
+          .first('id');
+
+        const branch = mappedBranch ?? await db.getDb()('branches')
+          .where({ is_active: true })
+          .orderBy([{ column: 'is_main_branch', order: 'desc' }, { column: 'created_at', order: 'asc' }])
+          .first('id');
+
+        if (!branch) {
+          logger.warn(
+            { employeeId: chosen.employee_id, odooBranchId: chosen.company_id },
+            'Skipping SCC candidate: no active tenant branch available',
+          );
+          stats.skipped += 1;
+          continue;
+        }
+
+        if (!mappedBranch) {
+          logger.warn(
+            { companyId: company.id, odooBranchId: chosen.company_id },
+            'Service crew cctv cron could not map Odoo branch to tenant branch; using fallback branch',
+          );
+        }
+
+        const auditedUserKey = await getEmployeeWebsiteKeyByEmployeeId(Number(chosen.employee_id));
+        const auditedUserId = auditedUserKey
+          ? await resolveUserIdByUserKey(auditedUserKey)
+          : null;
+
+        if (!auditedUserId) {
+          logger.info(
+            { employeeId: chosen.employee_id, employeeName: chosen.employee_name },
+            'Skipping SCC candidate: not a website user',
+          );
+          stats.skipped += 1;
+          continue;
+        }
+
+        const now = new Date();
+        const [audit] = await db.getDb()('store_audits')
+          .insert({
+            company_id: company.id,
+            type: 'service_crew_cctv',
+            status: 'pending',
+            branch_id: branch.id,
+            monetary_reward: randomReward(),
+            scc_odoo_employee_id: chosen.employee_id,
+            scc_employee_name: chosen.employee_name,
+            audited_user_id: auditedUserId,
+            audited_user_key: auditedUserKey,
+            created_at: now,
+            updated_at: now,
+          })
+          .returning('*');
+
+        pickedEmployeeIds.add(String(chosen.employee_id));
+        stats.succeeded += 1;
+        emitStoreAuditEvent(String(company.id), 'store-audit:new', audit);
+      } catch (innerError) {
+        logger.error(
+          { err: innerError, employeeId: chosen.employee_id },
+          'Failed to process individual SCC audit candidate',
+        );
+        stats.failed += 1;
+      }
+    }
+
+    if (stats.succeeded === 0) {
       return {
         status: 'skipped',
-        reason: 'No eligible attendance could be chosen',
-        stats: { processed: 0, succeeded: 0, failed: 0, skipped: 0 },
+        reason: stats.failed > 0 ? 'All attempts failed' : 'No eligible registered users found among candidates',
+        stats,
       };
     }
-
-    const company = await resolveCompanyByOdooBranchId(chosen.company_id);
-    const mappedBranch = await db.getDb()('branches')
-      .where({
-        odoo_branch_id: String(chosen.company_id),
-        is_active: true,
-      })
-      .first('id');
-
-    const branch = mappedBranch ?? await db.getDb()('branches')
-      .where({ is_active: true })
-      .orderBy([{ column: 'is_main_branch', order: 'desc' }, { column: 'created_at', order: 'asc' }])
-      .first('id');
-
-    if (!branch) {
-      return {
-        status: 'skipped',
-        reason: 'No active tenant branch was available for service crew cctv audit creation',
-        stats: { processed: 1, succeeded: 0, failed: 0, skipped: 1 },
-      };
-    }
-
-    if (!mappedBranch) {
-      logger.warn(
-        { companyId: company.id, odooBranchId: chosen.company_id },
-        'Service crew cctv cron could not map Odoo branch to tenant branch; using fallback branch',
-      );
-    }
-
-    const auditedUserKey = await getEmployeeWebsiteKeyByEmployeeId(Number(chosen.employee_id));
-    const auditedUserId = auditedUserKey
-      ? await resolveUserIdByUserKey(auditedUserKey)
-      : null;
-
-    const now = new Date();
-    const [audit] = await db.getDb()('store_audits')
-      .insert({
-        company_id: company.id,
-        type: 'service_crew_cctv',
-        status: 'pending',
-        branch_id: branch.id,
-        monetary_reward: randomReward(),
-        scc_odoo_employee_id: chosen.employee_id,
-        scc_employee_name: chosen.employee_name,
-        audited_user_id: auditedUserId,
-        audited_user_key: auditedUserKey,
-        created_at: now,
-        updated_at: now,
-      })
-      .returning('*');
-
-    emitStoreAuditEvent(String(company.id), 'store-audit:new', audit);
 
     return {
       status: 'success',
-      stats: { processed: 1, succeeded: 1, failed: 0, skipped: 0 },
+      stats,
     };
   } catch (error) {
     logger.error({ err: error }, 'Service crew cctv cron failed');
