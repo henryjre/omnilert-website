@@ -397,11 +397,10 @@ async function fetchMonthlyHistoryFromSnapshots(userId: string): Promise<Histori
 
   return snapshots.map(s => {
     const date = new Date(s.snapshot_date);
-    const monthKey = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
     return {
-      monthKey,
-      monthLabel: MONTH_NAMES[date.getUTCMonth()],
-      year: date.getUTCFullYear(),
+      monthKey: getMonthKey(date),
+      monthLabel: getMonthLabel(date),
+      year: getYear(date),
       epiScore: roundToTenth(toNumber(s.epi_score, 100)),
       criteria: snapshotToCriteria(s),
     };
@@ -443,8 +442,8 @@ async function buildCurrentLiveSnapshot(user: UserKpiData, officialEpiScore: num
 
   return {
     monthKey: effectiveMonthKey,
-    monthLabel: MONTH_NAMES[dateForLabel.getUTCMonth()],
-    year: dateForLabel.getUTCFullYear(),
+    monthLabel: getMonthLabel(dateForLabel),
+    year: getYear(dateForLabel),
     asOfDateTime: now.toISOString(),
     projectedEpiScore: roundToTenth(officialEpiScore + delta),
     delta,
@@ -759,11 +758,10 @@ export async function getEpiLeaderboard(currentUserId: string, monthKey: string)
     const userSnapshots = snapshotsByUser.get(row.userId) ?? [];
     const monthlyHistory = userSnapshots.map(s => {
       const date = new Date(s.snapshot_date);
-      const mKey = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
       return {
-        monthKey: mKey,
-        monthLabel: MONTH_NAMES[date.getUTCMonth()],
-        year: date.getUTCFullYear(),
+        monthKey: getMonthKey(date),
+        monthLabel: getMonthLabel(date),
+        year: getYear(date),
         epiScore: roundToTenth(toNumber(s.epi_score, 100)),
         criteria: snapshotToCriteria(s),
       };

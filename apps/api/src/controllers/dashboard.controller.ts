@@ -56,6 +56,10 @@ function parseMetricId(value: string | undefined): RollingMetricId {
     'uniform-compliance',
     'hygiene-compliance',
     'sop-compliance',
+    'customer-interaction',
+    'cashiering',
+    'suggestive-selling-and-upselling',
+    'service-efficiency',
   ];
 
   if (!allowed.includes(value as RollingMetricId)) {
@@ -587,13 +591,11 @@ export async function getEmployeeMetricSnapshotsData(req: Request, res: Response
     const rangeStartYmd = parseRangeYmd(req.query.rangeStartYmd as string | undefined, 'rangeStartYmd');
     const rangeEndYmd = parseRangeYmd(req.query.rangeEndYmd as string | undefined, 'rangeEndYmd');
     const userId = (req.query.userId as string | undefined)?.trim() || null;
-    const focusUserId = (req.query.focusUserId as string | undefined)?.trim() || null;
 
     const rows = await getEmployeeMetricDailySnapshots({
       rangeStartYmd,
       rangeEndYmd,
       userId,
-      focusUserId,
     });
 
     res.json({ success: true, data: rows });

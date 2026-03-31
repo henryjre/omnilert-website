@@ -546,12 +546,7 @@ export function ServiceCrewCctvAuditDetailPanel({
   const allComplianceAnswered = COMPLIANCE_CRITERIA.every((criterion) =>
     isComplianceAnswered(answers[criterion.key]),
   );
-  const allCustomerServiceRated = CUSTOMER_SERVICE_CRITERIA.every(
-    (criterion) => answers[criterion.key] !== null,
-  ) || CUSTOMER_SERVICE_CRITERIA.every(
-    (criterion) => answers[criterion.key] === null,
-  );
-  const allAnswered = allComplianceAnswered && allCustomerServiceRated;
+  const allAnswered = allComplianceAnswered;
 
   const baseAuditDetailRows = [
     { label: 'Employee', value: employeeName },

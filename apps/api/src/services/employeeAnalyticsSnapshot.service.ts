@@ -60,10 +60,10 @@ export interface EmployeeMetricDailySnapshotRow extends RollingMetricSnapshotVal
   lastName: string;
   avatarUrl: string | null;
   roleName: string;
-  snapshotDate: string | Date;
-  windowStartDate: string | Date;
-  windowEndDate: string | Date;
-  generatedAt: string | Date;
+  snapshotDate: string;
+  windowStartDate: string;
+  windowEndDate: string;
+  generatedAt: string;
   calculationVersion: string;
 }
 
@@ -81,7 +81,7 @@ function formatYmd(parts: ManilaDateParts): string {
 }
 
 function parseYmd(ymd: string): { year: number; month: number; day: number } {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd.substring(0, 10));
   if (!match) {
     throw new Error(`Invalid YMD format: ${ymd}`);
   }
@@ -129,6 +129,16 @@ function toNumber(value: number | string | null | undefined, fallback: number): 
     }
   }
   return fallback;
+}
+
+function toNumberOrNull(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }
 
 function countDailyViolations(
@@ -398,65 +408,182 @@ export async function runDailyEmployeeRollingMetricSnapshot(input?: { scheduledF
   };
 }
 
-async function calculateLiveSnapshot(userId: string, snapshotDateYmd: string): Promise<EmployeeMetricDailySnapshotRow | null> {
-  const masterDb = db.getDb();
-  const user = await masterDb('users as u')
-    .join('user_roles as ur', 'u.id', 'ur.user_id')
-    .join('roles as r', 'ur.role_id', 'r.id')
-    .where('u.id', userId)
-    .where('r.name', 'Service Crew')
-    .select('u.id', 'u.user_key', 'u.epi_score', 'u.first_name', 'u.last_name', 'u.avatar_url', 'r.name as roleName')
-    .first();
+async function fetchLiveSnapshotRows(
+  targetYmd: string,
+  existingDateUserIds: Set<string>,
+  filterUserId: string | null,
+): Promise<EmployeeMetricDailySnapshotRow[]> {
+  const dbConn = db.getDb();
+  const todayStart = toUtcBoundaryFromManilaYmd(targetYmd, false);
+  const todayEnd = toUtcBoundaryFromManilaYmd(targetYmd, true);
+  const thirtyDaysAgoYmd = addDaysToYmd(targetYmd, -30);
 
-  if (!user || !user.user_key) return null;
+  const windowStartDate = addDaysToYmd(targetYmd, -29);
+  const rollingStart = toUtcBoundaryFromManilaYmd(windowStartDate, false);
 
-  const { windowStartDate, windowEndDate } = getRollingWindowForSnapshotDate(snapshotDateYmd);
-  const from = toUtcBoundaryFromManilaYmd(windowStartDate, false);
-  const to = toUtcBoundaryFromManilaYmd(windowEndDate, true);
-  const dailyFrom = toUtcBoundaryFromManilaYmd(snapshotDateYmd, false);
-  const dailyTo = toUtcBoundaryFromManilaYmd(snapshotDateYmd, true);
+  // Get user_key for identity resolution if filtering by user
+  let userKey: string | null = null;
+  if (filterUserId) {
+    const userRow = await dbConn('users').where({ id: filterUserId }).first('user_key');
+    userKey = userRow?.user_key ?? null;
+  }
+
+  // Run bulk queries in parallel
+  const [sccAuditRows, wrsRows, violationRows, recentSnapshotRows, userBaseRows] = await Promise.all([
+    // Query 1 — SCC audits (30-day rolling average)
+    // Matches by both audited_user_id and audited_user_key to ensure no data is missed
+    (() => {
+      const q = dbConn('store_audits as a')
+        .leftJoin('users as u', 'u.user_key', 'a.audited_user_key')
+        .where({ 'a.type': 'service_crew_cctv', 'a.status': 'completed' })
+        .whereBetween('a.completed_at', [rollingStart, todayEnd])
+        .groupBy(dbConn.raw('COALESCE(a.audited_user_id, u.id)'))
+        .select(
+          dbConn.raw('COALESCE(a.audited_user_id, u.id) as user_id'),
+          dbConn.raw('AVG(a.scc_service_efficiency) as avg_service_efficiency'),
+          dbConn.raw('AVG(a.scc_customer_interaction) as avg_customer_interaction'),
+          dbConn.raw('AVG(a.scc_cashiering) as avg_cashiering'),
+          dbConn.raw('AVG(a.scc_suggestive_selling_and_upselling) as avg_suggestive_selling'),
+          dbConn.raw('AVG(a.scc_productivity_rate::int) * 100 as avg_productivity_rate'),
+          dbConn.raw('AVG(a.scc_uniform_compliance::int) * 100 as avg_uniform_compliance'),
+          dbConn.raw('AVG(a.scc_hygiene_compliance::int) * 100 as avg_hygiene_compliance'),
+          dbConn.raw('AVG(a.scc_sop_compliance::int) * 100 as avg_sop_compliance'),
+        );
+
+      if (filterUserId && userKey) {
+        q.where((idQ) => {
+          idQ.where('a.audited_user_id', filterUserId).orWhere('a.audited_user_key', userKey);
+        });
+      } else if (filterUserId) {
+        q.where('a.audited_user_id', filterUserId);
+      } else {
+        // Just ensure there is SOME identity
+        q.where((idQ) => {
+          idQ.whereNotNull('a.audited_user_id').orWhereNotNull('a.audited_user_key');
+        });
+      }
+      return q;
+    })() as Promise<Array<Record<string, any>>>,
+
+    // Query 2 — Peer evaluations (30-day rolling average)
+    (() => {
+      const q = dbConn('peer_evaluations as pe')
+        .whereNotNull('pe.submitted_at')
+        .whereRaw('COALESCE(pe.wrs_effective_at, pe.submitted_at) >= ?', [rollingStart])
+        .whereRaw('COALESCE(pe.wrs_effective_at, pe.submitted_at) <= ?', [todayEnd])
+        .groupBy('pe.evaluated_user_id')
+        .select(
+          'pe.evaluated_user_id as user_id',
+          dbConn.raw('AVG((pe.q1_score + pe.q2_score + pe.q3_score) / 3.0) as avg_wrs'),
+        );
+      if (filterUserId) q.where('pe.evaluated_user_id', filterUserId);
+      return q;
+    })() as Promise<Array<Record<string, any>>>,
+
+    // Query 3 — Violations count (Daily window, matches snapshot behavior)
+    (() => {
+      const q = dbConn('violation_notice_targets as vnt')
+        .join('violation_notices as vn', 'vn.id', 'vnt.violation_notice_id')
+        .where('vn.status', 'completed')
+        .whereBetween('vn.created_at', [todayStart, todayEnd])
+        .groupBy('vnt.user_id')
+        .select('vnt.user_id', dbConn.raw('COUNT(*)::int as violations_count'));
+      if (filterUserId) q.where('vnt.user_id', filterUserId);
+      return q;
+    })() as Promise<Array<Record<string, any>>>,
+
+    // Query 4 — Most recent snapshot per user (past 30 days) for all metrics fallback
+    (() => {
+      const q = dbConn.raw(`
+        SELECT DISTINCT ON (user_id) *
+        FROM employee_metric_daily_snapshots
+        WHERE snapshot_date >= ?
+        ${filterUserId ? 'AND user_id = ?' : ''}
+        ORDER BY user_id, snapshot_date DESC
+      `, filterUserId ? [thirtyDaysAgoYmd, filterUserId] : [thirtyDaysAgoYmd]);
+      return q;
+    })().then((result: any) => result.rows ?? result) as Promise<Array<Record<string, any>>>,
+
+    // Query 5 — Users to include in live rows (everyone active in last 30 days)
+    (() => {
+      const q = dbConn('users as u')
+        .whereExists(function() {
+          this.select('*')
+            .from('employee_metric_daily_snapshots as s')
+            .whereRaw('s.user_id = u.id')
+            .where('s.snapshot_date', '>=', thirtyDaysAgoYmd);
+        })
+        .select('u.id', 'u.first_name', 'u.last_name', 'u.avatar_url', 'u.epi_score');
+      if (filterUserId) q.where('u.id', filterUserId);
+      return q;
+    })() as Promise<Array<Record<string, any>>>,
+  ]);
+
+  // Index query results by user_id
+  const sccByUser = new Map(sccAuditRows.map((r) => [r.user_id, r]));
+  const wrsByUser = new Map(wrsRows.map((r) => [r.user_id, r]));
+  const violationsByUser = new Map(violationRows.map((r) => [r.user_id, r]));
+  const snapshotByUser = new Map(recentSnapshotRows.map((r) => [r.user_id, r]));
+
+  // Filters out IDs that already have this date's snapshot
+  const finalUserRows = userBaseRows.filter(u => !existingDateUserIds.has(u.id));
+  if (finalUserRows.length === 0) return [];
+
   const now = new Date();
 
-  const kpiData = await fetchUserKpiData(user.id, user.user_key);
-  const { breakdown } = await calculateKpiScores(kpiData, { window: { from, to }, minRecords: 1 });
-  const values = mapBreakdownToRollingMetricSnapshot(breakdown);
+  // Build synthetic rows
+  const liveRows: EmployeeMetricDailySnapshotRow[] = [];
+  for (const userInfo of finalUserRows) {
+    const userId = userInfo.id;
+    const scc = sccByUser.get(userId);
+    const wrs = wrsByUser.get(userId);
+    const viol = violationsByUser.get(userId);
+    const snap = snapshotByUser.get(userId);
 
-  return {
-    userId: user.id,
-    fullName: `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim(),
-    firstName: user.first_name || '',
-    lastName: user.last_name || '',
-    avatarUrl: user.avatar_url,
-    roleName: user.roleName,
-    snapshotDate: snapshotDateYmd,
-    windowStartDate,
-    windowEndDate,
-    customerInteractionScore: values.customerInteractionScore,
-    cashieringScore: values.cashieringScore,
-    suggestiveSellingAndUpsellingScore: values.suggestiveSellingAndUpsellingScore,
-    serviceEfficiencyScore: values.serviceEfficiencyScore,
-    workplaceRelationsScore: values.workplaceRelationsScore,
-    attendanceRate: values.attendanceRate,
-    punctualityRate: values.punctualityRate,
-    productivityRate: values.productivityRate,
-    averageOrderValue: values.averageOrderValue,
-    branchAov: values.branchAov,
-    uniformComplianceRate: values.uniformComplianceRate,
-    hygieneComplianceRate: values.hygieneComplianceRate,
-    sopComplianceRate: values.sopComplianceRate,
-    epiScore: toNumber(user.epi_score, 100),
-    awardsCount: 0,
-    violationsCount: countDailyViolations(kpiData.violationNotices, dailyFrom, dailyTo),
-    generatedAt: now.toISOString(),
-    calculationVersion: SNAPSHOT_CALCULATION_VERSION,
-  };
+    const firstName = userInfo.first_name || '';
+    const lastName = userInfo.last_name || '';
+
+    liveRows.push({
+      userId,
+      fullName: `${firstName} ${lastName}`.trim(),
+      firstName,
+      lastName,
+      avatarUrl: userInfo.avatar_url ?? null,
+      roleName: 'Service Crew',
+      snapshotDate: targetYmd,
+      windowStartDate,
+      windowEndDate: targetYmd,
+      // Metrics with live aggregation + snapshot fallback
+      serviceEfficiencyScore: toNumberOrNull(scc?.avg_service_efficiency ?? snap?.service_efficiency),
+      customerInteractionScore: toNumberOrNull(scc?.avg_customer_interaction ?? snap?.customer_interaction),
+      cashieringScore: toNumberOrNull(scc?.avg_cashiering ?? snap?.cashiering),
+      suggestiveSellingAndUpsellingScore: toNumberOrNull(scc?.avg_suggestive_selling ?? snap?.suggestive_selling_and_upselling),
+      productivityRate: toNumberOrNull(scc?.avg_productivity_rate ?? snap?.productivity_rate),
+      uniformComplianceRate: toNumberOrNull(scc?.avg_uniform_compliance ?? snap?.uniform_compliance_rate),
+      hygieneComplianceRate: toNumberOrNull(scc?.avg_hygiene_compliance ?? snap?.hygiene_compliance_rate),
+      sopComplianceRate: toNumberOrNull(scc?.avg_sop_compliance ?? snap?.sop_compliance_rate),
+      workplaceRelationsScore: toNumberOrNull(wrs?.avg_wrs ?? snap?.workplace_relations_score),
+      // Pure fallback metrics (Attendance & Punctuality per user request)
+      attendanceRate: toNumberOrNull(snap?.attendance_rate),
+      punctualityRate: toNumberOrNull(snap?.punctuality_rate),
+      // Live EPI from users table
+      epiScore: toNumberOrNull(userInfo.epi_score ?? snap?.epi_score),
+      averageOrderValue: toNumberOrNull(snap?.average_order_value),
+      branchAov: toNumberOrNull(snap?.branch_aov),
+      awardsCount: 0, // Stay 0 for live, per user request
+      violationsCount: viol?.violations_count ?? 0,
+      generatedAt: now.toISOString(),
+      calculationVersion: 'live-v2',
+    });
+  }
+
+  return liveRows;
 }
 
 export async function getEmployeeMetricDailySnapshots(input: {
   rangeStartYmd: string;
   rangeEndYmd: string;
   userId?: string | null;
-  focusUserId?: string | null;
 }): Promise<EmployeeMetricDailySnapshotRow[]> {
   const { startYmd, endYmd } = normalizeRangeYmd(input.rangeStartYmd, input.rangeEndYmd);
   const query = db.getDb()('employee_metric_daily_snapshots as s')
@@ -468,7 +595,7 @@ export async function getEmployeeMetricDailySnapshots(input: {
       db.getDb().raw(`COALESCE(u.last_name, '') as "lastName"`),
       'u.avatar_url as avatarUrl',
       db.getDb().raw(`'Service Crew'::text as "roleName"`),
-      's.snapshot_date as snapshotDate',
+      db.getDb().raw('s.snapshot_date::text as "snapshotDate"'),
       's.window_start_date as windowStartDate',
       's.window_end_date as windowEndDate',
       's.customer_interaction as customerInteractionScore',
@@ -500,46 +627,26 @@ export async function getEmployeeMetricDailySnapshots(input: {
 
   const rows = (await query) as EmployeeMetricDailySnapshotRow[];
 
-  // 1. Detect if the requested range includes "Today" in Manila
+  // Supplement with live data for 'Live' window (Today and Yesterday)
+  // This handles the gap between midnight and the 3:30 AM cron job.
   const todayYmd = formatYmd(getManilaDateParts());
-  const liveTargetId = input.userId || input.focusUserId;
+  const yesterdayYmd = addDaysToYmd(todayYmd, -1);
+  const liveTargetDates = [yesterdayYmd, todayYmd].filter(d => d >= startYmd && d <= endYmd);
 
-  logger.info({ startYmd, endYmd, todayYmd, userId: input.userId, focusUserId: input.focusUserId }, 'Checking for live snapshot requirement');
-  if (startYmd <= todayYmd && endYmd >= todayYmd && liveTargetId) {
-    // 2. Check if a database snapshot for today already exists (unlikely given cron schedule)
-    const hasTodayInRows = rows.some(r => {
-      let rowDateYmd = '';
-      if (r.snapshotDate instanceof Date) {
-        // Handle Knex Date objects (assume they represent Manila midnight)
-        const shifted = new Date(r.snapshotDate.getTime() + MANILA_OFFSET_MS);
-        rowDateYmd = formatYmd({
-          year: shifted.getUTCFullYear(),
-          month: shifted.getUTCMonth() + 1,
-          day: shifted.getUTCDate(),
-        });
-      } else {
-        rowDateYmd = String(r.snapshotDate).slice(0, 10);
-      }
-      return rowDateYmd === todayYmd;
-    });
-
-    logger.info({ hasTodayInRows, rowCount: rows.length, liveTargetId }, 'Today snapshot existence check');
-
-    if (!hasTodayInRows) {
-      try {
-        logger.info({ liveTargetId, todayYmd }, 'Calculating live snapshot...');
-        const liveSnapshot = await calculateLiveSnapshot(liveTargetId, todayYmd);
-        if (liveSnapshot) {
-          logger.info({ liveTargetId, snapshotDate: liveSnapshot.snapshotDate }, 'Live snapshot calculated successfully');
-          rows.push(liveSnapshot);
-        } else {
-          logger.warn({ liveTargetId, todayYmd }, 'Live snapshot returned null');
-        }
-      } catch (error) {
-        logger.error({ err: error, liveTargetId, todayYmd }, 'Failed to compute live employee analytics snapshot');
-      }
+  for (const targetYmd of liveTargetDates) {
+    const existingDateUserIds = new Set(
+      rows.filter((r) => r.snapshotDate === targetYmd).map((r) => r.userId),
+    );
+    try {
+      const liveRows = await fetchLiveSnapshotRows(targetYmd, existingDateUserIds, input.userId ?? null);
+      rows.push(...liveRows);
+    } catch (err) {
+      logger.error({ err, targetYmd }, 'Failed to fetch live snapshot rows for gap filler');
     }
   }
 
+  // Ensure rows are sorted by date after appending live data
+  rows.sort((a, b) => String(a.snapshotDate).localeCompare(String(b.snapshotDate)));
+  
   return rows;
 }

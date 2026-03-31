@@ -17,7 +17,11 @@ export type RollingMetricId =
   | 'average-order-value'
   | 'uniform-compliance'
   | 'hygiene-compliance'
-  | 'sop-compliance';
+  | 'sop-compliance'
+  | 'customer-interaction'
+  | 'cashiering'
+  | 'suggestive-selling-and-upselling'
+  | 'service-efficiency';
 
 export interface MetricEventQueryInput {
   userId: string;
@@ -36,7 +40,7 @@ export interface MetricEventQueryResult {
 }
 
 function parseYmd(ymd: string): { year: number; month: number; day: number } {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd.substring(0, 10));
   if (!match) {
     throw new Error(`Invalid YMD format: ${ymd}`);
   }
@@ -204,7 +208,13 @@ async function queryCustomerServiceEvents(input: MetricEventQueryInput): Promise
     )
     .orderBy('audits.completed_at', 'desc');
 
-  return paginateRows(rows, input.page, input.pageSize);
+  const mapped = rows.map((row) => ({
+    completedAt: row.completedAt,
+    branchName: row.branchName ?? null,
+    auditorName: row.auditorName ?? null,
+    result: row.score !== null ? `${Math.round(Number(row.score))}/5` : 'Not Audited',
+  }));
+  return paginateRows(mapped, input.page, input.pageSize);
 }
 
 async function queryWorkplaceRelationsEvents(input: MetricEventQueryInput): Promise<MetricEventQueryResult> {
@@ -228,7 +238,14 @@ async function queryWorkplaceRelationsEvents(input: MetricEventQueryInput): Prom
     )
     .orderBy('pe.wrs_effective_at', 'desc');
 
-  return paginateRows(rows, input.page, input.pageSize);
+  const mapped = rows.map((row) => ({
+    submittedAt: row.submittedAt,
+    effectiveAt: row.effectiveAt,
+    evaluatorName: row.evaluatorName ?? null,
+    branchName: row.branchName ?? null,
+    result: row.score !== null ? `${Math.round(Number(row.score))}/5` : 'Not Audited',
+  }));
+  return paginateRows(mapped, input.page, input.pageSize);
 }
 
 async function queryComplianceEvents(
@@ -275,7 +292,53 @@ async function queryComplianceEvents(
     completedAt: row.completedAt,
     branchName: row.branchName ?? null,
     auditorName: row.auditorName ?? null,
-    result: row.passed === true ? 'Pass' : row.passed === false ? 'Fail' : null,
+    result: row.passed === true ? 'Pass' : row.passed === false ? 'Fail' : 'Not Audited',
+  }));
+  return paginateRows(mapped, input.page, input.pageSize);
+}
+
+async function querySccScoreEvents(
+  input: MetricEventQueryInput,
+  field:
+    | 'scc_customer_interaction'
+    | 'scc_cashiering'
+    | 'scc_suggestive_selling_and_upselling'
+    | 'scc_service_efficiency',
+): Promise<MetricEventQueryResult> {
+  const { startYmd, endYmd } = normalizeRangeYmd(input.rangeStartYmd, input.rangeEndYmd);
+  const start = toLocalStartDate(startYmd);
+  const end = toLocalEndDate(endYmd);
+  const userKey = await getWebsiteUserKey(input.userId);
+
+  const rows = await db.getDb()('store_audits as audits')
+    .leftJoin('branches as b', 'b.id', 'audits.branch_id')
+    .leftJoin('users as auditor', 'auditor.id', 'audits.auditor_user_id')
+    .where({
+      'audits.type': 'service_crew_cctv',
+      'audits.status': 'completed',
+    })
+    .andWhere((ownedQuery) => {
+      ownedQuery.where('audits.audited_user_id', input.userId);
+      if (userKey) {
+        ownedQuery.orWhere((keyQ) => {
+          keyQ.whereNull('audits.audited_user_id').where('audits.audited_user_key', userKey);
+        });
+      }
+    })
+    .whereBetween('audits.completed_at', [start, end])
+    .select(
+      'audits.completed_at as completedAt',
+      db.getDb().raw(`${field} as score`),
+      'b.name as branchName',
+      db.getDb().raw(`NULLIF(TRIM(CONCAT_WS(' ', auditor.first_name, auditor.last_name)), '') as "auditorName"`),
+    )
+    .orderBy('audits.completed_at', 'desc');
+
+  const mapped = rows.map((row) => ({
+    completedAt: row.completedAt,
+    branchName: row.branchName ?? null,
+    auditorName: row.auditorName ?? null,
+    result: row.score !== null ? `${Math.round(Number(row.score))}/5` : 'Not Audited',
   }));
   return paginateRows(mapped, input.page, input.pageSize);
 }
@@ -368,6 +431,14 @@ export async function getEmployeeMetricEventRows(input: MetricEventQueryInput): 
       return queryComplianceEvents(input, 'scc_hygiene_compliance');
     case 'sop-compliance':
       return queryComplianceEvents(input, 'scc_sop_compliance');
+    case 'customer-interaction':
+      return querySccScoreEvents(input, 'scc_customer_interaction');
+    case 'cashiering':
+      return querySccScoreEvents(input, 'scc_cashiering');
+    case 'suggestive-selling-and-upselling':
+      return querySccScoreEvents(input, 'scc_suggestive_selling_and_upselling');
+    case 'service-efficiency':
+      return querySccScoreEvents(input, 'scc_service_efficiency');
     default: {
       const _never: never = input.metricId;
       return _never;

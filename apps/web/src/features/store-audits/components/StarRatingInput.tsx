@@ -3,7 +3,7 @@ import { Star } from 'lucide-react';
 
 interface StarRatingInputProps {
   value: number | null;
-  onChange: (value: number) => void;
+  onChange: (value: number | null) => void;
   disabled?: boolean;
 }
 
@@ -22,7 +22,7 @@ export function StarRatingInput({ value, onChange, disabled = false }: StarRatin
           <motion.button
             key={star}
             type="button"
-            onClick={() => onChange(star)}
+            onClick={() => onChange(value === star ? null : star)}
             disabled={disabled}
             whileTap={disabled || shouldReduceMotion ? undefined : { scale: 0.94 }}
             whileHover={disabled || shouldReduceMotion ? undefined : { y: -1 }}

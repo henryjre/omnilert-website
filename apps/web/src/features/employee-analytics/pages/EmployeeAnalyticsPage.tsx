@@ -652,8 +652,8 @@ const FIXED_SCORE_BANDS: ReadonlyArray<{ zone: HeroEpiZone; minPct: number; maxP
 const HERO_ZONE_DISTRIBUTION_STYLE: Record<HeroEpiZone, { fill: string; shortLabel: string }> = {
   red: { fill: '#ef4444', shortLabel: 'Critical Deficit' },
   amber: { fill: '#f59e0b', shortLabel: 'Underperforming' },
-  green: { fill: '#10b981', shortLabel: 'On Target' },
-  blue: { fill: '#3b82f6', shortLabel: 'Exceptional' },
+  green: { fill: '#3b82f6', shortLabel: 'On Target' },
+  blue: { fill: '#10b981', shortLabel: 'Exceptional' },
 };
 
 function roundToOneDecimal(value: number): number {
@@ -2663,6 +2663,16 @@ function PersonalMetricsBreakdownCard({
           mk("SOP", "sop-compliance"),
         ],
       },
+      {
+        title: "Customer Service",
+        icon: <Users className="h-3.5 w-3.5 text-rose-500" />,
+        items: [
+          mk("Customer Interaction", "customer-interaction"),
+          mk("Cashiering", "cashiering"),
+          mk("Suggestive Selling & Upselling", "suggestive-selling-and-upselling"),
+          mk("Service Efficiency", "service-efficiency"),
+        ],
+      },
     ];
   }, [stats, userName, analyticsRange, liveDataset]);
 
@@ -2980,15 +2990,34 @@ function PersonalMetricsBreakdownCard({
                                       rawRow as Record<string, unknown>,
                                       col.key,
                                     );
-                                    const isStatus = col.key === 'status' || col.key === 'result';
+                                    const isStatus = col.key === 'status' || col.key === 'result' || col.key === 'score';
                                     let statusClass = 'text-gray-700';
                                     if (isStatus) {
-                                      if (cellValue === 'Present' || cellValue === 'On-time' || cellValue === 'Pass') {
+                                      if (selectedMetric === 'workplace-relations' && col.key === 'score') {
+                                        const score = Number(rawRow[col.key]);
+                                        if (score >= 4.26) statusClass = 'text-emerald-600 font-bold';
+                                        else if (score >= 3.26) statusClass = 'text-blue-600 font-bold';
+                                        else if (score >= 2.01) statusClass = 'text-amber-500 font-bold';
+                                        else if (score >= 1.01) statusClass = 'text-orange-500 font-bold';
+                                        else statusClass = 'text-red-500 font-bold';
+                                      } else if (cellValue === 'Present' || cellValue === 'On-time' || cellValue === 'Pass') {
                                         statusClass = 'text-emerald-600 font-semibold';
                                       } else if (cellValue === 'Absent' || cellValue === 'Late' || cellValue === 'Fail' || cellValue === 'No Check-in') {
                                         statusClass = 'text-red-500 font-semibold';
                                       } else if (cellValue === 'Excused') {
                                         statusClass = 'text-amber-600 font-semibold';
+                                      } else if (cellValue === '5/5') {
+                                        statusClass = 'text-emerald-600 font-bold';
+                                      } else if (cellValue === '4/5') {
+                                        statusClass = 'text-blue-600 font-bold';
+                                      } else if (cellValue === '3/5') {
+                                        statusClass = 'text-amber-500 font-bold';
+                                      } else if (cellValue === '2/5') {
+                                        statusClass = 'text-orange-500 font-bold';
+                                      } else if (cellValue === '1/5') {
+                                        statusClass = 'text-red-500 font-bold';
+                                      } else if (cellValue === 'Not Audited') {
+                                        statusClass = 'text-gray-400 font-medium italic';
                                       }
                                     }
                                     return (
@@ -5271,12 +5300,10 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
       analyticsRange.granularity,
       analyticsRange.rangeStartYmd,
       analyticsRange.rangeEndYmd,
-      selectedUser?.id ?? 'all',
     ],
     queryFn: () => fetchEmployeeMetricSnapshots({
       rangeStartYmd: analyticsRange.rangeStartYmd,
       rangeEndYmd: analyticsRange.rangeEndYmd,
-      focusUserId: selectedUser?.id,
     }),
   });
   const liveDataset = useMemo(
