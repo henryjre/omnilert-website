@@ -185,7 +185,7 @@ test('buildAuditResultsWebhookPayload creates the shared SCC payload shape with 
       completed_at: '2026-03-21T10:00:00.000Z',
       observed_at: '2026-03-21T08:30:00.000Z',
       source_type: 'attendance',
-      source_reference: 'employee:88',
+      source_reference: 'CCTV Observation',
     },
     summary: {
       result_line: 'Status: Completed. Includes compliance checks and customer service ratings.',

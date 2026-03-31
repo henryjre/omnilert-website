@@ -4,7 +4,7 @@ import type { EpiCriteria } from './types';
 import { SectionLabel } from './SectionLabel';
 import { AnimatedCounter } from './AnimatedCounter';
 import { Card, CardBody } from '@/shared/components/ui/Card';
-import { VIOLATION_DEDUCTION, AWARD_BONUS } from './mockData';
+import { VIOLATION_DEDUCTION, AWARD_BONUS } from './epiUtils';
 
 interface DisciplineRecognitionSectionProps {
   criteria: EpiCriteria;

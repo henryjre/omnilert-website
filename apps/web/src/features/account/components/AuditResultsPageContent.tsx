@@ -49,7 +49,7 @@ export function AuditResultsPageContent({
           <h1 className="text-2xl font-bold text-gray-900">My Audit Results</h1>
         </div>
         <p className="mt-1 text-sm text-gray-500">
-          View your completed Service Crew CCTV Audit results.
+          View your completed audit results.
         </p>
       </div>
 

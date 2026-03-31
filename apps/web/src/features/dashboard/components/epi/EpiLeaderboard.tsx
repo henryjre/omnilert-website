@@ -11,7 +11,7 @@ import { Card, CardBody } from '@/shared/components/ui/Card';
 import { fetchEpiLeaderboardDetail } from '../../services/epi.api';
 import { getDashboardRefreshPolicy } from '../../services/dashboardRefreshPolicy';
 import { LeaderboardSkeleton } from './EpiSkeletons';
-import { AWARD_BONUS, VIOLATION_DEDUCTION } from './mockData';
+import { AWARD_BONUS, VIOLATION_DEDUCTION } from './epiUtils';
 
 interface EpiLeaderboardProps {
   entries: LeaderboardSummaryEntry[];

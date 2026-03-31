@@ -101,7 +101,7 @@ export function buildAuditResultsWebhookPayload(input: {
         id: audit.id,
         type: audit.type,
         type_label: formatAuditTypeLabel(audit.type),
-        completed_at: String(audit.completed_at ?? ''),
+        completed_at: audit.completed_at ? new Date(audit.completed_at).toISOString() : '',
         observed_at: audit.css_date_order,
         source_type: 'pos_order',
         source_reference:
@@ -130,13 +130,10 @@ export function buildAuditResultsWebhookPayload(input: {
       id: audit.id,
       type: audit.type,
       type_label: formatAuditTypeLabel(audit.type),
-      completed_at: String(audit.completed_at ?? ''),
+      completed_at: audit.completed_at ? new Date(audit.completed_at).toISOString() : '',
       observed_at: audit.created_at,
       source_type: 'attendance',
-      source_reference:
-        audit.scc_odoo_employee_id !== null
-          ? `employee:${audit.scc_odoo_employee_id}`
-          : `audit:${audit.id}`,
+      source_reference: 'CCTV Observation',
     },
     summary: {
       result_line: 'Status: Completed. Includes compliance checks and customer service ratings.',
