@@ -77,16 +77,40 @@ export function PerformanceScoresSection({ criteria, wrsStatus }: PerformanceSco
       <SectionLabel>Performance Scores</SectionLabel>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 items-stretch">
         <StarTile
+          label="Customer Interaction"
+          score={criteria.customerInteractionScore}
+          subtext={criteria.customerInteractionScore !== null ? 'Contributes to EPI' : 'Awaiting CCTV audits'}
+          delay={0}
+        />
+        <StarTile
+          label="Cashiering"
+          score={criteria.cashieringScore}
+          subtext={criteria.cashieringScore !== null ? 'Contributes to EPI' : 'Awaiting CCTV audits'}
+          delay={0.1}
+        />
+        <StarTile
+          label="Suggestive Selling & Upselling"
+          score={criteria.suggestiveSellingUpsellingScore}
+          subtext={criteria.suggestiveSellingUpsellingScore !== null ? 'Contributes to EPI' : 'Awaiting CCTV audits'}
+          delay={0.2}
+        />
+        <StarTile
+          label="Service Efficiency"
+          score={criteria.serviceEfficiencyScore}
+          subtext={criteria.serviceEfficiencyScore !== null ? 'Contributes to EPI' : 'Awaiting CCTV audits'}
+          delay={0.3}
+        />
+        <StarTile
           label="Workplace Relations Score"
           score={criteria.workplaceRelationsScore}
           subtext={criteria.workplaceRelationsScore !== null ? wrsDelayedText : wrsEmptyText}
-          delay={0}
+          delay={0.4}
         />
         <StarTile
           label="Professional Conduct Score"
           score={criteria.professionalConductScore}
           subtext={criteria.professionalConductScore !== null ? 'Contributes to EPI' : 'Awaiting management evaluations'}
-          delay={0.15}
+          delay={0.5}
         />
       </div>
     </div>

@@ -163,6 +163,10 @@ export interface DashboardCriteria {
   uniformComplianceRate: number | null;
   hygieneComplianceRate: number | null;
   sopComplianceRate: number | null;
+  customerInteractionScore: number | null;
+  cashieringScore: number | null;
+  suggestiveSellingUpsellingScore: number | null;
+  serviceEfficiencyScore: number | null;
 }
 
 export interface HistoricalMonthEntry {
@@ -300,6 +304,10 @@ function createEmptyCriteria(): DashboardCriteria {
     uniformComplianceRate: null,
     hygieneComplianceRate: null,
     sopComplianceRate: null,
+    customerInteractionScore: null,
+    cashieringScore: null,
+    suggestiveSellingUpsellingScore: null,
+    serviceEfficiencyScore: null,
   };
 }
 
@@ -320,6 +328,10 @@ function breakdownToCriteria(kpi: KpiBreakdown | null | undefined): DashboardCri
     uniformComplianceRate: kpi.uniform.rate,
     hygieneComplianceRate: kpi.hygiene.rate,
     sopComplianceRate: kpi.sop.rate,
+    customerInteractionScore: kpi.customer_interaction.score,
+    cashieringScore: kpi.cashiering.score,
+    suggestiveSellingUpsellingScore: kpi.suggestive_selling_and_upselling.score,
+    serviceEfficiencyScore: kpi.service_efficiency.score,
   };
 }
 

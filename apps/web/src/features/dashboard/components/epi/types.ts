@@ -12,6 +12,10 @@ export interface EpiCriteria {
   uniformComplianceRate: number | null;
   hygieneComplianceRate: number | null;
   sopComplianceRate: number | null;
+  customerInteractionScore: number | null;
+  cashieringScore: number | null;
+  suggestiveSellingUpsellingScore: number | null;
+  serviceEfficiencyScore: number | null;
 }
 
 export interface WrsStatusSummary {

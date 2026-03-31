@@ -20,7 +20,7 @@ let initialized = false;
 const MAX_TIMEOUT_MS = 2_147_483_647;
 const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
 const STALE_RUN_THRESHOLD_MS = 6 * 60 * 60 * 1000;
-const DISABLED_AUDIT_ODOO_COMPANY_IDS = new Set<number>([2]);
+const DISABLED_AUDIT_ODOO_COMPANY_IDS = new Set<number>(env.SERVICE_CREW_CCTV_CRON_DISABLED_COMPANY_IDS);
 
 interface ScheduledJobRunRow {
   id: string;

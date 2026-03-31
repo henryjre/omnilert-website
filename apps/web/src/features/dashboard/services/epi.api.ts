@@ -125,6 +125,10 @@ function getEmptyCriteria(): EpiCriteria {
     uniformComplianceRate: null,
     hygieneComplianceRate: null,
     sopComplianceRate: null,
+    customerInteractionScore: null,
+    cashieringScore: null,
+    suggestiveSellingUpsellingScore: null,
+    serviceEfficiencyScore: null,
   };
 }
 

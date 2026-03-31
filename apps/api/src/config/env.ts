@@ -62,6 +62,18 @@ const envSchema = z.object({
     }
     return undefined;
   }, z.boolean()).default(true),
+  SERVICE_CREW_CCTV_CRON_DISABLED_COMPANY_IDS: z.preprocess((value) => {
+    if (Array.isArray(value)) return value;
+    if (typeof value === 'string') {
+      return value
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s !== '')
+        .map(Number)
+        .filter((n) => !Number.isNaN(n));
+    }
+    return [];
+  }, z.array(z.number())).default([]),
 
   QUEUE_SCHEMA: z.string().default('pgboss'),
   EARLY_CHECKIN_QUEUE_NAME: z.string().default('early-checkin-auth'),
