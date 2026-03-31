@@ -18,6 +18,10 @@ function mockCriteria(epiScore: number, overrides: Partial<EpiCriteria> = {}): E
     uniformComplianceRate: Math.min(100, epiScore * 0.88),
     hygieneComplianceRate: Math.min(100, epiScore * 0.76),
     sopComplianceRate: Math.min(100, epiScore * 0.81),
+    customerInteractionScore: null,
+    cashieringScore: null,
+    suggestiveSellingUpsellingScore: null,
+    serviceEfficiencyScore: null,
     ...overrides,
   };
 }
@@ -194,6 +198,10 @@ const HISTORY: EpiMonthEntry[] = [
       uniformComplianceRate: 91.0,
       hygieneComplianceRate: 78.5,
       sopComplianceRate: null,
+      customerInteractionScore: null,
+      cashieringScore: null,
+      suggestiveSellingUpsellingScore: null,
+      serviceEfficiencyScore: null,
     },
     source: 'live',
     wrsStatus: { effectiveCount: 4, delayedCount: 1 },
