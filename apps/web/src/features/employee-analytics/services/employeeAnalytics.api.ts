@@ -57,6 +57,7 @@ export async function fetchEmployeeMetricSnapshots(input: {
   rangeStartYmd: string;
   rangeEndYmd: string;
   userId?: string | null;
+  focusUserId?: string | null;
 }): Promise<EmployeeMetricDailySnapshot[]> {
   const res = await api.get<{ success: boolean; data: EmployeeMetricDailySnapshot[] }>(
     '/dashboard/employee-analytics/metric-snapshots',
@@ -65,6 +66,7 @@ export async function fetchEmployeeMetricSnapshots(input: {
         rangeStartYmd: input.rangeStartYmd,
         rangeEndYmd: input.rangeEndYmd,
         ...(input.userId ? { userId: input.userId } : {}),
+        ...(input.focusUserId ? { focusUserId: input.focusUserId } : {}),
       },
     },
   );

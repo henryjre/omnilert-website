@@ -27,10 +27,10 @@ interface SnapshotUserRow {
 }
 
 export interface RollingMetricSnapshotValues {
-  customerInteraction: number | null;
-  cashiering: number | null;
-  suggestiveSellingAndUpselling: number | null;
-  serviceEfficiency: number | null;
+  customerInteractionScore: number | null;
+  cashieringScore: number | null;
+  suggestiveSellingAndUpsellingScore: number | null;
+  serviceEfficiencyScore: number | null;
   workplaceRelationsScore: number | null;
   attendanceRate: number | null;
   punctualityRate: number | null;
@@ -60,10 +60,10 @@ export interface EmployeeMetricDailySnapshotRow extends RollingMetricSnapshotVal
   lastName: string;
   avatarUrl: string | null;
   roleName: string;
-  snapshotDate: string;
-  windowStartDate: string;
-  windowEndDate: string;
-  generatedAt: string;
+  snapshotDate: string | Date;
+  windowStartDate: string | Date;
+  windowEndDate: string | Date;
+  generatedAt: string | Date;
   calculationVersion: string;
 }
 
@@ -166,10 +166,10 @@ export function getRollingWindowForSnapshotDate(snapshotDateYmd: string): Rollin
 
 export function mapBreakdownToRollingMetricSnapshot(breakdown: KpiBreakdown): RollingMetricSnapshotValues {
   return {
-    customerInteraction: breakdown.customer_interaction.score,
-    cashiering: breakdown.cashiering.score,
-    suggestiveSellingAndUpselling: breakdown.suggestive_selling_and_upselling.score,
-    serviceEfficiency: breakdown.service_efficiency.score,
+    customerInteractionScore: breakdown.customer_interaction.score,
+    cashieringScore: breakdown.cashiering.score,
+    suggestiveSellingAndUpsellingScore: breakdown.suggestive_selling_and_upselling.score,
+    serviceEfficiencyScore: breakdown.service_efficiency.score,
     workplaceRelationsScore: breakdown.wrs.score,
     attendanceRate: breakdown.attendance.rate,
     punctualityRate: breakdown.punctuality.rate,
@@ -322,7 +322,7 @@ export async function runDailyEmployeeRollingMetricSnapshot(input?: { scheduledF
   for (const user of users) {
     try {
       const kpiData = await fetchUserKpiData(user.id, user.user_key);
-      const { breakdown } = await calculateKpiScores(kpiData, { from, to });
+      const { breakdown } = await calculateKpiScores(kpiData, { window: { from, to } });
       const values = mapBreakdownToRollingMetricSnapshot(breakdown);
       const nonRolling: NonRollingSnapshotValues = {
         epiScore: user.epi_score,
@@ -336,10 +336,10 @@ export async function runDailyEmployeeRollingMetricSnapshot(input?: { scheduledF
           snapshot_date: snapshotDate,
           window_start_date: windowStartDate,
           window_end_date: windowEndDate,
-          customer_interaction: values.customerInteraction,
-          cashiering: values.cashiering,
-          suggestive_selling_and_upselling: values.suggestiveSellingAndUpselling,
-          service_efficiency: values.serviceEfficiency,
+          customer_interaction: values.customerInteractionScore,
+          cashiering: values.cashieringScore,
+          suggestive_selling_and_upselling: values.suggestiveSellingAndUpsellingScore,
+          service_efficiency: values.serviceEfficiencyScore,
           workplace_relations_score: values.workplaceRelationsScore,
           attendance_rate: values.attendanceRate,
           punctuality_rate: values.punctualityRate,
@@ -361,10 +361,10 @@ export async function runDailyEmployeeRollingMetricSnapshot(input?: { scheduledF
         .merge({
           window_start_date: windowStartDate,
           window_end_date: windowEndDate,
-          customer_interaction: values.customerInteraction,
-          cashiering: values.cashiering,
-          suggestive_selling_and_upselling: values.suggestiveSellingAndUpselling,
-          service_efficiency: values.serviceEfficiency,
+          customer_interaction: values.customerInteractionScore,
+          cashiering: values.cashieringScore,
+          suggestive_selling_and_upselling: values.suggestiveSellingAndUpsellingScore,
+          service_efficiency: values.serviceEfficiencyScore,
           workplace_relations_score: values.workplaceRelationsScore,
           attendance_rate: values.attendanceRate,
           punctuality_rate: values.punctualityRate,
@@ -398,10 +398,65 @@ export async function runDailyEmployeeRollingMetricSnapshot(input?: { scheduledF
   };
 }
 
+async function calculateLiveSnapshot(userId: string, snapshotDateYmd: string): Promise<EmployeeMetricDailySnapshotRow | null> {
+  const masterDb = db.getDb();
+  const user = await masterDb('users as u')
+    .join('user_roles as ur', 'u.id', 'ur.user_id')
+    .join('roles as r', 'ur.role_id', 'r.id')
+    .where('u.id', userId)
+    .where('r.name', 'Service Crew')
+    .select('u.id', 'u.user_key', 'u.epi_score', 'u.first_name', 'u.last_name', 'u.avatar_url', 'r.name as roleName')
+    .first();
+
+  if (!user || !user.user_key) return null;
+
+  const { windowStartDate, windowEndDate } = getRollingWindowForSnapshotDate(snapshotDateYmd);
+  const from = toUtcBoundaryFromManilaYmd(windowStartDate, false);
+  const to = toUtcBoundaryFromManilaYmd(windowEndDate, true);
+  const dailyFrom = toUtcBoundaryFromManilaYmd(snapshotDateYmd, false);
+  const dailyTo = toUtcBoundaryFromManilaYmd(snapshotDateYmd, true);
+  const now = new Date();
+
+  const kpiData = await fetchUserKpiData(user.id, user.user_key);
+  const { breakdown } = await calculateKpiScores(kpiData, { window: { from, to }, minRecords: 1 });
+  const values = mapBreakdownToRollingMetricSnapshot(breakdown);
+
+  return {
+    userId: user.id,
+    fullName: `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim(),
+    firstName: user.first_name || '',
+    lastName: user.last_name || '',
+    avatarUrl: user.avatar_url,
+    roleName: user.roleName,
+    snapshotDate: snapshotDateYmd,
+    windowStartDate,
+    windowEndDate,
+    customerInteractionScore: values.customerInteractionScore,
+    cashieringScore: values.cashieringScore,
+    suggestiveSellingAndUpsellingScore: values.suggestiveSellingAndUpsellingScore,
+    serviceEfficiencyScore: values.serviceEfficiencyScore,
+    workplaceRelationsScore: values.workplaceRelationsScore,
+    attendanceRate: values.attendanceRate,
+    punctualityRate: values.punctualityRate,
+    productivityRate: values.productivityRate,
+    averageOrderValue: values.averageOrderValue,
+    branchAov: values.branchAov,
+    uniformComplianceRate: values.uniformComplianceRate,
+    hygieneComplianceRate: values.hygieneComplianceRate,
+    sopComplianceRate: values.sopComplianceRate,
+    epiScore: toNumber(user.epi_score, 100),
+    awardsCount: 0,
+    violationsCount: countDailyViolations(kpiData.violationNotices, dailyFrom, dailyTo),
+    generatedAt: now.toISOString(),
+    calculationVersion: SNAPSHOT_CALCULATION_VERSION,
+  };
+}
+
 export async function getEmployeeMetricDailySnapshots(input: {
   rangeStartYmd: string;
   rangeEndYmd: string;
   userId?: string | null;
+  focusUserId?: string | null;
 }): Promise<EmployeeMetricDailySnapshotRow[]> {
   const { startYmd, endYmd } = normalizeRangeYmd(input.rangeStartYmd, input.rangeEndYmd);
   const query = db.getDb()('employee_metric_daily_snapshots as s')
@@ -416,10 +471,10 @@ export async function getEmployeeMetricDailySnapshots(input: {
       's.snapshot_date as snapshotDate',
       's.window_start_date as windowStartDate',
       's.window_end_date as windowEndDate',
-      's.customer_interaction as customerInteraction',
-      's.cashiering as cashiering',
-      's.suggestive_selling_and_upselling as suggestiveSellingAndUpselling',
-      's.service_efficiency as serviceEfficiency',
+      's.customer_interaction as customerInteractionScore',
+      's.cashiering as cashieringScore',
+      's.suggestive_selling_and_upselling as suggestiveSellingAndUpsellingScore',
+      's.service_efficiency as serviceEfficiencyScore',
       's.workplace_relations_score as workplaceRelationsScore',
       's.attendance_rate as attendanceRate',
       's.punctuality_rate as punctualityRate',
@@ -443,5 +498,48 @@ export async function getEmployeeMetricDailySnapshots(input: {
     query.andWhere('s.user_id', input.userId);
   }
 
-  return query as Promise<EmployeeMetricDailySnapshotRow[]>;
+  const rows = (await query) as EmployeeMetricDailySnapshotRow[];
+
+  // 1. Detect if the requested range includes "Today" in Manila
+  const todayYmd = formatYmd(getManilaDateParts());
+  const liveTargetId = input.userId || input.focusUserId;
+
+  logger.info({ startYmd, endYmd, todayYmd, userId: input.userId, focusUserId: input.focusUserId }, 'Checking for live snapshot requirement');
+  if (startYmd <= todayYmd && endYmd >= todayYmd && liveTargetId) {
+    // 2. Check if a database snapshot for today already exists (unlikely given cron schedule)
+    const hasTodayInRows = rows.some(r => {
+      let rowDateYmd = '';
+      if (r.snapshotDate instanceof Date) {
+        // Handle Knex Date objects (assume they represent Manila midnight)
+        const shifted = new Date(r.snapshotDate.getTime() + MANILA_OFFSET_MS);
+        rowDateYmd = formatYmd({
+          year: shifted.getUTCFullYear(),
+          month: shifted.getUTCMonth() + 1,
+          day: shifted.getUTCDate(),
+        });
+      } else {
+        rowDateYmd = String(r.snapshotDate).slice(0, 10);
+      }
+      return rowDateYmd === todayYmd;
+    });
+
+    logger.info({ hasTodayInRows, rowCount: rows.length, liveTargetId }, 'Today snapshot existence check');
+
+    if (!hasTodayInRows) {
+      try {
+        logger.info({ liveTargetId, todayYmd }, 'Calculating live snapshot...');
+        const liveSnapshot = await calculateLiveSnapshot(liveTargetId, todayYmd);
+        if (liveSnapshot) {
+          logger.info({ liveTargetId, snapshotDate: liveSnapshot.snapshotDate }, 'Live snapshot calculated successfully');
+          rows.push(liveSnapshot);
+        } else {
+          logger.warn({ liveTargetId, todayYmd }, 'Live snapshot returned null');
+        }
+      } catch (error) {
+        logger.error({ err: error, liveTargetId, todayYmd }, 'Failed to compute live employee analytics snapshot');
+      }
+    }
+  }
+
+  return rows;
 }

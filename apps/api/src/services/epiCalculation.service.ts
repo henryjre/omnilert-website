@@ -255,10 +255,11 @@ function calcWrs(
   }> | null,
   from: Date,
   to: Date,
+  minRecords: number = 10,
 ): { score: number | null; impact: number; count: number } {
   const { effective } = splitWrsEvaluations(peerEvaluations, from, to);
   const count = effective.length;
-  if (count < 10) return { score: null, impact: 0, count };
+  if (count < minRecords) return { score: null, impact: 0, count };
   const avg = effective.reduce((s, e) => s + e.average_score, 0) / count;
   const score = Math.round(avg * 100) / 100;
   return { score, impact: wrsImpact(score), count };
@@ -269,13 +270,14 @@ function calcComplianceRate(
   field: string,
   from: Date,
   to: Date,
+  minRecords: number = 10,
 ): { rate: number | null; count: number } {
   if (!Array.isArray(complianceAudit) || complianceAudit.length === 0) return { rate: null, count: 0 };
   const recent = complianceAudit.filter(
     (a) => dateRangeFilter(a.audited_at, from, to) && typeof a.answers?.[field] === 'boolean'
   );
   const count = recent.length;
-  if (count < 10) return { rate: null, count };
+  if (count < minRecords) return { rate: null, count };
   const trueCount = recent.filter((a) => a.answers[field] === true).length;
   const rate = Math.round((trueCount / count) * 1000) / 10;
   return { rate, count };
@@ -286,13 +288,14 @@ function calcAverageScore(
   field: string,
   from: Date,
   to: Date,
+  minRecords: number = 10,
 ): { score: number | null; count: number } {
   if (!Array.isArray(complianceAudit) || complianceAudit.length === 0) return { score: null, count: 0 };
   const recent = complianceAudit.filter(
     (a) => dateRangeFilter(a.audited_at, from, to) && typeof a.answers?.[field] === 'number'
   );
   const count = recent.length;
-  if (count < 10) return { score: null, count };
+  if (count < minRecords) return { score: null, count };
   const sum = recent.reduce((s, a) => s + a.answers[field], 0);
   const score = Math.round((sum / count) * 100) / 100;
   return { score, count };
@@ -301,9 +304,10 @@ function calcAverageScore(
 function calcAttendanceFromRecords(
   slots: OdooPlanningSlot[],
   attendances: OdooAttendanceRecord[],
+  minRecords: number = 10,
 ): { rate: number | null; impact: number; count: number } {
   const count = slots.length;
-  if (count < 10) return { rate: null, impact: 0, count };
+  if (count < minRecords) return { rate: null, impact: 0, count };
 
   const scheduledHours = slots.reduce((s, slot) => s + (slot.allocated_hours || 0), 0);
   if (scheduledHours === 0) return { rate: null, impact: 0, count };
@@ -329,9 +333,10 @@ function calcAttendanceFromRecords(
 function calcPunctualityFromRecords(
   slots: OdooPlanningSlot[],
   attendances: OdooAttendanceRecord[],
+  minRecords: number = 10,
 ): { rate: number | null; impact: number; count: number } {
   const count = slots.length;
-  if (count < 10) return { rate: null, impact: 0, count };
+  if (count < minRecords) return { rate: null, impact: 0, count };
 
   // Group attendances by employee+day for lookup
   const checkInMap = new Map<string, Date>();
@@ -398,9 +403,10 @@ async function calcAov(
   dateFrom: string,
   dateTo: string,
   queryDeps: Pick<KpiQueryDeps, 'getBranchPosOrders'>,
+  minRecords: number = 10,
 ): Promise<{ value: number | null; branch_avg: number | null; impact: number; count: number }> {
   const count = orders.length;
-  if (count < 10) return { value: null, branch_avg: null, impact: 0, count };
+  if (count < minRecords) return { value: null, branch_avg: null, impact: 0, count };
 
   const employeeTotal = orders.reduce((s, o) => s + o.amount_total, 0);
   const employeeAov = employeeTotal / count;
@@ -502,9 +508,13 @@ export interface UserKpiData {
 export async function calculateKpiScoresWithQueryDeps(
   userData: UserKpiData,
   queryDeps: KpiQueryDeps,
-  window?: KpiComputationWindow,
+  options?: {
+    window?: KpiComputationWindow;
+    minRecords?: number;
+  },
 ): Promise<EpiDeltaResult> {
-  const { from, to, fromStr, toStr } = resolveKpiComputationWindow(window);
+  const { from, to, fromStr, toStr } = resolveKpiComputationWindow(options?.window);
+  const minRecords = options?.minRecords ?? 10;
 
   // Resolve Odoo employee IDs for this user
   const employeeOdooIds = await queryDeps.getOdooEmployeeIdsByWebsiteKey(userData.userKey);
@@ -523,29 +533,32 @@ export async function calculateKpiScoresWithQueryDeps(
     fromStr,
     toStr,
     queryDeps,
+    minRecords,
   );
 
   const attendanceResult = calcAttendanceFromRecords(
     operationalOdooData.slots,
     operationalOdooData.attendances,
+    minRecords,
   );
   const punctualityResult = calcPunctualityFromRecords(
     operationalOdooData.slots,
     operationalOdooData.attendances,
+    minRecords,
   );
 
-  const wrs = calcWrs(userData.peerEvaluations, from, to);
+  const wrs = calcWrs(userData.peerEvaluations, from, to, minRecords);
   const pcs: KpiBreakdown['pcs'] = { score: null, impact: 0 }; // Not yet implemented
 
-  const complianceProductivity = calcComplianceRate(userData.complianceAudit, 'scc_productivity_rate', from, to);
-  const complianceUniform = calcComplianceRate(userData.complianceAudit, 'scc_uniform_compliance', from, to);
-  const complianceHygiene = calcComplianceRate(userData.complianceAudit, 'scc_hygiene_compliance', from, to);
-  const complianceSop = calcComplianceRate(userData.complianceAudit, 'scc_sop_compliance', from, to);
+  const complianceProductivity = calcComplianceRate(userData.complianceAudit, 'scc_productivity_rate', from, to, minRecords);
+  const complianceUniform = calcComplianceRate(userData.complianceAudit, 'scc_uniform_compliance', from, to, minRecords);
+  const complianceHygiene = calcComplianceRate(userData.complianceAudit, 'scc_hygiene_compliance', from, to, minRecords);
+  const complianceSop = calcComplianceRate(userData.complianceAudit, 'scc_sop_compliance', from, to, minRecords);
 
-  const complianceCustomerInteraction = calcAverageScore(userData.complianceAudit, 'scc_customer_interaction', from, to);
-  const complianceCashiering = calcAverageScore(userData.complianceAudit, 'scc_cashiering', from, to);
-  const complianceSuggestiveSelling = calcAverageScore(userData.complianceAudit, 'scc_suggestive_selling_and_upselling', from, to);
-  const complianceServiceEfficiency = calcAverageScore(userData.complianceAudit, 'scc_service_efficiency', from, to);
+  const complianceCustomerInteraction = calcAverageScore(userData.complianceAudit, 'scc_customer_interaction', from, to, minRecords);
+  const complianceCashiering = calcAverageScore(userData.complianceAudit, 'scc_cashiering', from, to, minRecords);
+  const complianceSuggestiveSelling = calcAverageScore(userData.complianceAudit, 'scc_suggestive_selling_and_upselling', from, to, minRecords);
+  const complianceServiceEfficiency = calcAverageScore(userData.complianceAudit, 'scc_service_efficiency', from, to, minRecords);
 
   const productivity: KpiBreakdown['productivity'] = {
     rate: complianceProductivity.rate,
@@ -627,7 +640,10 @@ export async function calculateKpiScoresWithQueryDeps(
 
 export async function calculateKpiScores(
   userData: UserKpiData,
-  window?: KpiComputationWindow,
+  options?: {
+    window?: KpiComputationWindow;
+    minRecords?: number;
+  },
 ): Promise<EpiDeltaResult> {
-  return calculateKpiScoresWithQueryDeps(userData, defaultKpiQueryDeps, window);
+  return calculateKpiScoresWithQueryDeps(userData, defaultKpiQueryDeps, options);
 }

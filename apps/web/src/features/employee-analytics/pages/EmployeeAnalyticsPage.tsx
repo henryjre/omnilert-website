@@ -5271,10 +5271,12 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
       analyticsRange.granularity,
       analyticsRange.rangeStartYmd,
       analyticsRange.rangeEndYmd,
+      selectedUser?.id ?? 'all',
     ],
     queryFn: () => fetchEmployeeMetricSnapshots({
       rangeStartYmd: analyticsRange.rangeStartYmd,
       rangeEndYmd: analyticsRange.rangeEndYmd,
+      focusUserId: selectedUser?.id,
     }),
   });
   const liveDataset = useMemo(

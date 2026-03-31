@@ -1,4 +1,4 @@
-import { db } from "../config/database.js";
+﻿import { db } from "../config/database.js";
 import { env } from "../config/env.js";
 import { logger } from "../utils/logger.js";
 
@@ -447,20 +447,6 @@ export async function getEmployeePayslipData(
 
     // Refresh from work entries
     await callOdooKw("hr.payslip", "action_refresh_from_work_entries", [[slipId]]);
-
-    // WORKAROUND: Odoo bug prevents re-computation unless a field like date_to is toggled.
-    // This triggers the onchange logic that refreshes salary rules correctly.
-    const originalDateTo = slip.date_to;
-    const d = new Date(originalDateTo);
-    d.setDate(d.getDate() - 1);
-    const tempDateTo = d.toISOString().split("T")[0];
-
-    await callOdooKw("hr.payslip", "write", [[slipId], { date_to: tempDateTo }]);
-    await callOdooKw("hr.payslip", "write", [[slipId], { date_to: originalDateTo }]);
-
-    // Refresh from work entries
-    await callOdooKw("hr.payslip", "action_refresh_from_work_entries"
-, [[slipId]]);
 
     // Compute the salary rule lines
     await callOdooKw("hr.payslip", "compute_sheet", [[slipId]]);
@@ -2995,20 +2981,6 @@ export async function getPayslipDetailById(payslipId: number): Promise<{
     // payslip throws "The payslips should be in Draft or Waiting state."
     if (slip.state === "draft" || slip.state === "verify") {
       await callOdooKw("hr.payslip", "action_refresh_from_work_entries", [[payslipId]]);
-
-
-      // WORKAROUND: Odoo bug prevents re-computation unless a field like date_to is toggled.
-      // This triggers the onchange logic that refreshes salary rules correctly.
-      const originalDateTo = slip.date_to;
-      const d = new Date(originalDateTo);
-      d.setDate(d.getDate() - 1);
-      const tempDateTo = d.toISOString().split("T")[0];
-
-      await callOdooKw("hr.payslip", "write", [[payslipId], { date_to: tempDateTo }]);
-      await callOdooKw("hr.payslip", "write", [[payslipId], { date_to: originalDateTo }]);
-
-      await callOdooKw("hr.payslip", "action_refresh_from_work_entries", [[payslipId]]);
-
       await callOdooKw("hr.payslip", "compute_sheet", [[payslipId]]);
     }
 
@@ -3103,4 +3075,3 @@ export async function getOrCreatePendingPayslipDetail(
   }
   return createViewOnlyPayslip(employeeId, companyId, employeeName, cutoff);
 }
-

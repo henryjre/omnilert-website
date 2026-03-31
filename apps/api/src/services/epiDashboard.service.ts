@@ -437,7 +437,7 @@ async function buildCurrentLiveSnapshot(user: UserKpiData, officialEpiScore: num
     peerEvaluations: user.peerEvaluations,
     complianceAudit: user.complianceAudit,
     violationNotices: user.violationNotices,
-  }, { from, to });
+  }, { window: { from, to }, minRecords: 1 });
 
   const dateForLabel = monthKey ? new Date(`${monthKey}-01`) : now;
 
@@ -479,6 +479,32 @@ function accumulateMonthScore(
 
   existing.sum += score;
   existing.count += 1;
+}
+
+export function createGlobalAverageByMonth(
+  rows: GlobalAverageUserRow[],
+  currentMonthKey: string,
+): Record<string, number> {
+  const sumsByMonth = new Map<string, { sum: number; count: number }>();
+
+  for (const row of rows) {
+    // 1. Accumulate current month based on official score
+    accumulateMonthScore(sumsByMonth, currentMonthKey, row.officialEpiScore);
+
+    // 2. Accumulate historical scores, making sure we don't double-count the current month
+    for (const h of row.monthlyHistory) {
+      if (h.monthKey !== currentMonthKey) {
+        accumulateMonthScore(sumsByMonth, h.monthKey, h.epiScore);
+      }
+    }
+  }
+
+  const result: Record<string, number> = {};
+  for (const [monthKey, { sum, count }] of sumsByMonth.entries()) {
+    result[monthKey] = roundToTenth(sum / count);
+  }
+
+  return result;
 }
 
 export async function getGlobalAverageHistory(): Promise<Record<string, number>> {
