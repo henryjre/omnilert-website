@@ -2783,59 +2783,80 @@ export async function getAllPayslipsForUser(
  */
 export async function calculatePendingPayslipStubs(
   employees: Array<{ id: number; name?: string | null; company_id?: [number, string] | false }>,
-  existingPayslips: Array<{ employee_id: number; company_id: number; date_from: string; date_to: string }>,
+  existingPayslips: Array<{ employee_id: number; company_id: number; date_from: string; date_to: string; status: "draft" | "completed" }>,
 ): Promise<PayslipListItem[]> {
   const now = new Date();
-  const day = now.getDate();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 
-  // Helper for semi-month range with month offset
-  const getSemiMonthRangeForBase = (cutoff: number, dateBase: Date) => {
+  // Helper: semi-monthly range for a given cutoff and month base (0-indexed month)
+  const getSemiMonthRangeForBase = (cutoff: 1 | 2, dateBase: Date): { date_from: string; date_to: string } => {
     const year = dateBase.getFullYear();
     const month = dateBase.getMonth(); // 0-indexed
     if (cutoff === 1) {
-      const from = new Date(year, month, 1);
-      const to = new Date(year, month, 15);
       return {
-        date_from: `${from.getFullYear()}-${String(from.getMonth() + 1).padStart(2, "0")}-01`,
-        date_to: `${to.getFullYear()}-${String(to.getMonth() + 1).padStart(2, "0")}-15`,
+        date_from: `${year}-${String(month + 1).padStart(2, "0")}-01`,
+        date_to: `${year}-${String(month + 1).padStart(2, "0")}-15`,
       };
     } else {
-      const from = new Date(year, month, 16);
-      const to = new Date(year, month + 1, 0); // Last day of month
+      const lastDay = new Date(year, month + 1, 0).getDate();
       return {
-        date_from: `${from.getFullYear()}-${String(from.getMonth() + 1).padStart(2, "0")}-16`,
-        date_to: `${to.getFullYear()}-${String(to.getMonth() + 1).padStart(2, "0")}-${String(to.getDate()).padStart(2, "0")}`,
+        date_from: `${year}-${String(month + 1).padStart(2, "0")}-16`,
+        date_to: `${year}-${String(month + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`,
       };
     }
   };
 
-  const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const targetCutoffs: Array<{ cutoff: 1 | 2; range: { date_from: string; date_to: string } }> = [];
-
-  // 1. Previous Month (Both cutoffs)
-  targetCutoffs.push({ cutoff: 1, range: getSemiMonthRangeForBase(1, prevMonth) });
-  targetCutoffs.push({ cutoff: 2, range: getSemiMonthRangeForBase(2, prevMonth) });
-
-  // 2. Current Month (Visibility rules)
-  targetCutoffs.push({ cutoff: 1, range: getSemiMonthRangeForBase(1, now) });
-  if (day > 15) {
-    targetCutoffs.push({ cutoff: 2, range: getSemiMonthRangeForBase(2, now) });
-  }
+  // Helper: given the date_to of a completed payslip, return the start of the next period
+  const getNextPeriodStart = (date_to: string): { year: number; month: number; cutoff: 1 | 2 } => {
+    const parts = date_to.split("-");
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1; // 0-indexed
+    const day = parseInt(parts[2], 10);
+    if (day <= 15) {
+      // date_to falls within the 1st cutoff window; next is 2nd cutoff of same month
+      return { year, month, cutoff: 2 };
+    }
+    // date_to falls within 2nd cutoff window; next is 1st cutoff of next month
+    const next = new Date(year, month + 1, 1);
+    return { year: next.getFullYear(), month: next.getMonth(), cutoff: 1 };
+  };
 
   const employeeIds = employees.map((e) => e.id);
   if (employeeIds.length === 0) return [];
 
-  // Look back 60 days to catch all relevant work entries
-  const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
-  const searchStart = `${sixtyDaysAgo.getFullYear()}-${String(sixtyDaysAgo.getMonth() + 1).padStart(2, "0")}-${String(sixtyDaysAgo.getDate()).padStart(2, "0")}`;
+  // Determine the earliest date_from we'll need so the work-entry query covers
+  // the full window. Start with today as the upper bound and walk back.
+  let searchStart = todayStr;
+  for (const employee of employees) {
+    const companyField = employee.company_id;
+    if (!companyField || !Array.isArray(companyField)) continue;
+    const companyId = companyField[0];
 
-  // Fetch work entries for the entire relevant window
+    const lastCompleted = existingPayslips
+      .filter((p) => p.employee_id === employee.id && p.company_id === companyId && p.status === "completed")
+      .sort((a, b) => b.date_to.localeCompare(a.date_to))[0];
+
+    let startDate: string;
+    if (lastCompleted) {
+      const next = getNextPeriodStart(lastCompleted.date_to);
+      startDate = getSemiMonthRangeForBase(next.cutoff, new Date(next.year, next.month, 1)).date_from;
+    } else {
+      const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      startDate = getSemiMonthRangeForBase(1, prevMonth).date_from;
+    }
+
+    if (startDate < searchStart) searchStart = startDate;
+  }
+
+  // limit: 0 fetches all records — Odoo's default limit of 80 would silently
+  // drop entries for later periods, causing stubs to be skipped incorrectly.
   const workEntries = (await callOdooKw("hr.work.entry", "search_read", [], {
     domain: [
       ["employee_id", "in", employeeIds],
       ["date", ">=", searchStart],
     ],
     fields: ["employee_id", "company_id", "date"],
+    limit: 0,
   })) as Array<{
     employee_id: [number, string];
     company_id: [number, string];
@@ -2852,47 +2873,87 @@ export async function calculatePendingPayslipStubs(
     const companyName = companyField[1];
     const employeeName = employee.name ?? "";
 
-    for (const target of targetCutoffs) {
-      // 1. Skip if a real payslip (Draft or Completed) already exists for this period
+    // Find the most recent completed payslip for this employee+company
+    const lastCompleted = existingPayslips
+      .filter((p) => p.employee_id === employee.id && p.company_id === companyId && p.status === "completed")
+      .sort((a, b) => b.date_to.localeCompare(a.date_to))[0];
+
+    let year: number;
+    let month: number;
+    let cutoff: 1 | 2;
+
+    if (lastCompleted) {
+      ({ year, month, cutoff } = getNextPeriodStart(lastCompleted.date_to));
+    } else {
+      // No completed payslip — fall back to cutoff 1 of the previous month
+      const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      year = prevMonth.getFullYear();
+      month = prevMonth.getMonth();
+      cutoff = 1;
+    }
+
+    // Walk forward through every semi-monthly period until date_from exceeds today
+    for (;;) {
+      const range = getSemiMonthRangeForBase(cutoff, new Date(year, month, 1));
+
+      // Stop once the period hasn't started yet
+      if (range.date_from > todayStr) break;
+
+      // Skip if a real payslip (any status) already covers this period
       const hasReal = existingPayslips.some(
         (p) =>
           p.employee_id === employee.id &&
           p.company_id === companyId &&
-          p.date_from === target.range.date_from &&
-          p.date_to === target.range.date_to,
+          p.date_from === range.date_from &&
+          p.date_to === range.date_to,
       );
-      if (hasReal) continue;
 
-      // 2. Skip if the employee has no work entries for this specific cutoff at this branch
-      const hasAttendance = workEntries.some((we) => {
-        const weEmployeeId = Array.isArray(we.employee_id) ? we.employee_id[0] : we.employee_id;
-        const weCompanyId = Array.isArray(we.company_id) ? we.company_id[0] : we.company_id;
-        const weDate = we.date; // YYYY-MM-DD
+      if (!hasReal) {
+        // For the current ongoing period (today falls within it), always show the
+        // stub — today's work entries may not exist in Odoo yet. For past periods,
+        // require at least one work entry as a proxy for non-zero net pay.
+        const isCurrentPeriod = todayStr >= range.date_from && todayStr <= range.date_to;
+        const hasAttendance = isCurrentPeriod || workEntries.some((we) => {
+          const weEmployeeId = Array.isArray(we.employee_id) ? we.employee_id[0] : we.employee_id;
+          const weCompanyId = Array.isArray(we.company_id) ? we.company_id[0] : we.company_id;
+          const weDate = we.date.slice(0, 10); // truncate to YYYY-MM-DD if datetime
+          return (
+            weEmployeeId === employee.id &&
+            weCompanyId === companyId &&
+            weDate >= range.date_from &&
+            weDate <= range.date_to
+          );
+        });
 
-        return (
-          weEmployeeId === employee.id &&
-          weCompanyId === companyId &&
-          weDate >= target.range.date_from &&
-          weDate <= target.range.date_to
-        );
-      });
+        if (hasAttendance) {
+          stubs.push({
+            id: `pending-${companyId}:${range.date_from}:${cutoff}`,
+            name: `${employeeName} | ${cutoff === 1 ? "1st" : "2nd"} Cutoff Payslip`,
+            date_from: range.date_from,
+            date_to: range.date_to,
+            odoo_state: "",
+            status: "pending",
+            company_id: companyId,
+            company_name: companyName,
+            employee_id: employee.id,
+            employee_name: employeeName,
+            cutoff,
+            is_pending: true,
+          });
+        }
+      }
 
-      if (!hasAttendance) continue;
-
-      stubs.push({
-        id: `pending-${companyId}:${target.range.date_from}:${target.cutoff}`,
-        name: `${employeeName} | ${target.cutoff === 1 ? "1st" : "2nd"} Cutoff Payslip`,
-        date_from: target.range.date_from,
-        date_to: target.range.date_to,
-        odoo_state: "",
-        status: "pending",
-        company_id: companyId,
-        company_name: companyName,
-        employee_id: employee.id,
-        employee_name: employeeName,
-        cutoff: target.cutoff,
-        is_pending: true,
-      });
+      // Advance to the next semi-monthly period
+      if (cutoff === 1) {
+        cutoff = 2;
+      } else {
+        cutoff = 1;
+        month++;
+        if (month > 11) {
+          month = 0;
+          year++;
+        }
+      }
     }
   }
 

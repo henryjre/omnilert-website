@@ -781,6 +781,7 @@ export async function getPayslipList(req: Request, res: Response, next: NextFunc
         company_id: p.company_id,
         date_from: p.date_from,
         date_to: p.date_to,
+        status: p.status,
       })),
     );
 
