@@ -87,6 +87,7 @@ const router = Router();
 router.use(authenticate, resolveCompany);
 
 router.get('/', requirePermission(PERMISSIONS.STORE_AUDIT_VIEW), storeAuditController.list);
+router.get('/stats', requirePermission(PERMISSIONS.STORE_AUDIT_VIEW), storeAuditController.getStats);
 router.get('/:id', requirePermission(PERMISSIONS.STORE_AUDIT_VIEW), storeAuditController.getById);
 router.get('/:id/messages', requirePermission(PERMISSIONS.STORE_AUDIT_VIEW), storeAuditController.listMessages);
 router.post(

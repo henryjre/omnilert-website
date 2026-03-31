@@ -21,6 +21,37 @@ import {
   buildRejectedStoreAuditUpdate,
 } from './storeAuditTiming.service.js';
 
+function getPeriodRanges(now: Date) {
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const date = now.getDate();
+
+  let currentStart: Date;
+  let currentEnd: Date;
+  let previousStart: Date;
+  let previousEnd: Date;
+
+  if (date <= 15) {
+    // Current: 1-15 of this month
+    currentStart = new Date(year, month, 1);
+    currentEnd = new Date(year, month, 15, 23, 59, 59, 999);
+    // Previous: 16-last of previous month
+    const prevMonthLastDay = new Date(year, month, 0);
+    previousStart = new Date(year, month - 1, 16);
+    previousEnd = new Date(year, month - 1, prevMonthLastDay.getDate(), 23, 59, 59, 999);
+  } else {
+    // Current: 16-last of this month
+    currentStart = new Date(year, month, 16);
+    const thisMonthLastDay = new Date(year, month + 1, 0);
+    currentEnd = new Date(year, month, thisMonthLastDay.getDate(), 23, 59, 59, 999);
+    // Previous: 1-15 of this month
+    previousStart = new Date(year, month, 1);
+    previousEnd = new Date(year, month, 15, 23, 59, 59, 999);
+  }
+
+  return { currentStart, currentEnd, previousStart, previousEnd };
+}
+
 type StoreAuditRow = StoreAudit & {
   branch_name?: string | null;
   auditor_name?: string | null;
@@ -1131,4 +1162,43 @@ export async function completeStoreAudit(input: {
   });
   emitStoreAuditEvent(input.companyId, 'store-audit:completed', { id: input.auditId });
   return enriched;
+}
+
+export async function getAuditorStats(input: { userId: string }) {
+  const now = new Date();
+  const { currentStart, currentEnd, previousStart, previousEnd } = getPeriodRanges(now);
+
+  const fetchStats = async (start: Date, end: Date) => {
+    const res = await db.getDb()('store_audits')
+      .where({ auditor_user_id: input.userId, status: 'completed' })
+      .whereBetween('completed_at', [start, end])
+      .select(
+        db.getDb().raw('COUNT(*)::INTEGER as audit_count'),
+        db.getDb().raw('COALESCE(SUM(monetary_reward::DECIMAL), 0)::DECIMAL as total_reward')
+      )
+      .first();
+
+    const auditCount = Number(res?.audit_count ?? 0);
+    const totalReward = Number(res?.total_reward ?? 0);
+    const averageReward = auditCount > 0 ? totalReward / auditCount : 0;
+
+    return { auditCount, totalReward, averageReward };
+  };
+
+  const [current, previous] = await Promise.all([
+    fetchStats(currentStart, currentEnd),
+    fetchStats(previousStart, previousEnd),
+  ]);
+
+  return {
+    current: {
+      totalEarnings: current.totalReward,
+      auditsCompleted: current.auditCount,
+      averageReward: current.averageReward,
+    },
+    previous: {
+      totalEarnings: previous.totalReward,
+      auditsCompleted: previous.auditCount,
+    },
+  };
 }

@@ -145,6 +145,10 @@ type GlobalStoreAuditServiceDeps = {
         service_efficiency: number;
       };
   }) => Promise<StoreAudit>;
+  getAuditorStats: (input: { userId: string }) => Promise<{
+    current: { totalEarnings: number; auditsCompleted: number; averageReward: number };
+    previous: { totalEarnings: number; auditsCompleted: number };
+  }>;
 };
 
 async function defaultListStoreAuditRows(input: {
@@ -323,6 +327,11 @@ async function defaultCompleteStoreAudit(input: {
   return mod.completeStoreAudit(input);
 }
 
+async function defaultGetAuditorStats(input: { userId: string }) {
+  const mod = await import('./storeAudit.service.js');
+  return mod.getAuditorStats(input);
+}
+
 export function createGlobalStoreAuditService(
   overrides: Partial<GlobalStoreAuditServiceDeps> = {},
 ) {
@@ -338,6 +347,7 @@ export function createGlobalStoreAuditService(
     processStoreAudit: overrides.processStoreAudit ?? defaultProcessStoreAudit,
     rejectStoreAudit: overrides.rejectStoreAudit ?? defaultRejectStoreAudit,
     completeStoreAudit: overrides.completeStoreAudit ?? defaultCompleteStoreAudit,
+    getAuditorStats: overrides.getAuditorStats ?? defaultGetAuditorStats,
   };
 
   return {
@@ -483,6 +493,10 @@ export function createGlobalStoreAuditService(
         reason: input.reason,
       });
     },
+
+    async getAuditorStats(input: { userId: string }) {
+      return deps.getAuditorStats(input);
+    },
   };
 }
 
@@ -497,3 +511,4 @@ export const deleteStoreAuditMessage = globalStoreAuditService.deleteMessage;
 export const processAudit = globalStoreAuditService.processAudit;
 export const completeAudit = globalStoreAuditService.completeAudit;
 export const rejectAudit = globalStoreAuditService.rejectAudit;
+export const getAuditorStats = globalStoreAuditService.getAuditorStats;

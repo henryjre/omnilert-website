@@ -164,6 +164,10 @@ export function StoreAuditsPage() {
   const [groupedUsers, setGroupedUsers] = useState<GroupedUsersResponse | null>(null);
   const [loadingGroupedUsers, setLoadingGroupedUsers] = useState(false);
   const [pendingCounts, setPendingCounts] = useState<{ all: number; customer_service: number; service_crew_cctv: number }>({ all: 0, customer_service: 0, service_crew_cctv: 0 });
+  const [auditorStats, setAuditorStats] = useState<{
+    current: { totalEarnings: number; auditsCompleted: number; averageReward: number };
+    previous: { totalEarnings: number; auditsCompleted: number };
+  } | null>(null);
 
   const paginationState = useMemo(
     () => resolveStoreAuditPaginationState({ page, pageSize, total }),
@@ -261,6 +265,19 @@ export function StoreAuditsPage() {
     void fetchPendingCounts();
   }, [fetchPendingCounts]);
 
+  const fetchAuditorStats = useCallback(async () => {
+    try {
+      const res = await api.get('/store-audits/stats');
+      setAuditorStats(res.data.data);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchAuditorStats();
+  }, [fetchAuditorStats]);
+
   // Reset page and close detail panel when branch selection changes
   useEffect(() => {
     setPage(1);
@@ -348,10 +365,12 @@ export function StoreAuditsPage() {
     const refresh = () => {
       void fetchAudits({ silent: true });
       void fetchPendingCounts();
+      void fetchAuditorStats();
     };
     const refreshUpdated = (payload: { id?: string }) => {
       void fetchAudits({ silent: true });
       void fetchPendingCounts();
+      void fetchAuditorStats();
       if (payload.id && payload.id === selectedAuditId) {
         setAudits((prev) =>
           prev.map((a) => (a.id === payload.id ? { ...a, vn_requested: true } : a)),
@@ -413,6 +432,7 @@ export function StoreAuditsPage() {
       syncSelectedAudit(updatedAudit, 'completed');
       showSuccessToast('Audit completed successfully.');
       void fetchPendingCounts();
+      void fetchAuditorStats();
     } catch (err: any) {
       showErrorToast(err.response?.data?.error || 'Failed to complete audit');
     } finally {
@@ -430,6 +450,7 @@ export function StoreAuditsPage() {
       closeRejectModal();
       showSuccessToast('Audit rejected.');
       void fetchPendingCounts();
+      void fetchAuditorStats();
     } catch (err: any) {
       showErrorToast(err.response?.data?.error || 'Failed to reject audit');
     } finally {
@@ -488,9 +509,11 @@ export function StoreAuditsPage() {
             <p className="mt-0.5 text-sm font-medium text-primary-600">{activeCategoryLabel}</p>
           </div>
           <AuditorRewardCard
-            totalEarnings={0}
-            auditsCompleted={0}
-            ratePerAudit={0}
+            totalEarnings={auditorStats?.current.totalEarnings ?? 0}
+            auditsCompleted={auditorStats?.current.auditsCompleted ?? 0}
+            averageReward={auditorStats?.current.averageReward ?? 0}
+            previousPeriodTotalEarnings={auditorStats?.previous.totalEarnings ?? 0}
+            previousPeriodAuditsCompleted={auditorStats?.previous.auditsCompleted ?? 0}
           />
         </div>
 
@@ -545,11 +568,13 @@ export function StoreAuditsPage() {
           </div>
 
           {/* Right column — reward card */}
-          <div className="w-[280px] flex-shrink-0">
+          <div className="w-[360px] flex-shrink-0">
             <AuditorRewardCard
-              totalEarnings={0}
-              auditsCompleted={0}
-              ratePerAudit={0}
+              totalEarnings={auditorStats?.current.totalEarnings ?? 0}
+              auditsCompleted={auditorStats?.current.auditsCompleted ?? 0}
+              averageReward={auditorStats?.current.averageReward ?? 0}
+              previousPeriodTotalEarnings={auditorStats?.previous.totalEarnings ?? 0}
+              previousPeriodAuditsCompleted={auditorStats?.previous.auditsCompleted ?? 0}
               />
           </div>
         </div>

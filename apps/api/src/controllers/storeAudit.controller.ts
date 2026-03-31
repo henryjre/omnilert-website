@@ -123,3 +123,14 @@ export async function deleteMessage(req: Request, res: Response, next: NextFunct
     next(error);
   }
 }
+
+export async function getStats(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await storeAuditService.getAuditorStats({
+      userId: req.user!.sub,
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}

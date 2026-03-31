@@ -14,7 +14,8 @@
       "Bash(node -e \":*)",
       "Bash(rtk tsc:*)",
       "Bash(rtk git:*)",
-      "Bash(rtk vitest:*)"
+      "Bash(rtk vitest:*)",
+      "Bash(rtk npx:*)"
     ]
   }
 }
