@@ -197,6 +197,10 @@ function ExpandedMetricsLoading() {
       <div>
         <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">Performance Scores</p>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <LoadingMetric label="Customer Interaction" />
+          <LoadingMetric label="Cashiering" />
+          <LoadingMetric label="Suggestive Selling & Upselling" />
+          <LoadingMetric label="Service Efficiency" />
           <LoadingMetric label="Workplace Relations" />
           <LoadingMetric label="Professional Conduct" />
         </div>
@@ -257,7 +261,7 @@ function ExpandedMetrics({
   const violationImpact = criteria.violationCount * VIOLATION_DEDUCTION;
   const awardImpact = criteria.awardCount * AWARD_BONUS;
   const asOfDateTime = formatAsOfDateTime(detail?.asOfDateTime ?? null);
-  const showProjectedEpi = detail?.criteriaSource === 'live' && detail?.projectedEpiScore !== null;
+  const showProjectedEpi = detail?.criteriaSource === 'live' && (detail?.projectedEpiScore !== null || detail?.asOfDateTime !== null);
 
   return (
     <div className="space-y-4 text-xs">
@@ -270,7 +274,7 @@ function ExpandedMetrics({
                 ? 'Historical monthly EPI'
                 : 'Official EPI'}
             {showProjectedEpi
-              ? `: ${detail.projectedEpiScore?.toFixed(1)}`
+              ? `: ${(detail.projectedEpiScore ?? detail.epiScore ?? 0).toFixed(1)}`
               : detail.epiScore !== null
                 ? `: ${detail.epiScore.toFixed(1)}`
                 : ''}
@@ -285,6 +289,18 @@ function ExpandedMetrics({
       <div>
         <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">Performance Scores</p>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {criteria.customerInteractionScore !== null
+            ? <MetricBar label="Customer Interaction" value={criteria.customerInteractionScore} max={5} format={`${criteria.customerInteractionScore.toFixed(1)}/5`} />
+            : <NullMetric label="Customer Interaction" />}
+          {criteria.cashieringScore !== null
+            ? <MetricBar label="Cashiering" value={criteria.cashieringScore} max={5} format={`${criteria.cashieringScore.toFixed(1)}/5`} />
+            : <NullMetric label="Cashiering" />}
+          {criteria.suggestiveSellingUpsellingScore !== null
+            ? <MetricBar label="Suggestive Selling & Upselling" value={criteria.suggestiveSellingUpsellingScore} max={5} format={`${criteria.suggestiveSellingUpsellingScore.toFixed(1)}/5`} />
+            : <NullMetric label="Suggestive Selling & Upselling" />}
+          {criteria.serviceEfficiencyScore !== null
+            ? <MetricBar label="Service Efficiency" value={criteria.serviceEfficiencyScore} max={5} format={`${criteria.serviceEfficiencyScore.toFixed(1)}/5`} />
+            : <NullMetric label="Service Efficiency" />}
           {criteria.workplaceRelationsScore !== null
             ? <MetricBar label="Workplace Relations" value={criteria.workplaceRelationsScore} max={5} format={`${criteria.workplaceRelationsScore.toFixed(1)}/5`} />
             : <NullMetric label="Workplace Relations" />}

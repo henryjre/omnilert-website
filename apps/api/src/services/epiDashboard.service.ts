@@ -86,6 +86,10 @@ async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKp
         'scc_uniform_compliance',
         'scc_hygiene_compliance',
         'scc_sop_compliance',
+        'scc_customer_interaction',
+        'scc_cashiering',
+        'scc_suggestive_selling_and_upselling',
+        'scc_service_efficiency',
         dbConn.raw(`completed_at::text as audited_at`),
       ),
     dbConn('violation_notices')
@@ -100,10 +104,14 @@ async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKp
   const complianceAudit = complianceAuditRows.length
     ? complianceAuditRows.map((r: any) => ({
         answers: {
-          productivity_rate: r.scc_productivity_rate ?? false,
-          uniform: r.scc_uniform_compliance ?? false,
-          hygiene: r.scc_hygiene_compliance ?? false,
-          sop: r.scc_sop_compliance ?? false,
+          scc_productivity_rate: r.scc_productivity_rate ?? false,
+          scc_uniform_compliance: r.scc_uniform_compliance ?? false,
+          scc_hygiene_compliance: r.scc_hygiene_compliance ?? false,
+          scc_sop_compliance: r.scc_sop_compliance ?? false,
+          scc_customer_interaction: r.scc_customer_interaction,
+          scc_cashiering: r.scc_cashiering,
+          scc_suggestive_selling_and_upselling: r.scc_suggestive_selling_and_upselling,
+          scc_service_efficiency: r.scc_service_efficiency,
         },
         audited_at: r.audited_at,
       }))
