@@ -167,6 +167,14 @@ function MarkdownReport({ text }: { text: string }) {
 }
 
 function StarDisplay({ value }: { value: number | null }) {
+  if (value === null) {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-gray-500 ring-1 ring-inset ring-gray-200">
+        Not Auditable
+      </span>
+    );
+  }
+
   return (
     <span className="inline-flex items-center gap-1">
       {Array.from({ length: 5 }).map((_, index) => (
@@ -185,7 +193,7 @@ function StarDisplay({ value }: { value: number | null }) {
           />
         </span>
       ))}
-      <span className="ml-1 text-xs font-medium text-gray-700">{value ?? '-'} / 5</span>
+      <span className="ml-1 text-xs font-medium text-gray-700">{value} / 5</span>
     </span>
   );
 }
@@ -379,10 +387,10 @@ export function ServiceCrewCctvAuditDetailPanel({
     uniform_compliance: boolean | null;
     hygiene_compliance: boolean | null;
     sop_compliance: boolean | null;
-    customer_interaction: number;
-    cashiering: number;
-    suggestive_selling_and_upselling: number;
-    service_efficiency: number;
+    customer_interaction: number | null;
+    cashiering: number | null;
+    suggestive_selling_and_upselling: number | null;
+    service_efficiency: number | null;
   }) => void;
   onReject?: () => void;
   onRequestVN?: () => void;
@@ -552,6 +560,8 @@ export function ServiceCrewCctvAuditDetailPanel({
   );
   const allCustomerServiceRated = CUSTOMER_SERVICE_CRITERIA.every(
     (criterion) => answers[criterion.key] !== null,
+  ) || CUSTOMER_SERVICE_CRITERIA.every(
+    (criterion) => answers[criterion.key] === null,
   );
   const allAnswered = allComplianceAnswered && allCustomerServiceRated;
 
@@ -1044,9 +1054,29 @@ export function ServiceCrewCctvAuditDetailPanel({
 
   const renderCustomerServiceCriteria = (editable: boolean) => (
     <div className="border-b border-gray-200 px-6 py-5">
-      <div className="mb-3 flex items-center gap-2">
-        <Star className="h-4 w-4 text-amber-500" />
-        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Customer Service Criteria</p>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Star className="h-4 w-4 text-amber-500" />
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Customer Service Criteria</p>
+        </div>
+        {editable && (
+          <button
+            type="button"
+            onClick={() => {
+              setAnswers((prev) => ({
+                ...prev,
+                customer_interaction: null,
+                cashiering: null,
+                suggestive_selling_and_upselling: null,
+                service_efficiency: null,
+              }));
+            }}
+            className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-tight text-gray-500 hover:bg-gray-50 hover:text-gray-700 focus:outline-none focus:ring-1 focus:ring-gray-300"
+          >
+            <XCircle className="h-3 w-3" />
+            Not Auditable
+          </button>
+        )}
       </div>
       <div className="space-y-2">
         {CUSTOMER_SERVICE_CRITERIA.map((criterion) => (
@@ -1346,10 +1376,10 @@ export function ServiceCrewCctvAuditDetailPanel({
                     uniform_compliance: toStoredComplianceValue(answers.uniform_compliance),
                     hygiene_compliance: toStoredComplianceValue(answers.hygiene_compliance),
                     sop_compliance: toStoredComplianceValue(answers.sop_compliance),
-                    customer_interaction: answers.customer_interaction ?? 0,
-                    cashiering: answers.cashiering ?? 0,
-                    suggestive_selling_and_upselling: answers.suggestive_selling_and_upselling ?? 0,
-                    service_efficiency: answers.service_efficiency ?? 0,
+                    customer_interaction: answers.customer_interaction,
+                    cashiering: answers.cashiering,
+                    suggestive_selling_and_upselling: answers.suggestive_selling_and_upselling,
+                    service_efficiency: answers.service_efficiency,
                   });
                 }}
                 disabled={actionLoading || messagesLoading || !allAnswered || !hasVisibleMessages}

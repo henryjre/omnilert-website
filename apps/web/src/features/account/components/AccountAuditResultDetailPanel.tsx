@@ -691,7 +691,9 @@ export function AccountAuditResultDetailPanel({ audit }: { audit: AccountAuditRe
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.25 + i * 0.09, duration: 0.4 }}
                   className={`rounded-xl border bg-white px-4 py-3.5 ${
-                    isWeak ? 'border-red-200' : tier === 'developing' ? 'border-amber-200' : 'border-gray-200'
+                    value === null ? 'border-gray-100 opacity-80' :
+                    isWeak ? 'border-red-200' :
+                    tier === 'developing' ? 'border-amber-200' : 'border-gray-200'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-3">
@@ -703,8 +705,10 @@ export function AccountAuditResultDetailPanel({ audit }: { audit: AccountAuditRe
                       {tier === 'developing' && <Target className="h-3.5 w-3.5 shrink-0 text-amber-500" />}
                       <p className="text-sm font-semibold text-gray-900">{criterion.label}</p>
                     </div>
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ring-1 ring-inset ${sCfg.labelBg}`}>
-                      {sCfg.label}
+                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ring-1 ring-inset ${
+                      value === null ? 'bg-gray-100 text-gray-500 ring-gray-300' : sCfg.labelBg
+                    }`}>
+                      {value === null ? 'Not Auditable' : sCfg.label}
                     </span>
                   </div>
 
@@ -717,6 +721,7 @@ export function AccountAuditResultDetailPanel({ audit }: { audit: AccountAuditRe
                     <div className="flex items-center gap-2">
                       <SkillDots value={value} tier={tier} />
                       <span className={`text-sm font-extrabold tabular-nums ${
+                        value === null ? 'text-gray-400' :
                         tier === 'outstanding' ? 'text-amber-700' :
                         tier === 'proficient' ? 'text-blue-700' :
                         tier === 'developing' ? 'text-amber-700' :
