@@ -263,8 +263,10 @@ test('calculateKpiScoresWithQueryDeps respects explicit rolling window', async (
     },
     getBranchPosOrders: async () => [],
   }, {
-    from: new Date(2026, 1, 25, 0, 0, 0, 0),
-    to: new Date(2026, 2, 25, 23, 59, 59, 999),
+    window: {
+      from: new Date(2026, 1, 25, 0, 0, 0, 0),
+      to: new Date(2026, 2, 25, 23, 59, 59, 999),
+    },
   });
 
   assert.equal(result.breakdown.cashiering.score, null);
