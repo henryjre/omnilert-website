@@ -166,51 +166,33 @@ const customerServiceCriteria = [
 ] as const;
 
 export function AccountAuditResultDetailPanel({ audit }: { audit: AccountAuditResultDetail }) {
-  const [previewMedia, setPreviewMedia] = useState<{
-    items: { url: string; fileName: string }[];
-    index: number;
-  } | null>(null);
 
-  const mediaAttachments = useMemo(
-    () => audit.audit_trail
-      .flatMap((entry) => entry.attachments)
-      .filter((a) => isImageAttachment(a) || isVideoAttachment(a)),
-    [audit.audit_trail],
-  );
+  const complianceCriteria = audit.scc_result
+    ? [
+      {
+        key: 'productivity_rate',
+        label: 'Productivity Rate',
+        value: audit.scc_result.compliance_criteria.productivity_rate,
+      },
+      {
+        key: 'uniform_compliance',
+        label: 'Uniform Compliance',
+        value: audit.scc_result.compliance_criteria.uniform_compliance,
+      },
+      {
+        key: 'hygiene_compliance',
+        label: 'Hygiene Compliance',
+        value: audit.scc_result.compliance_criteria.hygiene_compliance,
+      },
+      {
+        key: 'sop_compliance',
+        label: 'SOP Compliance',
+        value: audit.scc_result.compliance_criteria.sop_compliance,
+      },
+    ]
+    : [];
 
-  const openPreview = useCallback(
-    (attachment: AccountAuditResultAttachment, source: AccountAuditResultAttachment[]) => {
-      const items = toPreviewItems(source);
-      const index = items.findIndex((item) => item.url === attachment.file_url);
-      if (index >= 0) setPreviewMedia({ items, index });
-    },
-    [],
-  );
-
-  const complianceCriteria = [
-    {
-      key: 'productivity_rate',
-      label: 'Productivity Rate',
-      value: audit.scc_result.compliance_criteria.productivity_rate,
-    },
-    {
-      key: 'uniform_compliance',
-      label: 'Uniform Compliance',
-      value: audit.scc_result.compliance_criteria.uniform_compliance,
-    },
-    {
-      key: 'hygiene_compliance',
-      label: 'Hygiene Compliance',
-      value: audit.scc_result.compliance_criteria.hygiene_compliance,
-    },
-    {
-      key: 'sop_compliance',
-      label: 'SOP Compliance',
-      value: audit.scc_result.compliance_criteria.sop_compliance,
-    },
-  ];
-
-  const customerServiceValues = audit.scc_result.customer_service_criteria;
+  const customerServiceValues = audit.scc_result?.customer_service_criteria;
 
   return (
     <>
@@ -253,55 +235,59 @@ export function AccountAuditResultDetailPanel({ audit }: { audit: AccountAuditRe
           </div>
         </motion.section>
 
-        <motion.section variants={fadeUp} className="space-y-3">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-blue-500" />
-            <p className="text-sm font-semibold text-gray-900">Compliance Criteria</p>
-          </div>
-          <div className="grid gap-3">
-            {complianceCriteria.map((criterion) => {
-              const state = renderTriState(criterion.value);
-              return (
-                <div
-                  key={criterion.key}
-                  className="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3"
-                >
-                  <p className="text-sm font-medium text-gray-900">{criterion.label}</p>
-                  <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${state.className}`}>
-                    {state.label}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </motion.section>
+        {complianceCriteria.length > 0 && (
+          <motion.section variants={fadeUp} className="space-y-3">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-blue-500" />
+              <p className="text-sm font-semibold text-gray-900">Compliance Criteria</p>
+            </div>
+            <div className="grid gap-3">
+              {complianceCriteria.map((criterion) => {
+                const state = renderTriState(criterion.value);
+                return (
+                  <div
+                    key={criterion.key}
+                    className="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-4 py-3"
+                  >
+                    <p className="text-sm font-medium text-gray-900">{criterion.label}</p>
+                    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${state.className}`}>
+                      {state.label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </motion.section>
+        )}
 
-        <motion.section variants={fadeUp} className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-amber-500" />
-            <p className="text-sm font-semibold text-gray-900">Customer Service Criteria</p>
-          </div>
-          <div className="grid gap-3">
-            {customerServiceCriteria.map((criterion) => {
-              const value = customerServiceValues[criterion.key];
-              return (
-                <div key={criterion.key} className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-gray-900">{criterion.label}</p>
-                    <span className="text-xs font-semibold text-amber-700">{value ?? '-'} / 5</span>
+        {customerServiceValues && (
+          <motion.section variants={fadeUp} className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-amber-500" />
+              <p className="text-sm font-semibold text-gray-900">Customer Service Criteria</p>
+            </div>
+            <div className="grid gap-3">
+              {customerServiceCriteria.map((criterion) => {
+                const value = customerServiceValues[criterion.key];
+                return (
+                  <div key={criterion.key} className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-semibold text-gray-900">{criterion.label}</p>
+                      <span className="text-xs font-semibold text-amber-700">{value ?? '-'} / 5</span>
+                    </div>
+                    <p className="mt-1 text-xs text-gray-500">{criterion.description}</p>
+                    <div className="mt-3 h-2 overflow-hidden rounded-full bg-amber-100">
+                      <div
+                        className="h-full rounded-full bg-amber-400 transition-all"
+                        style={{ width: ratingFill(value) }}
+                      />
+                    </div>
                   </div>
-                  <p className="mt-1 text-xs text-gray-500">{criterion.description}</p>
-                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-amber-100">
-                    <div
-                      className="h-full rounded-full bg-amber-400 transition-all"
-                      style={{ width: ratingFill(value) }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </motion.section>
+                );
+              })}
+            </div>
+          </motion.section>
+        )}
 
         {audit.ai_report && (
           <motion.section variants={fadeUp} className="space-y-3">
@@ -315,83 +301,6 @@ export function AccountAuditResultDetailPanel({ audit }: { audit: AccountAuditRe
           </motion.section>
         )}
 
-        {audit.audit_trail.length > 0 && (
-          <motion.section variants={fadeUp} className="space-y-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Audit Trail</p>
-            <div className="space-y-3">
-              {audit.audit_trail.map((entry) => (
-                <div key={entry.id} className="rounded-xl border border-gray-200 bg-white p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-xs text-gray-400">{formatMessageTime(entry.created_at)}</p>
-                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">
-                      Audit Note
-                    </span>
-                  </div>
-                  {entry.content && (
-                    <p className="mt-2.5 whitespace-pre-wrap text-sm text-gray-800">{entry.content}</p>
-                  )}
-                  {entry.attachments.length > 0 && (
-                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                      {entry.attachments.map((attachment) => {
-                        const previewable = isImageAttachment(attachment) || isVideoAttachment(attachment);
-                        return (
-                          <div key={attachment.id} className="rounded-lg border border-gray-200 p-3">
-                            <div className="flex items-start gap-2">
-                              <FileText className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-medium text-gray-900">{attachment.file_name}</p>
-                                <p className="mt-0.5 text-xs text-gray-500">{formatFileSize(attachment.file_size)}</p>
-                                <div className="mt-1.5 flex flex-wrap gap-2">
-                                  {previewable && (
-                                    <button
-                                      type="button"
-                                      onClick={() => openPreview(attachment, entry.attachments)}
-                                      className="text-xs font-medium text-primary-700 hover:underline"
-                                    >
-                                      Preview
-                                    </button>
-                                  )}
-                                  <a
-                                    href={attachment.file_url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="inline-flex items-center gap-1 text-xs font-medium text-primary-700 hover:underline"
-                                  >
-                                    <ExternalLink className="h-3 w-3" />
-                                    Open File
-                                  </a>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </motion.section>
-        )}
-
-        {mediaAttachments.length > 0 && audit.audit_trail.every((entry) => entry.attachments.length === 0) && (
-          <motion.section variants={fadeUp} className="space-y-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Media</p>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {mediaAttachments.map((attachment) => (
-                <button
-                  key={attachment.id}
-                  type="button"
-                  onClick={() => openPreview(attachment, mediaAttachments)}
-                  className="rounded-lg border border-gray-200 p-3 text-left transition-colors hover:border-primary-300 hover:bg-primary-50"
-                >
-                  <p className="truncate text-sm font-medium text-gray-900">{attachment.file_name}</p>
-                  <p className="mt-1 text-xs text-gray-500">{formatFileSize(attachment.file_size)}</p>
-                </button>
-              ))}
-            </div>
-          </motion.section>
-        )}
 
         <motion.div
           variants={fadeUp}
@@ -410,12 +319,6 @@ export function AccountAuditResultDetailPanel({ audit }: { audit: AccountAuditRe
         </motion.div>
       </motion.div>
 
-      <ImagePreviewModal
-        items={previewMedia?.items ?? null}
-        index={previewMedia?.index ?? 0}
-        onIndexChange={(index) => setPreviewMedia((current) => (current ? { ...current, index } : current))}
-        onClose={() => setPreviewMedia(null)}
-      />
     </>
   );
 }

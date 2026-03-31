@@ -63,9 +63,6 @@ export function AccountAuditResultCard({
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          <p className="max-w-[220px] text-right text-sm font-semibold text-primary-700">
-            {audit.summary.result_line}
-          </p>
           <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" />
         </div>
       </div>
