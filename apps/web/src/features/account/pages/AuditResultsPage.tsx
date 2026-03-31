@@ -45,6 +45,7 @@ export function AuditResultsPage() {
   const [selectedAuditId, setSelectedAuditId] = useState<string | null>(initialId);
   const [selectedAudit, setSelectedAudit] = useState<AccountAuditResultDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const isFirstRender = React.useRef(true);
 
   const paginationState = useMemo(
     () => resolveStoreAuditPaginationState({ page, pageSize, total }),
@@ -103,10 +104,16 @@ export function AuditResultsPage() {
     };
   }, [page, selectedBranchIds, showErrorToast]);
 
-  /** Reset to page 1 when branch selection changes. */
+  /** Reset to page 1 when branch selection changes. Skip on first render. */
   useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
     setPage(1);
-    setSelectedAuditId(null);
+    // Note: We no longer automatically clear selectedAuditId here to allow
+    // deep links to persist even if branch filters are being initialized
+    // or changed. The user can manually close the detail panel.
   }, [selectedBranchIds]);
 
   useEffect(() => {
