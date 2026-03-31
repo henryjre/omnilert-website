@@ -14,10 +14,8 @@ const MAX_TIMEOUT_MS = 2_147_483_647;
 const STALE_RUN_THRESHOLD_MS = 6 * 60 * 60 * 1000;
 
 const WEEKLY_EPI_JOB_NAME = 'epi-weekly-snapshot';
-const MONTHLY_EPI_JOB_NAME = 'epi-monthly-snapshot';
 const EMPLOYEE_METRIC_DAILY_JOB_NAME = 'employee-metric-daily-snapshot';
 const WEEKLY_EPI_CRON = '0 5 * * 0';
-const MONTHLY_EPI_CRON = '0 4 1 * *';
 const EMPLOYEE_METRIC_DAILY_CRON = '30 3 * * *';
 
 interface EpiHistoryEntry {
@@ -173,13 +171,6 @@ const scheduledJobs: ScheduledSnapshotJob[] = [
     schedule: parseCronExpression(WEEKLY_EPI_CRON),
     handle: null,
     runner: ({ scheduledFor }) => runWeeklyEpiSnapshot({ scheduledFor }),
-  },
-  {
-    name: MONTHLY_EPI_JOB_NAME,
-    expression: MONTHLY_EPI_CRON,
-    schedule: parseCronExpression(MONTHLY_EPI_CRON),
-    handle: null,
-    runner: ({ scheduledFor }) => runMonthlyEpiSnapshot({ scheduledFor }),
   },
   {
     name: EMPLOYEE_METRIC_DAILY_JOB_NAME,
@@ -403,35 +394,20 @@ function getExpectedSnapshotDate(job: ScheduledSnapshotJob, scheduledFor: Date):
   if (job.name === WEEKLY_EPI_JOB_NAME) {
     return formatManilaDate(scheduledFor);
   }
-  if (job.name === MONTHLY_EPI_JOB_NAME) {
-    return getPreviousMonthDateString(scheduledFor);
-  }
   return getPreviousManilaDateString(scheduledFor);
 }
 
 async function hasExistingSnapshotHistory(job: ScheduledSnapshotJob, scheduledFor: Date): Promise<boolean> {
-  if (job.name === EMPLOYEE_METRIC_DAILY_JOB_NAME) {
-    const masterDb = db.getDb();
-    const snapshotDate = getExpectedSnapshotDate(job, scheduledFor);
-    const row = await masterDb('employee_metric_daily_snapshots')
-      .where({ snapshot_date: snapshotDate })
-      .first('id');
-    return Boolean(row);
-  }
-
   const masterDb = db.getDb();
-  const snapshotType: EpiHistoryEntry['type'] = job.name === WEEKLY_EPI_JOB_NAME ? 'weekly' : 'monthly';
-  const snapshotDate = getExpectedSnapshotDate(job, scheduledFor);
-  const jsonPath = `$[*] ? (@.type == "${snapshotType}" && @.date == "${snapshotDate}")`;
+  const scheduledForKey = formatScheduledForKey(scheduledFor);
 
-  const row = await masterDb('users as u')
-    .join('user_roles as ur', 'u.id', 'ur.user_id')
-    .join('roles as r', 'ur.role_id', 'r.id')
-    .where('u.is_active', true)
-    .where('u.employment_status', 'active')
-    .where('r.name', 'Service Crew')
-    .whereRaw(`jsonb_path_exists(COALESCE(u.epi_history, '[]'::jsonb), ?::jsonpath)`, [jsonPath])
-    .first('u.id');
+  const row = await masterDb('scheduled_job_runs')
+    .where({
+      job_name: job.name,
+      scheduled_for_key: scheduledForKey,
+      status: 'success'
+    })
+    .first('id');
 
   return Boolean(row);
 }
@@ -683,10 +659,6 @@ export async function runWeeklyEpiSnapshot(input?: { scheduledFor?: Date }): Pro
         .where({ id: user.id })
         .update({
           epi_score: epiAfter,
-          epi_history: masterDb.raw(
-            `COALESCE(epi_history, '[]'::jsonb) || ?::jsonb`,
-            [JSON.stringify([entry])],
-          ),
           updated_at: new Date(),
         });
 
@@ -789,59 +761,7 @@ export async function runWeeklyEpiSnapshot(input?: { scheduledFor?: Date }): Pro
   };
 }
 
-export async function runMonthlyEpiSnapshot(input?: { scheduledFor?: Date }): Promise<Partial<CronJobNotificationStats>> {
-  const scheduledFor = input?.scheduledFor ?? new Date();
-  const snapshotDate = getPreviousMonthDateString(scheduledFor);
 
-  logger.info({ snapshotDate }, 'EPI monthly snapshot started');
-
-  const masterDb = db.getDb();
-  const users = await getActiveServiceCrewUsers();
-  let succeeded = 0;
-  let failed = 0;
-
-  for (const user of users) {
-    try {
-      const kpiData = await fetchUserKpiData(user.id, user.user_key);
-      const { breakdown, raw_delta, capped } = await calculateKpiScores(kpiData);
-
-      const currentEpi = Number(user.epi_score ?? 100);
-      const entry: EpiHistoryEntry = {
-        type: 'monthly',
-        date: snapshotDate,
-        epi_before: currentEpi,
-        epi_after: currentEpi,
-        delta: 0,
-        kpi_breakdown: breakdown,
-        capped,
-        raw_delta,
-      };
-
-      await masterDb('users')
-        .where({ id: user.id })
-        .update({
-          epi_history: masterDb.raw(
-            `COALESCE(epi_history, '[]'::jsonb) || ?::jsonb`,
-            [JSON.stringify([entry])],
-          ),
-          updated_at: new Date(),
-        });
-      succeeded += 1;
-    } catch (error) {
-      failed += 1;
-      logger.error({ err: error, userId: user.id, snapshotDate }, 'EPI monthly snapshot failed for user');
-    }
-  }
-
-  logger.info({ snapshotDate, processed: users.length }, 'EPI monthly snapshot completed');
-
-  return {
-    processed: users.length,
-    succeeded,
-    failed,
-    skipped: 0,
-  };
-}
 
 export async function initEpiSnapshotCrons(): Promise<void> {
   if (initialized) return;

@@ -13,22 +13,10 @@ const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Se
 const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
 const THIRTY_DAY_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
-interface EpiHistoryEntry {
-  type: 'weekly' | 'monthly';
-  date: string;
-  epi_before: number;
-  epi_after: number;
-  delta: number;
-  kpi_breakdown: KpiBreakdown;
-  capped: boolean;
-  raw_delta: number;
-}
-
 interface DashboardUserRow {
   userId: string;
   userKey: string;
   epi_score: number | string | null;
-  epi_history: unknown;
 }
 
 async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKpiData> {
@@ -139,12 +127,10 @@ interface LeaderboardSummaryDbRow {
   last_name: string | null;
   avatar_url: string | null;
   epi_score: number | string | null;
-  epi_history: unknown;
 }
 
 interface GlobalAverageDbRow {
   epi_score: number | string | null;
-  epi_history: unknown;
 }
 
 interface ManilaDateParts {
@@ -319,6 +305,18 @@ function createEmptyCriteria(): DashboardCriteria {
   };
 }
 
+function isCurrentMonthSelection(monthKey: string, currentMonthKey: string): boolean {
+  return monthKey === currentMonthKey;
+}
+
+function isImmediatelyPrecedingMonth(monthKey: string, currentMonthKey: string): boolean {
+  const [cy, cm] = currentMonthKey.split('-').map(Number);
+  const [my, mm] = monthKey.split('-').map(Number);
+
+  if (cy === my) return cm === mm + 1;
+  return cy === my + 1 && cm === 1 && mm === 12;
+}
+
 function breakdownToCriteria(kpi: KpiBreakdown | null | undefined): DashboardCriteria {
   if (!kpi) return createEmptyCriteria();
 
@@ -343,54 +341,94 @@ function breakdownToCriteria(kpi: KpiBreakdown | null | undefined): DashboardCri
   };
 }
 
-function normalizeHistoryEntries(rawHistory: unknown): EpiHistoryEntry[] {
-  if (!Array.isArray(rawHistory)) return [];
-  return rawHistory.filter((entry): entry is EpiHistoryEntry => {
-    return Boolean(
-      entry &&
-      typeof entry === 'object' &&
-      'type' in entry &&
-      'date' in entry &&
-      'epi_after' in entry &&
-      'kpi_breakdown' in entry,
-    );
-  });
+function toNullableNumber(value: any): number | null {
+  if (value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isNaN(parsed) ? null : parsed;
 }
 
-function sortHistoryEntries(entries: EpiHistoryEntry[]): EpiHistoryEntry[] {
-  return [...entries].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+function snapshotToCriteria(s: any): DashboardCriteria {
+  if (!s) return createEmptyCriteria();
+  return {
+    sqaaScore: null,
+    workplaceRelationsScore: toNullableNumber(s.workplace_relations_score),
+    professionalConductScore: null,
+    productivityRate: toNullableNumber(s.productivity_rate),
+    punctualityRate: toNullableNumber(s.punctuality_rate),
+    attendanceRate: toNullableNumber(s.attendance_rate),
+    aov: toNullableNumber(s.average_order_value),
+    branchAov: toNullableNumber(s.branch_aov),
+    violationCount: toNumber(s.violations_count, 0),
+    awardCount: toNumber(s.awards_count, 0),
+    uniformComplianceRate: toNullableNumber(s.uniform_compliance_rate),
+    hygieneComplianceRate: toNullableNumber(s.hygiene_compliance_rate),
+    sopComplianceRate: toNullableNumber(s.sop_compliance_rate),
+    customerInteractionScore: toNullableNumber(s.customer_interaction),
+    cashieringScore: toNullableNumber(s.cashiering),
+    suggestiveSellingUpsellingScore: toNullableNumber(s.suggestive_selling_and_upselling),
+    serviceEfficiencyScore: toNullableNumber(s.service_efficiency),
+  };
 }
 
-function historyEntriesToMonthlyHistory(entries: EpiHistoryEntry[]): HistoricalMonthEntry[] {
-  const deduped = new Map<string, HistoricalMonthEntry>();
+async function fetchMonthlyHistoryFromSnapshots(userId: string): Promise<HistoricalMonthEntry[]> {
+  const masterDb = db.getDb();
+  const snapshots = await masterDb('employee_metric_daily_snapshots')
+    .where({ user_id: userId })
+    .select(
+      masterDb.raw("DISTINCT ON (date_trunc('month', snapshot_date)) snapshot_date"),
+      'epi_score',
+      'attendance_rate',
+      'punctuality_rate',
+      'productivity_rate',
+      'average_order_value',
+      'branch_aov',
+      'uniform_compliance_rate',
+      'hygiene_compliance_rate',
+      'sop_compliance_rate',
+      'workplace_relations_score',
+      'customer_interaction',
+      'cashiering',
+      'suggestive_selling_and_upselling',
+      'service_efficiency',
+      'awards_count',
+      'violations_count'
+    )
+    .orderByRaw("date_trunc('month', snapshot_date) DESC, snapshot_date DESC");
 
-  for (const entry of sortHistoryEntries(entries)) {
-    if (entry.type !== 'monthly') continue;
-
-    const monthKey = getMonthKeyFromDateString(entry.date);
-    if (!monthKey) continue;
-
-    const parsedDate = new Date(entry.date);
-    if (Number.isNaN(parsedDate.getTime())) continue;
-
-    deduped.set(monthKey, {
+  return snapshots.map(s => {
+    const date = new Date(s.snapshot_date);
+    const monthKey = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+    return {
       monthKey,
-      monthLabel: getMonthLabel(parsedDate),
-      year: getYear(parsedDate),
-      epiScore: roundToTenth(toNumber(entry.epi_after, 100)),
-      criteria: breakdownToCriteria(entry.kpi_breakdown),
-    });
-  }
-
-  return Array.from(deduped.values()).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
+      monthLabel: MONTH_NAMES[date.getUTCMonth()],
+      year: date.getUTCFullYear(),
+      epiScore: roundToTenth(toNumber(s.epi_score, 100)),
+      criteria: snapshotToCriteria(s),
+    };
+  }).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
 }
 
-async function buildCurrentLiveSnapshot(user: UserKpiData, officialEpiScore: number): Promise<CurrentLiveSnapshot | null> {
+
+
+async function buildCurrentLiveSnapshot(user: UserKpiData, officialEpiScore: number, monthKey?: string): Promise<CurrentLiveSnapshot | null> {
   if (!user.userKey) return null;
 
   const now = new Date();
-  const from = new Date(now.getTime() - THIRTY_DAY_WINDOW_MS);
   const parts = getManilaDateParts(now);
+  const effectiveMonthKey = monthKey || `${parts.year}-${String(parts.month).padStart(2, '0')}`;
+
+  let from: Date;
+  let to: Date;
+
+  if (monthKey) {
+    // For a historical month, use the 30-day window ending on the last day of that month
+    const [y, m] = monthKey.split('-').map(Number);
+    to = new Date(Date.UTC(y, m, 0, 15, 59, 59, 999)); // Last day of month
+    from = new Date(to.getTime() - THIRTY_DAY_WINDOW_MS + 1);
+  } else {
+    to = now;
+    from = new Date(now.getTime() - THIRTY_DAY_WINDOW_MS);
+  }
 
   const { breakdown, delta, raw_delta, capped } = await calculateKpiScores({
     userId: user.userId,
@@ -399,24 +437,22 @@ async function buildCurrentLiveSnapshot(user: UserKpiData, officialEpiScore: num
     peerEvaluations: user.peerEvaluations,
     complianceAudit: user.complianceAudit,
     violationNotices: user.violationNotices,
-  });
+  }, { from, to });
+
+  const dateForLabel = monthKey ? new Date(`${monthKey}-01`) : now;
 
   return {
-    monthKey: `${parts.year}-${String(parts.month).padStart(2, '0')}`,
-    monthLabel: MONTH_NAMES[parts.month - 1],
-    year: parts.year,
+    monthKey: effectiveMonthKey,
+    monthLabel: MONTH_NAMES[dateForLabel.getUTCMonth()],
+    year: dateForLabel.getUTCFullYear(),
     asOfDateTime: now.toISOString(),
     projectedEpiScore: roundToTenth(officialEpiScore + delta),
     delta,
     rawDelta: raw_delta,
     capped,
     criteria: breakdownToCriteria(breakdown),
-    wrsStatus: getWrsStatusSummary(user.peerEvaluations, from, now),
+    wrsStatus: getWrsStatusSummary(user.peerEvaluations, from, to),
   };
-}
-
-function isCurrentMonthSelection(monthKey: string, currentMonthKey: string): boolean {
-  return monthKey === currentMonthKey;
 }
 
 function getHistoricalMonth(monthlyHistory: HistoricalMonthEntry[], monthKey: string): HistoricalMonthEntry | null {
@@ -428,22 +464,7 @@ function formatFullName(firstName: string | null, lastName: string | null): stri
   return combined || 'Unknown User';
 }
 
-function toLeaderboardSummaryRow(row: LeaderboardSummaryDbRow): LeaderboardSummaryUserRow {
-  return {
-    userId: row.userId,
-    fullName: formatFullName(row.first_name, row.last_name),
-    avatarUrl: row.avatar_url ?? null,
-    officialEpiScore: toNumber(row.epi_score, 100),
-    monthlyHistory: historyEntriesToMonthlyHistory(normalizeHistoryEntries(row.epi_history)),
-  };
-}
 
-function toGlobalAverageUserRow(row: GlobalAverageDbRow): GlobalAverageUserRow {
-  return {
-    officialEpiScore: toNumber(row.epi_score, 100),
-    monthlyHistory: historyEntriesToMonthlyHistory(normalizeHistoryEntries(row.epi_history)),
-  };
-}
 
 function accumulateMonthScore(
   sumsByMonth: Map<string, { sum: number; count: number }>,
@@ -460,30 +481,27 @@ function accumulateMonthScore(
   existing.count += 1;
 }
 
-export function createGlobalAverageByMonth(
-  rows: GlobalAverageUserRow[],
-  currentMonthKey: string,
-): Record<string, number> {
-  const sumsByMonth = new Map<string, { sum: number; count: number }>();
+export async function getGlobalAverageHistory(): Promise<Record<string, number>> {
+  const masterDb = db.getDb();
+  
+  // Aggregate the EPI score average for the last day of every month
+  const averages = await masterDb('employee_metric_daily_snapshots')
+    .select(
+      masterDb.raw("date_trunc('month', snapshot_date) as month_date"),
+      masterDb.raw("AVG(epi_score) as average")
+    )
+    // We target snapshots that represent the month-end (last day)
+    .whereRaw("snapshot_date = (date_trunc('month', snapshot_date) + interval '1 month' - interval '1 day')::date")
+    .groupBy(1)
+    .orderBy(1, 'asc');
 
-  for (const row of rows) {
-    accumulateMonthScore(sumsByMonth, currentMonthKey, row.officialEpiScore);
-
-    for (const month of row.monthlyHistory) {
-      if (month.monthKey === currentMonthKey) continue;
-      accumulateMonthScore(sumsByMonth, month.monthKey, month.epiScore);
-    }
+  const result: Record<string, number> = {};
+  for (const row of averages) {
+    const d = new Date(row.month_date);
+    const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    result[key] = roundToTenth(toNumber(row.average, 100));
   }
-
-  const sortedEntries = Array.from(sumsByMonth.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-  const averages: Record<string, number> = {};
-
-  for (const [monthKey, aggregate] of sortedEntries) {
-    if (aggregate.count === 0) continue;
-    averages[monthKey] = roundToTenth(aggregate.sum / aggregate.count);
-  }
-
-  return averages;
+  return result;
 }
 
 function compareLeaderboardSummaryEntries(a: EpiLeaderboardSummaryEntry, b: EpiLeaderboardSummaryEntry): number {
@@ -561,6 +579,22 @@ export function createLeaderboardDetail(input: {
 
   const historicalMonth = getHistoricalMonth(row.monthlyHistory, monthKey);
   if (!historicalMonth) {
+    if (isImmediatelyPrecedingMonth(monthKey, currentMonthKey) && currentLive) {
+      return {
+        userId: row.userId,
+        fullName: row.fullName,
+        avatarUrl: row.avatarUrl,
+        monthKey,
+        epiScore: row.officialEpiScore,
+        projectedEpiScore: currentLive.projectedEpiScore,
+        hasData: true,
+        criteria: currentLive.criteria,
+        wrsStatus: currentLive.wrsStatus,
+        asOfDateTime: currentLive.asOfDateTime,
+        scoreSource: 'official',
+        criteriaSource: 'live',
+      };
+    }
     return {
       userId: row.userId,
       fullName: row.fullName,
@@ -610,14 +644,12 @@ export function applyGlobalLeaderboardFilters(query: any, masterDb: any) {
 export async function getEpiDashboard(userId: string): Promise<EpiDashboardResponse> {
   const masterDb = db.getDb();
   const currentMonthKey = getCurrentMonthKey();
-  const [row, globalAverageRows] = await Promise.all([
+  const [row, globalAverageByMonth] = await Promise.all([
     masterDb('users')
       .where({ id: userId })
-      .first('id as userId', 'user_key as userKey', 'epi_score', 'epi_history') as Promise<DashboardUserRow | undefined>,
-    applyGlobalLeaderboardFilters(masterDb('users as u'), masterDb)
-      .select('u.epi_score', 'u.epi_history') as Promise<GlobalAverageDbRow[]>,
+      .first('id as userId', 'user_key as userKey', 'epi_score') as Promise<DashboardUserRow | undefined>,
+    getGlobalAverageHistory(),
   ]);
-  const globalAverageByMonth = createGlobalAverageByMonth(globalAverageRows.map(toGlobalAverageUserRow), currentMonthKey);
 
   if (!row) {
     return {
@@ -630,7 +662,7 @@ export async function getEpiDashboard(userId: string): Promise<EpiDashboardRespo
   }
 
   const officialEpiScore = toNumber(row.epi_score, 100);
-  const monthlyHistory = historyEntriesToMonthlyHistory(normalizeHistoryEntries(row.epi_history));
+  const monthlyHistory = await fetchMonthlyHistoryFromSnapshots(userId);
 
   let currentLive: CurrentLiveSnapshot | null = null;
   try {
@@ -660,13 +692,65 @@ export async function getEpiLeaderboard(currentUserId: string, monthKey: string)
       'u.last_name',
       'u.avatar_url',
       'u.epi_score',
-      'u.epi_history',
     )
     .orderBy('u.last_name', 'asc')
     .orderBy('u.first_name', 'asc')
     .orderBy('u.id', 'asc') as LeaderboardSummaryDbRow[];
 
-  const summaryRows = rows.map(toLeaderboardSummaryRow);
+  const userIds = rows.map(r => r.userId);
+  const allSnapshots = await masterDb('employee_metric_daily_snapshots')
+    .whereIn('user_id', userIds)
+    .select(
+      masterDb.raw("DISTINCT ON (user_id, date_trunc('month', snapshot_date)) user_id"),
+      'snapshot_date',
+      'epi_score',
+      'attendance_rate',
+      'punctuality_rate',
+      'productivity_rate',
+      'average_order_value',
+      'branch_aov',
+      'uniform_compliance_rate',
+      'hygiene_compliance_rate',
+      'sop_compliance_rate',
+      'workplace_relations_score',
+      'customer_interaction',
+      'cashiering',
+      'suggestive_selling_and_upselling',
+      'service_efficiency',
+      'awards_count',
+      'violations_count'
+    )
+    .orderByRaw("user_id, date_trunc('month', snapshot_date) DESC, snapshot_date DESC");
+
+  const snapshotsByUser = new Map<string, any[]>();
+  for (const s of allSnapshots) {
+    const list = snapshotsByUser.get(s.user_id) ?? [];
+    list.push(s);
+    snapshotsByUser.set(s.user_id, list);
+  }
+
+  const summaryRows = rows.map((row) => {
+    const userSnapshots = snapshotsByUser.get(row.userId) ?? [];
+    const monthlyHistory = userSnapshots.map(s => {
+      const date = new Date(s.snapshot_date);
+      const mKey = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+      return {
+        monthKey: mKey,
+        monthLabel: MONTH_NAMES[date.getUTCMonth()],
+        year: date.getUTCFullYear(),
+        epiScore: roundToTenth(toNumber(s.epi_score, 100)),
+        criteria: snapshotToCriteria(s),
+      };
+    }).sort((a, b) => a.monthKey.localeCompare(b.monthKey));
+
+    return {
+      userId: row.userId,
+      fullName: formatFullName(row.first_name, row.last_name),
+      avatarUrl: row.avatar_url ?? null,
+      officialEpiScore: toNumber(row.epi_score, 100),
+      monthlyHistory,
+    };
+  });
   return createLeaderboardSummaryEntries(summaryRows, {
     currentUserId,
     monthKey,
@@ -691,7 +775,6 @@ export async function getEpiLeaderboardDetail(
       'u.avatar_url',
       'u.user_key as userKey',
       'u.epi_score',
-      'u.epi_history',
     ) as LeaderboardIdentityRow | undefined;
 
   if (!row) {
@@ -703,14 +786,16 @@ export async function getEpiLeaderboardDetail(
     fullName: formatFullName(row.first_name, row.last_name),
     avatarUrl: row.avatar_url ?? null,
     officialEpiScore: toNumber(row.epi_score, 100),
-    monthlyHistory: historyEntriesToMonthlyHistory(normalizeHistoryEntries(row.epi_history)),
+    monthlyHistory: await fetchMonthlyHistoryFromSnapshots(userId),
   };
 
   let currentLive: CurrentLiveSnapshot | null = null;
-  if (isCurrentMonth) {
+  const isImmediatelyPreceding = isImmediatelyPrecedingMonth(monthKey, currentMonthKey);
+
+  if (isCurrentMonth || (isImmediatelyPreceding && !getHistoricalMonth(detailRow.monthlyHistory, monthKey))) {
     try {
       const kpiData = await fetchUserKpiData(row.userId, row.userKey);
-      currentLive = await buildCurrentLiveSnapshot(kpiData, detailRow.officialEpiScore);
+      currentLive = await buildCurrentLiveSnapshot(kpiData, detailRow.officialEpiScore, isCurrentMonth ? undefined : monthKey);
     } catch (error) {
       logger.error({ err: error, userId: row.userId }, 'Failed to build live leaderboard detail snapshot');
     }

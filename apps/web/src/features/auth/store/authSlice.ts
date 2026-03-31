@@ -107,6 +107,7 @@ export const useAuthStore = create<AuthState>()(
     {
       name: 'omnilert-auth',
       partialize: (state) => ({
+        accessToken: state.accessToken,
         refreshToken: state.refreshToken,
         companySlug: state.companySlug,
         user: state.user,

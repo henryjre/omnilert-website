@@ -96,9 +96,6 @@ export async function generateEpiReportPdf(data: EpiReportData): Promise<Buffer>
     const deltaSign = data.delta >= 0 ? '+' : '';
     const deltaColor = data.delta > 0 ? '#16a34a' : data.delta < 0 ? '#dc2626' : '#6b7280';
     doc.fillColor(deltaColor).fontSize(22).font('Helvetica-Bold').text(`${deltaSign}${data.delta.toFixed(1)}`, 210, boxY + 24);
-    if (data.capped) {
-      doc.fillColor('#d97706').fontSize(8).font('Helvetica').text(`(raw: ${data.rawDelta >= 0 ? '+' : ''}${data.rawDelta.toFixed(1)}, capped)`, 210, boxY + 50);
-    }
 
     doc.fillColor('#0369a1').fontSize(9).font('Helvetica').text('New EPI', 380, boxY + 12);
     doc.fillColor('#0c4a6e').fontSize(22).font('Helvetica-Bold').text(data.epiAfter.toFixed(1), 380, boxY + 24);
@@ -155,7 +152,7 @@ export async function generateEpiReportPdf(data: EpiReportData): Promise<Buffer>
     doc.fillColor(impactColor(data.rawDelta)).fontSize(9).font('Helvetica-Bold')
       .text(`${rawSign}${data.rawDelta.toFixed(1)}`, 410, rowY, { width: 60, align: 'right' });
     rowY += 16;
-    doc.fillColor('#111827').fontSize(9).font('Helvetica-Bold').text('Final EPI Change (capped ±5)', 50, rowY);
+    doc.fillColor('#111827').fontSize(9).font('Helvetica-Bold').text('Final EPI Change', 50, rowY);
     const cappedSign = data.delta >= 0 ? '+' : '';
     doc.fillColor(impactColor(data.delta)).fontSize(9).font('Helvetica-Bold')
       .text(`${cappedSign}${data.delta.toFixed(1)}`, 410, rowY, { width: 60, align: 'right' });

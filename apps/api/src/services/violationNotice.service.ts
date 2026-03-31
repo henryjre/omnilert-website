@@ -1016,7 +1016,7 @@ async function notifyViolationNoticeCompletionTargets(input: {
   const vnLabel = `VN-${String(input.vnNumber).padStart(4, '0')}`;
   const epiMessage =
     input.epiDecrease > 0
-      ? ` EPI decrease: ${input.epiDecrease.toFixed(1)} will be applied at the next EPI calculation.`
+      ? ` EPI decrease: ${input.epiDecrease.toFixed(1)} has been applied to your official EPI score.`
       : "";
 
   await Promise.all(
@@ -1054,6 +1054,42 @@ export async function completeViolationNotice(input: {
       epi_decrease: input.epiDecrease,
       updated_at: completedAt,
     });
+
+    if (input.epiDecrease > 0) {
+      const targets = await trx('violation_notice_targets')
+        .where({ violation_notice_id: input.vnId })
+        .select<{ user_id: string }[]>('user_id');
+
+      for (const target of targets) {
+        const user = await trx('users')
+          .where({ id: target.user_id })
+          .first<{ epi_score: number | string | null; epi_history: any }>('epi_score', 'epi_history');
+
+        if (!user) continue;
+
+        const epiBefore = user.epi_score !== null ? Number(user.epi_score) : 100;
+        const epiAfter = Math.round(Math.max(0, epiBefore - input.epiDecrease) * 10) / 10;
+        const delta = Number((epiAfter - epiBefore).toFixed(1));
+
+        const historyEntry = {
+          type: 'violation',
+          date: completedAt.toISOString(),
+          epi_before: epiBefore,
+          epi_after: epiAfter,
+          delta,
+          vn_id: input.vnId,
+          vn_number: record.vn_number,
+        };
+
+        await trx('users')
+          .where({ id: target.user_id })
+          .update({
+            epi_score: epiAfter,
+            updated_at: completedAt,
+          });
+      }
+    }
+
     await createSystemMessage(
       input.vnId,
       input.userId,

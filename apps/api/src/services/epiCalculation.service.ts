@@ -255,12 +255,13 @@ function calcWrs(
   }> | null,
   from: Date,
   to: Date,
-): { score: number | null; impact: number } {
+): { score: number | null; impact: number; count: number } {
   const { effective } = splitWrsEvaluations(peerEvaluations, from, to);
-  if (effective.length === 0) return { score: null, impact: 0 };
-  const avg = effective.reduce((s, e) => s + e.average_score, 0) / effective.length;
+  const count = effective.length;
+  if (count < 10) return { score: null, impact: 0, count };
+  const avg = effective.reduce((s, e) => s + e.average_score, 0) / count;
   const score = Math.round(avg * 100) / 100;
-  return { score, impact: wrsImpact(score) };
+  return { score, impact: wrsImpact(score), count };
 }
 
 function calcComplianceRate(
@@ -268,14 +269,16 @@ function calcComplianceRate(
   field: string,
   from: Date,
   to: Date,
-): number | null {
-  if (!Array.isArray(complianceAudit) || complianceAudit.length === 0) return null;
+): { rate: number | null; count: number } {
+  if (!Array.isArray(complianceAudit) || complianceAudit.length === 0) return { rate: null, count: 0 };
   const recent = complianceAudit.filter(
     (a) => dateRangeFilter(a.audited_at, from, to) && typeof a.answers?.[field] === 'boolean'
   );
-  if (recent.length === 0) return null;
+  const count = recent.length;
+  if (count < 10) return { rate: null, count };
   const trueCount = recent.filter((a) => a.answers[field] === true).length;
-  return Math.round((trueCount / recent.length) * 1000) / 10;
+  const rate = Math.round((trueCount / count) * 1000) / 10;
+  return { rate, count };
 }
 
 function calcAverageScore(
@@ -283,24 +286,27 @@ function calcAverageScore(
   field: string,
   from: Date,
   to: Date,
-): number | null {
-  if (!Array.isArray(complianceAudit) || complianceAudit.length === 0) return null;
+): { score: number | null; count: number } {
+  if (!Array.isArray(complianceAudit) || complianceAudit.length === 0) return { score: null, count: 0 };
   const recent = complianceAudit.filter(
     (a) => dateRangeFilter(a.audited_at, from, to) && typeof a.answers?.[field] === 'number'
   );
-  if (recent.length === 0) return null;
+  const count = recent.length;
+  if (count < 10) return { score: null, count };
   const sum = recent.reduce((s, a) => s + a.answers[field], 0);
-  return Math.round((sum / recent.length) * 100) / 100;
+  const score = Math.round((sum / count) * 100) / 100;
+  return { score, count };
 }
 
 function calcAttendanceFromRecords(
   slots: OdooPlanningSlot[],
   attendances: OdooAttendanceRecord[],
-): { rate: number | null; impact: number } {
-  if (slots.length === 0) return { rate: null, impact: 0 };
+): { rate: number | null; impact: number; count: number } {
+  const count = slots.length;
+  if (count < 10) return { rate: null, impact: 0, count };
 
   const scheduledHours = slots.reduce((s, slot) => s + (slot.allocated_hours || 0), 0);
-  if (scheduledHours === 0) return { rate: null, impact: 0 };
+  if (scheduledHours === 0) return { rate: null, impact: 0, count };
 
   // Build set of days with actual check-ins
   const checkedInDays = new Set(
@@ -317,14 +323,15 @@ function calcAttendanceFromRecords(
   }
 
   const rate = Math.round(((scheduledHours - absentHours) / scheduledHours) * 1000) / 10;
-  return { rate, impact: attendanceImpact(rate) };
+  return { rate, impact: attendanceImpact(rate), count };
 }
 
 function calcPunctualityFromRecords(
   slots: OdooPlanningSlot[],
   attendances: OdooAttendanceRecord[],
-): { rate: number | null; impact: number } {
-  if (slots.length === 0) return { rate: null, impact: 0 };
+): { rate: number | null; impact: number; count: number } {
+  const count = slots.length;
+  if (count < 10) return { rate: null, impact: 0, count };
 
   // Group attendances by employee+day for lookup
   const checkInMap = new Map<string, Date>();
@@ -358,10 +365,10 @@ function calcPunctualityFromRecords(
     }
   }
 
-  if (scheduledMinutes === 0) return { rate: null, impact: 0 };
+  if (scheduledMinutes === 0) return { rate: null, impact: 0, count };
 
   const rate = Math.round(((scheduledMinutes - totalLateMinutes) / scheduledMinutes) * 1000) / 10;
-  return { rate, impact: punctualityImpact(rate) };
+  return { rate, impact: punctualityImpact(rate), count };
 }
 
 async function fetchOperationalOdooData(
@@ -391,11 +398,12 @@ async function calcAov(
   dateFrom: string,
   dateTo: string,
   queryDeps: Pick<KpiQueryDeps, 'getBranchPosOrders'>,
-): Promise<{ value: number | null; branch_avg: number | null; impact: number }> {
-  if (orders.length === 0) return { value: null, branch_avg: null, impact: 0 };
+): Promise<{ value: number | null; branch_avg: number | null; impact: number; count: number }> {
+  const count = orders.length;
+  if (count < 10) return { value: null, branch_avg: null, impact: 0, count };
 
   const employeeTotal = orders.reduce((s, o) => s + o.amount_total, 0);
-  const employeeAov = employeeTotal / orders.length;
+  const employeeAov = employeeTotal / count;
   const roundedEmployeeAov = Math.round(employeeAov * 100) / 100;
 
   const workedBranchIds = Array.from(new Set(
@@ -405,7 +413,7 @@ async function calcAov(
   ));
 
   if (workedBranchIds.length === 0) {
-    return { value: roundedEmployeeAov, branch_avg: null, impact: 0 };
+    return { value: roundedEmployeeAov, branch_avg: null, impact: 0, count };
   }
 
   const branchOrderWeights = new Map<number, number>();
@@ -436,7 +444,7 @@ async function calcAov(
   }
 
   if (weightedCount === 0) {
-    return { value: roundedEmployeeAov, branch_avg: null, impact: 0 };
+    return { value: roundedEmployeeAov, branch_avg: null, impact: 0, count };
   }
 
   const branchBenchmark = weightedTotal / weightedCount;
@@ -449,6 +457,7 @@ async function calcAov(
     value: roundedEmployeeAov,
     branch_avg: Math.round(branchBenchmark * 100) / 100,
     impact: aovImpact(pct),
+    count,
   };
 }
 
@@ -467,7 +476,7 @@ function calcViolations(
   return {
     count: recent.length,
     total_decrease: totalDecrease,
-    impact: -totalDecrease,
+    impact: 0, // Impact is zero because EPI points are now deducted immediately on completion
   };
 }
 
@@ -528,47 +537,47 @@ export async function calculateKpiScoresWithQueryDeps(
   const wrs = calcWrs(userData.peerEvaluations, from, to);
   const pcs: KpiBreakdown['pcs'] = { score: null, impact: 0 }; // Not yet implemented
 
-  const productivityRate = calcComplianceRate(userData.complianceAudit, 'scc_productivity_rate', from, to);
-  const uniformRate = calcComplianceRate(userData.complianceAudit, 'scc_uniform_compliance', from, to);
-  const hygieneRate = calcComplianceRate(userData.complianceAudit, 'scc_hygiene_compliance', from, to);
-  const sopRate = calcComplianceRate(userData.complianceAudit, 'scc_sop_compliance', from, to);
+  const complianceProductivity = calcComplianceRate(userData.complianceAudit, 'scc_productivity_rate', from, to);
+  const complianceUniform = calcComplianceRate(userData.complianceAudit, 'scc_uniform_compliance', from, to);
+  const complianceHygiene = calcComplianceRate(userData.complianceAudit, 'scc_hygiene_compliance', from, to);
+  const complianceSop = calcComplianceRate(userData.complianceAudit, 'scc_sop_compliance', from, to);
 
-  const customerInteractionScore = calcAverageScore(userData.complianceAudit, 'scc_customer_interaction', from, to);
-  const cashieringScore = calcAverageScore(userData.complianceAudit, 'scc_cashiering', from, to);
-  const suggestiveSellingScore = calcAverageScore(userData.complianceAudit, 'scc_suggestive_selling_and_upselling', from, to);
-  const serviceEfficiencyScore = calcAverageScore(userData.complianceAudit, 'scc_service_efficiency', from, to);
+  const complianceCustomerInteraction = calcAverageScore(userData.complianceAudit, 'scc_customer_interaction', from, to);
+  const complianceCashiering = calcAverageScore(userData.complianceAudit, 'scc_cashiering', from, to);
+  const complianceSuggestiveSelling = calcAverageScore(userData.complianceAudit, 'scc_suggestive_selling_and_upselling', from, to);
+  const complianceServiceEfficiency = calcAverageScore(userData.complianceAudit, 'scc_service_efficiency', from, to);
 
   const productivity: KpiBreakdown['productivity'] = {
-    rate: productivityRate,
-    impact: productivityRate !== null ? productivityImpact(productivityRate) : 0,
+    rate: complianceProductivity.rate,
+    impact: complianceProductivity.rate !== null ? productivityImpact(complianceProductivity.rate) : 0,
   };
   const uniform: KpiBreakdown['uniform'] = {
-    rate: uniformRate,
-    impact: uniformRate !== null ? uniformImpact(uniformRate) : 0,
+    rate: complianceUniform.rate,
+    impact: complianceUniform.rate !== null ? uniformImpact(complianceUniform.rate) : 0,
   };
   const hygiene: KpiBreakdown['hygiene'] = {
-    rate: hygieneRate,
-    impact: hygieneRate !== null ? hygieneImpact(hygieneRate) : 0,
+    rate: complianceHygiene.rate,
+    impact: complianceHygiene.rate !== null ? hygieneImpact(complianceHygiene.rate) : 0,
   };
   const sop: KpiBreakdown['sop'] = {
-    rate: sopRate,
-    impact: sopRate !== null ? sopImpact(sopRate) : 0,
+    rate: complianceSop.rate,
+    impact: complianceSop.rate !== null ? sopImpact(complianceSop.rate) : 0,
   };
   const customer_interaction: KpiBreakdown['customer_interaction'] = {
-    score: customerInteractionScore,
-    impact: customerInteractionScore !== null ? customerInteractionImpact(customerInteractionScore) : 0,
+    score: complianceCustomerInteraction.score,
+    impact: complianceCustomerInteraction.score !== null ? customerInteractionImpact(complianceCustomerInteraction.score) : 0,
   };
   const cashiering: KpiBreakdown['cashiering'] = {
-    score: cashieringScore,
-    impact: cashieringScore !== null ? cashieringImpact(cashieringScore) : 0,
+    score: complianceCashiering.score,
+    impact: complianceCashiering.score !== null ? cashieringImpact(complianceCashiering.score) : 0,
   };
   const suggestive_selling_and_upselling: KpiBreakdown['suggestive_selling_and_upselling'] = {
-    score: suggestiveSellingScore,
-    impact: suggestiveSellingScore !== null ? suggestiveSellingImpact(suggestiveSellingScore) : 0,
+    score: complianceSuggestiveSelling.score,
+    impact: complianceSuggestiveSelling.score !== null ? suggestiveSellingImpact(complianceSuggestiveSelling.score) : 0,
   };
   const service_efficiency: KpiBreakdown['service_efficiency'] = {
-    score: serviceEfficiencyScore,
-    impact: serviceEfficiencyScore !== null ? serviceEfficiencyImpact(serviceEfficiencyScore) : 0,
+    score: complianceServiceEfficiency.score,
+    impact: complianceServiceEfficiency.score !== null ? serviceEfficiencyImpact(complianceServiceEfficiency.score) : 0,
   };
 
   const awards: KpiBreakdown['awards'] = { count: 0, impact: 0 }; // Awards system not yet built
@@ -610,8 +619,8 @@ export async function calculateKpiScoresWithQueryDeps(
     awards.impact +
     violations.impact;
 
-  const capped = Math.abs(raw_delta) > 5;
-  const delta = Math.max(-5, Math.min(5, raw_delta));
+  const capped = false;
+  const delta = raw_delta;
 
   return { breakdown, delta, raw_delta, capped };
 }

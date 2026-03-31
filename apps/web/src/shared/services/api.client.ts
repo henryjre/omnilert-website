@@ -35,6 +35,9 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+let isRefreshing = false;
+let refreshPromise: Promise<any> | null = null;
+
 // Auto-refresh on 401
 api.interceptors.response.use(
   (response) => response,
@@ -44,22 +47,40 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
 
+      if (isRefreshing) {
+        try {
+          const res = await refreshPromise;
+          originalRequest.headers.Authorization = `Bearer ${res.data.data.accessToken}`;
+          return api(originalRequest);
+        } catch {
+          return Promise.reject(error);
+        }
+      }
+
+      isRefreshing = true;
       const refreshToken = useAuthStore.getState().refreshToken;
+
       if (!refreshToken) {
+        isRefreshing = false;
         useAuthStore.getState().logout();
         return Promise.reject(error);
       }
 
+      refreshPromise = axios.post('/api/v1/auth/refresh', { refreshToken });
+
       try {
-        const res = await axios.post('/api/v1/auth/refresh', { refreshToken });
+        const res = await refreshPromise;
         const { accessToken, refreshToken: newRefreshToken } = res.data.data;
 
         useAuthStore.getState().setTokens(accessToken, newRefreshToken);
         originalRequest.headers.Authorization = `Bearer ${accessToken}`;
         return api(originalRequest);
-      } catch {
+      } catch (err) {
         useAuthStore.getState().logout();
-        return Promise.reject(error);
+        return Promise.reject(err);
+      } finally {
+        isRefreshing = false;
+        refreshPromise = null;
       }
     }
 
