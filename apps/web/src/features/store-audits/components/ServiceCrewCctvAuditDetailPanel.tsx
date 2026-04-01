@@ -1,14 +1,17 @@
 import type { ChangeEvent } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import type { StoreAudit, StoreAuditAttachment, StoreAuditMessage } from '@omnilert/shared';
 import {
   AlertTriangle,
+  Award,
+  Ban,
   Banknote,
   CheckCircle2,
   ClipboardCheck,
   ClipboardList,
+  Crown,
   ExternalLink,
   Eye,
   Paperclip,
@@ -17,9 +20,14 @@ import {
   ShieldCheck,
   Sparkles,
   Star,
+  Target,
   Trash2,
+  TrendingDown,
+  TrendingUp,
+  Trophy,
   X,
   XCircle,
+  Zap,
 } from 'lucide-react';
 import { ImagePreviewModal } from '@/features/case-reports/components/ImagePreviewModal';
 import { AnimatedModal } from '@/shared/components/ui/AnimatedModal';
@@ -303,6 +311,358 @@ function getTriStateBadge(value: ComplianceAnswer | boolean | null) {
   return { label: 'Not Auditable', className: 'bg-gray-100 text-gray-600' };
 }
 
+/* ------------------------------------------------------------------ */
+/*  Performance tier system (completed view)                          */
+/* ------------------------------------------------------------------ */
+
+type PerformanceTier = 'outstanding' | 'proficient' | 'developing' | 'underperforming' | 'below_standards';
+
+function getPerformanceTier(value: number | null, max = 5): PerformanceTier {
+  if (value == null) return 'developing';
+  const pct = value / max;
+  if (pct >= 0.9) return 'outstanding';
+  if (pct >= 0.7) return 'proficient';
+  if (pct >= 0.5) return 'developing';
+  if (pct >= 0.3) return 'underperforming';
+  return 'below_standards';
+}
+
+function getLetterGrade(value: number | null, max: number | null): string {
+  if (value == null || max == null || max <= 0) return '-';
+  const pct = value / max;
+  if (pct >= 0.95) return 'A+';
+  if (pct >= 0.9) return 'A';
+  if (pct >= 0.8) return 'B+';
+  if (pct >= 0.7) return 'B';
+  if (pct >= 0.6) return 'C+';
+  if (pct >= 0.5) return 'C';
+  if (pct >= 0.4) return 'D';
+  return 'F';
+}
+
+function getAuditTier(audit: StoreAudit): PerformanceTier {
+  const vals = [
+    audit.scc_customer_interaction,
+    audit.scc_cashiering,
+    audit.scc_suggestive_selling_and_upselling,
+    audit.scc_service_efficiency,
+  ].filter((v): v is number => v != null);
+  if (vals.length === 0) return 'developing';
+  const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+  return getPerformanceTier(avg, 5);
+}
+
+interface TierTheme {
+  title: string;
+  tagline: string;
+  heroGradient: string;
+  heroBorder: string;
+  heroText: string;
+  heroSubtext: string;
+  iconBg: string;
+  ringStroke: string;
+  ringTrack: string;
+  gradeBg: string;
+  gradeText: string;
+  gradeGlow: string;
+  rankIcon: typeof Trophy;
+}
+
+const tierThemes: Record<PerformanceTier, TierTheme> = {
+  outstanding: {
+    title: 'Outstanding',
+    tagline: 'Top-tier performance. Keep raising the bar!',
+    heroGradient: 'from-amber-500 via-yellow-500 to-amber-400',
+    heroBorder: 'border-yellow-300/40',
+    heroText: 'text-amber-950',
+    heroSubtext: 'text-amber-900/70',
+    iconBg: 'bg-amber-900/10',
+    ringStroke: '#b45309',
+    ringTrack: 'rgba(180,83,9,0.12)',
+    gradeBg: 'bg-amber-900/90',
+    gradeText: 'text-yellow-300',
+    gradeGlow: 'shadow-[0_0_24px_rgba(234,179,8,0.45)]',
+    rankIcon: Crown,
+  },
+  proficient: {
+    title: 'Proficient',
+    tagline: 'Solid execution. A few areas away from outstanding.',
+    heroGradient: 'from-sky-500 via-blue-500 to-indigo-400',
+    heroBorder: 'border-blue-300/30',
+    heroText: 'text-white',
+    heroSubtext: 'text-blue-100',
+    iconBg: 'bg-white/15',
+    ringStroke: '#3b82f6',
+    ringTrack: 'rgba(255,255,255,0.15)',
+    gradeBg: 'bg-white/20',
+    gradeText: 'text-white',
+    gradeGlow: 'shadow-[0_0_16px_rgba(59,130,246,0.3)]',
+    rankIcon: Award,
+  },
+  developing: {
+    title: 'Developing',
+    tagline: 'Progress noted. Focus on the gaps to level up.',
+    heroGradient: 'from-amber-100 via-orange-50 to-yellow-50',
+    heroBorder: 'border-amber-200',
+    heroText: 'text-amber-900',
+    heroSubtext: 'text-amber-800/70',
+    iconBg: 'bg-amber-500/10',
+    ringStroke: '#d97706',
+    ringTrack: 'rgba(217,119,6,0.1)',
+    gradeBg: 'bg-amber-600',
+    gradeText: 'text-white',
+    gradeGlow: '',
+    rankIcon: Target,
+  },
+  underperforming: {
+    title: 'Underperforming',
+    tagline: 'Improvement plan required. Review flagged areas.',
+    heroGradient: 'from-gray-200 via-slate-100 to-gray-100',
+    heroBorder: 'border-gray-300',
+    heroText: 'text-gray-800',
+    heroSubtext: 'text-gray-600',
+    iconBg: 'bg-gray-500/10',
+    ringStroke: '#ef4444',
+    ringTrack: 'rgba(239,68,68,0.08)',
+    gradeBg: 'bg-red-600',
+    gradeText: 'text-white',
+    gradeGlow: '',
+    rankIcon: TrendingDown,
+  },
+  below_standards: {
+    title: 'Below Standards',
+    tagline: 'Immediate attention needed. Corrective action required.',
+    heroGradient: 'from-gray-700 via-gray-600 to-slate-500',
+    heroBorder: 'border-gray-500/30',
+    heroText: 'text-white',
+    heroSubtext: 'text-gray-300',
+    iconBg: 'bg-white/[0.08]',
+    ringStroke: '#dc2626',
+    ringTrack: 'rgba(255,255,255,0.06)',
+    gradeBg: 'bg-red-700',
+    gradeText: 'text-red-100',
+    gradeGlow: '',
+    rankIcon: TrendingDown,
+  },
+};
+
+const skillTierConfig: Record<PerformanceTier, {
+  barColor: string;
+  barGlow: string;
+  label: string;
+  labelBg: string;
+  dotFill: string;
+  dotEmpty: string;
+}> = {
+  outstanding: {
+    barColor: 'bg-gradient-to-r from-yellow-400 via-amber-400 to-yellow-500',
+    barGlow: 'shadow-[0_0_10px_rgba(234,179,8,0.35)]',
+    label: 'Outstanding',
+    labelBg: 'text-amber-800 bg-amber-100 ring-amber-300',
+    dotFill: 'bg-amber-400 ring-amber-300',
+    dotEmpty: 'bg-amber-100 ring-amber-200',
+  },
+  proficient: {
+    barColor: 'bg-gradient-to-r from-blue-400 to-sky-500',
+    barGlow: 'shadow-[0_0_8px_rgba(59,130,246,0.25)]',
+    label: 'Proficient',
+    labelBg: 'text-blue-800 bg-blue-100 ring-blue-300',
+    dotFill: 'bg-blue-400 ring-blue-300',
+    dotEmpty: 'bg-blue-100 ring-blue-200',
+  },
+  developing: {
+    barColor: 'bg-gradient-to-r from-amber-400 to-orange-400',
+    barGlow: '',
+    label: 'Developing',
+    labelBg: 'text-amber-800 bg-amber-50 ring-amber-200',
+    dotFill: 'bg-amber-400 ring-amber-300',
+    dotEmpty: 'bg-gray-100 ring-gray-200',
+  },
+  underperforming: {
+    barColor: 'bg-gradient-to-r from-orange-500 to-red-400',
+    barGlow: '',
+    label: 'Underperforming',
+    labelBg: 'text-red-800 bg-red-50 ring-red-200',
+    dotFill: 'bg-red-400 ring-red-300',
+    dotEmpty: 'bg-gray-100 ring-gray-200',
+  },
+  below_standards: {
+    barColor: 'bg-gradient-to-r from-red-600 to-red-700',
+    barGlow: '',
+    label: 'Below Standards',
+    labelBg: 'text-red-900 bg-red-100 ring-red-300',
+    dotFill: 'bg-red-500 ring-red-400',
+    dotEmpty: 'bg-gray-100 ring-gray-200',
+  },
+};
+
+/* ------------------------------------------------------------------ */
+/*  Animation variants                                                 */
+/* ------------------------------------------------------------------ */
+
+const auditPanelFadeUp = {
+  hidden: { opacity: 0, y: 20 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' as const } },
+};
+
+const auditPanelStagger = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.1 } },
+};
+
+/* ------------------------------------------------------------------ */
+/*  Score ring                                                         */
+/* ------------------------------------------------------------------ */
+
+function ScoreRing({
+  value,
+  max,
+  stroke,
+  track,
+  size = 80,
+}: {
+  value: number | null;
+  max: number | null;
+  stroke: string;
+  track: string;
+  size?: number;
+}) {
+  const [animated, setAnimated] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setAnimated(true), 250);
+    return () => clearTimeout(t);
+  }, []);
+
+  const v = value ?? 0;
+  const m = max && max > 0 ? max : 1;
+  const pct = Math.max(0, Math.min(1, v / m));
+  const r = (size - 10) / 2;
+  const circumference = 2 * Math.PI * r;
+  const offset = circumference * (1 - (animated ? pct : 0));
+
+  return (
+    <div className="relative" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={track} strokeWidth={7} />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke={stroke}
+          strokeWidth={7}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          style={{ transition: 'stroke-dashoffset 1.2s cubic-bezier(0.34,1.56,0.64,1)' }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-lg font-extrabold leading-none" style={{ color: stroke }}>
+          {value != null ? (Number.isInteger(value) ? value : value.toFixed(1)) : '-'}
+        </span>
+        {max != null && (
+          <span className="mt-0.5 text-[10px] font-semibold leading-none opacity-40">/ {max}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Skill dots                                                         */
+/* ------------------------------------------------------------------ */
+
+function SkillDots({ value, max = 5, tier }: { value: number | null; max?: number; tier: PerformanceTier }) {
+  const filled = value != null ? Math.round(Math.max(0, Math.min(max, value))) : 0;
+  const cfg = skillTierConfig[tier];
+  return (
+    <div className="flex items-center gap-1">
+      {Array.from({ length: max }).map((_, i) => (
+        <motion.div
+          key={i}
+          initial={{ scale: 0, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ delay: 0.4 + i * 0.08, type: 'spring', stiffness: 400, damping: 15 }}
+          className={`h-2.5 w-2.5 rounded-full ring-1 ring-inset ${i < filled ? cfg.dotFill : cfg.dotEmpty}`}
+        />
+      ))}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Rating bar                                                         */
+/* ------------------------------------------------------------------ */
+
+function RatingBar({ value, max = 5, tier }: { value: number | null; max?: number; tier: PerformanceTier }) {
+  const [animated, setAnimated] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setAnimated(true), 350);
+    return () => clearTimeout(t);
+  }, []);
+  const pct = value != null ? Math.max(0, Math.min(100, (value / max) * 100)) : 0;
+  const cfg = skillTierConfig[tier];
+  return (
+    <div className="h-2 overflow-hidden rounded-full bg-gray-100">
+      <div
+        className={`h-full rounded-full transition-all duration-700 ease-out ${cfg.barColor} ${cfg.barGlow}`}
+        style={{ width: animated ? `${pct}%` : '0%' }}
+      />
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Achievement banner                                                 */
+/* ------------------------------------------------------------------ */
+
+function CompletedAchievementBanner({ passCount, total }: { passCount: number; total: number }) {
+  if (total === 0) return null;
+  if (passCount === total) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: -8, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ delay: 0.5, type: 'spring', stiffness: 300, damping: 20 }}
+        className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 px-3.5 py-2 text-white shadow-md shadow-emerald-500/20"
+      >
+        <Trophy className="h-4 w-4 shrink-0" />
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wide">Full Compliance Achieved</p>
+          <p className="text-[10px] text-emerald-100">All {total} standards met — exemplary adherence.</p>
+        </div>
+      </motion.div>
+    );
+  }
+  if (passCount === 0) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3.5 py-2">
+        <XCircle className="h-4 w-4 shrink-0 text-red-500" />
+        <div>
+          <p className="text-xs font-bold text-red-800 uppercase tracking-wide">No Standards Met</p>
+          <p className="text-[10px] text-red-600">0/{total} — immediate corrective action required.</p>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-2">
+      <Target className="h-4 w-4 shrink-0 text-amber-600" />
+      <div>
+        <p className="text-xs font-bold text-amber-800 uppercase tracking-wide">{passCount}/{total} Standards Met</p>
+        <p className="text-[10px] text-amber-600">
+          {total - passCount} area{total - passCount > 1 ? 's' : ''} need{total - passCount === 1 ? 's' : ''} attention.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Employee avatar                                                    */
+/* ------------------------------------------------------------------ */
+
 function EmployeeAvatar({
   name,
   avatarUrl,
@@ -562,10 +922,39 @@ export function ServiceCrewCctvAuditDetailPanel({
   );
   const allAnswered = allComplianceAnswered;
 
+  // Gamey completed view — tier + score
+  const completedCsVals = [
+    audit.scc_customer_interaction,
+    audit.scc_cashiering,
+    audit.scc_suggestive_selling_and_upselling,
+    audit.scc_service_efficiency,
+  ].filter((v): v is number => v != null);
+  const completedAvgScore = completedCsVals.length > 0
+    ? completedCsVals.reduce((a, b) => a + b, 0) / completedCsVals.length
+    : null;
+  const completedTier = getAuditTier(audit);
+  const completedTheme = tierThemes[completedTier];
+  const CompletedRankIcon = completedTheme.rankIcon;
+  const completedLetterGrade = getLetterGrade(completedAvgScore, 5);
+  const completedComplianceCriteria = [
+    { key: 'productivity_rate', label: 'Productivity Rate', value: audit.scc_productivity_rate ?? null },
+    { key: 'uniform_compliance', label: 'Uniform Compliance', value: audit.scc_uniform_compliance ?? null },
+    { key: 'hygiene_compliance', label: 'Hygiene Compliance', value: audit.scc_hygiene_compliance ?? null },
+    { key: 'sop_compliance', label: 'SOP Compliance', value: audit.scc_sop_compliance ?? null },
+  ];
+  const completedPassCount = completedComplianceCriteria.filter((c) => c.value === true).length;
+  const completedAuditedCount = completedComplianceCriteria.filter((c) => c.value !== null).length;
+
   const baseAuditDetailRows = [
     { label: 'Employee', value: employeeName },
     { label: 'Branch', value: branchLabel },
     { label: 'Audit Time', value: formatDateTime(audit.created_at) },
+    {
+      label: 'Audit End Time',
+      value: audit.created_at
+        ? formatDateTime(new Date(new Date(audit.created_at).getTime() + 20 * 60 * 1000).toISOString())
+        : '-',
+    },
     ...(hasMonetaryReward
       ? [
           {
@@ -579,6 +968,15 @@ export function ServiceCrewCctvAuditDetailPanel({
     ...baseAuditDetailRows,
     ...(timing.durationText
       ? [{ label: 'Processing Time', value: timing.durationText }]
+      : []),
+  ];
+  const completedAuditDetailRows = [
+    ...baseAuditDetailRows,
+    ...(audit.completed_at
+      ? [{ label: 'Completed At', value: formatDateTime(audit.completed_at) }]
+      : []),
+    ...(timing.durationText
+      ? [{ label: 'Audit Duration', value: timing.durationText }]
       : []),
   ];
 
@@ -1217,33 +1615,120 @@ export function ServiceCrewCctvAuditDetailPanel({
         )}
 
         {audit.status === 'rejected' && (
-          <div className="space-y-0">
-            {renderStatusBanner('rejected')}
-            {renderAuditDetailsSection(finalizedAuditDetailRows, 'border-b border-gray-200 px-6 py-5')}
-            {renderComplianceCriteria(false)}
-            {renderCustomerServiceCriteria(false)}
+          <motion.div
+            className="space-y-0"
+            variants={auditPanelStagger}
+            initial="hidden"
+            animate="show"
+          >
+            {/* ── Rejected Hero ── */}
+            <motion.section
+              variants={auditPanelFadeUp}
+              className="relative overflow-hidden border-b border-zinc-700/30 bg-gradient-to-br from-slate-800 via-slate-700 to-zinc-700 px-6 py-6"
+            >
+              {/* Diagonal stripe texture */}
+              <div
+                className="pointer-events-none absolute inset-0 opacity-[0.035]"
+                style={{
+                  backgroundImage: 'repeating-linear-gradient(-45deg, white 0, white 1px, transparent 0, transparent 50%)',
+                  backgroundSize: '12px 12px',
+                }}
+              />
+              <div className="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-white/[0.03]" />
+              <div className="pointer-events-none absolute -bottom-4 -left-4 h-20 w-20 rounded-full bg-white/[0.02]" />
 
-            <div className="border-b border-gray-200 px-6 py-5">
-              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-4">
-                <div className="flex items-start gap-3">
-                  <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
-                  <div>
-                    <p className="text-sm font-semibold text-red-900">Rejection Reason</p>
-                    <p className="mt-1 whitespace-pre-wrap text-sm text-red-800">
-                      {audit.rejection_reason || 'No rejection reason recorded.'}
-                    </p>
-                  </div>
+              <div className="relative flex items-start gap-4">
+                {/* Void badge */}
+                <div className="flex h-[80px] w-[80px] shrink-0 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-inset ring-white/10">
+                  <Ban className="h-10 w-10 text-zinc-300" />
+                </div>
+
+                <div className="min-w-0 flex-1 pt-1">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                    Audit Closed
+                  </p>
+                  <p className="mt-1 text-lg font-extrabold leading-tight text-white">Audit Rejected</p>
+                  <p className="mt-1.5 text-sm italic leading-relaxed text-zinc-300">
+                    &ldquo;This audit was closed before the evaluation could be completed.&rdquo;
+                  </p>
                 </div>
               </div>
-            </div>
 
-            <div className="border-b border-gray-200 px-6 py-5">
-              <div className="mb-3 flex items-center gap-2">
-                <ClipboardCheck className="h-4 w-4 text-gray-400" />
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Audit Notes</p>
+              {/* Employee info strip */}
+              <div className="relative mt-4 rounded-xl bg-white/10 px-4 py-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <EmployeeAvatar
+                    name={employeeName}
+                    avatarUrl={audit.audited_user_avatar_url ?? null}
+                    onClick={audit.audited_user_avatar_url ? () => setShowProfilePreview(true) : undefined}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold leading-tight text-white">{employeeName}</p>
+                    <p className="text-xs text-zinc-300">{branchLabel}</p>
+                    {audit.auditor_name && (
+                      <p className="text-xs text-zinc-400">Auditor: {audit.auditor_name}</p>
+                    )}
+                  </div>
+                  {hasMonetaryReward && (
+                    <div className="shrink-0 rounded-xl bg-white/10 px-3 py-2 text-right ring-1 ring-inset ring-white/10">
+                      <div className="flex items-center gap-1 text-xs text-zinc-400">
+                        <Banknote className="h-3.5 w-3.5" />
+                        <span>Reward</span>
+                      </div>
+                      <p className="text-sm font-bold text-white">
+                        {moneyFormatter.format(Number(audit.monetary_reward ?? 0))}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </motion.section>
+
+            {/* Audit Details */}
+            <motion.section variants={auditPanelFadeUp} className="space-y-3 border-b border-gray-200 px-6 py-5">
+              <div className="flex items-center gap-2">
+                <ClipboardList className="h-4 w-4 text-gray-500" />
+                <p className="text-sm font-bold uppercase tracking-wide text-gray-900">Audit Details</p>
+              </div>
+              <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+                {finalizedAuditDetailRows.map(({ label, value }, i) => (
+                  <motion.div
+                    key={label}
+                    initial={{ opacity: 0, x: -6 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.08 + i * 0.05 }}
+                    className="flex items-baseline gap-4 px-4 py-2.5 [&:not(:last-child)]:border-b [&:not(:last-child)]:border-gray-100"
+                  >
+                    <dt className="w-28 shrink-0 text-[10px] font-bold uppercase tracking-wider text-gray-400">{label}</dt>
+                    <dd className="min-w-0 flex-1 text-sm font-semibold text-gray-900">{value}</dd>
+                  </motion.div>
+                ))}
+              </div>
+            </motion.section>
+
+            {/* Rejection Reason */}
+            <motion.section variants={auditPanelFadeUp} className="space-y-3 border-b border-gray-200 px-6 py-5">
+              <div className="flex items-center gap-2">
+                <Ban className="h-4 w-4 text-zinc-500" />
+                <p className="text-sm font-bold uppercase tracking-wide text-gray-900">Rejection Reason</p>
+              </div>
+              <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+                <div className="px-4 py-3.5">
+                  <p className="whitespace-pre-wrap text-sm text-zinc-700">
+                    {audit.rejection_reason || 'No rejection reason recorded.'}
+                  </p>
+                </div>
+              </div>
+            </motion.section>
+
+            {/* Audit Notes */}
+            <motion.section variants={auditPanelFadeUp} className="space-y-3 border-b border-gray-200 px-6 py-5">
+              <div className="flex items-center gap-2">
+                <ClipboardCheck className="h-4 w-4 text-indigo-500" />
+                <p className="text-sm font-bold uppercase tracking-wide text-gray-900">Audit Notes</p>
               </div>
               {renderMessageTrail(true)}
-            </div>
+            </motion.section>
 
             {mediaOnlyAttachments.length > 0 && (
               <div className="border-b border-gray-200 px-6 py-5">
@@ -1263,53 +1748,305 @@ export function ServiceCrewCctvAuditDetailPanel({
                 </div>
               </div>
             )}
-          </div>
+          </motion.div>
         )}
 
         {audit.status === 'completed' && (
-          <div className="space-y-0">
-            {renderStatusBanner('completed')}
-            {renderAuditDetailsSection(finalizedAuditDetailRows, 'border-b border-gray-200 px-6 py-5')}
-            {renderComplianceCriteria(false)}
-            {renderCustomerServiceCriteria(false)}
+          <motion.div
+            className="space-y-0"
+            variants={auditPanelStagger}
+            initial="hidden"
+            animate="show"
+          >
+            {/* ── Performance Hero ── */}
+            <motion.section
+              variants={auditPanelFadeUp}
+              className={`relative overflow-hidden border-b ${completedTheme.heroBorder} bg-gradient-to-br ${completedTheme.heroGradient} px-6 py-6`}
+            >
+              <div className="pointer-events-none absolute -right-6 -top-6 h-28 w-28 rounded-full bg-white/[0.06]" />
+              <div className="pointer-events-none absolute -bottom-3 -left-3 h-16 w-16 rounded-full bg-white/[0.04]" />
+              <div className="pointer-events-none absolute right-12 top-12 h-8 w-8 rounded-full bg-white/[0.03]" />
 
-            <div className="border-b border-gray-200 px-6 py-5">
-              <div className="mb-3 flex items-center gap-2">
-                <ClipboardCheck className="h-4 w-4 text-gray-400" />
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Audit Notes</p>
-              </div>
-              {renderMessageTrail(true)}
-            </div>
-
-            {mediaOnlyAttachments.length > 0 && (
-              <div className="border-b border-gray-200 px-6 py-5">
-                <div className="mb-3 flex items-center gap-2">
-                  <Paperclip className="h-4 w-4 text-gray-400" />
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Media Attachments</p>
+              <div className="relative flex items-start gap-4">
+                <div className="flex shrink-0 flex-col items-center gap-1.5">
+                  {completedAvgScore != null ? (
+                    <ScoreRing
+                      value={parseFloat(completedAvgScore.toFixed(1))}
+                      max={5}
+                      stroke={completedTheme.ringStroke}
+                      track={completedTheme.ringTrack}
+                      size={80}
+                    />
+                  ) : (
+                    <div className={`flex h-[80px] w-[80px] items-center justify-center rounded-2xl ${completedTheme.iconBg}`}>
+                      <ShieldCheck className="h-8 w-8 opacity-60" style={{ color: completedTheme.ringStroke }} />
+                    </div>
+                  )}
+                  {completedAvgScore != null && (
+                    <motion.span
+                      initial={{ opacity: 0, scale: 0.5 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: 0.6, type: 'spring', stiffness: 400, damping: 15 }}
+                      className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-extrabold ${completedTheme.gradeBg} ${completedTheme.gradeText} ${completedTheme.gradeGlow}`}
+                    >
+                      {completedLetterGrade}
+                    </motion.span>
+                  )}
                 </div>
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  {mediaOnlyAttachments.map((attachment) => (
-                    <div key={attachment.id} className="space-y-1">
-                      {renderAttachment(attachment, mediaOnlyAttachments, 'gallery')}
-                      <p className="truncate text-xs text-gray-400" title={attachment.file_name}>
-                        {attachment.file_name}
+
+                <div className="min-w-0 flex-1 pt-1">
+                  <p className={`text-xs font-semibold uppercase tracking-wider ${completedTheme.heroSubtext} opacity-70`}>
+                    Performance Review
+                  </p>
+                  <div className="mt-1 flex items-center gap-2">
+                    <CompletedRankIcon className={`h-5 w-5 shrink-0 ${completedTheme.heroText}`} />
+                    <p className={`text-lg font-extrabold ${completedTheme.heroText} leading-tight`}>{completedTheme.title}</p>
+                  </div>
+                  <p className={`mt-1.5 text-sm ${completedTheme.heroSubtext} leading-relaxed italic`}>
+                    &ldquo;{completedTheme.tagline}&rdquo;
+                  </p>
+                </div>
+              </div>
+
+              {/* Employee info strip */}
+              <div className={`relative mt-4 rounded-xl ${completedTheme.iconBg} px-4 py-3`}>
+                <div className="flex flex-wrap items-center gap-3">
+                  <EmployeeAvatar
+                    name={employeeName}
+                    avatarUrl={audit.audited_user_avatar_url ?? null}
+                    onClick={audit.audited_user_avatar_url ? () => setShowProfilePreview(true) : undefined}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className={`font-semibold leading-tight ${completedTheme.heroText}`}>{employeeName}</p>
+                    <p className={`text-xs ${completedTheme.heroSubtext}`}>{branchLabel}</p>
+                    {audit.auditor_name && (
+                      <p className={`text-xs ${completedTheme.heroSubtext} opacity-70`}>Auditor: {audit.auditor_name}</p>
+                    )}
+                  </div>
+                  {hasMonetaryReward && (
+                    <div className={`shrink-0 rounded-xl ${completedTheme.iconBg} px-3 py-2 text-right ring-1 ring-inset ring-white/20`}>
+                      <div className={`flex items-center gap-1 text-xs ${completedTheme.heroSubtext}`}>
+                        <Banknote className="h-3.5 w-3.5" />
+                        <span>Reward</span>
+                      </div>
+                      <p className={`text-sm font-bold ${completedTheme.heroText}`}>
+                        {moneyFormatter.format(Number(audit.monetary_reward ?? 0))}
                       </p>
                     </div>
-                  ))}
+                  )}
                 </div>
               </div>
+            </motion.section>
+
+            {/* Audit Details */}
+            <motion.section variants={auditPanelFadeUp} className="space-y-3 border-b border-gray-200 px-6 py-5">
+              <div className="flex items-center gap-2">
+                <ClipboardList className="h-4 w-4 text-gray-500" />
+                <p className="text-sm font-bold uppercase tracking-wide text-gray-900">Audit Details</p>
+              </div>
+              <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+                {completedAuditDetailRows.map(({ label, value }, i) => (
+                  <motion.div
+                    key={label}
+                    initial={{ opacity: 0, x: -6 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.08 + i * 0.05 }}
+                    className="flex items-baseline gap-4 px-4 py-2.5 [&:not(:last-child)]:border-b [&:not(:last-child)]:border-gray-100"
+                  >
+                    <dt className="w-28 shrink-0 text-[10px] font-bold uppercase tracking-wider text-gray-400">{label}</dt>
+                    <dd className="min-w-0 flex-1 text-sm font-semibold text-gray-900">{value}</dd>
+                  </motion.div>
+                ))}
+              </div>
+            </motion.section>
+
+            {/* Compliance Standards */}
+            <motion.section variants={auditPanelFadeUp} className="space-y-3 border-b border-gray-200 px-6 py-5">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-blue-500" />
+                <p className="text-sm font-bold uppercase tracking-wide text-gray-900">Compliance Standards</p>
+              </div>
+              <CompletedAchievementBanner passCount={completedPassCount} total={completedAuditedCount} />
+              <div className="grid grid-cols-2 gap-2">
+                {completedComplianceCriteria.map((criterion, i) => {
+                  const isPass = criterion.value === true;
+                  const isFail = criterion.value === false;
+                  return (
+                    <motion.div
+                      key={criterion.key}
+                      initial={{ opacity: 0, scale: 0.85, y: 10 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      transition={{ delay: 0.15 + i * 0.08, type: 'spring', stiffness: 280, damping: 22 }}
+                      className={`relative flex flex-col items-center gap-2.5 overflow-hidden rounded-2xl border px-3 py-4 text-center ${
+                        isPass
+                          ? 'border-emerald-200/80 bg-gradient-to-b from-emerald-50 to-white'
+                          : isFail
+                            ? 'border-red-200/80 bg-gradient-to-b from-red-50 to-white'
+                            : 'border-dashed border-gray-200 bg-gray-50/60'
+                      }`}
+                    >
+                      <div className={`absolute inset-x-0 top-0 h-0.5 ${isPass ? 'bg-emerald-400' : isFail ? 'bg-red-400' : 'bg-gray-200'}`} />
+                      <motion.div
+                        initial={{ scale: 0.5, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        transition={{ delay: 0.3 + i * 0.08, type: 'spring', stiffness: 400, damping: 18 }}
+                        className={`relative flex h-11 w-11 items-center justify-center rounded-full ${isPass ? 'bg-emerald-100' : isFail ? 'bg-red-100' : 'bg-gray-100'}`}
+                      >
+                        <div className={`absolute inset-0 rounded-full border-2 ${isPass ? 'border-emerald-300' : isFail ? 'border-red-300' : 'border-dashed border-gray-300'}`} />
+                        {isPass && <CheckCircle2 className="h-5 w-5 text-emerald-600" />}
+                        {isFail && <XCircle className="h-5 w-5 text-red-600" />}
+                        {criterion.value === null && <span className="text-base font-bold text-gray-300">–</span>}
+                      </motion.div>
+                      <p className={`text-[11px] font-semibold leading-tight ${isFail ? 'text-red-900' : 'text-gray-800'}`}>
+                        {criterion.label}
+                      </p>
+                      <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-widest ${
+                        isPass ? 'bg-emerald-600 text-white' : isFail ? 'bg-red-600 text-white' : 'bg-gray-200 text-gray-500'
+                      }`}>
+                        {isPass ? 'Pass' : isFail ? 'Fail' : 'N/A'}
+                      </span>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </motion.section>
+
+            {/* Service Skills */}
+            <motion.section variants={auditPanelFadeUp} className="space-y-3 border-b border-gray-200 px-6 py-5">
+              <div className="flex items-center gap-2">
+                <Zap className="h-4 w-4 text-amber-500" />
+                <p className="text-sm font-bold uppercase tracking-wide text-gray-900">Service Skills</p>
+              </div>
+              <div className="grid gap-3">
+                {CUSTOMER_SERVICE_CRITERIA.map((criterion, i) => {
+                  const value = answers[criterion.key];
+                  const skillTier = getPerformanceTier(value, 5);
+                  const sCfg = skillTierConfig[skillTier];
+                  const isStrong = skillTier === 'outstanding' || skillTier === 'proficient';
+                  const isWeak = skillTier === 'underperforming' || skillTier === 'below_standards';
+                  return (
+                    <motion.div
+                      key={criterion.key}
+                      initial={{ opacity: 0, y: 14 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.25 + i * 0.09, duration: 0.4 }}
+                      className={`rounded-xl border bg-white px-4 py-3.5 ${
+                        value === null ? 'border-gray-100 opacity-80' :
+                        isWeak ? 'border-red-200' :
+                        skillTier === 'developing' ? 'border-amber-200' : 'border-gray-200'
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          {isStrong && <TrendingUp className={`h-3.5 w-3.5 shrink-0 ${skillTier === 'outstanding' ? 'text-amber-500' : 'text-blue-500'}`} />}
+                          {isWeak && <TrendingDown className="h-3.5 w-3.5 shrink-0 text-red-500" />}
+                          {skillTier === 'developing' && <Target className="h-3.5 w-3.5 shrink-0 text-amber-500" />}
+                          <p className="text-sm font-semibold text-gray-900">{criterion.label}</p>
+                        </div>
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ring-1 ring-inset ${
+                          value === null ? 'bg-gray-100 text-gray-500 ring-gray-300' : sCfg.labelBg
+                        }`}>
+                          {value === null ? 'Not Auditable' : sCfg.label}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-gray-500">{criterion.description}</p>
+                      <div className="mt-3 flex items-center justify-between gap-3">
+                        <div className="flex-1">
+                          <RatingBar value={value} tier={skillTier} />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <SkillDots value={value} tier={skillTier} />
+                          <span className={`text-sm font-extrabold tabular-nums ${
+                            value === null ? 'text-gray-400' :
+                            skillTier === 'outstanding' ? 'text-amber-700' :
+                            skillTier === 'proficient' ? 'text-blue-700' :
+                            skillTier === 'developing' ? 'text-amber-700' :
+                            'text-red-700'
+                          }`}>
+                            {value ?? '-'}<span className="font-normal text-xs text-gray-400">/5</span>
+                          </span>
+                        </div>
+                      </div>
+                      {skillTier === 'outstanding' && (
+                        <motion.p
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          transition={{ delay: 0.6 }}
+                          className="mt-2 flex items-center gap-1 text-[11px] font-semibold text-amber-600"
+                        >
+                          <Star className="h-3 w-3" />
+                          Exceeding expectations — role model performance.
+                        </motion.p>
+                      )}
+                      {skillTier === 'below_standards' && (
+                        <p className="mt-2 flex items-center gap-1 text-[11px] font-semibold text-red-600">
+                          <XCircle className="h-3 w-3" />
+                          Requires immediate coaching and follow-up.
+                        </p>
+                      )}
+                      {skillTier === 'underperforming' && (
+                        <p className="mt-2 flex items-center gap-1 text-[11px] font-semibold text-red-500">
+                          <Target className="h-3 w-3" />
+                          Targeted improvement needed in this area.
+                        </p>
+                      )}
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </motion.section>
+
+            {/* Audit Notes */}
+            <motion.section variants={auditPanelFadeUp} className="space-y-3 border-b border-gray-200 px-6 py-5">
+              <div className="flex items-center gap-2">
+                <ClipboardCheck className="h-4 w-4 text-indigo-500" />
+                <p className="text-sm font-bold uppercase tracking-wide text-gray-900">Audit Notes</p>
+              </div>
+              {renderMessageTrail(true)}
+            </motion.section>
+
+            {mediaOnlyAttachments.length > 0 && (
+              <motion.section variants={auditPanelFadeUp} className="space-y-3 border-b border-gray-200 px-6 py-5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Paperclip className="h-4 w-4 text-gray-500" />
+                    <p className="text-sm font-bold uppercase tracking-wide text-gray-900">Media</p>
+                  </div>
+                  <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-[10px] font-bold text-gray-500">
+                    {mediaOnlyAttachments.length} file{mediaOnlyAttachments.length > 1 ? 's' : ''}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {mediaOnlyAttachments.map((attachment, i) => (
+                    <motion.div
+                      key={attachment.id}
+                      initial={{ opacity: 0, scale: 0.88 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: 0.1 + i * 0.07, type: 'spring', stiffness: 280, damping: 22 }}
+                      className="space-y-1"
+                    >
+                      <div className="overflow-hidden rounded-xl border border-gray-200 shadow-[0_2px_6px_rgba(15,23,42,0.06)]">
+                        {renderAttachment(attachment, mediaOnlyAttachments, 'gallery')}
+                      </div>
+                      <p className="truncate px-0.5 text-xs text-gray-400" title={attachment.file_name}>
+                        {attachment.file_name}
+                      </p>
+                    </motion.div>
+                  ))}
+                </div>
+              </motion.section>
             )}
 
             {audit.scc_ai_report && (
-              <div className="border-b border-gray-200 px-6 py-5">
-                <div className="mb-3 flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-primary-500" />
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">AI Report</p>
+              <motion.section variants={auditPanelFadeUp} className="space-y-3 border-b border-gray-200 px-6 py-5">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-violet-500" />
+                  <p className="text-sm font-bold uppercase tracking-wide text-gray-900">Performance Insights</p>
                 </div>
-                <div className="rounded-xl bg-gray-50 p-4">
+                <div className="rounded-xl border border-violet-100 bg-gradient-to-br from-violet-50/80 to-purple-50/40 px-4 py-3.5">
                   <MarkdownReport text={audit.scc_ai_report} />
                 </div>
-              </div>
+              </motion.section>
             )}
 
             {audit.linked_vn_id && (
@@ -1324,7 +2061,7 @@ export function ServiceCrewCctvAuditDetailPanel({
                 </button>
               </div>
             )}
-          </div>
+          </motion.div>
         )}
       </div>
 

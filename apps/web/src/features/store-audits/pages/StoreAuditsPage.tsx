@@ -150,6 +150,7 @@ export function StoreAuditsPage() {
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [pendingCompleteData, setPendingCompleteData] = useState<{ id: string; payload: any } | null>(null);
+  const [completionLogs, setCompletionLogs] = useState<string[]>([]);
   const [groupedUsers, setGroupedUsers] = useState<GroupedUsersResponse | null>(null);
   const [loadingGroupedUsers, setLoadingGroupedUsers] = useState(false);
   const [pendingCounts, setPendingCounts] = useState<{ all: number; customer_service: number; service_crew_cctv: number }>({ all: 0, customer_service: 0, service_crew_cctv: 0 });
@@ -181,8 +182,10 @@ export function StoreAuditsPage() {
     setRejectReason('');
   }, []);
   const closeCompleteConfirmation = useCallback(() => {
+    if (actionLoading) return;
     setPendingCompleteData(null);
-  }, []);
+    setCompletionLogs([]);
+  }, [actionLoading]);
   const clearAuditDraft = useCallback((audit: StoreAudit) => {
     const draftKey = audit.type === 'customer_service'
       ? `css-audit-draft-${audit.id}`
@@ -291,15 +294,9 @@ export function StoreAuditsPage() {
     }
 
     if (loading) return;
-
-    if (initialAuditIdRef.current !== selectedAuditId) {
-      setSelectedAuditId(null);
-      return;
-    }
-
     initialAuditIdRef.current = null;
-    let active = true;
 
+    let active = true;
     void api.get(`/store-audits/${selectedAuditId}`)
       .then((response) => {
         if (!active) return;
@@ -417,17 +414,50 @@ export function StoreAuditsPage() {
         },
   ) => {
     setActionLoading(true);
+    setCompletionLogs(['Gathering audit trail and note summaries...']);
+
+    const aiLogDelay = 2200;
+    const aiLogTimeout = setTimeout(() => {
+      setCompletionLogs((prev) => [...prev, 'Generating AI-powered performance analysis...']);
+    }, aiLogDelay);
+
     try {
       const response = await api.post(`/store-audits/${auditId}/complete`, payload);
       const updatedAudit = response.data.data as StoreAudit;
+      
+      clearTimeout(aiLogTimeout);
+      setCompletionLogs((prev) => [
+        ...prev,
+        'AI analysis completed successfully.',
+        'Processing audit rewards...',
+      ]);
+      
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      setCompletionLogs((prev) => [...prev, 'Finalizing records and notifying the employee...']);
+      
+      // Sync immediately so the panel behind the modal updates to the completed view
       clearAuditDraft(updatedAudit);
       syncSelectedAudit(updatedAudit, 'completed');
-      closeCompleteConfirmation();
-      showSuccessToast('Audit completed successfully.');
       void fetchPendingCounts();
       void fetchAuditorStats();
+
+      await new Promise((resolve) => setTimeout(resolve, 800));
+
+      // 3s Countdown loop
+      for (let i = 3; i > 0; i--) {
+        setCompletionLogs((prev) => {
+          const base = prev.filter((l) => !l.startsWith('Audit complete!'));
+          return [...base, `Audit complete! This modal will close in ${i}s...`];
+        });
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+
+      closeCompleteConfirmation();
+      showSuccessToast('Audit completed successfully.');
     } catch (err: any) {
+      clearTimeout(aiLogTimeout);
       showErrorToast(err.response?.data?.error || 'Failed to complete audit');
+      setCompletionLogs([]);
     } finally {
       setActionLoading(false);
     }
@@ -838,19 +868,38 @@ export function StoreAuditsPage() {
               </div>
             </div>
             <div className="px-5 py-4">
-              <div className="rounded-lg bg-gray-50 p-3">
-                <p className="text-sm font-medium text-gray-800">
-                  {selectedAudit.type === 'customer_service'
-                    ? normalizeAuditedEmployeeName(selectedAudit.css_cashier_name) || 'Customer Service Audit'
-                    : normalizeAuditedEmployeeName(selectedAudit.scc_employee_name) || 'Service Crew CCTV Audit'}
-                </p>
-                <p className="mt-0.5 text-xs text-gray-500">
-                  {selectedAudit.branch_name || selectedAudit.company?.name || selectedAudit.id}
-                </p>
-              </div>
-              <p className="mt-3 text-xs text-gray-500 italic">
-                Note: Once completed, this audit will be moved to history and rewards will be computed.
-              </p>
+              {!actionLoading ? (
+                <>
+                  <div className="rounded-lg bg-gray-50 p-3">
+                    <p className="text-sm font-medium text-gray-800">
+                      {selectedAudit.type === 'customer_service'
+                        ? normalizeAuditedEmployeeName(selectedAudit.css_cashier_name) || 'Customer Service Audit'
+                        : normalizeAuditedEmployeeName(selectedAudit.scc_employee_name) || 'Service Crew CCTV Audit'}
+                    </p>
+                    <p className="mt-0.5 text-xs text-gray-500">
+                      {selectedAudit.branch_name || selectedAudit.company?.name || selectedAudit.id}
+                    </p>
+                  </div>
+                  <p className="mt-3 text-xs text-gray-500 italic">
+                    Note: Once completed, this audit will be moved to history and rewards will be computed.
+                  </p>
+                </>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-green-600 border-t-transparent" />
+                    <p className="text-sm font-semibold text-green-700">Finalizing Audit...</p>
+                  </div>
+                  <div className="rounded-xl border border-green-100 bg-green-50/50 p-4 font-mono text-[11px] leading-relaxed text-green-800 shadow-inner">
+                    {completionLogs.map((log, index) => (
+                      <div key={index} className="flex gap-2 animate-in fade-in slide-in-from-left-2 duration-300">
+                        <span className="opacity-40">[{new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}]</span>
+                        <span>{log}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <div className="flex gap-3 border-t border-gray-200 px-5 py-4">
               <Button
