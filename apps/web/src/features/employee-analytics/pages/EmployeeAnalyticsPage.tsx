@@ -2592,10 +2592,24 @@ function formatEventCell(metricId: EmployeeAnalyticsMetricId, row: Record<string
 
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
   const isDateTimeKey =
-    key === 'scheduledStart'
-    || key === 'checkIn'
+    key === 'checkIn'
     || key.endsWith('At')
     || key.toLowerCase().includes('date');
+
+  if (key === 'scheduledStart') {
+    return formatEventTimeOnly(value, isMobile);
+  }
+
+  if (key === 'date') {
+    const d = parseEventDate(value);
+    if (!d) return String(value);
+    const pad2 = (n: number) => String(n).padStart(2, '0');
+    if (isMobile) {
+      return `${pad2(d.getMonth() + 1)}/${pad2(d.getDate())}/${String(d.getFullYear()).slice(-2)}`;
+    }
+    const monthFull = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    return `${monthFull[d.getMonth()] ?? pad2(d.getMonth() + 1)} ${pad2(d.getDate())}, ${d.getFullYear()}`;
+  }
 
   if (
     key === 'checkIn'

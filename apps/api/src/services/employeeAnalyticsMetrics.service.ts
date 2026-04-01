@@ -7,6 +7,7 @@ import {
   type OdooAttendanceRecord,
   type OdooPlanningSlot,
 } from './odooQuery.service.js';
+import { toOdooDatetime, parseUtcTimestamp } from './odoo.service.js';
 
 export type RollingMetricId =
   | 'customer-service'
@@ -58,8 +59,7 @@ function toLocalEndDate(ymd: string): Date {
 }
 
 function formatDateTime(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  return toOdooDatetime(date);
 }
 
 function paginateRows<T extends Record<string, unknown>>(rows: T[], page: number, pageSize: number): MetricEventQueryResult & { rows: T[] } {
@@ -92,7 +92,7 @@ function buildAttendanceLookup(attendances: OdooAttendanceRecord[]): Map<string,
   const lookup = new Map<string, AttendanceLookupValue>();
   for (const attendance of attendances) {
     const employeeId = Array.isArray(attendance.employee_id) ? attendance.employee_id[0] : attendance.employee_id;
-    const checkIn = new Date(attendance.check_in);
+    const checkIn = parseUtcTimestamp(attendance.check_in);
     if (Number.isNaN(checkIn.getTime())) {
       continue;
     }
@@ -156,7 +156,7 @@ async function getAttendanceBasedRows(input: {
 
   const rows = slots.map((slot) => {
     const employeeId = Array.isArray(slot.employee_id) ? slot.employee_id[0] : slot.employee_id;
-    const slotStart = new Date(slot.start_datetime);
+    const slotStart = parseUtcTimestamp(slot.start_datetime);
     const key = `${employeeId}:${slotStart.toDateString()}`;
     const attendance = attendanceLookup.get(key);
     const scheduledBranchOdooId = Array.isArray(slot.company_id) ? slot.company_id[0] : null;
@@ -171,7 +171,7 @@ async function getAttendanceBasedRows(input: {
     };
   });
 
-  rows.sort((a, b) => new Date(b.slot.start_datetime).getTime() - new Date(a.slot.start_datetime).getTime());
+  rows.sort((a, b) => parseUtcTimestamp(b.slot.start_datetime).getTime() - parseUtcTimestamp(a.slot.start_datetime).getTime());
   return rows;
 }
 
@@ -351,9 +351,9 @@ async function queryAttendanceEvents(input: MetricEventQueryInput): Promise<Metr
   });
 
   const rows = attendanceRows.map(({ slot, checkIn, checkInBranchName, checkInBranchOdooId, scheduledBranchName, scheduledBranchOdooId }) => ({
-    date: new Date(slot.start_datetime).toISOString(),
-    scheduledStart: slot.start_datetime,
-    scheduledEnd: slot.end_datetime,
+    date: parseUtcTimestamp(slot.start_datetime).toISOString(),
+    scheduledStart: parseUtcTimestamp(slot.start_datetime).toISOString(),
+    scheduledEnd: parseUtcTimestamp(slot.end_datetime).toISOString(),
     scheduledHours: slot.allocated_hours ?? 0,
     checkIn: checkIn ? checkIn.toISOString() : null,
     branchName: checkInBranchName ?? scheduledBranchName,
@@ -372,11 +372,11 @@ async function queryPunctualityEvents(input: MetricEventQueryInput): Promise<Met
   });
 
   const rows = attendanceRows.map(({ slot, checkIn, checkInBranchName, checkInBranchOdooId, scheduledBranchName, scheduledBranchOdooId }) => {
-    const slotStart = new Date(slot.start_datetime);
+    const slotStart = parseUtcTimestamp(slot.start_datetime);
     const varianceMinutes = checkIn ? Math.round((checkIn.getTime() - slotStart.getTime()) / 60000) : null;
     return {
       date: slotStart.toISOString(),
-      scheduledStart: slot.start_datetime,
+      scheduledStart: slotStart.toISOString(),
       checkIn: checkIn ? checkIn.toISOString() : null,
       branchName: checkInBranchName ?? scheduledBranchName,
       branchOdooId: checkInBranchOdooId ?? scheduledBranchOdooId,
@@ -401,7 +401,7 @@ async function queryAovEvents(input: MetricEventQueryInput): Promise<MetricEvent
 
   const rows = orders
     .map((order) => ({
-      dateOrder: order.date_order,
+      dateOrder: order.date_order ? parseUtcTimestamp(order.date_order).toISOString() : order.date_order,
       amountTotal: Number(order.amount_total ?? 0),
       branchOdooId: Array.isArray(order.company_id) ? order.company_id[0] : null,
       branchName: Array.isArray(order.company_id) ? order.company_id[1] : null,

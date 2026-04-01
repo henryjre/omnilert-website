@@ -70,7 +70,7 @@ test('calculateKpiScoresWithQueryDeps fetches slots and attendance once for both
       branchOrderFetches += 1;
       return [{ amount_total: 120 }, { amount_total: 180 }];
     },
-  });
+  }, { minRecords: 1 });
 
   assert.equal(employeeIdLookups, 1);
   assert.equal(slotFetches, 1);
@@ -148,7 +148,7 @@ test('calculateKpiScoresWithQueryDeps benchmarks AOV against weighted attended b
 
       return [{ amount_total: 1000 }];
     },
-  });
+  }, { minRecords: 1 });
 
   assert.deepEqual(branchOrderLookups, [12, 99, 55]);
   assert.equal(result.breakdown.aov.value, 225);
@@ -190,7 +190,7 @@ test('calculateKpiScoresWithQueryDeps keeps employee AOV visible when no attenda
     getBranchPosOrders: async () => {
       throw new Error('should not fetch branch orders without attendance-derived worked branches');
     },
-  });
+  }, { minRecords: 1 });
 
   assert.equal(result.breakdown.aov.value, 150);
   assert.equal(result.breakdown.aov.branch_avg, null);
@@ -264,15 +264,16 @@ test('calculateKpiScoresWithQueryDeps respects explicit rolling window', async (
     getBranchPosOrders: async () => [],
   }, {
     window: {
-      from: new Date(2026, 1, 25, 0, 0, 0, 0),
-      to: new Date(2026, 2, 25, 23, 59, 59, 999),
+      from: new Date('2026-03-01T00:00:00.000Z'),
+      to: new Date('2026-03-31T23:59:59.999Z'),
     },
+    minRecords: 1,
   });
 
   assert.equal(result.breakdown.cashiering.score, null);
   assert.deepEqual(calls, [
-    { fn: 'slots', from: '2026-02-25 00:00:00', to: '2026-03-25 23:59:59' },
-    { fn: 'attendance', from: '2026-02-25 00:00:00', to: '2026-03-25 23:59:59' },
-    { fn: 'orders', from: '2026-02-25 00:00:00', to: '2026-03-25 23:59:59' },
+    { fn: 'slots', from: '2026-03-01 00:00:00', to: '2026-03-31 23:59:59' },
+    { fn: 'attendance', from: '2026-03-01 00:00:00', to: '2026-03-31 23:59:59' },
+    { fn: 'orders', from: '2026-03-01 00:00:00', to: '2026-03-31 23:59:59' },
   ]);
 });

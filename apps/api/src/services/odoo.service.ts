@@ -797,7 +797,7 @@ export async function getEmployeeAuditRatings(
  * @param date - The date to convert
  * @returns Odoo formatted datetime string in UTC timezone
  */
-function toOdooDatetime(date: Date): string {
+export function toOdooDatetime(date: Date): string {
   // Use UTC timezone as Odoo uses UTC
   const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone: "UTC",
@@ -827,7 +827,7 @@ function toOdooDatetime(date: Date): string {
  * @param timestamp - The timestamp string (e.g., "2026-02-17 11:30:00" or ISO string)
  * @returns Date object
  */
-function parseUtcTimestamp(timestamp: string | Date): Date {
+export function parseUtcTimestamp(timestamp: string | Date): Date {
   if (timestamp instanceof Date) {
     return timestamp;
   }

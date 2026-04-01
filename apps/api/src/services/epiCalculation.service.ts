@@ -8,6 +8,7 @@ import {
   type OdooAttendanceRecord,
   type OdooPlanningSlot,
 } from './odooQuery.service.js';
+import { toOdooDatetime, parseUtcTimestamp } from './odoo.service.js';
 
 // ─── KPI Breakdown Types ──────────────────────────────────────────────────────
 
@@ -162,13 +163,12 @@ function serviceEfficiencyImpact(score: number): number {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function dateRangeFilter(dateStr: string, from: Date, to: Date): boolean {
-  const d = new Date(dateStr);
+  const d = parseUtcTimestamp(dateStr);
   return d >= from && d <= to;
 }
 
 function formatDateTime(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  return toOdooDatetime(date);
 }
 
 function getPast30DayRange(): { from: Date; to: Date; fromStr: string; toStr: string } {
@@ -211,9 +211,9 @@ function splitWrsEvaluations(
   const delayed: Array<{ average_score: number }> = [];
 
   for (const evaluation of peerEvaluations) {
-    const submittedAt = evaluation.submitted_at ? new Date(evaluation.submitted_at) : null;
+    const submittedAt = evaluation.submitted_at ? parseUtcTimestamp(evaluation.submitted_at) : null;
     const effectiveAtRaw = evaluation.wrs_effective_at ?? evaluation.submitted_at;
-    const effectiveAt = effectiveAtRaw ? new Date(effectiveAtRaw) : null;
+    const effectiveAt = effectiveAtRaw ? parseUtcTimestamp(effectiveAtRaw) : null;
     if (!effectiveAt || Number.isNaN(effectiveAt.getTime())) continue;
 
     if (effectiveAt >= from && effectiveAt <= to) {
@@ -314,13 +314,13 @@ function calcAttendanceFromRecords(
 
   // Build set of days with actual check-ins
   const checkedInDays = new Set(
-    attendances.map((a) => new Date(a.check_in).toDateString()),
+    attendances.map((a) => parseUtcTimestamp(a.check_in).toDateString()),
   );
 
   // For each slot, check if there's a check-in on that day
   let absentHours = 0;
   for (const slot of slots) {
-    const slotDay = new Date(slot.start_datetime).toDateString();
+    const slotDay = parseUtcTimestamp(slot.start_datetime).toDateString();
     if (!checkedInDays.has(slotDay)) {
       absentHours += slot.allocated_hours || 0;
     }
@@ -342,10 +342,11 @@ function calcPunctualityFromRecords(
   const checkInMap = new Map<string, Date>();
   for (const att of attendances) {
     const empId = Array.isArray(att.employee_id) ? att.employee_id[0] : att.employee_id;
-    const day = new Date(att.check_in).toDateString();
+    const checkIn = parseUtcTimestamp(att.check_in);
+    const day = checkIn.toDateString();
     const key = `${empId}:${day}`;
     if (!checkInMap.has(key)) {
-      checkInMap.set(key, new Date(att.check_in));
+      checkInMap.set(key, checkIn);
     }
   }
 
@@ -353,8 +354,8 @@ function calcPunctualityFromRecords(
   let totalLateMinutes = 0;
 
   for (const slot of slots) {
-    const slotStart = new Date(slot.start_datetime);
-    const slotEnd = new Date(slot.end_datetime);
+    const slotStart = parseUtcTimestamp(slot.start_datetime);
+    const slotEnd = parseUtcTimestamp(slot.end_datetime);
     const durationMinutes = (slotEnd.getTime() - slotStart.getTime()) / 60000;
     scheduledMinutes += durationMinutes;
 
