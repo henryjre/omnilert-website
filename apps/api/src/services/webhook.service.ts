@@ -21,13 +21,15 @@ export function shouldPreserveInterimDutyPlanningSlotDelete(statuses: string[]):
 }
 
 export async function resolveCompanyByOdooBranchId(odooCompanyId: number) {
-  const branch = await db.getDb()('branches')
+  const branch = await db
+    .getDb()('branches')
     .where({ odoo_branch_id: String(odooCompanyId) })
     .first('company_id');
   if (!branch) {
     throw new AppError(404, `No company found for Odoo company_id: ${odooCompanyId}`);
   }
-  const company = await db.getDb()('companies')
+  const company = await db
+    .getDb()('companies')
     .where({ id: branch.company_id, is_active: true })
     .first();
   if (!company) {
@@ -36,41 +38,35 @@ export async function resolveCompanyByOdooBranchId(odooCompanyId: number) {
   return company;
 }
 
-export async function resolveUserIdByUserKey(
-  userKey?: string | null,
-): Promise<string | null> {
+export async function resolveUserIdByUserKey(userKey?: string | null): Promise<string | null> {
   const normalized = typeof userKey === 'string' ? userKey.trim() : '';
   if (!normalized) return null;
 
-  const byWebsiteKey = await db.getDb()('users')
-    .where({ user_key: normalized })
-    .first('id');
+  const byWebsiteKey = await db.getDb()('users').where({ user_key: normalized }).first('id');
   if (byWebsiteKey?.id) {
     return String(byWebsiteKey.id);
   }
 
   // Fallback: some environments still mirror website key into users.id.
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized);
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    normalized,
+  );
   if (!isUuid) {
     return null;
   }
 
-  const byId = await db.getDb()('users')
-    .where({ id: normalized })
-    .first('id');
+  const byId = await db.getDb()('users').where({ id: normalized }).first('id');
   return byId?.id ? String(byId.id) : null;
 }
 
-export async function processPosVerification(
-  payload: {
-    branchId: string;
-    transactionId: string;
-    title: string;
-    description?: string;
-    amount?: number;
-    data?: Record<string, unknown>;
-  },
-) {
+export async function processPosVerification(payload: {
+  branchId: string;
+  transactionId: string;
+  title: string;
+  description?: string;
+  amount?: number;
+  data?: Record<string, unknown>;
+}) {
   const tenantDb = db.getDb();
 
   // Map Odoo branch ID to internal branch
@@ -113,22 +109,20 @@ export async function processPosVerification(
   return verification;
 }
 
-export async function processPosSession(
-  payload: {
-    _action?: string;
-    _id?: number;
-    _model?: string;
-    id?: number;
-    name: string;
-    display_name?: string;
-    company_id: number;
-    cash_register_balance_start?: number;
-    cash_register_balance_end?: number;
-    opening_notes?: string;
-    x_closing_pcf?: number;
-    x_company_name?: string;
-  },
-) {
+export async function processPosSession(payload: {
+  _action?: string;
+  _id?: number;
+  _model?: string;
+  id?: number;
+  name: string;
+  display_name?: string;
+  company_id: number;
+  cash_register_balance_start?: number;
+  cash_register_balance_end?: number;
+  opening_notes?: string;
+  x_closing_pcf?: number;
+  x_company_name?: string;
+}) {
   const tenantDb = db.getDb();
 
   // company_id maps to the branch's odoo_branch_id
@@ -275,26 +269,25 @@ export async function processPosSession(
   return session;
 }
 
-export async function processEmployeeShift(
-  payload: {
-    id: number;
-    company_id: number;
-    start_datetime: string;
-    end_datetime: string;
-    x_employee_avatar?: string;
-    x_employee_contact_name: string;
-    x_role_color: number;
-    x_role_name: string;
-    x_website_key?: string;
-    [key: string]: unknown;
-  },
-) {
+export async function processEmployeeShift(payload: {
+  id: number;
+  company_id: number;
+  start_datetime: string;
+  end_datetime: string;
+  x_employee_avatar?: string;
+  x_employee_contact_name: string;
+  x_role_color: number;
+  x_role_name: string;
+  x_website_key?: string;
+  [key: string]: unknown;
+}) {
   const tenantDb = db.getDb();
 
   const branch = await tenantDb('branches')
     .where({ odoo_branch_id: String(payload.company_id) })
     .first();
-  if (!branch) throw new AppError(404, `Branch not found for odoo_branch_id: ${payload.company_id}`);
+  if (!branch)
+    throw new AppError(404, `Branch not found for odoo_branch_id: ${payload.company_id}`);
 
   // Parse UTC datetimes (Odoo sends "YYYY-MM-DD HH:MM:SS" without timezone indicator)
   const shiftStart = new Date(payload.start_datetime + ' UTC');
@@ -314,9 +307,12 @@ export async function processEmployeeShift(
   if (existing) {
     // Diff tracked fields to create a change log
     const TRACKED_FIELDS = [
-      'start_datetime', 'end_datetime',
-      'x_role_name', 'x_role_color',
-      'x_employee_contact_name', 'x_employee_avatar',
+      'start_datetime',
+      'end_datetime',
+      'x_role_name',
+      'x_role_color',
+      'x_employee_contact_name',
+      'x_employee_avatar',
       'x_website_key',
     ];
     const existingPayload = existing.odoo_payload as Record<string, unknown>;
@@ -377,8 +373,8 @@ export async function processEmployeeShift(
     const existingUserId = (existing.user_id as string | null) ?? null;
 
     // Notify the same assigned user when their shift's time or duty type changes.
-    const relevantShiftFieldChanged = Object.keys(changes).some(
-      (f) => ['start_datetime', 'end_datetime', 'x_role_name'].includes(f),
+    const relevantShiftFieldChanged = Object.keys(changes).some((f) =>
+      ['start_datetime', 'end_datetime', 'x_role_name'].includes(f),
     );
     if (userId && userId === existingUserId && relevantShiftFieldChanged) {
       await createAndDispatchNotification({
@@ -440,15 +436,13 @@ export async function processEmployeeShift(
   return shift;
 }
 
-export async function processPlanningSlotDelete(
-  payload: {
-    _id?: number;
-    id?: number;
-    company_id: number;
-    start_datetime?: string;
-    [key: string]: unknown;
-  },
-) {
+export async function processPlanningSlotDelete(payload: {
+  _id?: number;
+  id?: number;
+  company_id: number;
+  start_datetime?: string;
+  [key: string]: unknown;
+}) {
   const tenantDb = db.getDb();
 
   const odooShiftId = payload.id ?? payload._id;
@@ -459,7 +453,8 @@ export async function processPlanningSlotDelete(
   const branch = await tenantDb('branches')
     .where({ odoo_branch_id: String(payload.company_id) })
     .first();
-  if (!branch) throw new AppError(404, `Branch not found for odoo_branch_id: ${payload.company_id}`);
+  if (!branch)
+    throw new AppError(404, `Branch not found for odoo_branch_id: ${payload.company_id}`);
 
   const existing = await tenantDb('employee_shifts')
     .where({ odoo_shift_id: odooShiftId, branch_id: branch.id })
@@ -468,11 +463,13 @@ export async function processPlanningSlotDelete(
     throw new AppError(404, `Shift not found for odoo_shift_id: ${odooShiftId}`);
   }
 
-  const interimDutyStatuses = (await tenantDb('shift_authorizations')
+  const interimDutyStatuses = (
+    await tenantDb('shift_authorizations')
       .where({ shift_id: existing.id, auth_type: INTERIM_DUTY_AUTH_TYPE })
-      .select('status'))
-    .map((row: { status: string | null }) => String(row.status ?? '').trim());
-  const preserveInterimDutyHistory = shouldPreserveInterimDutyPlanningSlotDelete(interimDutyStatuses);
+      .select('status')
+  ).map((row: { status: string | null }) => String(row.status ?? '').trim());
+  const preserveInterimDutyHistory =
+    shouldPreserveInterimDutyPlanningSlotDelete(interimDutyStatuses);
 
   if (preserveInterimDutyHistory) {
     return {
@@ -503,14 +500,12 @@ export async function processPlanningSlotDelete(
 
   try {
     const io = getIO();
-    io.of('/employee-shifts')
-      .to(`branch:${branch.id}`)
-      .emit('shift:deleted', {
-        id: existing.id,
-        odoo_shift_id: existing.odoo_shift_id,
-        branch_id: existing.branch_id,
-        user_id: existing.user_id,
-      });
+    io.of('/employee-shifts').to(`branch:${branch.id}`).emit('shift:deleted', {
+      id: existing.id,
+      odoo_shift_id: existing.odoo_shift_id,
+      branch_id: existing.branch_id,
+      user_id: existing.user_id,
+    });
   } catch {
     logger.warn('Socket.IO not available for employee shift delete emit');
   }
@@ -545,22 +540,15 @@ function formatDiffMinutes(minutes: number): string {
   return `${minutes}m`;
 }
 
-export async function reassignUserToSingleCheckedInBranch(
-  userId: string,
-  branchId: string,
-) {
+export async function reassignUserToSingleCheckedInBranch(userId: string, branchId: string) {
   await db.getDb().transaction(async (trx) => {
-    const branch = await trx('branches')
-      .where({ id: branchId })
-      .first('company_id');
+    const branch = await trx('branches').where({ id: branchId }).first('company_id');
 
     if (!branch?.company_id) {
       throw new AppError(404, `Branch not found for reassignment: ${branchId}`);
     }
 
-    await trx('user_branches')
-      .where({ user_id: userId })
-      .delete();
+    await trx('user_branches').where({ user_id: userId }).delete();
 
     await trx('user_branches')
       .insert({
@@ -660,28 +648,39 @@ type CheckInRoleType = typeof SYSTEM_ROLES.MANAGEMENT | typeof SYSTEM_ROLES.SERV
 interface AttendanceProcessorDeps {
   now: () => Date;
   findBranchByOdooCompanyId: (odooCompanyId: number) => Promise<AttendanceBranchRow | null>;
-  findShiftByPlanningSlotId: (planningSlotId: number, branchId: string) => Promise<AttendanceShiftRow | null>;
+  findShiftByPlanningSlotId: (
+    planningSlotId: number,
+    branchId: string,
+  ) => Promise<AttendanceShiftRow | null>;
   findShiftById: (shiftId: string) => Promise<AttendanceShiftRow | null>;
   createShiftLog: (input: Record<string, unknown>) => Promise<AttendanceShiftLogRow>;
-  updateShiftById: (shiftId: string, updates: Record<string, unknown>) => Promise<AttendanceShiftRow | null>;
+  updateShiftById: (
+    shiftId: string,
+    updates: Record<string, unknown>,
+  ) => Promise<AttendanceShiftRow | null>;
   incrementShiftPendingApprovals: (shiftId: string) => Promise<AttendanceShiftRow | null>;
-  createShiftAuthorization: (input: Record<string, unknown>) => Promise<AttendanceShiftAuthorizationRow>;
+  createShiftAuthorization: (
+    input: Record<string, unknown>,
+  ) => Promise<AttendanceShiftAuthorizationRow>;
   upsertInterimShift: (input: Record<string, unknown>) => Promise<AttendanceShiftRow>;
   reassignLogsToShift: (attendanceId: number, shiftId: string) => Promise<void>;
-  findOverlappingShiftInOtherBranches: (
-    input: { userId: string | null; branchId: string; attendanceStart: Date; attendanceEnd: Date },
-  ) => Promise<AttendanceShiftRow | null>;
+  findOverlappingShiftInOtherBranches: (input: {
+    userId: string | null;
+    branchId: string;
+    attendanceStart: Date;
+    attendanceEnd: Date;
+  }) => Promise<AttendanceShiftRow | null>;
   resolveAttendanceIdentity: (payload: AttendancePayload) => Promise<ResolvedAttendanceIdentity>;
   listUserRoleMembership: (userId: string) => Promise<UserRoleMembership[]>;
   disableUserRole: (userId: string, roleId: string) => Promise<void>;
   enableUserRole: (userId: string, roleId: string) => Promise<void>;
   clearUserDisabledRoles: (userId: string) => Promise<number>;
-  listActiveAttendancesByWebsiteUserKey: (websiteUserKey: string) => Promise<IdentityActiveAttendance[]>;
+  listActiveAttendancesByWebsiteUserKey: (
+    websiteUserKey: string,
+  ) => Promise<IdentityActiveAttendance[]>;
+  findExistingCheckOutLog: (attendanceId: number) => Promise<AttendanceShiftLogRow | null>;
   checkOutAttendancesByIds: (attendanceIds: number[], checkOutTime: Date) => Promise<void>;
-  reassignUserToSingleCheckedInBranch: (
-    userId: string,
-    branchId: string,
-  ) => Promise<void>;
+  reassignUserToSingleCheckedInBranch: (userId: string, branchId: string) => Promise<void>;
   enqueueEarlyCheckInAuthJob: (
     payload: Parameters<typeof enqueueEarlyCheckInAuthJob>[0],
     runAt: Date,
@@ -710,9 +709,11 @@ export function emitAttendanceSocketEvent(
   if (event === 'user:branch-assignments-updated') {
     const userId = String(payload.userId ?? '').trim();
     if (!userId) return;
-    io.of('/user-events').to(`user:${userId}`).emit(event, {
-      branchIds: Array.isArray(payload.branchIds) ? payload.branchIds : [],
-    });
+    io.of('/user-events')
+      .to(`user:${userId}`)
+      .emit(event, {
+        branchIds: Array.isArray(payload.branchIds) ? payload.branchIds : [],
+      });
     return;
   }
 
@@ -744,8 +745,10 @@ function hasPositiveWindowOverlap(
   shiftStart: Date,
   shiftEnd: Date,
 ): boolean {
-  return Math.max(rangeStart.getTime(), shiftStart.getTime())
-    < Math.min(rangeEnd.getTime(), shiftEnd.getTime());
+  return (
+    Math.max(rangeStart.getTime(), shiftStart.getTime()) <
+    Math.min(rangeEnd.getTime(), shiftEnd.getTime())
+  );
 }
 
 function resolveCheckInRoleType(odooCompanyId: number): CheckInRoleType {
@@ -753,20 +756,15 @@ function resolveCheckInRoleType(odooCompanyId: number): CheckInRoleType {
 }
 
 function resolveOppositeRoleType(roleType: CheckInRoleType): CheckInRoleType {
-  return roleType === SYSTEM_ROLES.MANAGEMENT
-    ? SYSTEM_ROLES.SERVICE_CREW
-    : SYSTEM_ROLES.MANAGEMENT;
+  return roleType === SYSTEM_ROLES.MANAGEMENT ? SYSTEM_ROLES.SERVICE_CREW : SYSTEM_ROLES.MANAGEMENT;
 }
 
 async function defaultResolveAttendanceIdentity(
   payload: AttendancePayload,
 ): Promise<ResolvedAttendanceIdentity> {
-  let websiteUserKey = typeof payload.x_website_key === 'string'
-    ? payload.x_website_key.trim()
-    : '';
-  let userId = websiteUserKey
-    ? await resolveUserIdByUserKey(websiteUserKey)
-    : null;
+  let websiteUserKey =
+    typeof payload.x_website_key === 'string' ? payload.x_website_key.trim() : '';
+  let userId = websiteUserKey ? await resolveUserIdByUserKey(websiteUserKey) : null;
   let employeeName = String(payload.x_employee_contact_name ?? '').trim();
 
   if (!websiteUserKey || !userId) {
@@ -775,9 +773,7 @@ async function defaultResolveAttendanceIdentity(
       if (fallbackIdentity?.websiteUserKey) {
         websiteUserKey = fallbackIdentity.websiteUserKey;
         if (!userId) {
-          userId = await resolveUserIdByUserKey(
-            fallbackIdentity.websiteUserKey,
-          );
+          userId = await resolveUserIdByUserKey(fallbackIdentity.websiteUserKey);
         }
       }
       if (!employeeName && fallbackIdentity?.employeeName) {
@@ -804,35 +800,38 @@ async function defaultResolveAttendanceIdentity(
 const defaultAttendanceProcessorDeps: AttendanceProcessorDeps = {
   now: () => new Date(),
   findBranchByOdooCompanyId: async (odooCompanyId) =>
-    (await db.getDb()('branches')
+    (await db
+      .getDb()('branches')
       .where({ odoo_branch_id: String(odooCompanyId) })
       .first()) as AttendanceBranchRow | null,
   findShiftByPlanningSlotId: async (planningSlotId, branchId) =>
-    (await db.getDb()('employee_shifts')
+    (await db
+      .getDb()('employee_shifts')
       .where({ odoo_shift_id: planningSlotId, branch_id: branchId })
       .first()) as AttendanceShiftRow | null,
   findShiftById: async (shiftId) =>
-    (await db.getDb()('employee_shifts')
+    (await db
+      .getDb()('employee_shifts')
       .where({ id: shiftId })
       .first()) as AttendanceShiftRow | null,
   createShiftLog: async (input) =>
-    (await db.getDb()('shift_logs')
-      .insert(input)
-      .returning('*'))[0] as AttendanceShiftLogRow,
+    (await db.getDb()('shift_logs').insert(input).returning('*'))[0] as AttendanceShiftLogRow,
   updateShiftById: async (shiftId, updates) =>
-    ((await db.getDb()('employee_shifts')
-      .where({ id: shiftId })
-      .update(updates)
-      .returning('*'))[0] ?? null) as AttendanceShiftRow | null,
+    ((
+      await db.getDb()('employee_shifts').where({ id: shiftId }).update(updates).returning('*')
+    )[0] ?? null) as AttendanceShiftRow | null,
   incrementShiftPendingApprovals: async (shiftId) =>
-    ((await db.getDb()('employee_shifts')
-      .where({ id: shiftId })
-      .increment('pending_approvals', 1)
-      .returning('*'))[0] ?? null) as AttendanceShiftRow | null,
+    ((
+      await db
+        .getDb()('employee_shifts')
+        .where({ id: shiftId })
+        .increment('pending_approvals', 1)
+        .returning('*')
+    )[0] ?? null) as AttendanceShiftRow | null,
   createShiftAuthorization: async (input) =>
-    (await db.getDb()('shift_authorizations')
-      .insert(input)
-      .returning('*'))[0] as AttendanceShiftAuthorizationRow,
+    (
+      await db.getDb()('shift_authorizations').insert(input).returning('*')
+    )[0] as AttendanceShiftAuthorizationRow,
   upsertInterimShift: async (input) => {
     const knex = db.getDb();
     const existing = await knex('employee_shifts')
@@ -843,24 +842,23 @@ const defaultAttendanceProcessorDeps: AttendanceProcessorDeps = {
       .first();
 
     if (existing) {
-      return ((await knex('employee_shifts')
-        .where({ id: existing.id })
-        .update(input)
-        .returning('*'))[0] ?? existing) as AttendanceShiftRow;
+      return ((
+        await knex('employee_shifts').where({ id: existing.id }).update(input).returning('*')
+      )[0] ?? existing) as AttendanceShiftRow;
     }
 
-    return (await knex('employee_shifts')
-      .insert(input)
-      .returning('*'))[0] as AttendanceShiftRow;
+    return (await knex('employee_shifts').insert(input).returning('*'))[0] as AttendanceShiftRow;
   },
   reassignLogsToShift: async (attendanceId, shiftId) => {
-    await db.getDb()('shift_logs')
+    await db
+      .getDb()('shift_logs')
       .where({ odoo_attendance_id: attendanceId })
       .update({ shift_id: shiftId });
   },
   findOverlappingShiftInOtherBranches: async (input) => {
     if (!input.userId) return null;
-    return (await db.getDb()('employee_shifts')
+    return (await db
+      .getDb()('employee_shifts')
       .where({ user_id: input.userId })
       .whereNot('branch_id', input.branchId)
       .andWhere('shift_start', '<', input.attendanceEnd)
@@ -870,12 +868,14 @@ const defaultAttendanceProcessorDeps: AttendanceProcessorDeps = {
   },
   resolveAttendanceIdentity: defaultResolveAttendanceIdentity,
   listUserRoleMembership: async (userId) =>
-    (await db.getDb()('user_roles as ur')
+    (await db
+      .getDb()('user_roles as ur')
       .join('roles as r', 'ur.role_id', 'r.id')
       .where('ur.user_id', userId)
       .select('r.id as roleId', 'r.name as roleName')) as UserRoleMembership[],
   disableUserRole: async (userId, roleId) => {
-    await db.getDb()('user_role_disables')
+    await db
+      .getDb()('user_role_disables')
       .insert({
         user_id: userId,
         role_id: roleId,
@@ -886,28 +886,26 @@ const defaultAttendanceProcessorDeps: AttendanceProcessorDeps = {
       .merge({ updated_at: new Date() });
   },
   enableUserRole: async (userId, roleId) => {
-    await db.getDb()('user_role_disables')
-      .where({ user_id: userId, role_id: roleId })
-      .delete();
+    await db.getDb()('user_role_disables').where({ user_id: userId, role_id: roleId }).delete();
   },
-  clearUserDisabledRoles: async (userId) => Number(await db.getDb()('user_role_disables')
-    .where({ user_id: userId })
-    .delete()),
+  clearUserDisabledRoles: async (userId) =>
+    Number(await db.getDb()('user_role_disables').where({ user_id: userId }).delete()),
   listActiveAttendancesByWebsiteUserKey: async (websiteUserKey) =>
-    (await getActiveAttendancesForWebsiteUserKey(websiteUserKey))
-      .map((attendance) => ({
-        id: attendance.id,
-        company_id: attendance.company_id,
-        check_in: attendance.check_in,
-      })),
+    (await getActiveAttendancesForWebsiteUserKey(websiteUserKey)).map((attendance) => ({
+      id: attendance.id,
+      company_id: attendance.company_id,
+      check_in: attendance.check_in,
+    })),
+  findExistingCheckOutLog: async (attendanceId) =>
+    (await db
+      .getDb()('shift_logs')
+      .where({ odoo_attendance_id: attendanceId, log_type: 'check_out' })
+      .first()) as AttendanceShiftLogRow | null ?? null,
   checkOutAttendancesByIds: async (attendanceIds, checkOutTime) => {
     await batchCheckOutAttendances(attendanceIds, checkOutTime);
   },
   reassignUserToSingleCheckedInBranch: (userId, branchId) =>
-    reassignUserToSingleCheckedInBranch(
-      userId,
-      branchId,
-    ),
+    reassignUserToSingleCheckedInBranch(userId, branchId),
   enqueueEarlyCheckInAuthJob: (payload, runAt) => enqueueEarlyCheckInAuthJob(payload, runAt),
   createAndDispatchNotification: (input) => createAndDispatchNotification(input),
   emitSocketEvent: (event, payload) => {
@@ -972,13 +970,14 @@ async function applyCheckInRoleScopeAndAttendanceGuard(input: {
 
   const activeAttendances = await deps.listActiveAttendancesByWebsiteUserKey(websiteUserKey);
 
-  const attendanceIdsToCheckOut = checkInRoleType === SYSTEM_ROLES.MANAGEMENT
-    ? activeAttendances
-      .filter((attendance) => attendance.id !== payload.id)
-      .map((attendance) => attendance.id)
-    : activeAttendances
-      .filter((attendance) => attendance.id !== payload.id && attendance.company_id === 1)
-      .map((attendance) => attendance.id);
+  const attendanceIdsToCheckOut =
+    checkInRoleType === SYSTEM_ROLES.MANAGEMENT
+      ? activeAttendances
+          .filter((attendance) => attendance.id !== payload.id)
+          .map((attendance) => attendance.id)
+      : activeAttendances
+          .filter((attendance) => attendance.id !== payload.id && attendance.company_id === 1)
+          .map((attendance) => attendance.id);
 
   if (attendanceIdsToCheckOut.length > 0) {
     await deps.checkOutAttendancesByIds(attendanceIdsToCheckOut, checkInTime);
@@ -987,30 +986,37 @@ async function applyCheckInRoleScopeAndAttendanceGuard(input: {
   deps.emitSocketEvent('user:auth-scope-updated', { userId });
 }
 
-export function createAttendanceProcessor(
-  overrides: Partial<AttendanceProcessorDeps> = {},
-) {
+export function createAttendanceProcessor(overrides: Partial<AttendanceProcessorDeps> = {}) {
   const deps: AttendanceProcessorDeps = { ...defaultAttendanceProcessorDeps, ...overrides };
 
   return async function processAttendance(
     payload: AttendancePayload,
   ): Promise<AttendanceShiftLogRow> {
     const branch = await deps.findBranchByOdooCompanyId(payload.x_company_id);
-    if (!branch) throw new AppError(404, `Branch not found for x_company_id: ${payload.x_company_id}`);
+    if (!branch)
+      throw new AppError(404, `Branch not found for x_company_id: ${payload.x_company_id}`);
 
-    let shift = payload.x_planning_slot_id !== false && payload.x_planning_slot_id != null
-      ? await deps.findShiftByPlanningSlotId(payload.x_planning_slot_id, branch.id)
-      : null;
+    let shift =
+      payload.x_planning_slot_id !== false && payload.x_planning_slot_id != null
+        ? await deps.findShiftByPlanningSlotId(payload.x_planning_slot_id, branch.id)
+        : null;
 
     const isCheckOut = Boolean(payload.check_out);
+
+    if (isCheckOut) {
+      const existingLog = await deps.findExistingCheckOutLog(payload.id);
+      if (existingLog) return existingLog;
+    }
+
     const logType = isCheckOut ? 'check_out' : 'check_in';
     const eventTime = isCheckOut
       ? parseOdooUtcDateTime(payload.check_out!)
       : parseOdooUtcDateTime(payload.check_in);
     const resolvedIdentity = await deps.resolveAttendanceIdentity(payload);
-    const logPayload = resolvedIdentity.websiteUserKey && !payload.x_website_key
-      ? { ...payload, x_website_key: resolvedIdentity.websiteUserKey }
-      : payload;
+    const logPayload =
+      resolvedIdentity.websiteUserKey && !payload.x_website_key
+        ? { ...payload, x_website_key: resolvedIdentity.websiteUserKey }
+        : payload;
 
     let log = await deps.createShiftLog({
       company_id: branch.company_id,
@@ -1044,11 +1050,11 @@ export function createAttendanceProcessor(
       const attendanceEnd = eventTime;
       const linkedShiftHasOverlap = shift
         ? hasPositiveWindowOverlap(
-          attendanceStart,
-          attendanceEnd,
-          new Date(shift.shift_start),
-          new Date(shift.shift_end),
-        )
+            attendanceStart,
+            attendanceEnd,
+            new Date(shift.shift_start),
+            new Date(shift.shift_end),
+          )
         : false;
       const allowsInterimDuty = payload.x_company_id !== 1;
 
@@ -1079,8 +1085,12 @@ export function createAttendanceProcessor(
           odoo_shift_id: interimOdooShiftId,
           branch_id: branch.id,
           user_id: resolvedIdentity.userId ?? (shift?.user_id as string | null | undefined) ?? null,
-          employee_name: resolvedIdentity.employeeName || String(payload.x_employee_contact_name ?? ''),
-          employee_avatar_url: payload.x_employee_avatar ?? (shift?.employee_avatar_url as string | null | undefined) ?? null,
+          employee_name:
+            resolvedIdentity.employeeName || String(payload.x_employee_contact_name ?? ''),
+          employee_avatar_url:
+            payload.x_employee_avatar ??
+            (shift?.employee_avatar_url as string | null | undefined) ??
+            null,
           duty_type: 'Interim Duty',
           duty_color: 0,
           shift_start: attendanceStart,
@@ -1092,7 +1102,8 @@ export function createAttendanceProcessor(
           odoo_payload: JSON.stringify({
             source: 'attendance',
             source_attendance_id: payload.id,
-            source_planning_slot_id: payload.x_planning_slot_id === false ? null : payload.x_planning_slot_id ?? null,
+            source_planning_slot_id:
+              payload.x_planning_slot_id === false ? null : (payload.x_planning_slot_id ?? null),
             interim_reason: interimReason,
             linked_shift_id: shift?.id ?? null,
             linked_shift_odoo_id: shift?.odoo_shift_id ?? null,
@@ -1138,11 +1149,12 @@ export function createAttendanceProcessor(
       if (eventTime.getTime() >= shiftEnd.getTime()) {
         skipStandardAuthorizationFlow = true;
       } else {
-        activeShift = await deps.updateShiftById(shift.id, {
-          status: 'active',
-          check_in_status: 'checked_in',
-          updated_at: deps.now(),
-        }) ?? shift;
+        activeShift =
+          (await deps.updateShiftById(shift.id, {
+            status: 'active',
+            check_in_status: 'checked_in',
+            updated_at: deps.now(),
+          })) ?? shift;
 
         if (shift.user_id) {
           const userId = shift.user_id as string;
@@ -1158,11 +1170,12 @@ export function createAttendanceProcessor(
 
     if (isCheckOut && shift && !skipStandardAuthorizationFlow) {
       const totalWorkedHours = payload.x_cumulative_minutes / 60;
-      activeShift = await deps.updateShiftById(shift.id, {
-        total_worked_hours: totalWorkedHours,
-        check_in_status: 'checked_out',
-        updated_at: deps.now(),
-      }) ?? shift;
+      activeShift =
+        (await deps.updateShiftById(shift.id, {
+          total_worked_hours: totalWorkedHours,
+          check_in_status: 'checked_out',
+          updated_at: deps.now(),
+        })) ?? shift;
       updatedTotalWorkedHours = totalWorkedHours;
     }
 
@@ -1171,46 +1184,54 @@ export function createAttendanceProcessor(
       const shiftEnd = new Date(shift.shift_end);
 
       if (!isCheckOut) {
-        const diffMs = shiftStart.getTime() - eventTime.getTime();
-        const diffMinutes = Math.round(diffMs / 60_000);
-
-        if (diffMinutes > 0) {
-          const scheduleAt = new Date(shiftStart.getTime() + 60_000);
-          await deps.enqueueEarlyCheckInAuthJob(
-            {
-              companyId: branch.company_id as string,
-              branchId: branch.id as string,
-              shiftId: shift.id as string,
-              shiftLogId: log.id as string,
-              userId: (shift.user_id as string) ?? null,
-              checkInEventTime: eventTime.toISOString(),
-            },
-            scheduleAt,
+        if (payload.x_prev_attendance_id) {
+          // Rule out triggering tardiness or early check-in for subsequent attendances of the day.
+          logger.info(
+            { attendanceId: payload.id, prevAttendanceId: payload.x_prev_attendance_id },
+            'Subsequent attendance check-in: Skipping tardiness/early check-in authorization',
           );
-        } else if (diffMinutes < 0) {
-          const absDiff = Math.abs(diffMinutes);
-          const auth = await deps.createShiftAuthorization({
-            company_id: branch.company_id,
-            shift_id: shift.id as string,
-            shift_log_id: log.id,
-            branch_id: branch.id,
-            user_id: (shift.user_id as string) ?? null,
-            auth_type: 'tardiness',
-            diff_minutes: absDiff,
-            needs_employee_reason: true,
-            status: 'pending',
-          });
-          await deps.incrementShiftPendingApprovals(shift.id as string);
-          if (shift.user_id) {
-          await deps.createAndDispatchNotification({
-              userId: shift.user_id as string,
-              title: 'Tardiness Authorization Required',
-              message: `You checked in ${formatDiffMinutes(absDiff)} late for your shift. Please submit a reason in the Authorization Requests tab.`,
-              type: 'warning',
-              linkUrl: '/account/schedule',
+        } else {
+          const diffMs = shiftStart.getTime() - eventTime.getTime();
+          const diffMinutes = Math.round(diffMs / 60_000);
+
+          if (diffMinutes > 0) {
+            const scheduleAt = new Date(shiftStart.getTime() + 60_000);
+            await deps.enqueueEarlyCheckInAuthJob(
+              {
+                companyId: branch.company_id as string,
+                branchId: branch.id as string,
+                shiftId: shift.id as string,
+                shiftLogId: log.id as string,
+                userId: (shift.user_id as string) ?? null,
+                checkInEventTime: eventTime.toISOString(),
+              },
+              scheduleAt,
+            );
+          } else if (diffMinutes < 0) {
+            const absDiff = Math.abs(diffMinutes);
+            const auth = await deps.createShiftAuthorization({
+              company_id: branch.company_id,
+              shift_id: shift.id as string,
+              shift_log_id: log.id,
+              branch_id: branch.id,
+              user_id: (shift.user_id as string) ?? null,
+              auth_type: 'tardiness',
+              diff_minutes: absDiff,
+              needs_employee_reason: true,
+              status: 'pending',
             });
+            await deps.incrementShiftPendingApprovals(shift.id as string);
+            if (shift.user_id) {
+              await deps.createAndDispatchNotification({
+                userId: shift.user_id as string,
+                title: 'Tardiness Authorization Required',
+                message: `You checked in ${formatDiffMinutes(absDiff)} late for your shift. Please submit a reason in the Authorization Requests tab.`,
+                type: 'warning',
+                linkUrl: '/account/schedule',
+              });
+            }
+            deps.emitSocketEvent('shift:authorization-new', auth as Record<string, unknown>);
           }
-          deps.emitSocketEvent('shift:authorization-new', auth as Record<string, unknown>);
         }
       } else {
         const diffMs = shiftEnd.getTime() - eventTime.getTime();
@@ -1290,10 +1311,10 @@ export function createAttendanceProcessor(
     });
 
     const checkInStatusUserId =
-      resolvedIdentity.userId
-      ?? (activeShift?.user_id as string | null | undefined)
-      ?? (shift?.user_id as string | null | undefined)
-      ?? null;
+      resolvedIdentity.userId ??
+      (activeShift?.user_id as string | null | undefined) ??
+      (shift?.user_id as string | null | undefined) ??
+      null;
 
     if (checkInStatusUserId) {
       deps.emitSocketEvent('user:check-in-status-updated', {
@@ -1313,26 +1334,24 @@ export function createAttendanceProcessor(
 
 export const processAttendance = createAttendanceProcessor();
 
-export async function processDiscountOrder(
-  payload: {
-    company_id: number;
-    pos_reference: string;
-    date_order: string;
-    cashier: string;
-    amount_total: number;
-    x_session_name?: string;
-    x_company_name?: string;
-    x_website_key?: string;
-    x_order_lines: {
-      product_name: string;
-      qty: number;
-      uom_name: string;
-      price_unit: number;
-      discount?: number;
-    }[];
-    [key: string]: unknown;
-  },
-) {
+export async function processDiscountOrder(payload: {
+  company_id: number;
+  pos_reference: string;
+  date_order: string;
+  cashier: string;
+  amount_total: number;
+  x_session_name?: string;
+  x_company_name?: string;
+  x_website_key?: string;
+  x_order_lines: {
+    product_name: string;
+    qty: number;
+    uom_name: string;
+    price_unit: number;
+    discount?: number;
+  }[];
+  [key: string]: unknown;
+}) {
   const tenantDb = db.getDb();
 
   // Resolve branch by Odoo company_id
@@ -1389,26 +1408,24 @@ export async function processDiscountOrder(
   return verification;
 }
 
-export async function processRefundOrder(
-  payload: {
-    company_id: number;
-    pos_reference: string;
-    date_order: string;
-    cashier: string;
-    amount_total: number;
-    x_session_name?: string;
-    x_company_name?: string;
-    x_website_key?: string;
-    x_order_lines: {
-      product_name: string;
-      qty: number;
-      uom_name: string;
-      price_unit: number;
-      discount?: number;
-    }[];
-    [key: string]: unknown;
-  },
-) {
+export async function processRefundOrder(payload: {
+  company_id: number;
+  pos_reference: string;
+  date_order: string;
+  cashier: string;
+  amount_total: number;
+  x_session_name?: string;
+  x_company_name?: string;
+  x_website_key?: string;
+  x_order_lines: {
+    product_name: string;
+    qty: number;
+    uom_name: string;
+    price_unit: number;
+    discount?: number;
+  }[];
+  [key: string]: unknown;
+}) {
   const tenantDb = db.getDb();
 
   const branch = await tenantDb('branches')
@@ -1460,27 +1477,25 @@ export async function processRefundOrder(
   return verification;
 }
 
-export async function processTokenPayOrder(
-  payload: {
-    company_id: number;
-    pos_reference: string;
-    date_order: string;
-    cashier: string;
-    amount_total: number;
-    x_session_name?: string;
-    x_company_name?: string;
-    x_website_key?: string;
-    x_customer_website_key?: string;
-    x_order_lines: {
-      product_name: string;
-      qty: number;
-      uom_name: string;
-      price_unit: number;
-      discount?: number;
-    }[];
-    [key: string]: unknown;
-  },
-) {
+export async function processTokenPayOrder(payload: {
+  company_id: number;
+  pos_reference: string;
+  date_order: string;
+  cashier: string;
+  amount_total: number;
+  x_session_name?: string;
+  x_company_name?: string;
+  x_website_key?: string;
+  x_customer_website_key?: string;
+  x_order_lines: {
+    product_name: string;
+    qty: number;
+    uom_name: string;
+    price_unit: number;
+    discount?: number;
+  }[];
+  [key: string]: unknown;
+}) {
   const tenantDb = db.getDb();
 
   const branch = await tenantDb('branches')
@@ -1534,31 +1549,29 @@ export async function processTokenPayOrder(
   return verification;
 }
 
-export async function processNonCashOrder(
-  payload: {
-    company_id: number;
-    pos_reference: string;
-    date_order: string;
-    cashier: string;
-    amount_total: number;
-    x_session_name?: string;
-    x_company_name?: string;
-    x_website_key?: string;
-    x_order_lines: {
-      product_name: string;
-      qty: number;
-      uom_name: string;
-      price_unit: number;
-      discount?: number;
-    }[];
-    x_payments?: {
-      id?: number;
-      name: string;
-      amount: number;
-    }[];
-    [key: string]: unknown;
-  },
-) {
+export async function processNonCashOrder(payload: {
+  company_id: number;
+  pos_reference: string;
+  date_order: string;
+  cashier: string;
+  amount_total: number;
+  x_session_name?: string;
+  x_company_name?: string;
+  x_website_key?: string;
+  x_order_lines: {
+    product_name: string;
+    qty: number;
+    uom_name: string;
+    price_unit: number;
+    discount?: number;
+  }[];
+  x_payments?: {
+    id?: number;
+    name: string;
+    amount: number;
+  }[];
+  [key: string]: unknown;
+}) {
   const tenantDb = db.getDb();
 
   const branch = await tenantDb('branches')
@@ -1610,24 +1623,22 @@ export async function processNonCashOrder(
   return verification;
 }
 
-export async function processISPEPurchaseOrder(
-  payload: {
-    company_id: number;
-    name: string;
-    date_approve?: string;
-    partner_ref?: string;
-    amount_total: number;
-    x_pos_session?: string;
-    x_order_line_details?: {
-      product_id?: number;
-      product_name: string;
-      quantity: number;
-      uom_name: string;
-      price_unit: number;
-    }[];
-    [key: string]: unknown;
-  },
-) {
+export async function processISPEPurchaseOrder(payload: {
+  company_id: number;
+  name: string;
+  date_approve?: string;
+  partner_ref?: string;
+  amount_total: number;
+  x_pos_session?: string;
+  x_order_line_details?: {
+    product_id?: number;
+    product_name: string;
+    quantity: number;
+    uom_name: string;
+    price_unit: number;
+  }[];
+  [key: string]: unknown;
+}) {
   const tenantDb = db.getDb();
 
   const branch = await tenantDb('branches')
@@ -1677,15 +1688,13 @@ export async function processISPEPurchaseOrder(
   return verification;
 }
 
-export async function processRegisterCash(
-  payload: {
-    company_id: number;
-    amount_total: number;
-    create_date?: string;
-    payment_ref: string;
-    [key: string]: unknown;
-  },
-) {
+export async function processRegisterCash(payload: {
+  company_id: number;
+  amount_total: number;
+  create_date?: string;
+  payment_ref: string;
+  [key: string]: unknown;
+}) {
   const tenantDb = db.getDb();
 
   const branch = await tenantDb('branches')
@@ -1744,30 +1753,44 @@ export async function processRegisterCash(
 
 // ── POS Session Close ──────────────────────────────────────────────
 
-export async function processPosSessionClose(
-  payload: {
-    _action?: string;
-    _id?: number;
-    _model?: string;
-    id?: number;
-    name: string;
-    display_name?: string;
-    company_id: number;
-    cash_register_balance_start?: number;
-    cash_register_balance_end?: number;
-    cash_register_balance_end_real?: number;
-    cash_register_difference?: number;
-    closing_notes?: string;
-    x_company_name?: string;
-    x_opening_pcf?: number;
-    x_ispe_total?: number;
-    x_pos_name?: string;
-    x_discount_orders?: { order_id: number; price_unit: number; product_name: string; qty: number; product_id?: number; discount?: number; uom_name?: string }[];
-    x_refund_orders?: { order_id: number; price_unit: number; product_name: string; qty: number; product_id?: number; discount?: number; uom_name?: string }[];
-    x_payment_methods?: { amount: number; payment_method_id: number; payment_method_name: string }[];
-    x_statement_lines?: { amount: number; payment_ref: string }[];
-  },
-) {
+export async function processPosSessionClose(payload: {
+  _action?: string;
+  _id?: number;
+  _model?: string;
+  id?: number;
+  name: string;
+  display_name?: string;
+  company_id: number;
+  cash_register_balance_start?: number;
+  cash_register_balance_end?: number;
+  cash_register_balance_end_real?: number;
+  cash_register_difference?: number;
+  closing_notes?: string;
+  x_company_name?: string;
+  x_opening_pcf?: number;
+  x_ispe_total?: number;
+  x_pos_name?: string;
+  x_discount_orders?: {
+    order_id: number;
+    price_unit: number;
+    product_name: string;
+    qty: number;
+    product_id?: number;
+    discount?: number;
+    uom_name?: string;
+  }[];
+  x_refund_orders?: {
+    order_id: number;
+    price_unit: number;
+    product_name: string;
+    qty: number;
+    product_id?: number;
+    discount?: number;
+    uom_name?: string;
+  }[];
+  x_payment_methods?: { amount: number; payment_method_id: number; payment_method_name: string }[];
+  x_statement_lines?: { amount: number; payment_ref: string }[];
+}) {
   const tenantDb = db.getDb();
 
   const branch = await tenantDb('branches')
@@ -1823,7 +1846,11 @@ export async function processPosSessionClose(
   // Cash Report
   const cashPayments = paymentMethods.find((pm) => pm.payment_method_name === 'Cash')?.amount ?? 0;
 
-  const parseReason = (ref: string) => ref.split(/-in-|-out-/).slice(1).join('') || ref;
+  const parseReason = (ref: string) =>
+    ref
+      .split(/-in-|-out-/)
+      .slice(1)
+      .join('') || ref;
 
   const cashIns = statementLines
     .filter((l) => l.amount > 0)
@@ -1909,13 +1936,14 @@ export async function processPosSessionClose(
 }
 
 export function computeCssReward(amountTotal: number): number {
-  const [min, max] = amountTotal < 150
-    ? [7, 10]
-    : amountTotal < 400
-      ? [10, 15]
-      : amountTotal < 800
-        ? [15, 25]
-        : [25, 30];
+  const [min, max] =
+    amountTotal < 150
+      ? [7, 10]
+      : amountTotal < 400
+        ? [10, 15]
+        : amountTotal < 800
+          ? [15, 25]
+          : [25, 30];
   return Math.round((Math.random() * (max - min) + min) * 100) / 100;
 }
 
@@ -1959,17 +1987,18 @@ export async function createCssAudit(payload: {
     throw new AppError(404, `Branch not found for company_id: ${payload.company_id}`);
   }
 
-  const auditedUserKey = typeof payload.x_website_key === 'string'
-    ? payload.x_website_key.trim()
-    : '';
+  const auditedUserKey =
+    typeof payload.x_website_key === 'string' ? payload.x_website_key.trim() : '';
 
-  const auditedUserId = auditedUserKey
-    ? await resolveUserIdByUserKey(auditedUserKey)
-    : null;
+  const auditedUserId = auditedUserKey ? await resolveUserIdByUserKey(auditedUserKey) : null;
 
   if (!auditedUserId) {
     logger.info(
-      { odooCompanyId: payload.company_id, posReference: payload.pos_reference, cashier: payload.cashier },
+      {
+        odooCompanyId: payload.company_id,
+        posReference: payload.pos_reference,
+        cashier: payload.cashier,
+      },
       'Skipping CSS audit creation because the cashier is not a website user',
     );
     return;
@@ -1989,7 +2018,9 @@ export async function createCssAudit(payload: {
     css_cashier_user_key: auditedUserKey || null,
     audited_user_id: auditedUserId,
     audited_user_key: auditedUserKey || null,
-    css_date_order: payload.date_order ? new Date(`${payload.date_order.replace(' ', 'T')}Z`) : null,
+    css_date_order: payload.date_order
+      ? new Date(`${payload.date_order.replace(' ', 'T')}Z`)
+      : null,
     css_amount_total: payload.amount_total,
     css_order_lines: JSON.stringify(payload.x_order_lines ?? []),
     css_payments: JSON.stringify(payload.x_payments ?? []),

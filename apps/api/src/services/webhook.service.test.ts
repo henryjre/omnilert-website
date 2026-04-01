@@ -41,7 +41,9 @@ type ShiftRecord = {
   updated_at?: Date;
 };
 
-function createShift(partial: Partial<ShiftRecord> & Pick<ShiftRecord, 'id' | 'odoo_shift_id' | 'branch_id'>): ShiftRecord {
+function createShift(
+  partial: Partial<ShiftRecord> & Pick<ShiftRecord, 'id' | 'odoo_shift_id' | 'branch_id'>,
+): ShiftRecord {
   return {
     id: partial.id,
     odoo_shift_id: partial.odoo_shift_id,
@@ -64,7 +66,12 @@ function createShift(partial: Partial<ShiftRecord> & Pick<ShiftRecord, 'id' | 'o
   };
 }
 
-function hasPositiveOverlap(aStart: string | Date, aEnd: string | Date, bStart: string | Date, bEnd: string | Date): boolean {
+function hasPositiveOverlap(
+  aStart: string | Date,
+  aEnd: string | Date,
+  bStart: string | Date,
+  bEnd: string | Date,
+): boolean {
   const latestStart = Math.max(new Date(aStart).getTime(), new Date(bStart).getTime());
   const earliestEnd = Math.min(new Date(aEnd).getTime(), new Date(bEnd).getTime());
   return latestStart < earliestEnd;
@@ -76,11 +83,14 @@ function createAttendanceHarness(options?: {
   resolvedUserId?: string | null;
   resolvedEmployeeName?: string;
   userRolesByUserId?: Record<string, Array<{ id: string; name: string }>>;
-  activeAttendancesByWebsiteKey?: Record<string, Array<{
-    id: number;
-    company_id: number;
-    check_in: string;
-  }>>;
+  activeAttendancesByWebsiteKey?: Record<
+    string,
+    Array<{
+      id: number;
+      company_id: number;
+      check_in: string;
+    }>
+  >;
   initialDisabledRoleIdsByUserId?: Record<string, string[]>;
 }) {
   const tenantDb = { name: 'tenant-db' };
@@ -123,13 +133,21 @@ function createAttendanceHarness(options?: {
     disabledRoleIdsByUserId.set(userId, new Set(roleIds));
   }
 
-  const activeAttendancesByWebsiteKey = new Map<string, Array<{
-    id: number;
-    company_id: number;
-    check_in: string;
-  }>>();
-  for (const [websiteUserKey, attendances] of Object.entries(options?.activeAttendancesByWebsiteKey ?? {})) {
-    activeAttendancesByWebsiteKey.set(websiteUserKey, attendances.map((attendance) => ({ ...attendance })));
+  const activeAttendancesByWebsiteKey = new Map<
+    string,
+    Array<{
+      id: number;
+      company_id: number;
+      check_in: string;
+    }>
+  >();
+  for (const [websiteUserKey, attendances] of Object.entries(
+    options?.activeAttendancesByWebsiteKey ?? {},
+  )) {
+    activeAttendancesByWebsiteKey.set(
+      websiteUserKey,
+      attendances.map((attendance) => ({ ...attendance })),
+    );
   }
 
   let logCount = 0;
@@ -154,7 +172,9 @@ function createAttendanceHarness(options?: {
       findBranchByOdooCompanyId: async (odooCompanyId: number) =>
         branches.find((branch) => branch.odoo_branch_id === String(odooCompanyId)) ?? null,
       findShiftByPlanningSlotId: async (planningSlotId: number, branchId: string) =>
-        shifts.find((shift) => shift.odoo_shift_id === planningSlotId && shift.branch_id === branchId) ?? null,
+        shifts.find(
+          (shift) => shift.odoo_shift_id === planningSlotId && shift.branch_id === branchId,
+        ) ?? null,
       findShiftById: async (shiftId: string) =>
         shifts.find((shift) => shift.id === shiftId) ?? null,
       createShiftLog: async (input: Record<string, unknown>) => {
@@ -181,7 +201,9 @@ function createAttendanceHarness(options?: {
       },
       upsertInterimShift: async (input: Record<string, unknown>) => {
         const odooShiftId = Number(input.odoo_shift_id);
-        let shift = shifts.find((row) => row.odoo_shift_id === odooShiftId && row.branch_id === input.branch_id);
+        let shift = shifts.find(
+          (row) => row.odoo_shift_id === odooShiftId && row.branch_id === input.branch_id,
+        );
         if (!shift) {
           shift = createShift({
             id: `shift-interim-${++interimShiftCount}`,
@@ -214,20 +236,33 @@ function createAttendanceHarness(options?: {
           }
         }
       },
-      findOverlappingShiftInOtherBranches: async (
-        input: { userId: string | null; branchId: string; attendanceStart: Date; attendanceEnd: Date },
-      ) => {
+      findOverlappingShiftInOtherBranches: async (input: {
+        userId: string | null;
+        branchId: string;
+        attendanceStart: Date;
+        attendanceEnd: Date;
+      }) => {
         if (!input.userId) return null;
-        return shifts.find((shift) =>
-          shift.user_id === input.userId
-          && shift.branch_id !== input.branchId
-          && hasPositiveOverlap(shift.shift_start, shift.shift_end, input.attendanceStart, input.attendanceEnd)
-        ) ?? null;
+        return (
+          shifts.find(
+            (shift) =>
+              shift.user_id === input.userId &&
+              shift.branch_id !== input.branchId &&
+              hasPositiveOverlap(
+                shift.shift_start,
+                shift.shift_end,
+                input.attendanceStart,
+                input.attendanceEnd,
+              ),
+          ) ?? null
+        );
       },
       resolveAttendanceIdentity: async (payload: Record<string, unknown>) => ({
         userId: options?.resolvedUserId ?? 'user-1',
-        websiteUserKey: String(payload.x_website_key ?? options?.websiteUserKey ?? '').trim() || null,
-        employeeName: options?.resolvedEmployeeName ?? String(payload.x_employee_contact_name ?? ''),
+        websiteUserKey:
+          String(payload.x_website_key ?? options?.websiteUserKey ?? '').trim() || null,
+        employeeName:
+          options?.resolvedEmployeeName ?? String(payload.x_employee_contact_name ?? ''),
       }),
       listUserRoleMembership: async (userId: string) => roleMembershipByUserId.get(userId) ?? [],
       disableUserRole: async (userId: string, roleId: string) => {
@@ -251,7 +286,10 @@ function createAttendanceHarness(options?: {
         return count;
       },
       listActiveAttendancesByWebsiteUserKey: async (websiteUserKey: string) =>
-        (activeAttendancesByWebsiteKey.get(websiteUserKey) ?? []).map((attendance) => ({ ...attendance })),
+        (activeAttendancesByWebsiteKey.get(websiteUserKey) ?? []).map((attendance) => ({
+          ...attendance,
+        })),
+      findExistingCheckOutLog: async (_attendanceId: number) => null,
       checkOutAttendancesByIds: async (attendanceIds: number[], checkOutTime: Date) => {
         checkoutOps.push({ attendanceIds: [...attendanceIds], checkOutTime });
         const attendanceIdsSet = new Set(attendanceIds);
@@ -284,26 +322,11 @@ test('reassignUserToSingleCheckedInBranch is exported and accepts (userId, branc
 });
 
 test('shouldPreserveInterimDutyPlanningSlotDelete preserves rejected interim-duty history', () => {
-  assert.equal(
-    shouldPreserveInterimDutyPlanningSlotDelete(['rejected']),
-    true,
-  );
-  assert.equal(
-    shouldPreserveInterimDutyPlanningSlotDelete(['pending']),
-    true,
-  );
-  assert.equal(
-    shouldPreserveInterimDutyPlanningSlotDelete(['approved']),
-    true,
-  );
-  assert.equal(
-    shouldPreserveInterimDutyPlanningSlotDelete(['no_approval_needed']),
-    false,
-  );
-  assert.equal(
-    shouldPreserveInterimDutyPlanningSlotDelete([]),
-    false,
-  );
+  assert.equal(shouldPreserveInterimDutyPlanningSlotDelete(['rejected']), true);
+  assert.equal(shouldPreserveInterimDutyPlanningSlotDelete(['pending']), true);
+  assert.equal(shouldPreserveInterimDutyPlanningSlotDelete(['approved']), true);
+  assert.equal(shouldPreserveInterimDutyPlanningSlotDelete(['no_approval_needed']), false);
+  assert.equal(shouldPreserveInterimDutyPlanningSlotDelete([]), false);
 });
 
 test('createAttendanceProcessor creates a synthetic interim-duty shift for unlinked attendance on checkout', async () => {
@@ -346,7 +369,10 @@ test('createAttendanceProcessor creates a synthetic interim-duty shift for unlin
   assert.equal(interimShift?.allocated_hours, 8);
   assert.equal(interimShift?.total_worked_hours, 8);
 
-  const interimPayload = JSON.parse(String(interimShift?.odoo_payload ?? '{}')) as Record<string, unknown>;
+  const interimPayload = JSON.parse(String(interimShift?.odoo_payload ?? '{}')) as Record<
+    string,
+    unknown
+  >;
   assert.equal(interimPayload.interim_reason, 'no_planning_schedule');
   assert.equal(interimPayload.source_attendance_id, 9001);
 
@@ -512,7 +538,10 @@ test('createAttendanceProcessor marks cross-branch coverage as scheduled_other_b
   const interimShift = harness.shifts.find((shift) => shift.odoo_shift_id === -9004);
   assert.ok(interimShift);
 
-  const interimPayload = JSON.parse(String(interimShift?.odoo_payload ?? '{}')) as Record<string, unknown>;
+  const interimPayload = JSON.parse(String(interimShift?.odoo_payload ?? '{}')) as Record<
+    string,
+    unknown
+  >;
   assert.equal(interimPayload.interim_reason, 'scheduled_other_branch');
   assert.equal(harness.auths.length, 1);
   assert.equal(harness.auths[0]?.auth_type, 'interim_duty');
@@ -680,7 +709,10 @@ test('createAttendanceProcessor management check-in disables service crew and ch
   });
 
   assert.equal(harness.checkoutOps.length, 1);
-  assert.deepEqual(harness.checkoutOps[0]?.attendanceIds.sort((a, b) => a - b), [9102, 9103]);
+  assert.deepEqual(
+    harness.checkoutOps[0]?.attendanceIds.sort((a, b) => a - b),
+    [9102, 9103],
+  );
   assert.equal(harness.checkoutOps[0]?.checkOutTime.toISOString(), '2026-03-20T01:00:00.000Z');
 
   const disabled = harness.disabledRoleIdsByUserId.get('user-1');
@@ -761,7 +793,10 @@ test('createAttendanceProcessor skips role gating and auto-checkout for administ
   assert.equal(harness.checkoutOps.length, 0);
   const disabled = harness.disabledRoleIdsByUserId.get('admin-user');
   assert.equal(disabled?.size ?? 0, 0);
-  assert.equal(harness.socketEvents.some((evt) => evt.event === 'user:auth-scope-updated'), false);
+  assert.equal(
+    harness.socketEvents.some((evt) => evt.event === 'user:auth-scope-updated'),
+    false,
+  );
   assert.ok(harness.socketEvents.some((evt) => evt.event === 'user:check-in-status-updated'));
 });
 
@@ -770,9 +805,7 @@ test('createAttendanceProcessor skips role gating and auto-checkout when user la
     websiteUserKey: 'website-user-1',
     resolvedUserId: 'user-no-management',
     userRolesByUserId: {
-      'user-no-management': [
-        { id: 'role-service-crew', name: 'Service Crew' },
-      ],
+      'user-no-management': [{ id: 'role-service-crew', name: 'Service Crew' }],
     },
     activeAttendancesByWebsiteKey: {
       'website-user-1': [
@@ -795,7 +828,10 @@ test('createAttendanceProcessor skips role gating and auto-checkout when user la
 
   assert.equal(harness.checkoutOps.length, 0);
   assert.equal(harness.disabledRoleIdsByUserId.get('user-no-management')?.size ?? 0, 0);
-  assert.equal(harness.socketEvents.some((evt) => evt.event === 'user:auth-scope-updated'), false);
+  assert.equal(
+    harness.socketEvents.some((evt) => evt.event === 'user:auth-scope-updated'),
+    false,
+  );
   assert.ok(harness.socketEvents.some((evt) => evt.event === 'user:check-in-status-updated'));
 });
 
@@ -851,7 +887,9 @@ test('createAttendanceProcessor persists resolved website key on shift logs when
   });
 
   assert.equal(harness.logs.length, 1);
-  const savedPayload = JSON.parse(String(harness.logs[0]?.odoo_payload ?? '{}')) as { x_website_key?: string };
+  const savedPayload = JSON.parse(String(harness.logs[0]?.odoo_payload ?? '{}')) as {
+    x_website_key?: string;
+  };
   assert.equal(savedPayload.x_website_key, 'website-user-1');
 });
 
@@ -951,9 +989,7 @@ test('service crew check-in emits user:auth-scope-updated to /user-events/user:<
       ],
     },
     activeAttendancesByWebsiteKey: {
-      'wk-dual': [
-        { id: 7001, company_id: 2, check_in: '2026-03-20 09:00:00' },
-      ],
+      'wk-dual': [{ id: 7001, company_id: 2, check_in: '2026-03-20 09:00:00' }],
     },
   });
 
@@ -1004,9 +1040,7 @@ test('management check-in emits user:auth-scope-updated to /user-events/user:<id
       ],
     },
     activeAttendancesByWebsiteKey: {
-      'wk-dual-mgmt': [
-        { id: 8001, company_id: 1, check_in: '2026-03-20 09:00:00' },
-      ],
+      'wk-dual-mgmt': [{ id: 8001, company_id: 1, check_in: '2026-03-20 09:00:00' }],
     },
   });
 
@@ -1041,5 +1075,109 @@ test('management check-in emits user:auth-scope-updated to /user-events/user:<id
   assert.ok(authScopeEmit, 'user:auth-scope-updated must be emitted');
   assert.equal(authScopeEmit?.namespace, '/user-events', 'must target /user-events namespace');
   assert.equal(authScopeEmit?.room, 'user:user-dual-mgmt', 'must target user:<id> room');
-  assert.deepEqual(authScopeEmit?.payload, { userId: 'user-dual-mgmt' }, 'payload must contain userId');
+  assert.deepEqual(
+    authScopeEmit?.payload,
+    { userId: 'user-dual-mgmt' },
+    'payload must contain userId',
+  );
+});
+
+test('createAttendanceProcessor skips check-out processing when a check-out log already exists for the same attendance id (idempotency guard)', async () => {
+  const harness = createAttendanceHarness({
+    websiteUserKey: 'website-user-1',
+  });
+  const existingLog = {
+    id: 'log-existing',
+    log_type: 'check_out',
+    odoo_attendance_id: 9701,
+    branch_id: 'branch-service',
+    event_time: '2026-03-20T09:00:00.000Z',
+    odoo_payload: '{}',
+  };
+  const deps = {
+    ...harness.deps,
+    findExistingCheckOutLog: async (_attendanceId: number) => existingLog,
+  };
+  const processAttendance = createAttendanceProcessor(deps as any);
+
+  const result = await processAttendance({
+    id: 9701,
+    check_in: '2026-03-20 01:00:00',
+    check_out: '2026-03-20 09:00:00',
+    worked_hours: 8,
+    x_company_id: 2,
+    x_cumulative_minutes: 480,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: false,
+    x_website_key: 'website-user-1',
+  });
+
+  assert.equal(harness.logs.length, 0, 'no new shift log should be created for duplicate check-out');
+  assert.equal(harness.auths.length, 0, 'no authorization should be created for duplicate check-out');
+  assert.deepEqual(result, existingLog, 'should return the existing log unchanged');
+});
+
+test('createAttendanceProcessor skips tardiness when x_prev_attendance_id is set (re-check-in after earlier check-out)', async () => {
+  const shift = createShift({
+    id: 'shift-rechkin',
+    odoo_shift_id: 1601,
+    branch_id: 'branch-other',
+    user_id: 'user-1',
+    shift_start: '2026-04-01 04:00:00',
+    shift_end: '2026-04-01 13:00:00',
+  });
+  const harness = createAttendanceHarness({ shifts: [shift] });
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  // Check in at 7:41 AM — 3h 41m after shift start (12:00 PM UTC = 4:00 UTC shift start)
+  // With x_prev_attendance_id set → this is a re-check-in, not the first of the day
+  await processAttendance({
+    id: 11240,
+    check_in: '2026-04-01 07:41:27',
+    x_company_id: 99,
+    x_cumulative_minutes: 0,
+    x_employee_contact_name: '4023 - Chovie Pineda',
+    x_planning_slot_id: 1601,
+    x_prev_attendance_id: 11239,
+    x_website_key: 'website-user-1',
+  });
+
+  assert.equal(
+    harness.auths.filter((a) => a.auth_type === 'tardiness').length,
+    0,
+    'tardiness must not be created for a re-check-in',
+  );
+  assert.equal(harness.queuedJobs.length, 0, 'no early check-in job should be queued for a re-check-in');
+});
+
+test('createAttendanceProcessor skips early check-in job when x_prev_attendance_id is set (re-check-in before shift start)', async () => {
+  const shift = createShift({
+    id: 'shift-rechkin-early',
+    odoo_shift_id: 1602,
+    branch_id: 'branch-other',
+    user_id: 'user-1',
+    shift_start: '2026-04-01 10:00:00',
+    shift_end: '2026-04-01 18:00:00',
+  });
+  const harness = createAttendanceHarness({ shifts: [shift] });
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  // Check in at 09:45 — 15m before shift start, but with x_prev_attendance_id → re-check-in
+  await processAttendance({
+    id: 11250,
+    check_in: '2026-04-01 09:45:00',
+    x_company_id: 99,
+    x_cumulative_minutes: 0,
+    x_employee_contact_name: '4023 - Chovie Pineda',
+    x_planning_slot_id: 1602,
+    x_prev_attendance_id: 11249,
+    x_website_key: 'website-user-1',
+  });
+
+  assert.equal(harness.queuedJobs.length, 0, 'no early check-in job should be queued for a re-check-in');
+  assert.equal(
+    harness.auths.filter((a) => a.auth_type === 'early_check_in').length,
+    0,
+    'no early check-in auth should be created for a re-check-in',
+  );
 });
