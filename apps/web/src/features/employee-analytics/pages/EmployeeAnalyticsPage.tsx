@@ -73,6 +73,7 @@ import {
   getMetricScaleMax,
   buildMetricInsights,
   mapMetricInsightsToCardRows,
+  type MetricInsightItem,
 } from '../utils/analyticsRuleEngine';
 import { isStickyHeaderStuck } from '../stickyHeader';
 import {
@@ -1190,7 +1191,7 @@ function getMetricInsights(
   roster: IndividualMetricsRosterEntry[],
   getBaseMetricValue: (employeeName: string, metricId: string) => number,
   globalTarget: number,
-) {
+): MetricInsightItem[] {
   const dataset = ACTIVE_LIVE_DATASET;
   if (!dataset || metricId === 'professional-conduct') {
     return getMetricInsightsMock(metricId, selection, roster, getBaseMetricValue, globalTarget);
@@ -1199,7 +1200,7 @@ function getMetricInsights(
   // Extract data for logic (Filtering out those without records)
   const employees = getMetricEmployeeRows(dataset, metricId as EmployeeAnalyticsMetricId).filter((e) => e.hasData);
 
-  return buildMetricInsights({
+  const raw = buildMetricInsights({
     metricId,
     metricLabel: METRIC_LABELS[metricId] || metricId,
     employeeRows: employees.map((e) => ({
@@ -1210,6 +1211,8 @@ function getMetricInsights(
     benchmarkValue: globalTarget,
     selection,
   });
+
+  return mapMetricInsightsToCardRows(raw);
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -4772,16 +4775,14 @@ function MetricInsightsCard({
   const hasAnyData = useMemo(() => employees.some(e => e.hasData), [employees]);
 
   const insights = useMemo(
-    () => {
-      const raw = getMetricInsights(
+    () =>
+      getMetricInsights(
         metricId,
         analyticsRange,
         INDIVIDUAL_METRICS_ROSTER,
         getBaseMetricValueForEmployee,
         BRANCH_AVERAGES[metricId as keyof typeof BRANCH_AVERAGES] ?? 85,
-      );
-      return mapMetricInsightsToCardRows(raw);
-    },
+      ),
     [metricId, analyticsRange],
   );
 
