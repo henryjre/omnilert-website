@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { ViewToggle, type ViewOption } from '@/shared/components/ui/ViewToggle';
 import { useSearchParams } from 'react-router-dom';
@@ -10,6 +10,7 @@ import { Button } from '@/shared/components/ui/Button';
 import { Spinner } from '@/shared/components/ui/Spinner';
 import { AnimatedModal } from '@/shared/components/ui/AnimatedModal';
 import { api } from '@/shared/services/api.client';
+import { OvertimeTypePicker } from '@/shared/components/OvertimeTypePicker';
 import { useAuthStore } from '@/features/auth/store/authSlice';
 import { useBranchStore } from '@/shared/store/branchStore';
 import { usePermission } from '@/shared/hooks/usePermission';
@@ -184,7 +185,7 @@ function AuthorizationCard({
   canApprove: boolean;
   canSubmitPublicAuthRequest: boolean;
   onReasonSubmit: (id: string, reason: string) => Promise<void>;
-  onApprove: (id: string, overtimeType?: string) => Promise<void>;
+  onApprove: (id: string, overtimeType?: string, hours?: number, minutes?: number) => Promise<void>;
   onReject: (id: string, reason: string) => Promise<void>;
 }) {
   const config = AUTH_TYPE_CONFIG[auth.auth_type] ?? { label: auth.auth_type, color: 'gray', Icon: Clock, diffLabel: '' };
@@ -196,7 +197,10 @@ function AuthorizationCard({
   const [rejectText, setRejectText] = useState('');
   const [rejectLoading, setRejectLoading] = useState(false);
   const [approveLoading, setApproveLoading] = useState(false);
-  const [selectedOvertimeType, setSelectedOvertimeType] = useState<string>('');
+  const [selectedOvertimeType, setSelectedOvertimeType] = useState<string>('normal_overtime');
+  const [overtimeHours, setOvertimeHours] = useState(Math.floor((auth.diff_minutes || 0) / 60));
+  const [overtimeMinutes, setOvertimeMinutes] = useState((auth.diff_minutes || 0) % 60);
+  const [showOvertimeModal, setShowOvertimeModal] = useState(false);
 
   const isOwner = auth.user_id === currentUserId;
   const needsReason = auth.needs_employee_reason && !auth.employee_reason;
@@ -291,35 +295,17 @@ function AuthorizationCard({
       )}
 
       {canManagerAct && auth.auth_type === 'overtime' && !rejectMode && (
-        <div className="space-y-2">
-          <select
-            value={selectedOvertimeType}
-            onChange={(e) => setSelectedOvertimeType(e.target.value)}
-            className="w-full rounded border border-gray-300 px-3 py-1.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="success"
+            onClick={() => setShowOvertimeModal(true)}
           >
-            <option value="">Select overtime type...</option>
-            <option value="normal_overtime">Normal Overtime</option>
-            <option value="overtime_premium">Overtime Premium</option>
-          </select>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="success"
-              disabled={approveLoading || !selectedOvertimeType}
-              onClick={async () => {
-                setApproveLoading(true);
-                await onApprove(auth.id, selectedOvertimeType);
-                setApproveLoading(false);
-              }}
-            >
-              {approveLoading ? 'Approving...' : (
-                <span className="flex items-center gap-1"><CheckCircle className="h-3.5 w-3.5" /> Approve</span>
-              )}
-            </Button>
-            <Button size="sm" variant="danger" onClick={() => setRejectMode(true)}>
-              <span className="flex items-center gap-1"><XCircle className="h-3.5 w-3.5" /> Reject</span>
-            </Button>
-          </div>
+            <span className="flex items-center gap-1"><CheckCircle className="h-3.5 w-3.5" /> Approve</span>
+          </Button>
+          <Button size="sm" variant="danger" onClick={() => setRejectMode(true)}>
+            <span className="flex items-center gap-1"><XCircle className="h-3.5 w-3.5" /> Reject</span>
+          </Button>
         </div>
       )}
 
@@ -375,6 +361,58 @@ function AuthorizationCard({
           </div>
         </div>
       )}
+
+      <AnimatePresence>
+        {showOvertimeModal && (
+          <AnimatedModal
+            maxWidth="max-w-sm"
+            zIndexClass="z-[60]"
+            onBackdropClick={approveLoading ? undefined : () => setShowOvertimeModal(false)}
+          >
+            <div className="border-b border-gray-200 px-5 py-4">
+              <p className="font-semibold text-gray-900">Approve Overtime</p>
+              <p className="mt-0.5 text-xs text-gray-500">Please select the overtime type to apply for this request.</p>
+            </div>
+            <div className="space-y-4 px-5 py-6">
+              <OvertimeTypePicker
+                value={selectedOvertimeType}
+                onChange={setSelectedOvertimeType}
+                hours={overtimeHours}
+                setHours={setOvertimeHours}
+                minutes={overtimeMinutes}
+                setMinutes={setOvertimeMinutes}
+                maxMinutes={auth.diff_minutes}
+              />
+            </div>
+            <div className="flex gap-3 border-t border-gray-200 px-5 py-4">
+              <Button
+                className="flex-1"
+                variant="success"
+                disabled={!selectedOvertimeType || approveLoading}
+                onClick={async () => {
+                  setApproveLoading(true);
+                  try {
+                    await onApprove(auth.id, selectedOvertimeType, overtimeHours, overtimeMinutes);
+                    setShowOvertimeModal(false);
+                  } finally {
+                    setApproveLoading(false);
+                  }
+                }}
+              >
+                {approveLoading ? 'Processing...' : 'Approve'}
+              </Button>
+              <Button
+                className="flex-1"
+                variant="secondary"
+                disabled={approveLoading}
+                onClick={() => setShowOvertimeModal(false)}
+              >
+                Cancel
+              </Button>
+            </div>
+          </AnimatedModal>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -802,8 +840,8 @@ function ShiftDetailPanel({
     onAuthorizationUpdate(res.data.data);
   };
 
-  const handleApprove = async (authId: string, overtimeType?: string) => {
-    const body = overtimeType ? { overtimeType } : {};
+  const handleApprove = async (authId: string, overtimeType?: string, hours?: number, minutes?: number) => {
+    const body = overtimeType ? { overtimeType, hours, minutes } : {};
     const res = await api.post(`/shift-authorizations/${authId}/approve`, body);
     onAuthorizationUpdate(res.data.data);
   };

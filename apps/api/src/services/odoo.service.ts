@@ -1291,10 +1291,81 @@ export async function updatePosSessionClosingPcf(
 }
 
 /**
- * Search for work entries by employee and date
- * @param employeeId - The Odoo employee ID
- * @param date - The date to search for (YYYY-MM-DD format)
+ * Finds the first hr.work.entry for an employee on a given date with a specific work_entry_type_id.
  */
+export async function findWorkEntryByEmployeeAndDate(
+  employeeId: number,
+  date: string,
+  workEntryTypeId: number,
+): Promise<{ id: number; duration: number } | null> {
+  const results = (await callOdooKw(
+    'hr.work.entry',
+    'search_read',
+    [],
+    {
+      domain: [
+        ['employee_id', '=', employeeId],
+        ['date', '=', date],
+        ['work_entry_type_id', '=', workEntryTypeId],
+      ],
+      fields: ['id', 'duration'],
+      order: 'id asc',
+      limit: 1,
+    },
+  )) as Array<{ id: number; duration: number }>;
+
+  return results.length > 0 ? results[0] : null;
+}
+
+/**
+ * Deducts a given number of minutes from an hr.work.entry duration field.
+ * Duration in Odoo is stored in hours (float).
+ */
+export async function deductWorkEntryDuration(
+  workEntryId: number,
+  currentDurationHours: number,
+  deductMinutes: number,
+): Promise<boolean> {
+  const deductHours = deductMinutes / 60;
+  const newDuration = Math.max(0, currentDurationHours - deductHours);
+
+  const result = await callOdooKw(
+    'hr.work.entry',
+    'write',
+    [[workEntryId], { duration: newDuration }],
+  );
+  logger.info(`Deducted ${deductMinutes}min (${deductHours}h) from work entry ${workEntryId}. New duration: ${newDuration}h`);
+  return result === true;
+}
+
+/**
+ * Creates an hr.work.entry for overtime approval.
+ */
+export async function createOvertimeWorkEntry(params: {
+  employeeId: number;
+  date: string;
+  workEntryTypeId: number;
+  durationMinutes: number;
+  description: string;
+}): Promise<number> {
+  const durationHours = params.durationMinutes / 60;
+
+  const newId = (await callOdooKw(
+    'hr.work.entry',
+    'create',
+    [{
+      employee_id: params.employeeId,
+      date: params.date,
+      work_entry_type_id: params.workEntryTypeId,
+      duration: durationHours,
+      name: params.description,
+    }],
+  )) as number;
+
+  logger.info(`Created overtime work entry ${newId} for employee ${params.employeeId} on ${params.date}. Type: ${params.workEntryTypeId}, Duration: ${durationHours}h`);
+  return newId;
+}
+
 export async function searchWorkEntriesByEmployeeAndDate(
   employeeId: number,
   date: string
@@ -1316,82 +1387,6 @@ export async function searchWorkEntriesByEmployeeAndDate(
   );
 }
 
-/**
- * Search for work entries by attendance_id
- * @param attendanceId - The Odoo attendance ID
- */
-export async function searchWorkEntriesByAttendanceId(
-  attendanceId: number
-): Promise<unknown> {
-  return await callOdooKw(
-    "hr.work.entry",
-    "search_read",
-    [],
-    {
-      domain: [
-        ["attendance_id", "=", attendanceId],
-      ],
-      fields: ["id", "employee_id", "attendance_id", "date_start", "date_stop", "state"],
-      limit: 5,
-    }
-  );
-}
-
-/**
- * Updates the date_start for an hr.work.entry record
- * @param workEntryId - The Odoo work entry ID
- * @param dateStart - The new date_start datetime
- * @returns True if successful
- */
-export async function updateWorkEntryDateStart(
-  workEntryId: number,
-  dateStart: string | Date
-): Promise<boolean> {
-  try {
-    const parsedDate = parseUtcTimestamp(dateStart);
-    const odooDatetime = toOdooDatetime(parsedDate);
-
-    const result = await callOdooKw(
-      "hr.work.entry",
-      "write",
-      [[workEntryId], { date_start: odooDatetime }]
-    );
-
-    logger.info(`Updated hr.work.entry ${workEntryId} date_start to ${odooDatetime}`);
-    return result === true;
-  } catch (err) {
-    logger.error(`Failed to update date_start for work entry ${workEntryId}: ${err}`);
-    throw err;
-  }
-}
-
-/**
- * Updates the date_stop for an hr.work.entry record
- * @param workEntryId - The Odoo work entry ID
- * @param dateStop - The new date_stop datetime
- * @returns True if successful
- */
-export async function updateWorkEntryDateStop(
-  workEntryId: number,
-  dateStop: string | Date
-): Promise<boolean> {
-  try {
-    const parsedDate = parseUtcTimestamp(dateStop);
-    const odooDatetime = toOdooDatetime(parsedDate);
-
-    const result = await callOdooKw(
-      "hr.work.entry",
-      "write",
-      [[workEntryId], { date_stop: odooDatetime }]
-    );
-
-    logger.info(`Updated hr.work.entry ${workEntryId} date_stop to ${odooDatetime}`);
-    return result === true;
-  } catch (err) {
-    logger.error(`Failed to update date_stop for work entry ${workEntryId}: ${err}`);
-    throw err;
-  }
-}
 
 async function withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
   let lastError: unknown;

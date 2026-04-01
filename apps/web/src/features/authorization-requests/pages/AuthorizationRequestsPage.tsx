@@ -1,10 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
 import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import { createPortal } from 'react-dom';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Badge } from '@/shared/components/ui/Badge';
 import { Button } from '@/shared/components/ui/Button';
 import { AnimatedModal } from '@/shared/components/ui/AnimatedModal';
+import { OvertimeTypePicker } from '@/shared/components/OvertimeTypePicker';
 import { api } from '@/shared/services/api.client';
 import { useBranchStore } from '@/shared/store/branchStore';
 import { usePermission } from '@/shared/hooks/usePermission';
@@ -33,6 +34,7 @@ import {
   Check,
   Briefcase,
   ArrowLeftRight,
+  ChevronDown,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -456,9 +458,12 @@ function ServiceCrewDetailPanel({
   const { Icon } = config;
   const [rejectMode, setRejectMode] = useState(false);
   const [rejectText, setRejectText] = useState('');
-  const [selectedOvertimeType, setSelectedOvertimeType] = useState('');
+  const [selectedOvertimeType, setSelectedOvertimeType] = useState('normal_overtime');
+  const [overtimeHours, setOvertimeHours] = useState(Math.floor((auth.diff_minutes || 0) / 60));
+  const [overtimeMinutes, setOvertimeMinutes] = useState((auth.diff_minutes || 0) % 60);
   const [loading, setLoading] = useState<'approve' | 'reject' | null>(null);
   const [confirmModal, setConfirmModal] = useState<{ action: 'approve' | 'reject'; message: string; onConfirm: () => Promise<void> } | null>(null);
+  const [showOvertimeModal, setShowOvertimeModal] = useState(false);
 
   const canAct = canApprove && auth.status === 'pending' && (!auth.needs_employee_reason || auth.employee_reason);
   const isOvertime = auth.auth_type === 'overtime';
@@ -475,7 +480,9 @@ function ServiceCrewDetailPanel({
   async function handleApprove() {
     setLoading('approve');
     try {
-      const body = isOvertime && selectedOvertimeType ? { overtimeType: selectedOvertimeType } : {};
+      const body = isOvertime && selectedOvertimeType 
+        ? { overtimeType: selectedOvertimeType, hours: overtimeHours, minutes: overtimeMinutes } 
+        : {};
       const res = await api.post(`/shift-authorizations/${auth.id}/approve`, body);
       onUpdated(res.data.data);
       showSuccessToast('Request approved.');
@@ -678,27 +685,21 @@ function ServiceCrewDetailPanel({
         <div className="border-t border-gray-200 px-6 py-4">
           {!rejectMode ? (
             <div className="space-y-3">
-              {isOvertime && (
-                <select
-                  value={selectedOvertimeType}
-                  onChange={(e) => setSelectedOvertimeType(e.target.value)}
-                  className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                >
-                  <option value="">Select overtime type...</option>
-                  <option value="normal_overtime">Normal Overtime</option>
-                  <option value="overtime_premium">Overtime Premium</option>
-                </select>
-              )}
               <div className="flex gap-3">
                 <Button
                   className="flex-1"
                   variant="success"
-                  disabled={isOvertime && !selectedOvertimeType}
-                  onClick={() => setConfirmModal({
-                    action: 'approve',
-                    message: 'Confirm approval of this request?',
-                    onConfirm: handleApprove,
-                  })}
+                  onClick={() => {
+                    if (isOvertime) {
+                      setShowOvertimeModal(true);
+                    } else {
+                      setConfirmModal({
+                        action: 'approve',
+                        message: 'Confirm approval of this request?',
+                        onConfirm: handleApprove,
+                      });
+                    }
+                  }}
                 >
                   <span className="flex items-center justify-center gap-1.5">
                     <CheckCircle className="h-4 w-4" />
@@ -779,6 +780,51 @@ function ServiceCrewDetailPanel({
                 variant="secondary"
                 disabled={loading !== null}
                 onClick={() => setConfirmModal(null)}
+              >
+                Cancel
+              </Button>
+            </div>
+          </AnimatedModal>
+        )}
+
+        {showOvertimeModal && (
+          <AnimatedModal
+            maxWidth="max-w-sm"
+            zIndexClass="z-[60]"
+            onBackdropClick={loading !== null ? undefined : () => setShowOvertimeModal(false)}
+          >
+            <div className="border-b border-gray-200 px-5 py-4">
+              <p className="font-semibold text-gray-900">Approve Overtime</p>
+              <p className="mt-0.5 text-xs text-gray-500">Please select the overtime type to apply for this request.</p>
+            </div>
+            <div className="space-y-4 px-5 py-6">
+              <OvertimeTypePicker
+                value={selectedOvertimeType}
+                onChange={setSelectedOvertimeType}
+                hours={overtimeHours}
+                setHours={setOvertimeHours}
+                minutes={overtimeMinutes}
+                setMinutes={setOvertimeMinutes}
+                maxMinutes={auth.diff_minutes}
+              />
+            </div>
+            <div className="flex gap-3 border-t border-gray-200 px-5 py-4">
+              <Button
+                className="flex-1"
+                variant="success"
+                disabled={!selectedOvertimeType || loading !== null}
+                onClick={async () => {
+                  await handleApprove();
+                  setShowOvertimeModal(false);
+                }}
+              >
+                {loading === 'approve' ? 'Processing...' : 'Approve'}
+              </Button>
+              <Button
+                className="flex-1"
+                variant="secondary"
+                disabled={loading !== null}
+                onClick={() => setShowOvertimeModal(false)}
               >
                 Cancel
               </Button>

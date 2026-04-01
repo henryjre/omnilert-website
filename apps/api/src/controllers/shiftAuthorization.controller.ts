@@ -5,11 +5,12 @@ import { logger } from '../utils/logger.js';
 import {
   deleteAttendanceById,
   deletePlanningSlotById,
-  searchWorkEntriesByAttendanceId,
   updateAttendanceCheckIn,
   updateAttendanceCheckOut,
-  updateWorkEntryDateStart,
-  updateWorkEntryDateStop,
+  findWorkEntryByEmployeeAndDate,
+  deductWorkEntryDuration,
+  createOvertimeWorkEntry,
+  getEmployeeByWebsiteUserKey,
 } from '../services/odoo.service.js';
 import { createAndDispatchNotification } from '../services/notification.service.js';
 import { db } from '../config/database.js';
@@ -147,8 +148,8 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
       throw new AppError(400, 'Employee has not submitted a reason yet');
     }
 
-    // For overtime authorizations, require overtime type selection
-    const { overtimeType } = req.body as { overtimeType?: string };
+    // For overtime authorizations, require overtime type selection and read duration
+    const { overtimeType, hours, minutes } = req.body as { overtimeType?: string; hours?: number; minutes?: number };
     if (auth.auth_type === 'overtime') {
       if (!overtimeType || !['normal_overtime', 'overtime_premium'].includes(overtimeType)) {
         throw new AppError(400, 'Overtime type is required: normal_overtime or overtime_premium');
@@ -218,9 +219,9 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
       logger.warn('Socket.IO unavailable for authorization approve emit');
     }
 
-    // Sync with Odoo for tardiness approval
+    // Sync with Odoo for tardiness approval / overtime work entries
     if (auth.auth_type !== INTERIM_DUTY_AUTH_TYPE) {
-      await syncOdooAttendance(auth, 'approve');
+      await syncOdooAttendance(auth, 'approve', { overtimeType, hours, minutes, managerName });
     }
 
     res.json({ success: true, data: { ...updated, resolved_by_name: managerName } });
@@ -336,24 +337,45 @@ function authTypeLabel(authType: string): string {
 }
 
 /**
- * Updates Odoo attendance based on authorization type and action
- * @param auth - The shift authorization record
- * @param action - 'approve' or 'reject'
+ * Updates Odoo attendance/work entries based on authorization type and action.
+ * For overtime approvals: deducts from the regular work entry (type 1) and creates an overtime entry.
+ * For overtime rejections: deducts the actual overtime duration from the regular work entry (type 1).
  */
 async function syncOdooAttendance(
   auth: Record<string, unknown>,
-  action: "approve" | "reject"
+  action: 'approve' | 'reject',
+  overtimeParams?: { overtimeType?: string; hours?: number; minutes?: number; managerName?: string },
 ): Promise<void> {
   const tenantDb = db.getDb();
-  // Get the shift_log to find odoo_attendance_id
-  const shiftLog = await tenantDb("shift_logs").where({ id: auth.shift_log_id }).first();
+
+  // Overtime auth types operate on work entries, not attendance records.
+  // Skip the attendance lookup entirely and go straight to work entry logic.
+  if (auth.auth_type === 'overtime') {
+    const shift = await tenantDb('employee_shifts').where({ id: auth.shift_id }).first();
+    if (!shift) {
+      logger.warn(`No employee_shift found for shift_id ${auth.shift_id}`);
+      return;
+    }
+    try {
+      if (action === 'approve' && overtimeParams?.overtimeType) {
+        await syncOvertimeApproval(auth, shift, overtimeParams, overtimeParams.managerName ?? 'Unknown');
+      } else if (action === 'reject') {
+        await syncOvertimeRejection(auth, shift);
+      }
+    } catch (err) {
+      logger.error(`Failed to sync Odoo work entry for overtime authorization ${auth.id}: ${err}`);
+    }
+    return;
+  }
+
+  // For all other auth types, we need the attendance record
+  const shiftLog = await tenantDb('shift_logs').where({ id: auth.shift_log_id }).first();
   if (!shiftLog || !shiftLog.odoo_attendance_id) {
     logger.warn(`No odoo_attendance_id found for shift_log ${auth.shift_log_id}`);
     return;
   }
 
-  // Get the employee_shift to find shift_start and shift_end
-  const shift = await tenantDb("employee_shifts").where({ id: auth.shift_id }).first();
+  const shift = await tenantDb('employee_shifts').where({ id: auth.shift_id }).first();
   if (!shift) {
     logger.warn(`No employee_shift found for shift_id ${auth.shift_id}`);
     return;
@@ -362,87 +384,133 @@ async function syncOdooAttendance(
   const odooAttendanceId = shiftLog.odoo_attendance_id as number;
 
   try {
-    if (action === "approve") {
-      // Tardiness approved: update check_in to shift start time
-      if (auth.auth_type === "tardiness") {
-        const shiftStart = shift.shift_start;
-        await updateAttendanceCheckIn(odooAttendanceId, shiftStart);
-
-        // Also update hr.work.entry date_start
-        await syncWorkEntryDateStart(odooAttendanceId, shiftStart);
+    if (action === 'approve') {
+      if (auth.auth_type === 'tardiness') {
+        await updateAttendanceCheckIn(odooAttendanceId, shift.shift_start);
       }
-    } else if (action === "reject") {
-      // Early check-in rejected: update check_in to shift start time
-      if (auth.auth_type === "early_check_in") {
-        const shiftStart = shift.shift_start;
-        await updateAttendanceCheckIn(odooAttendanceId, shiftStart);
-
-        // Also update hr.work.entry date_start
-        await syncWorkEntryDateStart(odooAttendanceId, shiftStart);
+    } else if (action === 'reject') {
+      if (auth.auth_type === 'early_check_in') {
+        await updateAttendanceCheckIn(odooAttendanceId, shift.shift_start);
       }
-      // Late check-out rejected: update check_out to shift end time
-      if (auth.auth_type === "late_check_out") {
-        const shiftEnd = shift.shift_end;
-        await updateAttendanceCheckOut(odooAttendanceId, shiftEnd);
-
-        // Also update hr.work.entry date_stop
-        await syncWorkEntryDateStop(odooAttendanceId, shiftEnd);
+      if (auth.auth_type === 'late_check_out') {
+        await updateAttendanceCheckOut(odooAttendanceId, shift.shift_end);
       }
     }
   } catch (err) {
-    // Log error but don't fail the authorization - Odoo sync is best-effort
     logger.error(`Failed to sync Odoo attendance for authorization ${auth.id}: ${err}`);
   }
 }
 
-/**
- * Syncs hr.work.entry date_start with the shift start time
- */
-async function syncWorkEntryDateStart(
-  odooAttendanceId: number,
-  shiftStart: string | Date
-): Promise<void> {
-  try {
-    // Search for work entries by attendance_id
-    const workEntries = (await searchWorkEntriesByAttendanceId(
-      odooAttendanceId
-    )) as Array<{ id: number; employee_id: [number, string]; attendance_id: number; date_start: string }>;
+const REGULAR_WORK_ENTRY_TYPE_ID = 1;
+const OVERTIME_WORK_ENTRY_TYPE_ID: Record<string, number> = {
+  normal_overtime: 2,
+  overtime_premium: 118,
+};
 
-    if (workEntries.length > 0) {
-      // Update the work entry's date_start
-      const workEntryId = workEntries[0].id;
-      await updateWorkEntryDateStart(workEntryId, shiftStart);
-      logger.info(`Updated hr.work.entry ${workEntryId} date_start to match shift start`);
-    } else {
-      logger.warn(`No hr.work.entry found for attendance ${odooAttendanceId}`);
-    }
-  } catch (err) {
-    logger.error(`Failed to sync hr.work.entry date_start: ${err}`);
+async function resolveOdooEmployeeIdForAuth(
+  auth: Record<string, unknown>,
+): Promise<number | null> {
+  const tenantDb = db.getDb();
+
+  const user = await tenantDb('users').where({ id: auth.user_id }).select('user_key').first();
+  const userKey = String(user?.user_key ?? '').trim();
+  if (!userKey) {
+    logger.warn(`No user_key found for user_id ${auth.user_id}`);
+    return null;
   }
+
+  const branch = await tenantDb('branches').where({ id: auth.branch_id }).select('odoo_branch_id').first();
+  const odooCompanyId = Number(branch?.odoo_branch_id ?? 0);
+  if (!odooCompanyId) {
+    logger.warn(`No odoo_branch_id found for branch_id ${auth.branch_id}`);
+    return null;
+  }
+
+  const employee = await getEmployeeByWebsiteUserKey(userKey, odooCompanyId);
+  if (!employee) {
+    logger.warn(`No Odoo employee found for userKey ${userKey}, company ${odooCompanyId}`);
+    return null;
+  }
+
+  return employee.id;
+}
+
+async function syncOvertimeApproval(
+  auth: Record<string, unknown>,
+  shift: Record<string, unknown>,
+  params: { overtimeType?: string; hours?: number; minutes?: number },
+  approverName: string,
+): Promise<void> {
+  const { overtimeType, hours = 0, minutes = 0 } = params;
+  if (!overtimeType) return;
+
+  const workEntryTypeId = OVERTIME_WORK_ENTRY_TYPE_ID[overtimeType];
+  if (!workEntryTypeId) {
+    logger.warn(`Unknown overtime type: ${overtimeType}`);
+    return;
+  }
+
+  const odooEmployeeId = await resolveOdooEmployeeIdForAuth(auth);
+  if (!odooEmployeeId) return;
+
+  const shiftDate = toShiftDateYmd(shift.shift_start);
+
+  const regularEntry = await findWorkEntryByEmployeeAndDate(odooEmployeeId, shiftDate, REGULAR_WORK_ENTRY_TYPE_ID);
+  if (!regularEntry) {
+    logger.warn(`No regular work entry (type ${REGULAR_WORK_ENTRY_TYPE_ID}) found for employee ${odooEmployeeId} on ${shiftDate}`);
+    return;
+  }
+
+  const approvedMinutes = (hours * 60) + minutes;
+  await deductWorkEntryDuration(regularEntry.id, regularEntry.duration, approvedMinutes);
+
+  const description = overtimeType === 'overtime_premium'
+    ? `Overtime Premium - Approved By: ${approverName}`
+    : `Overtime - Approved By: ${approverName}`;
+
+  await createOvertimeWorkEntry({
+    employeeId: odooEmployeeId,
+    date: shiftDate,
+    workEntryTypeId,
+    durationMinutes: approvedMinutes,
+    description,
+  });
+
+  logger.info(`Overtime approval synced for auth ${auth.id}: deducted ${approvedMinutes}min from entry ${regularEntry.id}, created ${overtimeType} entry.`);
+}
+
+async function syncOvertimeRejection(
+  auth: Record<string, unknown>,
+  shift: Record<string, unknown>,
+): Promise<void> {
+  const odooEmployeeId = await resolveOdooEmployeeIdForAuth(auth);
+  if (!odooEmployeeId) return;
+
+  const shiftDate = toShiftDateYmd(shift.shift_start);
+
+  const regularEntry = await findWorkEntryByEmployeeAndDate(odooEmployeeId, shiftDate, REGULAR_WORK_ENTRY_TYPE_ID);
+  if (!regularEntry) {
+    logger.warn(`No regular work entry (type ${REGULAR_WORK_ENTRY_TYPE_ID}) found for employee ${odooEmployeeId} on ${shiftDate} during rejection`);
+    return;
+  }
+
+  const diffMinutes = Number(auth.diff_minutes ?? 0);
+  if (diffMinutes <= 0) {
+    logger.warn(`diff_minutes is 0 or missing for authorization ${auth.id}, skipping work entry deduction.`);
+    return;
+  }
+
+  await deductWorkEntryDuration(regularEntry.id, regularEntry.duration, diffMinutes);
+  logger.info(`Overtime rejection synced for auth ${auth.id}: deducted ${diffMinutes}min from entry ${regularEntry.id}.`);
 }
 
 /**
- * Syncs hr.work.entry date_stop with the shift end time
+ * Converts a date/timestamp to YYYY-MM-DD format for Odoo work entry search.
  */
-async function syncWorkEntryDateStop(
-  odooAttendanceId: number,
-  shiftEnd: string | Date
-): Promise<void> {
-  try {
-    // Search for work entries by attendance_id
-    const workEntries = (await searchWorkEntriesByAttendanceId(
-      odooAttendanceId
-    )) as Array<{ id: number; employee_id: [number, string]; attendance_id: number; date_stop: string }>;
-
-    if (workEntries.length > 0) {
-      // Update the work entry's date_stop
-      const workEntryId = workEntries[0].id;
-      await updateWorkEntryDateStop(workEntryId, shiftEnd);
-      logger.info(`Updated hr.work.entry ${workEntryId} date_stop to match shift end`);
-    } else {
-      logger.warn(`No hr.work.entry found for attendance ${odooAttendanceId}`);
-    }
-  } catch (err) {
-    logger.error(`Failed to sync hr.work.entry date_stop: ${err}`);
-  }
+function toShiftDateYmd(dateInput: any): string {
+  const d = new Date(dateInput);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
