@@ -2547,13 +2547,27 @@ export async function createAuditSalaryAttachment(input: {
       return false;
     }
 
+    const dateStart = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    const [year, month, dayStr] = dateStart.split("-");
+    const day = parseInt(dayStr, 10);
+
+    let dateEstimatedEnd: string;
+    if (day <= 15) {
+      dateEstimatedEnd = `${year}-${month}-15`;
+    } else {
+      const lastDay = new Date(Number(year), Number(month), 0).getDate();
+      dateEstimatedEnd = `${year}-${month}-${String(lastDay).padStart(2, "0")}`;
+    }
+
     await callOdooKw('hr.salary.attachment', 'create', [{
       employee_ids: [[4, employeeId]],
       description: input.description,
-      other_input_type_id: 19,
+      other_input_type_id: 22,
       total_amount: input.totalAmount,
       monthly_amount: input.totalAmount,
-      date_start: new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()),
+      date_start: dateStart,
+      date_end: dateEstimatedEnd,
+      duration_type: "one",
     }]);
 
     logger.info({ employeeId, description: input.description }, 'createAuditSalaryAttachment: created');

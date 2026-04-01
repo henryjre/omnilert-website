@@ -1149,7 +1149,7 @@ export async function completeStoreAudit(input: {
     if (audit.audited_user_id || audit.audited_user_key || audit.scc_odoo_employee_id) {
       const monetaryReward = Number(audit.monetary_reward ?? 0);
       if (monetaryReward > 0) {
-        const description = `Service Crew CCTV Audit ${input.auditId} - ${formatDescriptionTimestamp(completedAt)}`;
+        const description = `SCC Audit | ${input.auditId} | ${formatDescriptionTimestamp(completedAt)}`;
         await createSalaryAttachmentForAuditor(description, monetaryReward);
       }
     }

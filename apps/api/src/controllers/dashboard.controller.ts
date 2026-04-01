@@ -223,8 +223,9 @@ export async function getPayslip(req: Request, res: Response, next: NextFunction
     let inNonTaxableSection = false;
     let inDeductionsSection = false;
 
-    // Track OTHERINC to combine them
+    // Track special income codes to combine them
     let otherIncomeTotal = 0;
+    let auditRewardsTotal = 0;
 
     // Track net pay
     let netPay = 0;
@@ -273,9 +274,13 @@ export async function getPayslip(req: Request, res: Response, next: NextFunction
         // Skip title rows
         if (code?.startsWith('TITLE')) continue;
 
-        // Combine OTHERINC into "Other Income"
+        // Track special codes
         if (code === 'OTHERINC') {
           otherIncomeTotal += amount;
+          continue;
+        }
+        if (code === 'AUDITREWARDS') {
+          auditRewardsTotal += amount;
           continue;
         }
 
@@ -290,9 +295,12 @@ export async function getPayslip(req: Request, res: Response, next: NextFunction
       }
     }
 
-    // Add combined Other Income to non-taxable
+    // Add combined special incomes to non-taxable
     if (otherIncomeTotal !== 0) {
       nonTaxable.push({ description: 'Other Income', amount: otherIncomeTotal });
+    }
+    if (auditRewardsTotal !== 0) {
+      nonTaxable.push({ description: 'Audit Rewards', amount: auditRewardsTotal });
     }
 
     const formattedData = {
@@ -703,6 +711,7 @@ function transformPayslipToDetailResponse(
   let inNonTaxableSection = false;
   let inDeductionsSection = false;
   let otherIncomeTotal = 0;
+  let auditRewardsTotal = 0;
   let netPay = 0;
 
   for (const line of payslip.lines) {
@@ -718,6 +727,7 @@ function transformPayslipToDetailResponse(
     if (name.startsWith("Total ")) { inTaxableSection = false; inNonTaxableSection = false; inDeductionsSection = false; continue; }
     if (code?.startsWith("TITLE")) continue;
     if (code === "OTHERINC") { otherIncomeTotal += amount; continue; }
+    if (code === "AUDITREWARDS") { auditRewardsTotal += amount; continue; }
 
     if (inTaxableSection && amount !== 0) { taxable.push({ description: name, amount }); }
     else if (inNonTaxableSection && amount !== 0) { nonTaxable.push({ description: name, amount }); }
@@ -726,6 +736,9 @@ function transformPayslipToDetailResponse(
 
   if (otherIncomeTotal !== 0) {
     nonTaxable.push({ description: "Other Income", amount: otherIncomeTotal });
+  }
+  if (auditRewardsTotal !== 0) {
+    nonTaxable.push({ description: "Audit Rewards", amount: auditRewardsTotal });
   }
 
   const resolvedStatus: PayslipStatus = overrideStatus ?? (
