@@ -12,7 +12,7 @@ import type {
   ListStoreAuditsResponse,
 } from '@omnilert/shared';
 import { PERMISSIONS } from '@omnilert/shared';
-import { CheckCircle, ClipboardList, Clock, LayoutGrid, Loader2, ShieldCheck, Star, X, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle, CheckCircle2, ClipboardList, Clock, LayoutGrid, Loader2, ShieldCheck, Star, X, XCircle } from 'lucide-react';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useSocket } from '@/shared/hooks/useSocket';
 import { useAppToast } from '@/shared/hooks/useAppToast';
@@ -149,6 +149,7 @@ export function StoreAuditsPage() {
   const [showRequestVNModal, setShowRequestVNModal] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
+  const [pendingCompleteData, setPendingCompleteData] = useState<{ id: string; payload: any } | null>(null);
   const [groupedUsers, setGroupedUsers] = useState<GroupedUsersResponse | null>(null);
   const [loadingGroupedUsers, setLoadingGroupedUsers] = useState(false);
   const [pendingCounts, setPendingCounts] = useState<{ all: number; customer_service: number; service_crew_cctv: number }>({ all: 0, customer_service: 0, service_crew_cctv: 0 });
@@ -178,6 +179,9 @@ export function StoreAuditsPage() {
   const closeRejectModal = useCallback(() => {
     setShowRejectModal(false);
     setRejectReason('');
+  }, []);
+  const closeCompleteConfirmation = useCallback(() => {
+    setPendingCompleteData(null);
   }, []);
   const clearAuditDraft = useCallback((audit: StoreAudit) => {
     const draftKey = audit.type === 'customer_service'
@@ -418,6 +422,7 @@ export function StoreAuditsPage() {
       const updatedAudit = response.data.data as StoreAudit;
       clearAuditDraft(updatedAudit);
       syncSelectedAudit(updatedAudit, 'completed');
+      closeCompleteConfirmation();
       showSuccessToast('Audit completed successfully.');
       void fetchPendingCounts();
       void fetchAuditorStats();
@@ -715,7 +720,7 @@ export function StoreAuditsPage() {
                   actionLoading={actionLoading}
                   panelError=""
                   onProcess={() => void handleProcess(selectedAudit.id)}
-                  onComplete={(payload) => void handleComplete(selectedAudit.id, payload)}
+                  onComplete={(payload) => setPendingCompleteData({ id: selectedAudit.id, payload })}
                   onReject={() => setShowRejectModal(true)}
                   onRequestVN={() => setShowRequestVNModal(true)}
                 />
@@ -738,7 +743,7 @@ export function StoreAuditsPage() {
                   actionLoading={actionLoading}
                   panelError=""
                   onProcess={() => void handleProcess(selectedAudit.id)}
-                  onComplete={(payload) => void handleComplete(selectedAudit.id, payload)}
+                  onComplete={(payload) => setPendingCompleteData({ id: selectedAudit.id, payload })}
                   onReject={() => setShowRejectModal(true)}
                   onRequestVN={() => setShowRequestVNModal(true)}
                 />
@@ -767,21 +772,24 @@ export function StoreAuditsPage() {
             zIndexClass="z-[60]"
             onBackdropClick={actionLoading ? undefined : closeRejectModal}
           >
-            <div className="border-b border-gray-200 px-5 py-4">
-              <p className="font-semibold text-gray-900">Reject Audit</p>
-              <p className="mt-1 text-sm text-gray-500">
-                This will move the audit to the rejected tab and keep it read-only.
-              </p>
+            <div className="flex items-center gap-3 border-b border-gray-200 px-5 py-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-50">
+                <XCircle className="h-5 w-5 text-red-600" />
+              </div>
+              <div>
+                <p className="font-semibold text-gray-900">Reject Audit</p>
+                <p className="mt-0.5 text-xs text-gray-500">Provide a reason for rejecting this audit.</p>
+              </div>
             </div>
             <div className="space-y-4 px-5 py-4">
-                  <div>
-                    <p className="text-sm font-medium text-gray-800">
-                      {selectedAudit.type === 'customer_service'
-                        ? normalizeAuditedEmployeeName(selectedAudit.css_cashier_name) || 'Customer Service Audit'
-                        : normalizeAuditedEmployeeName(selectedAudit.scc_employee_name) || 'Service Crew CCTV Audit'}
-                    </p>
-                    <p className="mt-0.5 text-xs text-gray-500">
-                      {selectedAudit.branch_name || selectedAudit.company?.name || selectedAudit.id}
+              <div>
+                <p className="text-sm font-medium text-gray-800">
+                  {selectedAudit.type === 'customer_service'
+                    ? normalizeAuditedEmployeeName(selectedAudit.css_cashier_name) || 'Customer Service Audit'
+                    : normalizeAuditedEmployeeName(selectedAudit.scc_employee_name) || 'Service Crew CCTV Audit'}
+                </p>
+                <p className="mt-0.5 text-xs text-gray-500">
+                  {selectedAudit.branch_name || selectedAudit.company?.name || selectedAudit.id}
                 </p>
               </div>
               <textarea
@@ -807,6 +815,57 @@ export function StoreAuditsPage() {
                 variant="secondary"
                 disabled={actionLoading}
                 onClick={closeRejectModal}
+              >
+                Cancel
+              </Button>
+            </div>
+          </AnimatedModal>
+        )}
+
+        {pendingCompleteData && selectedAudit && (
+          <AnimatedModal
+            maxWidth="max-w-md"
+            zIndexClass="z-[60]"
+            onBackdropClick={actionLoading ? undefined : closeCompleteConfirmation}
+          >
+            <div className="flex items-center gap-3 border-b border-gray-200 px-5 py-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-50">
+                <CheckCircle2 className="h-5 w-5 text-green-600" />
+              </div>
+              <div>
+                <p className="font-semibold text-gray-900">Complete Audit</p>
+                <p className="mt-0.5 text-xs text-gray-500">Please confirm if you want to submit this audit.</p>
+              </div>
+            </div>
+            <div className="px-5 py-4">
+              <div className="rounded-lg bg-gray-50 p-3">
+                <p className="text-sm font-medium text-gray-800">
+                  {selectedAudit.type === 'customer_service'
+                    ? normalizeAuditedEmployeeName(selectedAudit.css_cashier_name) || 'Customer Service Audit'
+                    : normalizeAuditedEmployeeName(selectedAudit.scc_employee_name) || 'Service Crew CCTV Audit'}
+                </p>
+                <p className="mt-0.5 text-xs text-gray-500">
+                  {selectedAudit.branch_name || selectedAudit.company?.name || selectedAudit.id}
+                </p>
+              </div>
+              <p className="mt-3 text-xs text-gray-500 italic">
+                Note: Once completed, this audit will be moved to history and rewards will be computed.
+              </p>
+            </div>
+            <div className="flex gap-3 border-t border-gray-200 px-5 py-4">
+              <Button
+                className="flex-1"
+                variant="success"
+                disabled={actionLoading}
+                onClick={() => void handleComplete(pendingCompleteData.id, pendingCompleteData.payload)}
+              >
+                {actionLoading ? 'Completing…' : 'Yes, Complete Audit'}
+              </Button>
+              <Button
+                className="flex-1"
+                variant="secondary"
+                disabled={actionLoading}
+                onClick={closeCompleteConfirmation}
               >
                 Cancel
               </Button>

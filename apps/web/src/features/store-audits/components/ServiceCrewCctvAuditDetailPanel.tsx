@@ -395,9 +395,9 @@ export function ServiceCrewCctvAuditDetailPanel({
       try {
         const saved = localStorage.getItem(draftKey);
         if (saved) {
-          const parsed = JSON.parse(saved) as Partial<AnswersState>;
-          if (parsed && typeof parsed === 'object') {
-            return { ...buildDefaultAnswers(audit), ...parsed };
+          const parsed = JSON.parse(saved) as { answers?: Partial<AnswersState>; messageDraft?: string };
+          if (parsed.answers && typeof parsed.answers === 'object') {
+            return { ...buildDefaultAnswers(audit), ...parsed.answers };
           }
         }
       } catch {
@@ -407,7 +407,19 @@ export function ServiceCrewCctvAuditDetailPanel({
   });
   const [messages, setMessages] = useState<StoreAuditMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
-  const [messageDraft, setMessageDraft] = useState('');
+  const [messageDraft, setMessageDraft] = useState(() => {
+    if (audit.status === 'processing') {
+      try {
+        const saved = localStorage.getItem(draftKey);
+        if (saved) {
+          const parsed = JSON.parse(saved) as { messageDraft?: string };
+          return parsed.messageDraft ?? '';
+        }
+      } catch {
+      }
+    }
+    return '';
+  });
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
@@ -425,10 +437,10 @@ export function ServiceCrewCctvAuditDetailPanel({
   useEffect(() => {
     if (audit.status !== 'processing') return;
     try {
-      localStorage.setItem(draftKey, JSON.stringify(answers));
+      localStorage.setItem(draftKey, JSON.stringify({ answers, messageDraft }));
     } catch {
     }
-  }, [answers, audit.status, draftKey]);
+  }, [answers, messageDraft, audit.status, draftKey]);
 
   useEffect(() => {
     const fallback = buildDefaultAnswers(audit);
@@ -436,9 +448,10 @@ export function ServiceCrewCctvAuditDetailPanel({
       try {
         const saved = localStorage.getItem(draftKey);
         if (saved) {
-          const parsed = JSON.parse(saved) as Partial<AnswersState>;
+          const parsed = JSON.parse(saved) as { answers?: Partial<AnswersState>; messageDraft?: string };
           if (parsed && typeof parsed === 'object') {
-            setAnswers({ ...fallback, ...parsed });
+            setAnswers({ ...fallback, ...(parsed.answers || {}) });
+            setMessageDraft(parsed.messageDraft ?? '');
             return;
           }
         }
@@ -446,6 +459,7 @@ export function ServiceCrewCctvAuditDetailPanel({
       }
     }
     setAnswers(fallback);
+    setMessageDraft('');
   }, [
     audit.id,
     audit.scc_productivity_rate,

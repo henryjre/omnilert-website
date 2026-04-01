@@ -247,7 +247,7 @@ export function CssAuditDetailPanel({
       try {
         const saved = localStorage.getItem(draftKey);
         if (saved) {
-          const parsed = JSON.parse(saved) as { criteriaScores?: CriteriaState };
+          const parsed = JSON.parse(saved) as { criteriaScores?: CriteriaState; messageDraft?: string };
           if (parsed.criteriaScores) return parsed.criteriaScores;
         }
       } catch {
@@ -259,7 +259,20 @@ export function CssAuditDetailPanel({
 
   const [messages, setMessages] = useState<StoreAuditMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
-  const [messageDraft, setMessageDraft] = useState('');
+  const [messageDraft, setMessageDraft] = useState(() => {
+    if (audit.status === 'processing') {
+      try {
+        const saved = localStorage.getItem(draftKey);
+        if (saved) {
+          const parsed = JSON.parse(saved) as { messageDraft?: string };
+          return parsed.messageDraft ?? '';
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return '';
+  });
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
@@ -275,11 +288,11 @@ export function CssAuditDetailPanel({
   useEffect(() => {
     if (audit.status !== 'processing') return;
     try {
-      localStorage.setItem(draftKey, JSON.stringify({ criteriaScores }));
+      localStorage.setItem(draftKey, JSON.stringify({ criteriaScores, messageDraft }));
     } catch {
       // ignore
     }
-  }, [audit.status, criteriaScores, draftKey]);
+  }, [audit.status, criteriaScores, messageDraft, draftKey]);
 
   useEffect(() => {
     const fallback = buildInitialCriteria(audit.css_criteria_scores);
@@ -287,8 +300,9 @@ export function CssAuditDetailPanel({
       try {
         const saved = localStorage.getItem(draftKey);
         if (saved) {
-          const parsed = JSON.parse(saved) as { criteriaScores?: CriteriaState };
+          const parsed = JSON.parse(saved) as { criteriaScores?: CriteriaState; messageDraft?: string };
           setCriteriaScores(parsed.criteriaScores ?? fallback);
+          setMessageDraft(parsed.messageDraft ?? '');
           return;
         }
       } catch {
@@ -296,6 +310,7 @@ export function CssAuditDetailPanel({
       }
     }
     setCriteriaScores(fallback);
+    setMessageDraft('');
   }, [audit.id, audit.css_criteria_scores, audit.status, draftKey]);
 
   const fetchMessages = useCallback(
