@@ -679,6 +679,7 @@ interface AttendanceProcessorDeps {
     websiteUserKey: string,
   ) => Promise<IdentityActiveAttendance[]>;
   findExistingCheckOutLog: (attendanceId: number) => Promise<AttendanceShiftLogRow | null>;
+  deleteEarlyCheckOutAuthByShiftLogId: (shiftLogId: string) => Promise<boolean>;
   checkOutAttendancesByIds: (attendanceIds: number[], checkOutTime: Date) => Promise<void>;
   reassignUserToSingleCheckedInBranch: (userId: string, branchId: string) => Promise<void>;
   enqueueEarlyCheckInAuthJob: (
@@ -901,6 +902,13 @@ const defaultAttendanceProcessorDeps: AttendanceProcessorDeps = {
       .getDb()('shift_logs')
       .where({ odoo_attendance_id: attendanceId, log_type: 'check_out' })
       .first()) as AttendanceShiftLogRow | null ?? null,
+  deleteEarlyCheckOutAuthByShiftLogId: async (shiftLogId) => {
+    const count = await db
+      .getDb()('shift_authorizations')
+      .where({ shift_log_id: shiftLogId, auth_type: 'early_check_out' })
+      .delete();
+    return Number(count) > 0;
+  },
   checkOutAttendancesByIds: async (attendanceIds, checkOutTime) => {
     await batchCheckOutAttendances(attendanceIds, checkOutTime);
   },
@@ -1190,6 +1198,30 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
             { attendanceId: payload.id, prevAttendanceId: payload.x_prev_attendance_id },
             'Subsequent attendance check-in: Skipping tardiness/early check-in authorization',
           );
+          // Retroactively void any early_check_out authorization created for the previous
+          // attendance's checkout — it was a break, not the final checkout of the day.
+          const prevCheckOutLog = await deps.findExistingCheckOutLog(
+            payload.x_prev_attendance_id as number,
+          );
+          if (prevCheckOutLog) {
+            const voided = await deps.deleteEarlyCheckOutAuthByShiftLogId(
+              prevCheckOutLog.id as string,
+            );
+            if (voided) {
+              logger.info(
+                {
+                  attendanceId: payload.id,
+                  prevAttendanceId: payload.x_prev_attendance_id,
+                  prevCheckOutLogId: prevCheckOutLog.id,
+                },
+                'Voided early_check_out authorization for break checkout',
+              );
+              deps.emitSocketEvent('shift:authorization-voided', {
+                shift_id: prevCheckOutLog.shift_id ?? shift?.id ?? null,
+                branch_id: branch.id,
+              });
+            }
+          }
         } else {
           const diffMs = shiftStart.getTime() - eventTime.getTime();
           const diffMinutes = Math.round(diffMs / 60_000);

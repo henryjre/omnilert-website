@@ -289,7 +289,18 @@ function createAttendanceHarness(options?: {
         (activeAttendancesByWebsiteKey.get(websiteUserKey) ?? []).map((attendance) => ({
           ...attendance,
         })),
-      findExistingCheckOutLog: async (_attendanceId: number) => null,
+      findExistingCheckOutLog: async (attendanceId: number) =>
+        (logs.find(
+          (log) => log.odoo_attendance_id === attendanceId && log.log_type === 'check_out',
+        ) ?? null) as Record<string, unknown> | null,
+      deleteEarlyCheckOutAuthByShiftLogId: async (shiftLogId: string) => {
+        const idx = auths.findIndex(
+          (a) => a.shift_log_id === shiftLogId && a.auth_type === 'early_check_out',
+        );
+        if (idx === -1) return false;
+        auths.splice(idx, 1);
+        return true;
+      },
       checkOutAttendancesByIds: async (attendanceIds: number[], checkOutTime: Date) => {
         checkoutOps.push({ attendanceIds: [...attendanceIds], checkOutTime });
         const attendanceIdsSet = new Set(attendanceIds);
@@ -1179,5 +1190,115 @@ test('createAttendanceProcessor skips early check-in job when x_prev_attendance_
     harness.auths.filter((a) => a.auth_type === 'early_check_in').length,
     0,
     'no early check-in auth should be created for a re-check-in',
+  );
+});
+
+test('createAttendanceProcessor retroactively voids early_check_out when re-check-in follows (break checkout scenario)', async () => {
+  const plannedShift = createShift({
+    id: 'shift-break-1',
+    odoo_shift_id: 2001,
+    branch_id: 'branch-main',
+    user_id: 'user-1',
+    shift_start: '2026-04-01T07:00:00.000Z',
+    shift_end: '2026-04-01T18:00:00.000Z',
+  });
+  const harness = createAttendanceHarness({
+    shifts: [plannedShift],
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+  });
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  // Initial check-in at 7:30 AM → tardiness (30 min late)
+  await processAttendance({
+    id: 10001,
+    check_in: '2026-04-01 07:30:00',
+    x_company_id: 12,
+    x_cumulative_minutes: 0,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: 2001,
+    x_website_key: 'website-user-1',
+  });
+
+  assert.equal(harness.auths.filter((a) => a.auth_type === 'tardiness').length, 1, 'tardiness should be created');
+
+  // Break checkout at 12:00 PM → triggers early_check_out (false positive)
+  await processAttendance({
+    id: 10001,
+    check_in: '2026-04-01 07:30:00',
+    check_out: '2026-04-01 12:00:00',
+    worked_hours: 4.5,
+    x_company_id: 12,
+    x_cumulative_minutes: 270,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: 2001,
+    x_website_key: 'website-user-1',
+  });
+
+  assert.equal(harness.auths.filter((a) => a.auth_type === 'early_check_out').length, 1, 'early_check_out should be initially created');
+
+  // Re-check-in at 1:00 PM with x_prev_attendance_id → should void the early_check_out
+  await processAttendance({
+    id: 10002,
+    check_in: '2026-04-01 13:00:00',
+    x_company_id: 12,
+    x_cumulative_minutes: 0,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: 2001,
+    x_prev_attendance_id: 10001,
+    x_website_key: 'website-user-1',
+  });
+
+  assert.equal(
+    harness.auths.filter((a) => a.auth_type === 'early_check_out').length,
+    0,
+    'early_check_out must be voided after re-check-in',
+  );
+  assert.ok(
+    harness.socketEvents.some((e) => e.event === 'shift:authorization-voided'),
+    'shift:authorization-voided must be emitted',
+  );
+});
+
+test('createAttendanceProcessor preserves the final early_check_out when no re-check-in follows', async () => {
+  const plannedShift = createShift({
+    id: 'shift-break-2',
+    odoo_shift_id: 2002,
+    branch_id: 'branch-main',
+    user_id: 'user-1',
+    shift_start: '2026-04-01T07:00:00.000Z',
+    shift_end: '2026-04-01T18:00:00.000Z',
+    status: 'active',
+    check_in_status: 'checked_in',
+  });
+  const harness = createAttendanceHarness({
+    shifts: [plannedShift],
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+  });
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  // Final checkout at 5:00 PM (1 hour early) — no subsequent re-check-in
+  await processAttendance({
+    id: 10003,
+    check_in: '2026-04-01 07:00:00',
+    check_out: '2026-04-01 17:00:00',
+    worked_hours: 10,
+    x_company_id: 12,
+    x_cumulative_minutes: 600,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: 2002,
+    x_website_key: 'website-user-1',
+  });
+
+  assert.equal(
+    harness.auths.filter((a) => a.auth_type === 'early_check_out').length,
+    1,
+    'final early_check_out must be preserved',
+  );
+  assert.equal(
+    harness.socketEvents.some((e) => e.event === 'shift:authorization-voided'),
+    false,
+    'no void event should be emitted for a final checkout',
   );
 });
