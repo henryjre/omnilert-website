@@ -83,12 +83,20 @@ export function SingleUserSelect({
       >
         <div className="flex-shrink-0">
           {selectedUser ? (
-            <div
-              className="h-8 w-8 flex items-center justify-center rounded-full font-bold text-white text-[11px]"
-              style={{ backgroundColor: getAvatarColor(selectedUser.name) }}
-            >
-              {getInitials(selectedUser.name)}
-            </div>
+            selectedUser.avatar_url ? (
+              <img
+                src={selectedUser.avatar_url}
+                alt={selectedUser.name}
+                className="h-8 w-8 rounded-full object-cover shadow-sm ring-1 ring-gray-100"
+              />
+            ) : (
+              <div
+                className="h-8 w-8 flex items-center justify-center rounded-full font-bold text-white text-[11px]"
+                style={{ backgroundColor: getAvatarColor(selectedUser.name) }}
+              >
+                {getInitials(selectedUser.name)}
+              </div>
+            )
           ) : (
             <div className="h-8 w-8 flex items-center justify-center rounded-full bg-gray-100 text-gray-400">
               <User className="h-4 w-4" />
@@ -151,11 +159,21 @@ export function SingleUserSelect({
                       selectedUserId === user.id ? 'bg-blue-50/80' : ''
                     }`}
                   >
-                    <div
-                      className="h-8 w-8 flex flex-shrink-0 items-center justify-center rounded-full font-bold text-white text-[11px] shadow-sm"
-                      style={{ backgroundColor: getAvatarColor(user.name) }}
-                    >
-                      {getInitials(user.name)}
+                    <div className="flex-shrink-0">
+                      {user.avatar_url ? (
+                        <img
+                          src={user.avatar_url}
+                          alt={user.name}
+                          className="h-8 w-8 rounded-full object-cover shadow-sm ring-1 ring-gray-100"
+                        />
+                      ) : (
+                        <div
+                          className="h-8 w-8 flex items-center justify-center rounded-full font-bold text-white text-[11px] shadow-sm"
+                          style={{ backgroundColor: getAvatarColor(user.name) }}
+                        >
+                          {getInitials(user.name)}
+                        </div>
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className={`text-sm font-bold truncate ${selectedUserId === user.id ? 'text-blue-700' : 'text-gray-700'}`}>

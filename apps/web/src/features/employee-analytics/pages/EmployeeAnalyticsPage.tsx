@@ -391,6 +391,7 @@ let TOP_PERFORMERS = [...FALLBACK_TOP_PERFORMERS];
 let PRIORITY_REVIEW = [...FALLBACK_PRIORITY_REVIEW];
 let ANALYTICS_USERS = [...FALLBACK_ANALYTICS_USERS];
 let ANALYTICS_USER_ENTRIES = [...FALLBACK_ANALYTICS_USER_ENTRIES];
+let USER_AVATAR_BY_NAME = new Map<string, string | null>();
 
 const BRANCH_AVERAGES = {
   epi: 85.4,
@@ -460,11 +461,13 @@ function setActiveLiveDataset(dataset: LiveAnalyticsDataset | null): void {
     id: user.id,
     name: user.name,
     role: user.roleName || 'Service Crew',
+    avatar_url: user.avatarUrl,
   }));
   INDIVIDUAL_METRICS_ROSTER = dataset.users.map((user) => ({
     name: user.name,
     role: user.roleName || 'Service Crew',
   }));
+  USER_AVATAR_BY_NAME = new Map(dataset.users.map((u) => [u.name, u.avatarUrl]));
 }
 
 const getPersonalizedStats = (userName: string) => {
@@ -3724,11 +3727,21 @@ function EmployeePickerDropdown({
                       }`}>
                         {isSelected && <Check className="h-3 w-3 text-white" />}
                       </div>
-                      <div
-                        className="h-6 w-6 flex flex-shrink-0 items-center justify-center rounded-full text-white text-[9px] font-bold shadow-sm"
-                        style={{ backgroundColor: `hsl(${Math.abs(hue)}, 65%, 55%)` }}
-                      >
-                        {initials}
+                      <div className="flex-shrink-0">
+                        {USER_AVATAR_BY_NAME.get(user) ? (
+                          <img
+                            src={USER_AVATAR_BY_NAME.get(user)!}
+                            alt={user}
+                            className="h-6 w-6 rounded-full object-cover shadow-sm ring-1 ring-gray-100"
+                          />
+                        ) : (
+                          <div
+                            className="h-6 w-6 flex items-center justify-center rounded-full text-white text-[9px] font-bold shadow-sm"
+                            style={{ backgroundColor: `hsl(${Math.abs(hue)}, 65%, 55%)` }}
+                          >
+                            {initials}
+                          </div>
+                        )}
                       </div>
                       <span className={`text-xs font-semibold truncate ${isSelected ? 'text-blue-700' : 'text-gray-700'}`}>
                         {user}
@@ -3925,11 +3938,21 @@ function CompactUserSelect({
           hasUsers ? 'hover:border-blue-400 hover:shadow-sm' : 'cursor-not-allowed opacity-60'
         }`}
       >
-        <div
-          className="h-5 w-5 flex items-center justify-center rounded-full text-white text-[8px] font-bold flex-shrink-0"
-          style={{ backgroundColor: `hsl(${Math.abs(hue)}, 65%, 55%)` }}
-        >
-          {initials}
+        <div className="flex-shrink-0">
+          {USER_AVATAR_BY_NAME.get(displayName) ? (
+            <img
+              src={USER_AVATAR_BY_NAME.get(displayName)!}
+              alt={displayName}
+              className="h-5 w-5 rounded-full object-cover shadow-sm ring-1 ring-gray-50"
+            />
+          ) : (
+            <div
+              className="h-5 w-5 flex items-center justify-center rounded-full text-white text-[8px] font-bold"
+              style={{ backgroundColor: `hsl(${Math.abs(hue)}, 65%, 55%)` }}
+            >
+              {initials}
+            </div>
+          )}
         </div>
         <span className="text-xs font-semibold text-gray-700 truncate max-w-[100px]">{displayName}</span>
         <ChevronDown className={`h-3 w-3 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
@@ -3979,11 +4002,21 @@ function CompactUserSelect({
                         isSelected ? 'bg-blue-50/80' : ''
                       }`}
                     >
-                      <div
-                        className="h-6 w-6 flex flex-shrink-0 items-center justify-center rounded-full text-white text-[9px] font-bold shadow-sm"
-                        style={{ backgroundColor: `hsl(${Math.abs(uHue)}, 65%, 55%)` }}
-                      >
-                        {uInitials}
+                      <div className="flex-shrink-0">
+                        {USER_AVATAR_BY_NAME.get(user) ? (
+                          <img
+                            src={USER_AVATAR_BY_NAME.get(user)!}
+                            alt={user}
+                            className="h-6 w-6 rounded-full object-cover shadow-sm ring-1 ring-gray-100"
+                          />
+                        ) : (
+                          <div
+                            className="h-6 w-6 flex items-center justify-center rounded-full text-white text-[9px] font-bold shadow-sm"
+                            style={{ backgroundColor: `hsl(${Math.abs(uHue)}, 65%, 55%)` }}
+                          >
+                            {uInitials}
+                          </div>
+                        )}
                       </div>
                       <span className={`text-xs font-semibold truncate ${isSelected ? 'text-blue-700' : 'text-gray-700'}`}>
                         {user}

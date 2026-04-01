@@ -332,7 +332,7 @@ export async function runDailyEmployeeRollingMetricSnapshot(input?: { scheduledF
   for (const user of users) {
     try {
       const kpiData = await fetchUserKpiData(user.id, user.user_key);
-      const { breakdown } = await calculateKpiScores(kpiData, { window: { from, to } });
+      const { breakdown } = await calculateKpiScores(kpiData, { window: { from, to }, minRecords: 1 });
       const values = mapBreakdownToRollingMetricSnapshot(breakdown);
       const nonRolling: NonRollingSnapshotValues = {
         epiScore: user.epi_score,
