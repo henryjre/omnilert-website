@@ -115,6 +115,7 @@ export interface MetricEmployeeRow {
   startValue: number;
   endValue: number;
   periodChange: number;
+  hasData: boolean;
 }
 
 export interface LiveAnalyticsDataset {
@@ -443,6 +444,7 @@ export function getMetricEmployeeRows(
       startValue: 0,
       endValue: 0,
       periodChange: 0,
+      hasData: true,
     }));
   }
 
@@ -450,6 +452,7 @@ export function getMetricEmployeeRows(
     .map((user) => {
       const series = getSeriesForUser(dataset, user.id, metricId).map((point) => point.value);
       const { first, last } = firstAndLastFinite(series);
+      const hasData = last !== null;
       const startValue = first ?? 0;
       const endValue = last ?? 0;
       const periodChange = endValue - startValue;
@@ -462,6 +465,7 @@ export function getMetricEmployeeRows(
         startValue,
         endValue,
         periodChange,
+        hasData,
       };
     })
     .sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));

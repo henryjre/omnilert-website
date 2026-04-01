@@ -752,6 +752,7 @@ export interface MetricEmployeeRow {
   /** Delta from first bucket to last bucket within the selected range. */
   periodChange: number;
   role: string;
+  hasData: boolean;
 }
 
 export interface IndividualMetricsRosterEntry {
@@ -829,6 +830,7 @@ export function getMetricAllEmployeeData(
         endValue,
         periodChange,
         role: emp.role,
+        hasData: true,
       };
     })
     .sort((a, b) => b.value - a.value);

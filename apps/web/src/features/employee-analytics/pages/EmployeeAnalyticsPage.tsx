@@ -71,6 +71,8 @@ import {
   formatMetricValue as formatRuleMetricValue,
   getMetricKind,
   getMetricScaleMax,
+  buildMetricInsights,
+  mapMetricInsightsToCardRows,
 } from '../utils/analyticsRuleEngine';
 import { isStickyHeaderStuck } from '../stickyHeader';
 import {
@@ -1090,6 +1092,7 @@ function getMetricAllEmployeeData(
       startValue: 0,
       endValue: 0,
       periodChange: 0,
+      hasData: true,
     }));
   }
 
@@ -1100,6 +1103,7 @@ function getMetricAllEmployeeData(
     startValue: row.startValue,
     endValue: row.endValue,
     periodChange: row.periodChange,
+    hasData: row.hasData,
   }));
 }
 
@@ -1142,7 +1146,7 @@ function getMetricHeroVsGlobalDistribution(
     return getMetricHeroVsGlobalDistributionMock(metricId, selection, roster, getBaseMetricValue, globalTarget);
   }
 
-  const employees = getMetricEmployeeRows(dataset, metricId as EmployeeAnalyticsMetricId);
+  const employees = getMetricEmployeeRows(dataset, metricId as EmployeeAnalyticsMetricId).filter(e => e.hasData);
   const fixedMaxScore = getFixedDistributionMaxScore(metricId);
   if (fixedMaxScore !== null) {
     const distribution = buildFixedMetricScoreDistributionFromValues(
@@ -1165,7 +1169,7 @@ function getMetricHeroVsGlobalDistribution(
     getLatestGlobalMetricAverage(dataset, metricId as Exclude<EmployeeAnalyticsMetricId, 'professional-conduct'>)
     ?? globalTarget;
   const distribution = buildHeroDistributionFromValues(
-    employees.map((row) => row.value),
+    employees.map((row) => (row.hasData ? row.value : null)).filter((v): v is number => v !== null),
     latestGlobalAvg,
     metricId,
   );
@@ -1187,7 +1191,25 @@ function getMetricInsights(
   getBaseMetricValue: (employeeName: string, metricId: string) => number,
   globalTarget: number,
 ) {
-  return getMetricInsightsMock(metricId, selection, roster, getBaseMetricValue, globalTarget);
+  const dataset = ACTIVE_LIVE_DATASET;
+  if (!dataset || metricId === 'professional-conduct') {
+    return getMetricInsightsMock(metricId, selection, roster, getBaseMetricValue, globalTarget);
+  }
+
+  // Extract data for logic (Filtering out those without records)
+  const employees = getMetricEmployeeRows(dataset, metricId as EmployeeAnalyticsMetricId).filter((e) => e.hasData);
+
+  return buildMetricInsights({
+    metricId,
+    metricLabel: METRIC_LABELS[metricId] || metricId,
+    employeeRows: employees.map((e) => ({
+      name: e.name,
+      value: e.value,
+      previousValue: e.value - e.periodChange,
+    })),
+    benchmarkValue: globalTarget,
+    selection,
+  });
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -4112,8 +4134,15 @@ function MetricSummaryCard({
       ),
     [metricId, analyticsRange],
   );
-  const avg = employees.reduce((s, e) => s + e.value, 0) / employees.length;
-  const avgPeriodChange = employees.reduce((s, e) => s + e.periodChange, 0) / employees.length;
+  const { validEmployees, avg, avgPeriodChange } = useMemo(() => {
+    const valid = employees.filter(e => e.hasData);
+    if (valid.length === 0) return { validEmployees: valid, avg: 0, avgPeriodChange: 0 };
+    return {
+      validEmployees: valid,
+      avg: valid.reduce((s, e) => s + e.value, 0) / valid.length,
+      avgPeriodChange: valid.reduce((s, e) => s + e.periodChange, 0) / valid.length,
+    };
+  }, [employees]);
   const summaryTrendFooter = useMemo(() => buildMetricSummaryTrendFooter(analyticsRange), [analyticsRange]);
   const summaryYPadding = getMetricKind(metricId) === 'likert' ? 0.4 : 3;
 
@@ -4136,29 +4165,43 @@ function MetricSummaryCard({
             Global Average
           </p>
           <div className="mt-2 flex items-end gap-3">
-            <span
-              className="text-[48px] font-bold leading-none text-white tabular-nums"
-              style={{ letterSpacing: '-2px' }}
-            >
-              {formatMetricDisplay(metricId, avg)}
-            </span>
-            <div className="mb-2 flex items-center gap-1.5">
-              <span className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ring-inset ${
-                avgPeriodChange >= 0
-                  ? 'bg-emerald-400/20 text-emerald-300 ring-emerald-400/20'
-                  : 'bg-red-400/20 text-red-300 ring-red-400/20'
-              }`}>
-                {avgPeriodChange >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                {formatMetricDeltaDisplay(metricId, avgPeriodChange)}
-              </span>
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-white/40">
-                avg period
-              </span>
-            </div>
+            {validEmployees.length === 0 ? (
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[32px] font-bold text-white/40 tracking-tight">No data found</span>
+                <p className="text-[11px] font-bold text-white/20 uppercase tracking-widest">
+                  Awaiting records
+                </p>
+              </div>
+            ) : (
+              <>
+                <span
+                  className="text-[48px] font-bold leading-none text-white tabular-nums"
+                  style={{ letterSpacing: '-2px' }}
+                >
+                  {formatMetricDisplay(metricId, avg)}
+                </span>
+                <div className="mb-2 flex items-center gap-1.5">
+                  <span
+                    className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ring-inset ${
+                      avgPeriodChange >= 0
+                        ? 'bg-emerald-400/20 text-emerald-300 ring-emerald-400/20'
+                        : 'bg-red-400/20 text-red-300 ring-red-400/20'
+                    }`}
+                  >
+                    {avgPeriodChange >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                    {formatMetricDeltaDisplay(metricId, avgPeriodChange)}
+                  </span>
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-white/40">
+                    avg period
+                  </span>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
         <div className="flex-1 min-h-[80px]">
+          {validEmployees.length > 0 && (
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={trendData} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
               <defs>
@@ -4201,11 +4244,12 @@ function MetricSummaryCard({
               />
             </LineChart>
           </ResponsiveContainer>
+          )}
         </div>
 
         <div className="flex items-center justify-between px-5 py-2.5 border-t border-white/10 flex-shrink-0">
           <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">
-            {employees.length} employees
+            {validEmployees.length} employees
           </span>
           <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">
             {summaryTrendFooter}
@@ -4228,8 +4272,32 @@ function MetricTopBottomCard({
       getMetricAllEmployeeData(metricId, analyticsRange, INDIVIDUAL_METRICS_ROSTER, getBaseMetricValueForEmployee),
     [metricId, analyticsRange],
   );
-  const top3 = employees.slice(0, 3);
-  const bottom3 = employees.slice(-3).reverse();
+
+  const validEmployees = useMemo(() => employees.filter((e) => e.hasData), [employees]);
+  const hasAnyData = validEmployees.length > 0;
+
+  if (!hasAnyData) {
+    return (
+      <motion.div custom={1} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
+        <AnalyticsCard icon={<Users className="h-4 w-4" />} title="Top & Bottom" subtitle="Performers for this metric">
+          <div className="flex flex-col items-center justify-center p-8 text-center flex-1">
+            <div className="h-12 w-12 rounded-full bg-gray-50 flex items-center justify-center mb-3">
+              <Search className="h-6 w-6 text-gray-300" />
+            </div>
+            <p className="text-sm font-semibold text-gray-900">No data found</p>
+            <p className="text-xs text-gray-500 mt-1 max-w-[200px]">
+              No employee performance records exist for this metric in the selected period.
+            </p>
+          </div>
+        </AnalyticsCard>
+      </motion.div>
+    );
+  }
+
+  const top5 = validEmployees.slice(0, 5);
+  // Only include in bottom those NOT already in top
+  const bottomPlaceholder = validEmployees.slice(top5.length);
+  const bottom5 = bottomPlaceholder.slice(-5).reverse();
 
   return (
     <motion.div custom={1} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
@@ -4241,7 +4309,7 @@ function MetricTopBottomCard({
               <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600">Top Performers</span>
             </div>
             <div className="space-y-0.5">
-              {top3.map((emp, idx) => (
+              {top5.map((emp, idx) => (
                 <motion.div
                   key={emp.name}
                   variants={{
@@ -4250,7 +4318,7 @@ function MetricTopBottomCard({
                   }}
                   initial="hidden"
                   animate="visible"
-                  className="flex items-center justify-between rounded-md px-2 py-2 transition-colors hover:bg-gray-50"
+                  className="flex items-center justify-between rounded-md px-2 py-1.5 transition-colors hover:bg-gray-50"
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="w-4 text-[10px] font-bold text-gray-300 tabular-nums flex-shrink-0">
@@ -4258,7 +4326,7 @@ function MetricTopBottomCard({
                     </span>
                     <span className="text-sm font-medium text-gray-700 truncate">{emp.name}</span>
                   </div>
-                  <span className="ml-2 text-sm font-bold text-emerald-600 tabular-nums flex-shrink-0">
+                  <span className="ml-2 text-xs font-bold text-emerald-600 tabular-nums flex-shrink-0">
                     {formatMetricDisplay(metricId, emp.value)}
                   </span>
                 </motion.div>
@@ -4272,7 +4340,7 @@ function MetricTopBottomCard({
               <span className="text-[10px] font-bold uppercase tracking-widest text-red-600">Needs Improvement</span>
             </div>
             <div className="space-y-0.5">
-              {bottom3.map((emp, idx) => (
+              {bottom5.length > 0 ? bottom5.map((emp, idx) => (
                 <motion.div
                   key={emp.name}
                   variants={{
@@ -4281,19 +4349,23 @@ function MetricTopBottomCard({
                   }}
                   initial="hidden"
                   animate="visible"
-                  className="flex items-center justify-between rounded-md px-2 py-2 transition-colors hover:bg-gray-50"
+                  className="flex items-center justify-between rounded-md px-2 py-1.5 transition-colors hover:bg-gray-50"
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="w-4 text-[10px] font-bold text-gray-300 tabular-nums flex-shrink-0">
-                      {employees.length - 2 + idx}
+                      {validEmployees.length - bottom5.length + 1 + idx}
                     </span>
                     <span className="text-sm font-medium text-gray-700 truncate">{emp.name}</span>
                   </div>
-                  <span className="ml-2 text-sm font-bold text-red-500 tabular-nums flex-shrink-0">
+                  <span className="ml-2 text-xs font-bold text-red-500 tabular-nums flex-shrink-0">
                     {formatMetricDisplay(metricId, emp.value)}
                   </span>
                 </motion.div>
-              ))}
+              )) : (
+                <div className="p-4 text-center">
+                  <span className="text-[10px] font-medium text-gray-400 uppercase tracking-widest italic">All performers in Top list</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -4314,7 +4386,27 @@ function MetricBenchmarkCard({
       getMetricAllEmployeeData(metricId, analyticsRange, INDIVIDUAL_METRICS_ROSTER, getBaseMetricValueForEmployee),
     [metricId, analyticsRange],
   );
-  const avg = employees.reduce((s, e) => s + e.value, 0) / employees.length;
+  const { validEmployees, avg, median, stdDev, aboveTarget, pctAbove } = useMemo(() => {
+    const valid = employees.filter(e => e.hasData).sort((a, b) => a.value - b.value);
+    const globalTarget = perturbMetricGlobalTarget(
+      metricId,
+      BRANCH_AVERAGES[metricId as keyof typeof BRANCH_AVERAGES] ?? 85,
+      analyticsRange,
+    );
+    if (valid.length === 0) {
+      return { validEmployees: valid, avg: 0, median: 0, stdDev: 0, aboveTarget: 0, pctAbove: 0, globalTarget };
+    }
+    const totalScore = valid.reduce((s, e) => s + e.value, 0);
+    const mean = totalScore / valid.length;
+    const med = valid[Math.floor(valid.length / 2)]?.value ?? 0;
+    const variance = valid.reduce((s, e) => s + Math.pow(e.value - mean, 2), 0) / valid.length;
+    const sd = Math.sqrt(variance);
+    const countAbove = valid.filter((e) => e.value >= globalTarget).length;
+    const pct = Math.round((countAbove / valid.length) * 100);
+
+    return { validEmployees: valid, avg: mean, median: med, stdDev: sd, aboveTarget: countAbove, pctAbove: pct, globalTarget };
+  }, [employees, metricId, analyticsRange]);
+
   const globalTarget = useMemo(
     () =>
       perturbMetricGlobalTarget(
@@ -4324,11 +4416,6 @@ function MetricBenchmarkCard({
       ),
     [metricId, analyticsRange],
   );
-
-  const aboveTarget = employees.filter((e) => e.value >= globalTarget).length;
-  const pctAbove = Math.round((aboveTarget / employees.length) * 100);
-  const median = employees[Math.floor(employees.length / 2)]?.value ?? 0;
-  const stdDev = Math.sqrt(employees.reduce((s, e) => s + Math.pow(e.value - avg, 2), 0) / employees.length);
 
   return (
     <motion.div custom={2} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
@@ -4356,7 +4443,7 @@ function MetricBenchmarkCard({
           <div className="rounded-lg border border-blue-100 bg-blue-50/50 px-3.5 py-2.5">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Target Achievement</span>
-              <span className="text-xs font-bold text-blue-700">{aboveTarget}/{employees.length}</span>
+              <span className="text-xs font-bold text-blue-700">{aboveTarget}/{validEmployees.length}</span>
             </div>
             <div className="relative h-2 w-full overflow-hidden rounded-full bg-blue-100">
               <motion.div
@@ -4386,14 +4473,31 @@ function MetricEmployeeRankingCard({
       getMetricAllEmployeeData(metricId, analyticsRange, INDIVIDUAL_METRICS_ROSTER, getBaseMetricValueForEmployee),
     [metricId, analyticsRange],
   );
-  const avg = employees.reduce((s, e) => s + e.value, 0) / employees.length;
-  const maxVal = Math.max(...employees.map(e => e.value));
+  const { validEmployees, avg, maxVal } = useMemo(() => {
+    const valid = employees.filter(e => e.hasData);
+    if (valid.length === 0) return { validEmployees: valid, avg: 0, maxVal: 100 };
+    return {
+      validEmployees: valid,
+      avg: valid.reduce((s, e) => s + e.value, 0) / valid.length,
+      maxVal: Math.max(...valid.map(e => e.value)),
+    };
+  }, [employees]);
 
   const sorted = useMemo(() => {
-    if (sortBy === 'change') {
-      return [...employees].sort((a, b) => b.periodChange - a.periodChange);
-    }
-    return employees;
+    return [...employees].sort((a, b) => {
+      // 1. Force employees without data to the bottom
+      if (a.hasData !== b.hasData) {
+        return a.hasData ? -1 : 1;
+      }
+
+      // 2. For those with data, sort according to selected criteria
+      if (sortBy === 'change') {
+        return b.periodChange - a.periodChange;
+      }
+
+      // Default rank: By score descending
+      return b.value - a.value;
+    });
   }, [employees, sortBy]);
 
   return (
@@ -4475,22 +4579,26 @@ function MetricEmployeeRankingCard({
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.98 }}
                   transition={{ layout: { type: 'spring', stiffness: 350, damping: 30 }, opacity: { duration: 0.2 } }}
-                  className="px-4 sm:px-5 py-3 transition-colors hover:bg-gray-50/60 group"
+                  className={`px-4 sm:px-5 py-3 transition-colors hover:bg-gray-50/60 group ${
+                    !emp.hasData ? 'grayscale-[0.5] opacity-60' : ''
+                  }`}
                 >
                   {/* ── Desktop: single-row grid ── */}
                   <div className="hidden sm:grid grid-cols-12 gap-2 items-center">
                     {/* Rank */}
                     <div className="col-span-1 text-center">
                       <span className={`text-xs font-bold tabular-nums ${
-                        displayRank <= 3 ? 'text-primary-600' : 'text-gray-300'
+                        emp.hasData && displayRank <= 3 ? 'text-primary-600' : 'text-gray-300'
                       }`}>
-                        {displayRank}
+                        {emp.hasData ? displayRank : '-'}
                       </span>
                     </div>
 
                     {/* Name */}
                     <div className="col-span-3 min-w-0">
-                      <p className="text-sm font-semibold text-gray-700 truncate group-hover:text-primary-600 transition-colors">
+                      <p className={`text-sm font-semibold truncate transition-colors ${
+                        emp.hasData ? 'text-gray-700 group-hover:text-primary-600' : 'text-gray-500'
+                      }`}>
                         {emp.name}
                       </p>
                       <p className="text-[10px] text-gray-400 truncate">{emp.role}</p>
@@ -4499,43 +4607,47 @@ function MetricEmployeeRankingCard({
                     {/* Score bar */}
                     <div className="col-span-5 flex items-center gap-2.5">
                       <div className="flex-1 relative h-5 overflow-hidden rounded bg-gray-100">
-                        <motion.div
-                          key={`${emp.name}-${sortBy}`}
-                          initial={{ width: 0 }}
-                          animate={{ width: `${barWidth}%` }}
-                          transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1], delay: idx * 0.015 }}
-                          className={`h-full rounded ${
-                            isAboveAvg ? 'bg-emerald-400/70' : 'bg-amber-400/70'
-                          }`}
-                        />
-                        <div
-                          className="absolute top-0 h-full w-px bg-gray-400/50"
-                          style={{ left: `${avgMarker}%` }}
-                        />
+                        {emp.hasData && (
+                          <>
+                            <motion.div
+                              key={`${emp.name}-${sortBy}`}
+                              initial={{ width: 0 }}
+                              animate={{ width: `${barWidth}%` }}
+                              transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1], delay: idx * 0.015 }}
+                              className={`h-full rounded ${
+                                isAboveAvg ? 'bg-emerald-400/70' : 'bg-amber-400/70'
+                              }`}
+                            />
+                            <div
+                              className="absolute top-0 h-full w-0.5 bg-blue-600/50"
+                              style={{ left: `${avgMarker}%` }}
+                            />
+                          </>
+                        )}
                       </div>
                       <span className="text-xs font-bold text-gray-700 tabular-nums w-14 text-right flex-shrink-0">
-                        {formatMetricDisplay(metricId, emp.value)}
+                        {emp.hasData ? formatMetricDisplay(metricId, emp.value) : 'N/A'}
                       </span>
                     </div>
 
                     {/* Period change: first bucket to last bucket in selected range */}
                     <div className="col-span-3 flex items-center justify-end">
-                      <span className={`flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ring-inset ${
-                        emp.periodChange > 0
-                          ? 'bg-emerald-50 text-emerald-600 ring-emerald-100'
-                          : emp.periodChange < 0
-                            ? 'bg-red-50 text-red-500 ring-red-100'
-                            : 'bg-gray-50 text-gray-500 ring-gray-100'
-                      }`}>
-                        {emp.periodChange > 0 ? (
-                          <ArrowUpRight className="h-3 w-3" />
-                        ) : emp.periodChange < 0 ? (
-                          <ArrowDownRight className="h-3 w-3" />
-                        ) : (
-                          <Minus className="h-3 w-3" />
-                        )}
-                        {formatMetricDeltaDisplay(metricId, emp.periodChange)}
-                      </span>
+                      {emp.hasData && Math.abs(emp.periodChange) >= 0.05 ? (
+                        <span className={`flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ring-inset ${
+                          emp.periodChange > 0
+                            ? 'bg-emerald-50 text-emerald-600 ring-emerald-100'
+                            : 'bg-red-50 text-red-500 ring-red-100'
+                        }`}>
+                          {emp.periodChange > 0 ? (
+                            <ArrowUpRight className="h-3 w-3" />
+                          ) : (
+                            <ArrowDownRight className="h-3 w-3" />
+                          )}
+                          {formatMetricDeltaDisplay(metricId, emp.periodChange)}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest">No change</span>
+                      )}
                     </div>
                   </div>
 
@@ -4544,53 +4656,64 @@ function MetricEmployeeRankingCard({
                     {/* Top row: rank + name + change */}
                     <div className="flex items-center gap-2.5">
                       <span className={`text-sm font-bold tabular-nums w-6 text-center flex-shrink-0 ${
-                        displayRank <= 3 ? 'text-primary-600' : 'text-gray-300'
+                        emp.hasData && displayRank <= 3 ? 'text-primary-600' : 'text-gray-300'
                       }`}>
-                        {displayRank}
+                        {emp.hasData ? displayRank : '-'}
                       </span>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-gray-700 truncate">
+                        <p className={`text-sm font-semibold truncate ${
+                          emp.hasData ? 'text-gray-700' : 'text-gray-500'
+                        }`}>
                           {emp.name}
                         </p>
                         <p className="text-[10px] text-gray-400">{emp.role}</p>
                       </div>
                       <span className={`flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ring-inset flex-shrink-0 ${
-                        emp.periodChange > 0
-                          ? 'bg-emerald-50 text-emerald-600 ring-emerald-100'
-                          : emp.periodChange < 0
-                            ? 'bg-red-50 text-red-500 ring-red-100'
-                            : 'bg-gray-50 text-gray-500 ring-gray-100'
+                        emp.hasData && Math.abs(emp.periodChange) >= 0.05 ? (
+                          emp.periodChange > 0
+                            ? 'bg-emerald-50 text-emerald-600 ring-emerald-100'
+                            : 'bg-red-50 text-red-500 ring-red-100'
+                        ) : 'hidden'
                       }`}>
-                        {emp.periodChange > 0 ? (
-                          <ArrowUpRight className="h-3 w-3" />
-                        ) : emp.periodChange < 0 ? (
-                          <ArrowDownRight className="h-3 w-3" />
-                        ) : (
-                          <Minus className="h-3 w-3" />
+                        {emp.hasData && Math.abs(emp.periodChange) >= 0.05 && (
+                          <>
+                            {emp.periodChange > 0 ? (
+                              <ArrowUpRight className="h-3 w-3" />
+                            ) : (
+                              <ArrowDownRight className="h-3 w-3" />
+                            )}
+                            {formatMetricDeltaDisplay(metricId, emp.periodChange)}
+                          </>
                         )}
-                        {formatMetricDeltaDisplay(metricId, emp.periodChange)}
                       </span>
+                      {(!emp.hasData || Math.abs(emp.periodChange) < 0.05) && (
+                        <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest">No change</span>
+                      )}
                     </div>
 
                     {/* Bottom row: full-width score bar */}
                     <div className="flex items-center gap-2.5 pl-8">
                       <div className="flex-1 relative h-4 overflow-hidden rounded bg-gray-100">
-                        <motion.div
-                          key={`${emp.name}-${sortBy}-m`}
-                          initial={{ width: 0 }}
-                          animate={{ width: `${barWidth}%` }}
-                          transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1], delay: idx * 0.015 }}
-                          className={`h-full rounded ${
-                            isAboveAvg ? 'bg-emerald-400/70' : 'bg-amber-400/70'
-                          }`}
-                        />
-                        <div
-                          className="absolute top-0 h-full w-px bg-gray-400/50"
-                          style={{ left: `${avgMarker}%` }}
-                        />
+                        {emp.hasData && (
+                          <>
+                            <motion.div
+                              key={`${emp.name}-${sortBy}-m`}
+                              initial={{ width: 0 }}
+                              animate={{ width: `${barWidth}%` }}
+                              transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1], delay: idx * 0.015 }}
+                              className={`h-full rounded ${
+                                isAboveAvg ? 'bg-emerald-400/70' : 'bg-amber-400/70'
+                              }`}
+                            />
+                            <div
+                              className="absolute top-0 h-full w-px bg-blue-600/40"
+                              style={{ left: `${avgMarker}%` }}
+                            />
+                          </>
+                        )}
                       </div>
                       <span className="text-xs font-bold text-gray-700 tabular-nums flex-shrink-0">
-                        {formatMetricDisplay(metricId, emp.value)}
+                        {emp.hasData ? formatMetricDisplay(metricId, emp.value) : 'N/A'}
                       </span>
                     </div>
                   </div>
@@ -4612,12 +4735,16 @@ function MetricEmployeeRankingCard({
                 <span className="text-[10px] font-semibold text-gray-400">Below avg</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <div className="h-px w-3 bg-gray-400/50" />
+                <div className="h-2 w-2 rounded-full bg-gray-300" />
+                <span className="text-[10px] font-semibold text-gray-400">No records</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="h-[12px] w-0.5 bg-blue-500/50" />
                 <span className="text-[10px] font-semibold text-gray-400">Global avg</span>
               </div>
             </div>
             <span className="text-[10px] font-bold text-gray-400">
-              {employees.filter(e => e.value >= avg).length}/{employees.length} above average
+              {validEmployees.filter(e => e.value >= avg).length}/{validEmployees.length} above average
             </span>
           </div>
         </div>
@@ -4635,17 +4762,29 @@ function MetricInsightsCard({
 }) {
   const [currentPage, setCurrentPage] = useState(0);
   const [pageDirection, setPageDirection] = useState(0);
-  const insights = useMemo(
+
+  const employees = useMemo(
     () =>
-      getMetricInsights(
+      getMetricAllEmployeeData(metricId, analyticsRange, INDIVIDUAL_METRICS_ROSTER, getBaseMetricValueForEmployee),
+    [metricId, analyticsRange],
+  );
+
+  const hasAnyData = useMemo(() => employees.some(e => e.hasData), [employees]);
+
+  const insights = useMemo(
+    () => {
+      const raw = getMetricInsights(
         metricId,
         analyticsRange,
         INDIVIDUAL_METRICS_ROSTER,
         getBaseMetricValueForEmployee,
         BRANCH_AVERAGES[metricId as keyof typeof BRANCH_AVERAGES] ?? 85,
-      ),
+      );
+      return mapMetricInsightsToCardRows(raw);
+    },
     [metricId, analyticsRange],
   );
+
   const totalPages = Math.max(1, Math.ceil(insights.length / METRIC_INSIGHTS_PAGE_SIZE));
   const safeCurrentPage = Math.min(currentPage, totalPages - 1);
   const pageInsights = useMemo(
@@ -4670,32 +4809,42 @@ function MetricInsightsCard({
         subtitle={formatInsightsPeriodSubtitle(analyticsRange)}
       >
         <div className="flex flex-col flex-1 overflow-hidden">
-          <div className="flex-1 overflow-hidden">
-            <AnimatePresence mode="wait" initial={false} custom={pageDirection}>
-              <motion.div
-                key={safeCurrentPage}
-                custom={pageDirection}
-                variants={keyInsightsPageVariants}
-                initial="enter"
-                animate="center"
-                exit="exit"
-                className="divide-y divide-gray-50 h-full overflow-auto"
-              >
-                {pageInsights.map((insight, idx) => (
-                  <div
-                    key={`${safeCurrentPage}-${idx}-${insight.title}`}
-                    className="flex flex-col gap-2 p-4 transition-colors hover:bg-gray-50/60"
+          {!hasAnyData ? (
+            <div className="flex flex-col items-center justify-center p-8 text-center flex-1">
+              <div className="h-10 w-10 rounded-full bg-gray-50 flex items-center justify-center mb-3">
+                <Search className="h-5 w-5 text-gray-300" />
+              </div>
+              <p className="text-sm font-semibold text-gray-900">No data found</p>
+              <p className="text-xs text-gray-500 mt-1">No insights currently available.</p>
+            </div>
+          ) : (
+            <>
+              <div className="flex-1 overflow-hidden">
+                <AnimatePresence mode="wait" initial={false} custom={pageDirection}>
+                  <motion.div
+                    key={safeCurrentPage}
+                    custom={pageDirection}
+                    variants={keyInsightsPageVariants}
+                    initial="enter"
+                    animate="center"
+                    exit="exit"
+                    className="divide-y divide-gray-50 h-full overflow-auto"
                   >
-                    <div className="flex items-start gap-3">
+                    {pageInsights.map((insight, idx) => (
                       <div
-                        className={`mt-0.5 flex-shrink-0 h-8 w-8 rounded-lg flex items-center justify-center ${
-                          insight.type === 'warning'
-                            ? 'bg-amber-50 text-amber-500'
-                            : insight.type === 'success'
-                              ? 'bg-emerald-50 text-emerald-500'
-                              : 'bg-blue-50 text-blue-500'
-                        }`}
+                        key={`${safeCurrentPage}-${idx}-${insight.title}`}
+                        className="flex flex-col gap-2 p-4 transition-colors hover:bg-gray-50/60"
                       >
+                        <div className="flex items-start gap-3">
+                          <div
+                            className={`mt-0.5 flex-shrink-0 h-8 w-8 rounded-lg flex items-center justify-center ${
+                              insight.type === 'warning'
+                                ? 'bg-amber-50 text-amber-500'
+                                : insight.type === 'success'
+                                  ? 'bg-emerald-50 text-emerald-500'
+                                  : 'bg-blue-50 text-blue-500'
+                            }`}
+                          >
                         {insight.type === 'warning' ? (
                           <AlertTriangle className="h-4 w-4" />
                         ) : insight.type === 'success' ? (
@@ -4732,9 +4881,11 @@ function MetricInsightsCard({
               }}
             />
           </div>
-        </div>
-      </AnalyticsCard>
-    </motion.div>
+        </>
+      )}
+    </div>
+  </AnalyticsCard>
+</motion.div>
   );
 }
 
@@ -4759,6 +4910,25 @@ function MetricDistributionCard({
   );
   const { bins: distributionData, totalEmployees, dominantZone, dominantEmployeeCount, dominantSharePct, dominantBandLabel } =
     metricDistribution;
+
+  if (totalEmployees === 0) {
+    return (
+      <motion.div custom={5} variants={cardVariants} initial="hidden" animate="visible" className="h-full min-w-0 w-full">
+        <AnalyticsCard icon={<Users className="h-4 w-4" />} title="Score distribution" subtitle="Performance spread">
+          <div className="flex flex-col items-center justify-center p-8 text-center flex-1">
+            <div className="h-10 w-10 rounded-full bg-gray-50 flex items-center justify-center mb-3">
+              <Search className="h-5 w-5 text-gray-300" />
+            </div>
+            <p className="text-sm font-semibold text-gray-900">No data found</p>
+            <p className="text-xs text-gray-500 mt-1">
+              There is no participant data to display the distribution.
+            </p>
+          </div>
+        </AnalyticsCard>
+      </motion.div>
+    );
+  }
+
   const subtitle = fixedBandMode
     ? `${totalEmployees} employees · Fixed score bands`
     : `${totalEmployees} employees · vs Global Avg ${METRIC_LABELS[metricId] ?? ''}`;
@@ -4850,6 +5020,37 @@ function MetricTrendCard({
   );
   const trendTitle = useMemo(() => buildMetricTrendCardTitle(analyticsRange), [analyticsRange]);
   const trendSubtitle = buildMetricTrendCardSubtitle();
+
+  const dataset = ACTIVE_LIVE_DATASET;
+  const hasAnyTrendData = useMemo(() => {
+    if (!dataset) return true;
+    if (metricId === 'professional-conduct') return true;
+    const series = getGlobalSeries(dataset, metricId as any);
+    return series.some(p => p.value !== null);
+  }, [dataset, metricId]);
+
+  if (!hasAnyTrendData) {
+    return (
+      <motion.div custom={6} variants={cardVariants} initial="hidden" animate="visible" className="h-full min-w-0 w-full">
+        <AnalyticsCard
+          icon={<Activity className="h-4 w-4" />}
+          title={trendTitle}
+          subtitle={trendSubtitle}
+        >
+          <div className="flex flex-col items-center justify-center p-12 text-center flex-1">
+            <div className="h-12 w-12 rounded-full bg-gray-50 flex items-center justify-center mb-4">
+              <Search className="h-6 w-6 text-gray-300" />
+            </div>
+            <p className="text-sm font-semibold text-gray-900">No data found</p>
+            <p className="text-xs text-gray-500 mt-1 max-w-[220px]">
+              The trend cannot be calculated because there are no employee records for this metric in the selected period.
+            </p>
+          </div>
+        </AnalyticsCard>
+      </motion.div>
+    );
+  }
+
   const targetDisplay = trendData[0]?.target ?? 0;
   const trendYPadding = getMetricKind(metricId) === 'likert' ? 0.4 : 5;
 
