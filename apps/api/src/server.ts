@@ -9,7 +9,6 @@ import { initPeerEvaluationQueue, stopPeerEvaluationQueue } from './services/pee
 import { initPeerEvaluationCron, stopPeerEvaluationCron } from './services/peerEvaluationCron.service.js';
 import { initShiftAuthorizationCron, stopShiftAuthorizationCron } from './services/shiftAuthorizationCron.service.js';
 import { initEpiSnapshotCrons, stopEpiSnapshotCrons } from './services/epiSnapshotCron.service.js';
-import { verifyMailConnection } from './services/mail.service.js';
 import { logger } from './utils/logger.js';
 import fs from 'fs';
 
@@ -86,7 +85,6 @@ async function bootstrap(): Promise<void> {
   initPeerEvaluationCron();
   initShiftAuthorizationCron();
   await initEpiSnapshotCrons();
-  await verifyMailConnection();
 
   server.listen(env.PORT, () => {
     logger.info(`Server running on port ${env.PORT}`);

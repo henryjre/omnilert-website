@@ -1,9 +1,11 @@
 import type { AuditResultsWebhookPayload, StoreAudit } from '@omnilert/shared';
+import jwt from 'jsonwebtoken';
 import { db } from '../config/database.js';
+import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 import { getEmployeeWebsiteKeyByEmployeeId } from './odoo.service.js';
 
-const AUDIT_RESULTS_WEBHOOK_URL = 'https://n8n.omnilert.app/webhook/audit_results';
+const AUDIT_RESULTS_WEBHOOK_URL = 'https://n8n.omnilert.app/webhook/omnilert_mail';
 const AUDIT_RESULTS_WEBHOOK_TIMEOUT_MS = 5000;
 
 type LoggerLike = {
@@ -210,12 +212,23 @@ async function defaultFindCompanyById(
 }
 
 async function defaultSendWebhook(payload: AuditResultsWebhookPayload): Promise<void> {
+  const token = jwt.sign({ iss: 'omnilert-api' }, env.JWT_SECRET, {
+    algorithm: 'HS256',
+    expiresIn: '1m',
+  });
+
   const response = await fetch(AUDIT_RESULTS_WEBHOOK_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({
+      type: 'audit_result',
+      to: payload.recipient.email,
+      subject: 'Audit Completion Receipt',
+      data: payload,
+    }),
     signal: AbortSignal.timeout(AUDIT_RESULTS_WEBHOOK_TIMEOUT_MS),
   });
 
@@ -289,12 +302,23 @@ export function createStoreAuditResultsWebhookNotifier(
 
     try {
       if (deps.sendWebhook === defaultSendWebhook && deps.webhookUrl !== AUDIT_RESULTS_WEBHOOK_URL) {
+        const token = jwt.sign({ iss: 'omnilert-api' }, env.JWT_SECRET, {
+          algorithm: 'HS256',
+          expiresIn: '1m',
+        });
+
         const response = await fetch(deps.webhookUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
           },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({
+            type: 'audit_result',
+            to: payload.recipient.email,
+            subject: 'Audit Completion Receipt',
+            data: payload,
+          }),
           signal: AbortSignal.timeout(AUDIT_RESULTS_WEBHOOK_TIMEOUT_MS),
         });
 

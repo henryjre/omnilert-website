@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EPI Report PDF - DM Sans Design Mockup</title>
+    <!-- Use DM Sans from Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <style>
+        body {
+            background-color: #525659;
+            margin: 0;
+            padding: 40px;
+            font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            display: flex;
+            justify-content: center;
+        }
+        .pdf-page {
+            background-color: white;
+            width: 794px;
+            min-height: 1123px;
+            padding: 60px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            box-sizing: border-box;
+            color: #1e293b;
+        }
+        .header {
+            text-align: center;
+            border-bottom: 2px solid #f1f5f9;
+            padding-bottom: 25px;
+            margin-bottom: 35px;
+        }
+        .report-title {
+            color: #1e3a8a;
+            font-size: 28px;
+            font-weight: 800;
+            margin: 0 0 8px 0;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+        }
+        .report-subtitle {
+            font-size: 14px;
+            color: #64748b;
+            margin: 0;
+            font-weight: 500;
+        }
+        .employee-info {
+            margin-bottom: 35px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+        }
+        .employee-name {
+            font-size: 22px;
+            font-weight: 700;
+            margin-bottom: 6px;
+            color: #1e293b;
+        }
+        .employee-meta {
+            font-size: 13px;
+            color: #94a3b8;
+        }
+        .summary-box {
+            background-color: #f0f9ff;
+            border-radius: 16px;
+            padding: 28px;
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 45px;
+            border: 1px solid #e0f2fe;
+            box-shadow: inset 0 2px 4px rgba(30, 58, 138, 0.02);
+        }
+        .summary-item {
+            display: flex;
+            flex-direction: column;
+            width: 33.33%;
+            text-align: center;
+        }
+        .summary-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: #1e40af;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+        .summary-value {
+            font-size: 42px;
+            font-weight: 800;
+            color: #1e3a8a;
+            letter-spacing: -0.04em;
+        }
+        .delta-positive { color: #10b981; }
+        .delta-negative { color: #ef4444; }
+
+        .kpi-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            margin-bottom: 30px;
+        }
+        .kpi-table th {
+            text-align: left;
+            padding: 12px 10px;
+            border-bottom: 2px solid #f1f5f9;
+            color: #64748b;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 700;
+        }
+        .category-header td {
+            background-color: #f8fafc;
+            color: #1e3a8a;
+            font-weight: 700;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            padding: 14px 10px !important;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .kpi-table td {
+            padding: 11px 10px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        .impact-positive { color: #10b981; font-weight: 700; }
+        .impact-negative { color: #ef4444; font-weight: 700; }
+        .impact-neutral { color: #94a3b8; }
+
+        .footer-summary {
+            margin-top: 30px;
+            border-top: 2px solid #f1f5f9;
+            padding-top: 20px;
+        }
+        .footer-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 16px;
+            font-weight: 700;
+            padding: 10px 0;
+            color: #1e3a8a;
+        }
+    </style>
+</head>
+<body>
+    <div class="pdf-page">
+        <div class="header">
+            <h1 class="report-title">EPI Performance Report</h1>
+            <p class="report-subtitle">Week ending April 02, 2026</p>
+        </div>
+
+        <div class="employee-info">
+            <div>
+                <div class="employee-name">John Doe</div>
+                <div class="employee-meta">Employee #55291 &nbsp;&middot;&nbsp; john.doe@omnilert.app</div>
+            </div>
+            <div style="text-align: right; color: #94a3b8; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;">Omnilert Performance Engine</div>
+        </div>
+
+        <div class="summary-box">
+            <div class="summary-item">
+                <span class="summary-label">Start Position</span>
+                <span class="summary-value">100.0</span>
+            </div>
+            <div class="summary-item">
+                <span class="summary-label">Net Performance Shift</span>
+                <span class="summary-value delta-positive">+12.4</span>
+            </div>
+            <div class="summary-item">
+                <span class="summary-label">Final EPI Score</span>
+                <span class="summary-value">112.4</span>
+            </div>
+        </div>
+
+        <table class="kpi-table">
+            <thead>
+                <tr>
+                    <th width="50%">Key Performance Analytics</th>
+                    <th width="30%" style="text-align: right;">Metric Result</th>
+                    <th width="20%" style="text-align: right;">EPI Impact</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="category-header">
+                    <td colspan="3">Core Performance</td>
+                </tr>
+                <tr>
+                    <td>Customer Interaction</td>
+                    <td style="text-align: right;">4.80 / 5.00</td>
+                    <td style="text-align: right;" class="impact-positive">+3.0</td>
+                </tr>
+                <tr>
+                    <td>Service Efficiency</td>
+                    <td style="text-align: right;">4.50 / 5.00</td>
+                    <td style="text-align: right;" class="impact-positive">+2.0</td>
+                </tr>
+                <tr class="category-header">
+                    <td colspan="3">Operational Excellence</td>
+                </tr>
+                <tr>
+                    <td>Attendance Rate</td>
+                    <td style="text-align: right;">100% Rate</td>
+                    <td style="text-align: right;" class="impact-positive">+2.0</td>
+                </tr>
+                <tr>
+                    <td>Average Order Value (AOV)</td>
+                    <td style="text-align: right;">PHP 165.20</td>
+                    <td style="text-align: right;" class="impact-positive">+2.0</td>
+                </tr>
+                <tr class="category-header">
+                    <td colspan="3">Professional Record</td>
+                </tr>
+                <tr>
+                    <td>Workplace Relations Score (WRS)</td>
+                    <td style="text-align: right;">4.75 / 5.00</td>
+                    <td style="text-align: right;" class="impact-positive">+1.0</td>
+                </tr>
+                <tr>
+                    <td>Violations (Direct Reduction)</td>
+                    <td style="text-align: right;">1 Notice (-5.1)</td>
+                    <td style="text-align: right;" class="impact-negative">-5.1</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="footer-summary" style="margin-top: 15px;">
+            <div class="footer-row">
+                <span>Net Total Weekly Performance Impact</span>
+                <span class="impact-positive">+12.4</span>
+            </div>
+        </div>
+        
+        <div style="margin-top: 100px; text-align: center; color: #94a3b8; font-size: 10px; font-weight: 700; letter-spacing: 0.25em;">
+            OMNILERT ANALYTICS · CONFIDENTIAL ENGINE PROCESSED · 2026
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manager EPI Summary - DM Sans Design Mockup</title>
+    <!-- Use DM Sans from Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background-color: #525659;
+            margin: 0;
+            padding: 40px;
+            font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            display: flex;
+            justify-content: center;
+        }
+        .pdf-page {
+            background-color: white;
+            width: 794px;
+            min-height: 1123px;
+            padding: 60px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            box-sizing: border-box;
+            color: #1e293b;
+        }
+        .header {
+            text-align: center;
+            border-bottom: 2px solid #f1f5f9;
+            padding-bottom: 25px;
+            margin-bottom: 35px;
+        }
+        .report-title {
+            color: #1e3a8a;
+            font-size: 28px;
+            font-weight: 800;
+            margin: 0 0 8px 0;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+        }
+        .report-subtitle {
+            font-size: 14px;
+            color: #64748b;
+            margin: 0;
+            font-weight: 500;
+        }
+        .company-info {
+            margin-bottom: 35px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+        }
+        .company-name {
+            font-size: 22px;
+            font-weight: 700;
+            margin-bottom: 6px;
+            color: #1e293b;
+        }
+        .summary-box {
+            background-color: #f0f9ff;
+            border-radius: 16px;
+            padding: 28px;
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 45px;
+            border: 1px solid #e0f2fe;
+            box-shadow: inset 0 2px 4px rgba(30, 58, 138, 0.02);
+        }
+        .summary-item {
+            display: flex;
+            flex-direction: column;
+            width: 33.33%;
+            text-align: center;
+        }
+        .summary-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: #1e40af;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+        .summary-value {
+            font-size: 30px;
+            font-weight: 800;
+            color: #1e3a8a;
+            letter-spacing: -0.04em;
+        }
+        .delta-positive { color: #10b981; }
+        .delta-negative { color: #ef4444; }
+
+        .performance-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            margin-bottom: 30px;
+        }
+        .performance-table th {
+            text-align: left;
+            padding: 12px 10px;
+            border-bottom: 2px solid #f1f5f9;
+            color: #64748b;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 700;
+        }
+        .performance-table td {
+            padding: 12px 10px;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        .performance-table tr:nth-child(even) {
+            background-color: #f9fafb;
+        }
+        .impact-positive { color: #10b981; font-weight: 700; }
+        .impact-negative { color: #ef4444; font-weight: 700; }
+        
+        .footer {
+            margin-top: 60px;
+            text-align: center;
+            color: #94a3b8;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.2em;
+        }
+    </style>
+</head>
+<body>
+    <div class="pdf-page">
+        <div class="header">
+            <h1 class="report-title">Team Performance Summary</h1>
+            <p class="report-subtitle">EPI Management Overview &nbsp;&middot;&nbsp; Week ending April 02, 2026</p>
+        </div>
+
+        <div class="company-info">
+            <div>
+                <div class="company-name">Omnilert Main Branch</div>
+                <div style="font-size: 13px; color: #94a3b8; font-weight: 500;">Executive summary of current week active performance shifts.</div>
+            </div>
+            <div style="text-align: right; color: #94a3b8; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em;">INTERNAL DATA ONLY</div>
+        </div>
+
+        <div class="summary-box">
+            <div class="summary-item">
+                <span class="summary-label">Total Employees</span>
+                <span class="summary-value">114</span>
+            </div>
+            <div class="summary-item">
+                <span class="summary-label">Average EPI Change</span>
+                <span class="summary-value delta-positive">+1.42</span>
+            </div>
+            <div class="summary-item">
+                <span class="summary-label">Global Average EPI</span>
+                <span class="summary-value" style="color: #1e3a8a;">102.5</span>
+            </div>
+        </div>
+
+        <table class="performance-table">
+            <thead>
+                <tr>
+                    <th width="8%">#</th>
+                    <th width="32%">Employee Name</th>
+                    <th width="20%" style="text-align: right;">Previous EPI</th>
+                    <th width="20%" style="text-align: right;">Final EPI Score</th>
+                    <th width="20%" style="text-align: right;">Weekly Change</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>1</td>
+                    <td><b>Sonia Gonzales</b></td>
+                    <td style="text-align: right; color: #64748b;">104.3</td>
+                    <td style="text-align: right; font-weight: 700;">112.4</td>
+                    <td style="text-align: right;" class="impact-positive">+8.1</td>
+                </tr>
+                <tr>
+                    <td>2</td>
+                    <td><b>Marcus Aurelius</b></td>
+                    <td style="text-align: right; color: #64748b;">100.9</td>
+                    <td style="text-align: right; font-weight: 700;">105.1</td>
+                    <td style="text-align: right;" class="impact-positive">+4.2</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="footer" style="margin-top: 15px;">
+            OMNILERT ANALYTICS &middot; CONFIDENTIAL &middot; UNAUTHORIZED SHARING PROHIBITED
+        </div>
+    </div>
+</body>
+</html>

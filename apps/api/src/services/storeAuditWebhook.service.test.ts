@@ -223,7 +223,7 @@ test('createStoreAuditResultsWebhookNotifier skips delivery when recipient canno
   const warnLogs: Array<Record<string, unknown>> = [];
   let sendCalls = 0;
   const notifyCompletedStoreAudit = createStoreAuditResultsWebhookNotifier({
-    webhookUrl: 'https://example.com/webhook/audit_results',
+    webhookUrl: 'https://n8n.omnilert.app/webhook/omnilert_mail',
     resolveServiceCrewCctvWebsiteUserKey: async () => null,
     findUserById: async () => null,
     findUserByUserKey: async () => null,
@@ -262,7 +262,7 @@ test('createStoreAuditResultsWebhookNotifier logs webhook failures without block
   const errorLogs: Array<Record<string, unknown>> = [];
   let sendCalls = 0;
   const notifyCompletedStoreAudit = createStoreAuditResultsWebhookNotifier({
-    webhookUrl: 'https://example.com/webhook/audit_results',
+    webhookUrl: 'https://n8n.omnilert.app/webhook/omnilert_mail',
     resolveServiceCrewCctvWebsiteUserKey: async () => 'user-key-scc',
     findUserById: async () => null,
     findUserByUserKey: async () => ({
@@ -308,7 +308,7 @@ test('createStoreAuditResultsWebhookNotifier prefers canonical audited_user_id w
   let keyLookupCalls = 0;
   let idLookupCalls = 0;
   const notifyCompletedStoreAudit = createStoreAuditResultsWebhookNotifier({
-    webhookUrl: 'https://example.com/webhook/audit_results',
+    webhookUrl: 'https://n8n.omnilert.app/webhook/omnilert_mail',
     resolveServiceCrewCctvWebsiteUserKey: async () => {
       throw new Error('legacy resolver should not be used');
     },

@@ -710,52 +710,37 @@ export async function runWeeklyEpiSnapshot(input?: { scheduledFor?: Date }): Pro
     }
   }
 
-  const companies = await masterDb('companies').where({ is_active: true }).select('id', 'name');
-  for (const company of companies) {
+  // ── Global Manager Summary Dispatch
+  if (reportDataList.length > 0) {
     try {
-      const companyEmployeeIds = new Set(
-        (await masterDb('user_company_access')
-          .where({ company_id: company.id, is_active: true })
-          .select('user_id'))
-          .map((row) => row.user_id as string),
-      );
-
-      const companyReports = reportDataList.filter((report) => companyEmployeeIds.has(report.userId));
-      if (companyReports.length === 0) continue;
+      const globalAvgDelta = reportDataList.reduce((sum, report) => sum + report.delta, 0) / reportDataList.length;
+      const globalSummaryPdf = await generateManagerSummaryPdf(reportDataList, 'Omnilert Global', snapshotDate);
 
       const managers = await masterDb('users as u')
         .join('user_roles as ur', 'u.id', 'ur.user_id')
         .join('roles as r', 'ur.role_id', 'r.id')
-        .join('user_company_access as uca', (query) => {
-          query.on('uca.user_id', 'u.id').andOn('uca.company_id', masterDb.raw('?', [company.id]));
-        })
         .where('u.is_active', true)
         .whereIn('r.name', ['Administrator', 'Management'])
         .select('u.id', 'u.first_name', 'u.last_name', 'u.email')
         .distinct('u.id') as Array<{ id: string; first_name: string; last_name: string; email: string }>;
-
-      if (managers.length === 0) continue;
-
-      const avgDelta = companyReports.reduce((sum, report) => sum + report.delta, 0) / companyReports.length;
-      const summaryPdf = await generateManagerSummaryPdf(companyReports, company.name as string, snapshotDate);
 
       for (const manager of managers) {
         try {
           await sendManagerEpiSummaryEmail(
             manager.email,
             `${manager.first_name} ${manager.last_name}`.trim(),
-            company.name as string,
-            companyReports.length,
-            avgDelta,
+            'Omnilert Global',
+            reportDataList.length,
+            globalAvgDelta,
             snapshotDate,
-            summaryPdf,
+            globalSummaryPdf,
           );
         } catch (error) {
-          logger.error({ err: error, managerId: manager.id, snapshotDate }, 'Failed to send EPI summary email to manager');
+          logger.error({ err: error, managerId: manager.id, snapshotDate }, 'Failed to send Global EPI summary email to manager');
         }
       }
     } catch (error) {
-      logger.error({ err: error, companyId: company.id, snapshotDate }, 'Failed to send manager EPI summary for company');
+      logger.error({ err: error, snapshotDate }, 'Failed to generate/dispatch Global EPI summary');
     }
   }
 

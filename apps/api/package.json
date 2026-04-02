@@ -15,6 +15,9 @@
     "migrate:rollback": "tsx --no-cache ./node_modules/knex/bin/cli.js migrate:rollback --knexfile knexfile.ts",
     "migrate:status": "tsx --no-cache ./node_modules/knex/bin/cli.js migrate:status --knexfile knexfile.ts",
     "seed": "tsx ./node_modules/knex/bin/cli.js seed:run --knexfile knexfile.ts",
+    "dry-run:epi": "tsx src/scripts/dry-run-epi.ts",
+    "test-webhook:epi": "tsx src/scripts/test-webhook-dispatch.ts",
+    "test-manager-webhook:epi": "tsx src/scripts/test-manager-webhook.ts",
     "clean": "rimraf dist"
   },
   "dependencies": {
