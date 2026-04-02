@@ -121,6 +121,7 @@ function getEmptyCriteria(): EpiCriteria {
     aov: null,
     branchAov: null,
     violationCount: 0,
+    violationTotalDecrease: 0,
     awardCount: 0,
     uniformComplianceRate: null,
     hygieneComplianceRate: null,
