@@ -79,6 +79,7 @@ function createCriteria(overrides: Partial<DashboardCriteria> = {}): DashboardCr
     aov: 120,
     branchAov: 110,
     violationCount: 0,
+    violationTotalDecrease: 0,
     awardCount: 1,
     uniformComplianceRate: 100,
     hygieneComplianceRate: 100,
