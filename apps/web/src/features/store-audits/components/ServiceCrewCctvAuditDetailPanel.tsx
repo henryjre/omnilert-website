@@ -39,6 +39,7 @@ import { resolveServiceCrewCctvAuditPanelTiming } from './serviceCrewCctvAuditTi
 import { StarRatingInput } from './StarRatingInput';
 import { YesNoPill, type YesNoPillValue } from './YesNoPill';
 import { normalizeAuditedEmployeeName } from '@/shared/utils/string';
+import { FileThumbnail } from '@/shared/components/ui/FileThumbnail';
 
 function formatDateTime(value: string | null): string {
   if (!value) return '-';
@@ -1529,25 +1530,15 @@ export function ServiceCrewCctvAuditDetailPanel({
               {canMutateMessages && (
                 <div className="mt-3 rounded-xl border border-gray-200 bg-white p-3">
                   {selectedFiles.length > 0 && (
-                    <div className="mb-2 flex flex-wrap gap-2">
+                    <div className="mb-3 flex flex-wrap gap-3 p-1">
                       {selectedFiles.map((file) => (
-                        <span
-                          key={`${file.name}-${file.size}`}
-                          className="inline-flex items-center gap-2 rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700"
-                        >
-                          <span className="max-w-[180px] truncate">{file.name}</span>
-                          <span className="text-[11px] text-gray-500">{formatFileSize(file.size)}</span>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setSelectedFiles((current) => current.filter((item) => item !== file))
-                            }
-                            className="rounded-full p-0.5 hover:bg-gray-300"
-                            title="Remove attachment"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </span>
+                        <FileThumbnail
+                          key={`${file.name}-${file.size}-${file.lastModified}`}
+                          file={file}
+                          onRemove={() =>
+                            setSelectedFiles((current) => current.filter((item) => item !== file))
+                          }
+                        />
                       ))}
                     </div>
                   )}
@@ -1560,6 +1551,32 @@ export function ServiceCrewCctvAuditDetailPanel({
                       if (event.key === 'Enter' && !event.shiftKey) {
                         event.preventDefault();
                         void handleSendMessage();
+                      }
+                    }}
+                    onPaste={async (e) => {
+                      const items = Array.from(e.clipboardData.items);
+                      const imageItems = items.filter((item) => item.type.startsWith('image/'));
+                      if (imageItems.length === 0) return;
+
+                      const newFiles: File[] = [];
+                      for (const item of imageItems) {
+                        const blob = item.getAsFile();
+                        if (blob) {
+                          const extension = item.type.split('/')[1] || 'png';
+                          const file = new File(
+                            [blob],
+                            `pasted-image-${Date.now()}.${extension}`,
+                            { type: item.type },
+                          );
+                          newFiles.push(await normalizeFileForUpload(file));
+                        }
+                      }
+
+                      if (newFiles.length > 0) {
+                        setSelectedFiles((prev) => {
+                          const combined = [...prev, ...newFiles];
+                          return combined.slice(0, 10);
+                        });
                       }
                     }}
                     placeholder="Add observation, finding, or note..."

@@ -33,6 +33,8 @@ interface ChatSectionProps {
   onDelete: (messageId: string) => Promise<void>;
 }
 
+import { FileThumbnail } from '@/shared/components/ui/FileThumbnail';
+
 export function ChatSection({
   className,
   messages,
@@ -255,21 +257,14 @@ export function ChatSection({
             <button type="button" onClick={() => setReplyTo(null)}><X className="h-4 w-4" /></button>
           </div>
         )}
-
         {files.length > 0 && (
           <div className="mb-3 flex flex-wrap gap-2">
             {files.map((file) => (
-              <span key={`${file.name}-${file.size}`} className="flex items-center gap-1 rounded-full bg-gray-100 pl-3 pr-1 py-1 text-xs text-gray-700">
-                {file.name}
-                <button
-                  type="button"
-                  onClick={() => setFiles((current) => current.filter((f) => f !== file))}
-                  className="ml-0.5 rounded-full p-0.5 hover:bg-gray-300"
-                  title="Remove attachment"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
+              <FileThumbnail
+                key={`${file.name}-${file.size}-${file.lastModified}`}
+                file={file}
+                onRemove={() => setFiles((current) => current.filter((f) => f !== file))}
+              />
             ))}
           </div>
         )}
@@ -290,6 +285,29 @@ export function ChatSection({
             <textarea
               ref={textareaRef}
               value={content}
+              onPaste={async (e) => {
+                const items = Array.from(e.clipboardData.items);
+                const imageItems = items.filter((item) => item.type.startsWith('image/'));
+                if (imageItems.length === 0) return;
+
+                // Stop default paste (which might paste text if both are present, or do nothing)
+                // Actually, if we just want to ADD the image and let text paste normally, we don't preventDefault.
+                // But usually, when you paste an image, you don't want the raw binary bits as text.
+                
+                const newFiles: File[] = [];
+                for (const item of imageItems) {
+                  const blob = item.getAsFile();
+                  if (blob) {
+                    const extension = item.type.split('/')[1] || 'png';
+                    const file = new File([blob], `pasted-image-${Date.now()}.${extension}`, { type: item.type });
+                    newFiles.push(await normalizeFileForUpload(file));
+                  }
+                }
+                
+                if (newFiles.length > 0) {
+                  setFiles((prev) => [...prev, ...newFiles]);
+                }
+              }}
               onChange={(event) => {
                 const next = event.target.value;
                 setContent(next);
@@ -345,7 +363,8 @@ export function ChatSection({
           onChange={async (event) => {
             const raw = Array.from(event.target.files ?? []);
             const normalized = await Promise.all(raw.map(normalizeFileForUpload));
-            setFiles(normalized);
+            setFiles((current) => [...current, ...normalized]);
+            event.target.value = ''; // Reset to allow same file selection
           }}
         />
       </div>
