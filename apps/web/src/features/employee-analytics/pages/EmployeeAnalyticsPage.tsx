@@ -73,6 +73,7 @@ import {
   getMetricScaleMax,
   buildMetricInsights,
   mapMetricInsightsToCardRows,
+  smartRound,
   type MetricInsightItem,
 } from '../utils/analyticsRuleEngine';
 import { isStickyHeaderStuck } from '../stickyHeader';
@@ -1502,7 +1503,7 @@ function GlobalEpiCard({
               className="text-[48px] font-bold leading-none text-white tabular-nums"
               style={{ letterSpacing: '-2px' }}
             >
-              {globalEpi.toFixed(1)}
+              {smartRound(globalEpi, 2)}
             </span>
             <div className="mb-2 flex items-center gap-1.5">
               <span
@@ -1522,7 +1523,7 @@ function GlobalEpiCard({
                   <Minus className="h-3 w-3" />
                 )}
                 {globalEpiDelta > 0 ? '+' : ''}
-                {globalEpiDelta.toFixed(1)}
+                {smartRound(globalEpiDelta, 2)}
               </span>
               <span className="text-[10px] font-semibold uppercase tracking-widest text-white/40">
                 {comparisonCaption}
@@ -1633,11 +1634,14 @@ function AwardsViolationsCard({
 function LeaderboardCard({
   topPerformers,
   priorityReview,
+  onUserSelect,
 }: {
   topPerformers: { name: string; epi: number }[];
   priorityReview: { name: string; epi: number }[];
+  onUserSelect: (userName: string) => void;
 }) {
-  const navigate = useNavigate();
+  // We no longer use global navigate here as we pivot to internal view changes
+  // const navigate = useNavigate();
 
   return (
     <motion.div custom={2} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
@@ -1662,7 +1666,7 @@ function LeaderboardCard({
                   initial="hidden"
                   animate="visible"
                   whileHover="hover"
-                  onClick={() => navigate('/employee-profiles')}
+                  onClick={() => onUserSelect(employee.name)}
                   className="group flex cursor-pointer items-center justify-between rounded-md px-2 py-2 transition-colors hover:bg-gray-50 active:bg-gray-100"
                 >
                   <div className="flex items-center gap-2 min-w-0">
@@ -1674,7 +1678,7 @@ function LeaderboardCard({
                     </span>
                   </div>
                   <span className="ml-2 text-sm font-bold text-emerald-600 tabular-nums flex-shrink-0">
-                    {employee.epi.toFixed(1)}
+                    {smartRound(employee.epi, 2)}
                   </span>
                 </motion.div>
               ))}
@@ -1700,7 +1704,7 @@ function LeaderboardCard({
                   initial="hidden"
                   animate="visible"
                   whileHover="hover"
-                  onClick={() => navigate('/employee-profiles')}
+                  onClick={() => onUserSelect(employee.name)}
                   className="group flex cursor-pointer items-center justify-between rounded-md px-2 py-2 transition-colors hover:bg-gray-50 active:bg-gray-100"
                 >
                   <div className="flex items-center gap-2 min-w-0">
@@ -1712,7 +1716,7 @@ function LeaderboardCard({
                     </span>
                   </div>
                   <span className="ml-2 text-sm font-bold text-red-500 tabular-nums flex-shrink-0">
-                    {employee.epi.toFixed(1)}
+                    {smartRound(employee.epi, 2)}
                   </span>
                 </motion.div>
               ))}
@@ -1775,7 +1779,7 @@ function PersonalEpiCard({
               className="text-[48px] font-bold leading-none text-white tabular-nums"
               style={{ letterSpacing: '-2px' }}
             >
-              {displayEpi.toFixed(1)}
+              {smartRound(displayEpi, 2)}
             </span>
             <div className="mb-2 flex items-center gap-1.5">
               <span
@@ -1795,7 +1799,7 @@ function PersonalEpiCard({
                   <Minus className="h-3 w-3" />
                 )}
                 {epiDelta > 0 ? '+' : ''}
-                {epiDelta.toFixed(1)} pts
+                {smartRound(epiDelta, 2)} pts
               </span>
               <span className="text-[10px] font-semibold uppercase tracking-widest text-white/40">
                 {comparisonCaption}
@@ -1859,7 +1863,7 @@ function PersonalEpiCard({
         {/* Footer strip */}
         <div className="flex items-center justify-between px-5 py-2.5 border-t border-white/10 flex-shrink-0">
           <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">
-            Global Avg: {globalAvgDisplay.toFixed(1)}
+            Global Avg: {smartRound(globalAvgDisplay, 2)}
           </span>
           <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">
             {trendFooter}
@@ -1980,7 +1984,7 @@ function PersonalRankingCard({
   const safeRank = Math.max(1, Math.min(rank, safeTotalPeers));
   const percentMain =
     hero.percentChange !== null && Number.isFinite(hero.percentChange)
-      ? `${hero.percentChange > 0 ? "+" : ""}${hero.percentChange.toFixed(1)}%`
+      ? `${hero.percentChange > 0 ? "+" : ""}${smartRound(hero.percentChange, 2)}%`
       : "—";
   const zoneClass = HERO_ZONE_TEXT[hero.zone];
 
@@ -4093,16 +4097,16 @@ const METRIC_LABELS: Record<string, string> = {
   'service-efficiency': 'Service Efficiency',
 };
 
-function formatMetricDisplay(metricId: string, value: number, fractionDigits = 1): string {
+function formatMetricDisplay(metricId: string, value: number, fractionDigits = 2): string {
   const kind = getMetricKind(metricId);
+  const formatted = smartRound(value, fractionDigits);
   if (kind === 'monetary') {
-    return `₱${value.toFixed(0)}`;
+    return `₱${formatted}`;
   }
   if (kind === 'likert') {
-    const digits = fractionDigits > 1 ? fractionDigits : 2;
-    return `${value.toFixed(digits)}/5`;
+    return `${formatted}/5`;
   }
-  return `${value.toFixed(1)}%`;
+  return `${formatted}%`;
 }
 
 function formatMetricDeltaDisplay(metricId: string, delta: number): string {
@@ -4111,13 +4115,14 @@ function formatMetricDeltaDisplay(metricId: string, delta: number): string {
 
 function formatMetricStdDev(metricId: string, value: number): string {
   const kind = getMetricKind(metricId);
+  const formatted = smartRound(value, 2);
   if (kind === 'monetary') {
-    return `±₱${value.toFixed(1)}`;
+    return `±₱${formatted}`;
   }
   if (kind === 'likert') {
-    return `±${value.toFixed(2)}`;
+    return `±${formatted}`;
   }
-  return `±${value.toFixed(1)} pts`;
+  return `±${formatted} pts`;
 }
 
 function metricProgressPct(metricId: string, value: number, maxForMonetary = 100): number {
@@ -4280,9 +4285,11 @@ function MetricSummaryCard({
 function MetricTopBottomCard({
   metricId,
   analyticsRange,
+  onUserSelect,
 }: {
   metricId: string;
   analyticsRange: AnalyticsRangeSelection;
+  onUserSelect: (userName: string) => void;
 }) {
   const employees = useMemo(
     () =>
@@ -4335,7 +4342,8 @@ function MetricTopBottomCard({
                   }}
                   initial="hidden"
                   animate="visible"
-                  className="flex items-center justify-between rounded-md px-2 py-1.5 transition-colors hover:bg-gray-50"
+                  onClick={() => onUserSelect(emp.name)}
+                  className="flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 transition-colors hover:bg-gray-50"
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="w-4 text-[10px] font-bold text-gray-300 tabular-nums flex-shrink-0">
@@ -4366,7 +4374,8 @@ function MetricTopBottomCard({
                   }}
                   initial="hidden"
                   animate="visible"
-                  className="flex items-center justify-between rounded-md px-2 py-1.5 transition-colors hover:bg-gray-50"
+                  onClick={() => onUserSelect(emp.name)}
+                  className="flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 transition-colors hover:bg-gray-50"
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="w-4 text-[10px] font-bold text-gray-300 tabular-nums flex-shrink-0">
@@ -4480,9 +4489,11 @@ function MetricBenchmarkCard({
 function MetricEmployeeRankingCard({
   metricId,
   analyticsRange,
+  onUserSelect,
 }: {
   metricId: string;
   analyticsRange: AnalyticsRangeSelection;
+  onUserSelect: (userName: string) => void;
 }) {
   const [sortBy, setSortBy] = useState<'rank' | 'change'>('rank');
   const employees = useMemo(
@@ -4613,9 +4624,12 @@ function MetricEmployeeRankingCard({
 
                     {/* Name */}
                     <div className="col-span-3 min-w-0">
-                      <p className={`text-sm font-semibold truncate transition-colors ${
-                        emp.hasData ? 'text-gray-700 group-hover:text-primary-600' : 'text-gray-500'
-                      }`}>
+                      <p
+                        onClick={() => onUserSelect(emp.name)}
+                        className={`text-sm font-semibold truncate cursor-pointer transition-colors ${
+                          emp.hasData ? 'text-gray-700 group-hover:text-primary-600' : 'text-gray-500'
+                        }`}
+                      >
                         {emp.name}
                       </p>
                       <p className="text-[10px] text-gray-400 truncate">{emp.role}</p>
@@ -5379,9 +5393,11 @@ function MetricSelect({
 function MetricsViewContent({
   periodLabel,
   analyticsRange,
+  onUserSelect,
 }: {
   periodLabel: string;
   analyticsRange: AnalyticsRangeSelection;
+  onUserSelect: (userName: string) => void;
 }) {
   const [selectedMetric, setSelectedMetric] = useState<string>(coerceLegacyMetricSelection(METRICS[0].id));
   const selectedMetricMeta = METRICS.find((metric) => metric.id === selectedMetric);
@@ -5464,14 +5480,22 @@ function MetricsViewContent({
               <MetricBenchmarkCard metricId={selectedMetric} analyticsRange={analyticsRange} />
             </div>
             <div className="col-span-2">
-              <MetricTopBottomCard metricId={selectedMetric} analyticsRange={analyticsRange} />
+              <MetricTopBottomCard
+                metricId={selectedMetric}
+                analyticsRange={analyticsRange}
+                onUserSelect={onUserSelect}
+              />
             </div>
           </div>
 
           {/* Row 2: Rankings + Insights */}
           <div className="grid w-full min-w-0 gap-4 lg:grid-cols-10">
             <div className="lg:col-span-7 min-w-0">
-              <MetricEmployeeRankingCard metricId={selectedMetric} analyticsRange={analyticsRange} />
+              <MetricEmployeeRankingCard
+                metricId={selectedMetric}
+                analyticsRange={analyticsRange}
+                onUserSelect={onUserSelect}
+              />
             </div>
             <div className="lg:col-span-3">
               <MetricInsightsCard metricId={selectedMetric} analyticsRange={analyticsRange} />
@@ -5525,15 +5549,13 @@ function formatTenureFromDateStarted(value: string | null | undefined): string {
 
   const elapsedMonths = elapsedDays / 30.4375;
   if (elapsedMonths <= 12) {
-    const roundedMonths = Math.round(elapsedMonths * 10) / 10;
-    const unit = roundedMonths === 1 ? 'Month' : 'Months';
-    return `${roundedMonths.toFixed(1)} ${unit}`;
+    const unit = smartRound(elapsedMonths, 1) === '1' ? 'Month' : 'Months';
+    return `${smartRound(elapsedMonths, 1)} ${unit}`;
   }
 
   const elapsedYears = elapsedDays / 365.2425;
-  const roundedYears = Math.round(elapsedYears * 10) / 10;
-  const unit = roundedYears === 1 ? 'Year' : 'Years';
-  return `${roundedYears.toFixed(1)} ${unit}`;
+  const unit = smartRound(elapsedYears, 1) === '1' ? 'Year' : 'Years';
+  return `${smartRound(elapsedYears, 1)} ${unit}`;
 }
 
 export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPageProps) {
@@ -5714,6 +5736,15 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
                   <LeaderboardCard
                     topPerformers={generalViewMock.leaderboardTop}
                     priorityReview={generalViewMock.leaderboardBottom}
+                    onUserSelect={(userName) => {
+                      const userEntry = ANALYTICS_USER_ENTRIES.find((u) => u.name === userName);
+                      if (userEntry) {
+                        setSelectedUser(userEntry);
+                        setActiveView('employee');
+                        // Scroll to the top of the page so the user sees the new view
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }
+                    }}
                   />
                 </div>
               </div>
@@ -5878,7 +5909,18 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
           )}
 
           {activeView === 'metrics' && (
-            <MetricsViewContent periodLabel={analyticsPeriodLabel} analyticsRange={analyticsRange} />
+            <MetricsViewContent
+              periodLabel={analyticsPeriodLabel}
+              analyticsRange={analyticsRange}
+              onUserSelect={(userName) => {
+                const userEntry = ANALYTICS_USER_ENTRIES.find((u) => u.name === userName);
+                if (userEntry) {
+                  setSelectedUser(userEntry);
+                  setActiveView('employee');
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+              }}
+            />
           )}
         </motion.div>
       </AnimatePresence>

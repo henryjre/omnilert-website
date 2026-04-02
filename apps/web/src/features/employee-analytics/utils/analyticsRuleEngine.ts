@@ -332,29 +332,34 @@ export function isSignificantChange(
   return Math.abs(delta) >= getSignificantChangeThreshold(metricId, previousValue);
 }
 
+export function smartRound(value: number, precision: number = 2): string {
+  return parseFloat(value.toFixed(precision)).toString();
+}
+
 export function formatMetricValue(metricId: string, value: number): string {
   const kind = getMetricKind(metricId);
+  const formatted = smartRound(value, 2);
   if (kind === "likert") {
-    return `${value.toFixed(2)}/5`;
+    return `${formatted}/5`;
   }
   if (kind === "monetary") {
-    return `₱${value.toFixed(1)}`;
+    return `₱${formatted}`;
   }
-  return `${value.toFixed(1)}%`;
+  return `${formatted}%`;
 }
 
 export function formatMetricDelta(metricId: string, delta: number): string {
   const kind = getMetricKind(metricId);
+  const formatted = smartRound(Math.abs(delta), 2);
+  const sign = delta > 0 ? "+" : delta < 0 ? "-" : "";
+
   if (kind === "likert") {
-    const sign = delta > 0 ? "+" : "";
-    return `${sign}${delta.toFixed(2)}`;
+    return `${sign}${formatted}`;
   }
   if (kind === "monetary") {
-    const sign = delta > 0 ? "+" : delta < 0 ? "-" : "";
-    return `${sign}₱${Math.abs(delta).toFixed(1)}`;
+    return `${sign}₱${formatted}`;
   }
-  const sign = delta > 0 ? "+" : "";
-  return `${sign}${delta.toFixed(1)} pts`;
+  return `${sign}${formatted} pts`;
 }
 
 function getMetricBenchmark(
