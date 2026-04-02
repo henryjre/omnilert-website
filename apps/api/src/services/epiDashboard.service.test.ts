@@ -110,6 +110,7 @@ test('createLeaderboardSummaryEntries ranks the current month by official saved 
   const rows: LeaderboardSummaryUserRow[] = [
     {
       userId: 'user-1',
+      userKey: 'user-1-key',
       fullName: 'Alex Crew',
       avatarUrl: null,
       officialEpiScore: 108,
@@ -117,6 +118,7 @@ test('createLeaderboardSummaryEntries ranks the current month by official saved 
     },
     {
       userId: 'user-2',
+      userKey: 'user-2-key',
       fullName: 'Bianca Crew',
       avatarUrl: null,
       officialEpiScore: 111,
@@ -149,6 +151,7 @@ test('createLeaderboardSummaryEntries ranks historical months by saved monthly h
   const rows: LeaderboardSummaryUserRow[] = [
     {
       userId: 'user-1',
+      userKey: 'user-1-key',
       fullName: 'Alex Crew',
       avatarUrl: null,
       officialEpiScore: 130,
@@ -156,6 +159,7 @@ test('createLeaderboardSummaryEntries ranks historical months by saved monthly h
     },
     {
       userId: 'user-2',
+      userKey: 'user-2-key',
       fullName: 'Bianca Crew',
       avatarUrl: null,
       officialEpiScore: 90,
@@ -163,6 +167,7 @@ test('createLeaderboardSummaryEntries ranks historical months by saved monthly h
     },
     {
       userId: 'user-3',
+      userKey: 'user-3-key',
       fullName: 'Carlos Crew',
       avatarUrl: null,
       officialEpiScore: 99,
@@ -192,6 +197,7 @@ test('createLeaderboardDetail returns official current-month score with live cri
   const liveCriteria = createCriteria({ workplaceRelationsScore: 4.7, awardCount: 2 });
   const row: LeaderboardDetailUserRow = {
     userId: 'user-1',
+    userKey: 'user-1-key',
     fullName: 'Alex Crew',
     avatarUrl: null,
     officialEpiScore: 112.4,
@@ -231,6 +237,7 @@ test('createLeaderboardDetail returns historical score and criteria for past mon
   const historicalCriteria = createCriteria({ workplaceRelationsScore: 3.8, awardCount: 0 });
   const row: LeaderboardDetailUserRow = {
     userId: 'user-1',
+    userKey: 'user-1-key',
     fullName: 'Alex Crew',
     avatarUrl: null,
     officialEpiScore: 112.4,
