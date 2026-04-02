@@ -5,6 +5,10 @@ const config: Config = {
   darkMode: 'class',
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['"DM Sans"', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', 'Helvetica', 'Arial', 'sans-serif'],
+        'dm-sans': ['"DM Sans"', 'sans-serif'],
+      },
       colors: {
         primary: {
           50: 'rgb(var(--primary-50) / <alpha-value>)',

@@ -44,7 +44,7 @@ function renderCategoryHeader(doc: typeof PDFDocument.prototype, label: string, 
     .rect(50, y - 4, 495, 20)
     .fillColor('#f8fafc')
     .fill();
-  doc.fillColor(OMNILERT_NAVY).fontSize(9).font('SF-Pro-Bold').text(label, 60, y);
+  doc.fillColor(OMNILERT_NAVY).fontSize(9).font('DM-Sans-Medium').text(label, 60, y);
   doc
     .moveTo(50, y + 16)
     .lineTo(545, y + 16)
@@ -59,18 +59,18 @@ function renderKpiRow(
   impact: number,
   y: number,
 ): void {
-  doc.fillColor('#374151').fontSize(9).font('SF-Pro-Regular').text(label, 60, y);
+  doc.fillColor('#374151').fontSize(9).font('DM-Sans-Regular').text(label, 60, y);
   doc
     .fillColor('#111827')
     .fontSize(9)
-    .font('SF-Pro-Bold')
+    .font('DM-Sans-Bold')
     .text(score, 300, y, { width: 100, align: 'right' });
 
   const sign = impact >= 0 ? '+' : '';
   doc
     .fillColor(impactColor(impact))
     .fontSize(9)
-    .font('SF-Pro-Bold')
+    .font('DM-Sans-Bold')
     .text(`${sign}${impact.toFixed(1)}`, 460, y, { width: 85, align: 'right' });
 }
 
@@ -87,14 +87,15 @@ export async function generateEpiReportPdf(data: EpiReportData): Promise<Buffer>
 
     // Register Fonts
     const fontDir = path.resolve(__dirname, '../assets/fonts');
-    doc.registerFont('SF-Pro-Regular', path.join(fontDir, 'SF-Pro-Display-Regular.otf'));
-    doc.registerFont('SF-Pro-Bold', path.join(fontDir, 'SF-Pro-Display-Bold.otf'));
+    doc.registerFont('DM-Sans-Regular', path.join(fontDir, 'DMSans-Regular.ttf'));
+    doc.registerFont('DM-Sans-Medium', path.join(fontDir, 'DMSans-Medium.ttf'));
+    doc.registerFont('DM-Sans-Bold', path.join(fontDir, 'DMSans-Bold.ttf'));
 
     // ── Header Section
     doc
       .fillColor('#1e3a8a')
       .fontSize(26)
-      .font('SF-Pro-Bold')
+      .font('DM-Sans-Bold')
       .text('EPI PERFORMANCE REPORT', 0, 50, {
         align: 'center',
         width: doc.page.width,
@@ -103,27 +104,27 @@ export async function generateEpiReportPdf(data: EpiReportData): Promise<Buffer>
     doc
       .fillColor('#64748b')
       .fontSize(11)
-      .font('SF-Pro-Regular')
+      .font('DM-Sans-Regular')
       .text(`Week ending ${data.reportDate}`, 0, 82, { align: 'center', width: doc.page.width });
 
     doc.moveTo(50, 105).lineTo(545, 105).strokeColor('#f1f5f9').lineWidth(1).stroke();
 
     // ── Employee Info
     const infoY = 120;
-    doc.fillColor('#1e293b').fontSize(13).font('SF-Pro-Bold').text(data.fullName, 50, infoY);
+    doc.fillColor('#1e293b').fontSize(13).font('DM-Sans-Bold').text(data.fullName, 50, infoY);
     const empNum = data.employeeNumber
       ? `Employee #${data.employeeNumber}`
       : 'Internal ID: ' + data.userId.slice(0, 8);
     doc
       .fillColor(NEUTRAL_GRAY)
       .fontSize(9)
-      .font('SF-Pro-Regular')
+      .font('DM-Sans-Regular')
       .text(`${empNum}  ·  ${data.email}`, 50, infoY + 16);
 
     doc
       .fillColor('#94a3b8')
       .fontSize(8)
-      .font('SF-Pro-Bold')
+      .font('DM-Sans-Bold')
       .text('EMPLOYEE DATA ONLY', 400, infoY + 4, { width: 145, align: 'right' });
 
     // ── Executive Summary
@@ -135,25 +136,25 @@ export async function generateEpiReportPdf(data: EpiReportData): Promise<Buffer>
     doc
       .fillColor('#1e40af')
       .fontSize(8)
-      .font('SF-Pro-Bold')
+      .font('DM-Sans-Bold')
       .text('START POSITION', 50, summaryY + 16, { width: 165, align: 'center' });
     doc
       .fillColor(OMNILERT_NAVY)
       .fontSize(20)
-      .font('SF-Pro-Bold')
+      .font('DM-Sans-Bold')
       .text(data.epiBefore.toFixed(1), 50, summaryY + 30, { width: 165, align: 'center' });
 
     // Shift
     doc
       .fillColor('#1e40af')
       .fontSize(8)
-      .font('SF-Pro-Bold')
+      .font('DM-Sans-Bold')
       .text('NET PERFORMANCE SHIFT', 215, summaryY + 16, { width: 165, align: 'center' });
     const rawSign = data.rawDelta >= 0 ? '+' : '';
     doc
       .fillColor(impactColor(data.rawDelta))
       .fontSize(20)
-      .font('SF-Pro-Bold')
+      .font('DM-Sans-Bold')
       .text(`${rawSign}${data.rawDelta.toFixed(1)}`, 215, summaryY + 30, {
         width: 165,
         align: 'center',
@@ -163,12 +164,12 @@ export async function generateEpiReportPdf(data: EpiReportData): Promise<Buffer>
     doc
       .fillColor('#1e40af')
       .fontSize(8)
-      .font('SF-Pro-Bold')
+      .font('DM-Sans-Bold')
       .text('FINAL EPI SCORE', 380, summaryY + 16, { width: 165, align: 'center' });
     doc
       .fillColor(OMNILERT_NAVY)
       .fontSize(20)
-      .font('SF-Pro-Bold')
+      .font('DM-Sans-Bold')
       .text(data.epiAfter.toFixed(1), 380, summaryY + 30, { width: 165, align: 'center' });
 
     // ── Table Headers
@@ -176,7 +177,7 @@ export async function generateEpiReportPdf(data: EpiReportData): Promise<Buffer>
     doc
       .fillColor('#94a3b8')
       .fontSize(9)
-      .font('SF-Pro-Bold')
+      .font('DM-Sans-Medium')
       .text('KEY PERFORMANCE ANALYTICS', 50, tableHeaderY);
     doc.text('METRIC RESULT', 300, tableHeaderY, { width: 100, align: 'right' });
     doc.text('EPI IMPACT', 460, tableHeaderY, { width: 85, align: 'right' });
@@ -275,12 +276,12 @@ export async function generateEpiReportPdf(data: EpiReportData): Promise<Buffer>
     doc
       .fillColor(OMNILERT_NAVY)
       .fontSize(10)
-      .font('SF-Pro-Bold')
+      .font('DM-Sans-Bold')
       .text('Net Weekly EPI Impact', 60, rowY);
     doc
       .fillColor(impactColor(data.rawDelta))
       .fontSize(11)
-      .font('SF-Pro-Bold')
+      .font('DM-Sans-Bold')
       .text(`${rawSign}${data.rawDelta.toFixed(1)}`, 460, rowY, { width: 85, align: 'right' });
 
     doc.fontSize(8).fillColor('#94a3b8').text('OMNILERT ANALYTICS · CONFIDENTIAL · 2026', 50, 770, {
@@ -308,32 +309,33 @@ export async function generateManagerSummaryPdf(
 
     // Register Fonts
     const fontDir = path.resolve(__dirname, '../assets/fonts');
-    doc.registerFont('SF-Pro-Regular', path.join(fontDir, 'SF-Pro-Display-Regular.otf'));
-    doc.registerFont('SF-Pro-Bold', path.join(fontDir, 'SF-Pro-Display-Bold.otf'));
+    doc.registerFont('DM-Sans-Regular', path.join(fontDir, 'DMSans-Regular.ttf'));
+    doc.registerFont('DM-Sans-Medium', path.join(fontDir, 'DMSans-Medium.ttf'));
+    doc.registerFont('DM-Sans-Bold', path.join(fontDir, 'DMSans-Bold.ttf'));
 
     // Header
     doc.rect(0, 0, 595, 120).fillColor(OMNILERT_NAVY).fill();
     doc
       .fillColor('#ffffff')
       .fontSize(10)
-      .font('SF-Pro-Bold')
+      .font('DM-Sans-Bold')
       .text('OMNILERT ANALYTICS', 50, 40, { characterSpacing: 2 });
-    doc.fontSize(22).text('GLOBAL EPI MOVEMENT SUMMARY', 50, 58);
+    doc.fontSize(22).font('DM-Sans-Bold').text('GLOBAL EPI MOVEMENT SUMMARY', 50, 58);
 
     // Date
     doc
       .fillColor('#ffffff')
       .fontSize(9)
-      .font('SF-Pro-Bold')
+      .font('DM-Sans-Bold')
       .text(`Week ending ${snapshotDate}`, 50, 88);
 
     // Company Row
     let rowY = 145;
-    doc.fillColor('#1e293b').fontSize(18).font('SF-Pro-Bold').text(companyName, 50, rowY);
+    doc.fillColor('#1e293b').fontSize(18).font('DM-Sans-Bold').text(companyName, 50, rowY);
     doc
       .fillColor(NEUTRAL_GRAY)
       .fontSize(11)
-      .font('SF-Pro-Regular')
+      .font('DM-Sans-Regular')
       .text(
         'Executive summary of current week employee performance index movement.',
         50,
@@ -342,7 +344,7 @@ export async function generateManagerSummaryPdf(
     doc
       .fillColor(NEUTRAL_GRAY)
       .fontSize(9)
-      .font('SF-Pro-Bold')
+      .font('DM-Sans-Bold')
       .text('INTERNAL DATA ONLY', 410, rowY + 12, { width: 135, align: 'right' });
 
     // Summary Box
@@ -359,42 +361,42 @@ export async function generateManagerSummaryPdf(
     doc
       .fillColor('#1e40af')
       .fontSize(8)
-      .font('SF-Pro-Bold')
+      .font('DM-Sans-Bold')
       .text('TOTAL EMPLOYEES', 50, rowY + 22, { width: 165, align: 'center' });
     doc
       .fillColor(OMNILERT_NAVY)
       .fontSize(20)
-      .font('SF-Pro-Bold')
+      .font('DM-Sans-Bold')
       .text(`${reports.length}`, 50, rowY + 38, { width: 165, align: 'center' });
 
     // Stat: Avg Change
     doc
       .fillColor('#1e40af')
       .fontSize(8)
-      .font('SF-Pro-Bold')
+      .font('DM-Sans-Bold')
       .text('AVERAGE EPI CHANGE', 215, rowY + 22, { width: 165, align: 'center' });
     const avgSign = avgDelta >= 0 ? '+' : '';
     doc
       .fillColor(impactColor(avgDelta))
       .fontSize(20)
-      .font('SF-Pro-Bold')
+      .font('DM-Sans-Bold')
       .text(`${avgSign}${avgDelta.toFixed(2)}`, 215, rowY + 38, { width: 165, align: 'center' });
 
     // Stat: Global Avg
     doc
       .fillColor('#1e40af')
       .fontSize(8)
-      .font('SF-Pro-Bold')
+      .font('DM-Sans-Bold')
       .text('GLOBAL AVERAGE EPI', 380, rowY + 22, { width: 165, align: 'center' });
     doc
       .fillColor(OMNILERT_NAVY)
       .fontSize(20)
-      .font('SF-Pro-Bold')
+      .font('DM-Sans-Bold')
       .text(globalAvgEpi.toFixed(1), 380, rowY + 38, { width: 165, align: 'center' });
 
     // ── Leaderboard Table
     rowY += 120;
-    doc.fillColor(NEUTRAL_GRAY).fontSize(8).font('SF-Pro-Bold').text('#', 55, rowY);
+    doc.fillColor(NEUTRAL_GRAY).fontSize(8).font('DM-Sans-Bold').text('#', 55, rowY);
     doc.text('EMPLOYEE NAME', 85, rowY);
     doc.text('PREVIOUS EPI', 290, rowY, { width: 80, align: 'right' });
     doc.text('FINAL EPI', 375, rowY, { width: 80, align: 'right' });
@@ -416,23 +418,23 @@ export async function generateManagerSummaryPdf(
       doc
         .fillColor('#475569')
         .fontSize(9)
-        .font('SF-Pro-Regular')
+        .font('DM-Sans-Regular')
         .text(`${i + 1}`, 55, rowY);
-      doc.fillColor(OMNILERT_NAVY).font('SF-Pro-Bold').text(item.fullName, 85, rowY);
+      doc.fillColor(OMNILERT_NAVY).font('DM-Sans-Bold').text(item.fullName, 85, rowY);
 
       doc
         .fillColor(NEUTRAL_GRAY)
-        .font('SF-Pro-Regular')
+        .font('DM-Sans-Regular')
         .text(item.epiBefore.toFixed(1), 290, rowY, { width: 80, align: 'right' });
       doc
         .fillColor('#1e293b')
-        .font('SF-Pro-Bold')
+        .font('DM-Sans-Bold')
         .text(item.epiAfter.toFixed(1), 375, rowY, { width: 80, align: 'right' });
 
       const sign = item.delta >= 0 ? '+' : '';
       doc
         .fillColor(impactColor(item.delta))
-        .font('SF-Pro-Bold')
+        .font('DM-Sans-Bold')
         .text(`${sign}${item.delta.toFixed(1)}`, 460, rowY, { width: 85, align: 'right' });
 
       rowY += 22;
@@ -445,7 +447,7 @@ export async function generateManagerSummaryPdf(
     doc
       .fillColor(NEUTRAL_GRAY)
       .fontSize(8)
-      .font('SF-Pro-Bold')
+      .font('DM-Sans-Bold')
       .text('OMNILERT ANALYTICS · CONFIDENTIAL · 2026', 50, 770, {
         align: 'center',
         width: 495,
