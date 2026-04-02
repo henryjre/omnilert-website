@@ -258,7 +258,7 @@ async function markServiceCrewCctvOccurrenceFailure(
 }
 
 export async function runServiceCrewCctvCron(): Promise<ServiceCrewCctvRunOutcome> {
-  const MAX_AUDITS_PER_RUN = 2;
+  const MAX_AUDITS_PER_RUN = 1;
   const stats = { processed: 0, succeeded: 0, failed: 0, skipped: 0 };
 
   try {

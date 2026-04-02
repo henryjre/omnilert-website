@@ -56,15 +56,23 @@ async function processPeerEvaluationJob(job: Job<PeerEvaluationJobPayload>): Pro
       'Peer evaluation job skipped: invalid shift datetime payload',
     );
     return;
-  }
-  const shiftStartDomain = toOdooDateTime(shiftStartDate);
-  const shiftEndDomain = toOdooDateTime(shiftEndDate);
-  const lookbackStartDomain = toOdooDateTime(
-    new Date(shiftStartDate.getTime() - 24 * 60 * 60 * 1000),
-  );
+  }  // Step 1: Resolve evaluator's user_key to identify their Odoo records
+  const evaluatorUser = await db.getDb()('users')
+    .where({ id: payload.shiftUserId })
+    .first('user_key');
 
-  // Step 1: Get tenant DB
-  // single DB
+  if (!evaluatorUser?.user_key) {
+    logger.warn(
+      {
+        queue: env.PEER_EVAL_QUEUE_NAME,
+        jobId: job.id,
+        shiftId: payload.shiftId,
+        userId: payload.shiftUserId,
+      },
+      'Peer evaluation job skipped: evaluator has no user_key',
+    );
+    return;
+  }
 
   // Step 2: Validate shift still ended
   const shift = await db.getDb()('employee_shifts')
@@ -82,15 +90,18 @@ async function processPeerEvaluationJob(job: Job<PeerEvaluationJobPayload>): Pro
     return;
   }
 
-  // Step 3: Query Odoo hr.attendance for overlapping records at same branch
+  // Step 3: Query Odoo hr.attendance for records at same branch
+  // Search window: Scheduled start - 6h to Scheduled end + 6h to catch all relevant activity
+  const searchStart = new Date(shiftStartDate.getTime() - 6 * 60 * 60 * 1000);
+  const searchEnd = new Date(shiftEndDate.getTime() + 6 * 60 * 60 * 1000);
+  const searchStartDomain = toOdooDateTime(searchStart);
+  const searchEndDomain = toOdooDateTime(searchEnd);
+
   const rawAttendances = (await callOdooKw('hr.attendance', 'search_read', [], {
     domain: [
       ['x_company_id', '=', Number(payload.branchOdooId)],
-      ['check_in', '<', shiftEndDomain],
-      ['check_in', '>=', lookbackStartDomain],
-      '|',
-      ['check_out', '=', false],
-      ['check_out', '>', shiftStartDomain],
+      ['check_in', '<', searchEndDomain],
+      ['check_in', '>=', searchStartDomain],
     ],
     fields: ['id', 'employee_id', 'check_in', 'check_out'],
     limit: 500,
@@ -101,32 +112,75 @@ async function processPeerEvaluationJob(job: Job<PeerEvaluationJobPayload>): Pro
     check_out: string | false;
   }>;
 
-  // Step 4: Calculate overlap per attendance record and group by employee_id
+  if (rawAttendances.length === 0) {
+    logger.info(
+      { queue: env.PEER_EVAL_QUEUE_NAME, jobId: job.id, shiftId: payload.shiftId },
+      'Peer evaluation job: no attendances found at branch',
+    );
+    return;
+  }
+
+  // Step 4: Resolve all employee records to get x_website_key to identify the evaluator
+  const employeeIds = [...new Set(rawAttendances.map((a) => (Array.isArray(a.employee_id) ? a.employee_id[0] : null)).filter((id): id is number => id !== null))];
+  const hrEmployees = (await callOdooKw('hr.employee', 'search_read', [], {
+    domain: [['id', 'in', employeeIds]],
+    fields: ['id', 'x_website_key'],
+  })) as Array<{ id: number; x_website_key?: string | null }>;
+
+  const websiteKeyByOdooId = new Map<number, string>();
+  for (const emp of hrEmployees) {
+    if (emp.x_website_key) websiteKeyByOdooId.set(emp.id, emp.x_website_key);
+  }
+
+  // Identify evaluator's windows
+  const evaluatorOdooIds = new Set(hrEmployees.filter(e => e.x_website_key === evaluatorUser.user_key).map(e => e.id));
+  const evaluatorWindows: Array<{ start: number; end: number }> = [];
+
+  for (const att of rawAttendances) {
+    if (!Array.isArray(att.employee_id)) continue;
+    if (evaluatorOdooIds.has(att.employee_id[0])) {
+      const start = parseOdooUtcDateTime(att.check_in).getTime();
+      const end = att.check_out ? parseOdooUtcDateTime(att.check_out).getTime() : Date.now();
+      evaluatorWindows.push({ start, end });
+    }
+  }
+
+  if (evaluatorWindows.length === 0) {
+    logger.info(
+      { queue: env.PEER_EVAL_QUEUE_NAME, jobId: job.id, shiftId: payload.shiftId },
+      'Peer evaluation job: no evaluator attendance found in Odoo',
+    );
+    return;
+  }
+
+  // Step 5: Calculate actual overlap per coworker based on evaluator's windows
   const overlapByEmployee = new Map<number, number>();
 
-  const shiftStartMs = shiftStartDate.getTime();
-  const shiftEndMs = shiftEndDate.getTime();
-
   for (const attendance of rawAttendances) {
-    // Skip invalid records where employee_id is not an array
     if (!Array.isArray(attendance.employee_id)) continue;
-
+    
     const employeeOdooId = attendance.employee_id[0];
-    const checkInDate = parseOdooUtcDateTime(attendance.check_in);
-    if (Number.isNaN(checkInDate.getTime())) continue;
-    const checkOutDate = attendance.check_out
-      ? parseOdooUtcDateTime(attendance.check_out)
-      : new Date();
-    if (Number.isNaN(checkOutDate.getTime())) continue;
+    // Skip evaluator records
+    if (evaluatorOdooIds.has(employeeOdooId)) continue;
 
-    const checkInMs = checkInDate.getTime();
-    const checkOutMs = checkOutDate.getTime();
+    const checkInMs = parseOdooUtcDateTime(attendance.check_in).getTime();
+    const checkOutMs = attendance.check_out
+      ? parseOdooUtcDateTime(attendance.check_out).getTime()
+      : Date.now();
 
-    const overlapStart = Math.max(checkInMs, shiftStartMs);
-    const overlapEnd = Math.min(checkOutMs, shiftEndMs);
-    const overlapMinutes = (overlapEnd - overlapStart) / 60000;
+    // Calculate overlap with ANY of the evaluator's own attendance windows
+    let coworkerTotalOverlapMs = 0;
+    for (const win of evaluatorWindows) {
+      const overlapStart = Math.max(checkInMs, win.start);
+      const overlapEnd = Math.min(checkOutMs, win.end);
+      const duration = overlapEnd - overlapStart;
+      if (duration > 0) {
+        coworkerTotalOverlapMs += duration;
+      }
+    }
 
-    if (overlapMinutes > 0) {
+    if (coworkerTotalOverlapMs > 0) {
+      const overlapMinutes = coworkerTotalOverlapMs / 60000;
       overlapByEmployee.set(
         employeeOdooId,
         (overlapByEmployee.get(employeeOdooId) ?? 0) + overlapMinutes,
@@ -134,86 +188,39 @@ async function processPeerEvaluationJob(job: Job<PeerEvaluationJobPayload>): Pro
     }
   }
 
-  // Keep only employees where total overlapMinutes >= 60
-  const overlappingEmployeeIds: number[] = [];
-  for (const [employeeOdooId, totalMinutes] of overlapByEmployee.entries()) {
-    if (totalMinutes >= 60) {
-      overlappingEmployeeIds.push(employeeOdooId);
-    }
-  }
+  // Step 6: Filter by the 60-min threshold and resolve to Omnilert users
+  const overlappingEmployeeEntries = Array.from(overlapByEmployee.entries())
+    .filter(([_, mins]) => mins >= 60);
 
-  if (overlappingEmployeeIds.length === 0) {
+  if (overlappingEmployeeEntries.length === 0) {
     logger.info(
-      {
-        queue: env.PEER_EVAL_QUEUE_NAME,
-        jobId: job.id,
-        shiftId: payload.shiftId,
-      },
-      'Peer evaluation job: no qualifying co-workers found',
+      { queue: env.PEER_EVAL_QUEUE_NAME, jobId: job.id, shiftId: payload.shiftId },
+      'Peer evaluation job: no qualifying co-workers found after overlap calculation',
     );
     return;
   }
 
-  // Step 5: Batch query hr.employee for x_website_key (ONE call, not N calls)
-  const uniqueEmployeeIds = [...overlappingEmployeeIds];
-  const hrEmployees = (await callOdooKw('hr.employee', 'search_read', [], {
-    domain: [['id', 'in', uniqueEmployeeIds]],
-    fields: ['id', 'x_website_key'],
-  })) as Array<{ id: number; x_website_key?: string | null }>;
-
-  // Step 6 & 7: Resolve master user UUIDs and filter out the shift owner
-
-  // Collect all valid x_website_key values from hr.employee records
-  const websiteKeys = hrEmployees
-    .map((e) => e.x_website_key)
+  const qualifyingCoworkerOdooIds = overlappingEmployeeEntries.map(([id]) => id);
+  const relevantWebsiteKeys = qualifyingCoworkerOdooIds
+    .map(id => websiteKeyByOdooId.get(id))
     .filter((k): k is string => Boolean(k));
 
-  // ONE batch query instead of N serial queries
   const masterUsers = await db.getDb()('users')
-    .whereIn('user_key', websiteKeys)
+    .whereIn('user_key', relevantWebsiteKeys)
     .select('id', 'user_key');
+
   const userIdByWebsiteKey = new Map<string, string>();
   for (const user of masterUsers as Array<{ id: string; user_key: string | null }>) {
-    if (!user.user_key) continue;
-    userIdByWebsiteKey.set(String(user.user_key), String(user.id));
+    if (user.user_key) userIdByWebsiteKey.set(user.user_key, user.id);
   }
 
   const qualifyingCoworkers: Array<{ userId: string; overlapMinutes: number }> = [];
-
-  for (const hrEmployee of hrEmployees) {
-    const websiteKey = hrEmployee.x_website_key;
-    if (!websiteKey) {
-      logger.warn(
-        {
-          queue: env.PEER_EVAL_QUEUE_NAME,
-          jobId: job.id,
-          odooEmployeeId: hrEmployee.id,
-        },
-        'Peer evaluation: employee has no x_website_key, skipping',
-      );
-      continue;
+  for (const [odooId, mins] of overlappingEmployeeEntries) {
+    const key = websiteKeyByOdooId.get(odooId);
+    const userId = key ? userIdByWebsiteKey.get(key) : null;
+    if (userId && userId !== payload.shiftUserId) {
+      qualifyingCoworkers.push({ userId, overlapMinutes: mins });
     }
-
-    // Verify user exists in master DB (using pre-fetched set)
-    const resolvedUserId = userIdByWebsiteKey.get(websiteKey);
-    if (!resolvedUserId) {
-      logger.warn(
-        {
-          queue: env.PEER_EVAL_QUEUE_NAME,
-          jobId: job.id,
-          odooEmployeeId: hrEmployee.id,
-          websiteKey,
-        },
-        'Peer evaluation: x_website_key not found in master users, skipping',
-      );
-      continue;
-    }
-
-    // Filter out the shift owner (no self-evaluation)
-    if (resolvedUserId === payload.shiftUserId) continue;
-
-    const totalOverlap = overlapByEmployee.get(hrEmployee.id) ?? 0;
-    qualifyingCoworkers.push({ userId: resolvedUserId, overlapMinutes: totalOverlap });
   }
 
   if (qualifyingCoworkers.length === 0) {
@@ -228,36 +235,49 @@ async function processPeerEvaluationJob(job: Job<PeerEvaluationJobPayload>): Pro
     return;
   }
 
-  // Step 8: Insert peer_evaluations for each qualifying co-worker
+  // Step 7: Limit to exactly ONE random qualifying co-worker per evaluator per shift
+  
+  // First, check if an evaluation already exists for this shift/evaluator
+  const existingEval = await db.getDb()('peer_evaluations')
+    .where({ shift_id: payload.shiftId, evaluator_user_id: payload.shiftUserId })
+    .first();
+
+  if (existingEval) {
+    logger.info(
+      { queue: env.PEER_EVAL_QUEUE_NAME, jobId: job.id, shiftId: payload.shiftId, existingId: existingEval.id },
+      'Peer evaluation job: evaluator already has an evaluation for this shift, skipping',
+    );
+    return;
+  }
+
+  // Pick one random co-worker from the qualifying list
+  const randomIndex = Math.floor(Math.random() * qualifyingCoworkers.length);
+  const targetCoworker = qualifyingCoworkers[randomIndex];
+
+  // Step 8: Insert the single peer_evaluation record
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
   let insertedCount = 0;
   let firstInsertedId: string | null = null;
 
-  for (const coworker of qualifyingCoworkers) {
-    const rows = await db.getDb()('peer_evaluations')
-      .insert({
-        company_id: payload.companyId,
-        evaluator_user_id: payload.shiftUserId,
-        evaluated_user_id: coworker.userId,
-        shift_id: payload.shiftId,
-        status: 'pending',
-        q1_score: 5,
-        q2_score: 5,
-        q3_score: 5,
-        overlap_minutes: coworker.overlapMinutes,
-        expires_at: expiresAt,
-      })
-      .onConflict(['evaluator_user_id', 'evaluated_user_id', 'shift_id'])
-      .ignore()
-      .returning('id');
+  const rows = await db.getDb()('peer_evaluations')
+    .insert({
+      company_id: payload.companyId,
+      evaluator_user_id: payload.shiftUserId,
+      evaluated_user_id: targetCoworker.userId,
+      shift_id: payload.shiftId,
+      overlap_minutes: Math.round(targetCoworker.overlapMinutes),
+      status: 'pending',
+      expires_at: expiresAt,
+    })
+    .onConflict(['evaluator_user_id', 'evaluated_user_id', 'shift_id'])
+    .ignore()
+    .returning('id');
 
-    if (rows.length > 0 && rows[0]) {
-      if (firstInsertedId === null) {
-        firstInsertedId = rows[0].id as string;
-      }
-      insertedCount++;
-    }
+  if (rows.length > 0 && rows[0]) {
+    firstInsertedId = (rows[0] as unknown as { id: string }).id;
+    insertedCount = 1;
   }
+
 
   if (insertedCount === 0) {
     logger.info(
