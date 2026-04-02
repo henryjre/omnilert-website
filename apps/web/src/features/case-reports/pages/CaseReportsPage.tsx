@@ -483,23 +483,29 @@ export function CaseReportsPage() {
         )}
       </div>
 
-      {selectedReport && (
-        <div
-          className="fixed inset-0 z-40 bg-black/30"
-          onClick={() => {
-            setSelectedCaseId(null);
-            setSelectedReport(null);
-            setSearchParams({});
-          }}
-        />
-      )}
+      <AnimatePresence>
+        {selectedCaseId && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px]"
+              onClick={() => {
+                setSelectedCaseId(null);
+                setSelectedReport(null);
+                setSearchParams({});
+              }}
+            />
 
-      <div
-        className={`fixed inset-y-0 right-0 z-50 w-full max-w-[680px] transform bg-white shadow-2xl transition-transform duration-300 ${
-          selectedReport ? 'translate-x-0' : 'translate-x-full'
-        }`}
-      >
-        <CaseReportDetailPanel
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[680px] flex-col bg-white shadow-2xl"
+            >
+              <CaseReportDetailPanel
           report={selectedReport}
           messages={messages}
           currentUserId={user?.id ?? ''}
@@ -623,8 +629,11 @@ export function CaseReportsPage() {
               }
             }
           }}
-        />
-      </div>
+          />
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {createOpen && (

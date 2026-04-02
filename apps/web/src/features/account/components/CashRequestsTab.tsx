@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, memo } from 'react';
 import type { ElementType } from 'react';
 import { ViewToggle, type ViewOption } from '@/shared/components/ui/ViewToggle';
 import { createPortal } from 'react-dom';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useSearchParams } from "react-router-dom";
 import { Badge } from '@/shared/components/ui/Badge';
 import { Button } from '@/shared/components/ui/Button';
@@ -102,6 +102,49 @@ function resolveAttachmentUrl(url: string): string {
 const INPUT_CLS =
   'w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-medium text-gray-800 shadow-sm transition-colors placeholder:text-gray-400 hover:border-primary-200 focus:border-primary-300 focus:outline-none focus:ring-2 focus:ring-primary-200';
 const LABEL_CLS = 'block text-sm font-medium text-gray-700';
+
+// ─── Request Card Component ──────────────────────────────────────────────────
+
+interface CashRequestCardProps {
+  request: CashRequest;
+  onClick: (id: string) => void;
+}
+
+const CashRequestCard = memo(({ request, onClick }: CashRequestCardProps) => {
+  return (
+    <button
+      type="button"
+      onClick={() => onClick(request.id)}
+      className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3.5 text-left transition-colors hover:border-primary-200 hover:bg-primary-50/30 group"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium text-gray-900 group-hover:text-primary-700 transition-colors">
+            {REQUEST_TYPES.find((t) => t.key === request.request_type)?.label ?? request.request_type}
+          </p>
+          {request.branch_name && (
+            <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-gray-500">
+              <GitBranch className="h-3 w-3 shrink-0" />
+              {request.branch_name}
+            </p>
+          )}
+          <p className="mt-0.5 text-xs text-gray-400">{fmtDate(request.created_at)}</p>
+        </div>
+
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          <Badge variant={statusVariant(request.status)}>
+            {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
+          </Badge>
+          <p className="text-sm font-semibold text-gray-800">{fmtAmount(request.amount)}</p>
+        </div>
+
+        <ChevronRight className="h-4 w-4 shrink-0 text-gray-300 group-hover:translate-x-0.5 transition-transform" />
+      </div>
+    </button>
+  );
+});
+
+CashRequestCard.displayName = 'CashRequestCard';
 
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
@@ -603,7 +646,9 @@ export function CashRequestsTab() {
         `/account/cash-requests/${id}`,
         companyId ? { headers: { "X-Company-Id": companyId } } : undefined,
       );
-      setSelectedRequest(res.data.data as CashRequest);
+      if (res.data?.data) {
+        setSelectedRequest(res.data.data as CashRequest);
+      }
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { error?: string; message?: string } } };
       showErrorToast(
@@ -729,38 +774,11 @@ export function CashRequestsTab() {
       ) : (
         <div className="space-y-3">
           {pagedRequests.map((r) => (
-            <button
+            <CashRequestCard
               key={r.id}
-              type="button"
-              onClick={() => void openDetail(r.id)}
-              className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3.5 text-left transition-colors hover:border-primary-200 hover:bg-primary-50/30"
-            >
-              <div className="flex items-center justify-between gap-3">
-                {/* Left: type, branch, date */}
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium text-gray-900">
-                    {REQUEST_TYPES.find((t) => t.key === r.request_type)?.label ?? r.request_type}
-                  </p>
-                  {r.branch_name && (
-                    <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-gray-500">
-                      <GitBranch className="h-3 w-3 shrink-0" />
-                      {r.branch_name}
-                    </p>
-                  )}
-                  <p className="mt-0.5 text-xs text-gray-400">{fmtDate(r.created_at)}</p>
-                </div>
-
-                {/* Right: badge + amount + chevron */}
-                <div className="flex shrink-0 flex-col items-end gap-1.5">
-                  <Badge variant={statusVariant(r.status)}>
-                    {r.status.charAt(0).toUpperCase() + r.status.slice(1)}
-                  </Badge>
-                  <p className="text-sm font-semibold text-gray-800">{fmtAmount(r.amount)}</p>
-                </div>
-
-                <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" />
-              </div>
-            </button>
+              request={r}
+              onClick={openDetail}
+            />
           ))}
 
           {totalPages > 1 && (
@@ -797,31 +815,43 @@ export function CashRequestsTab() {
         onClose={() => setImageModalOpen(false)}
       />
 
-      {/* Detail panel — portalled to escape stacking context */}
+      {/* Detail panel — portalled so it escapes any stacking context */}
       {createPortal(
-        <>
+        <AnimatePresence>
           {selectedRequest && (
-            <div
-              className="fixed inset-0 z-40 bg-black/30"
-              onClick={() => { setSelectedRequest(null); setDetailLoading(false); }}
-            />
-          )}
-          <div
-            className={`fixed inset-y-0 right-0 z-50 w-full max-w-[560px] transform bg-white shadow-2xl transition-transform duration-300 ${
-              selectedRequest ? 'translate-x-0' : 'translate-x-full'
-            }`}
-          >
-            {selectedRequest && (
-              <CashRequestDetailPanel
-                request={selectedRequest}
-                loading={detailLoading}
-                onClose={() => { setSelectedRequest(null); setDetailLoading(false); }}
-                onViewAttachment={(url) => { setAttachmentUrl(url); setImageModalOpen(true); }}
+            <>
+              {/* Backdrop */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px]"
+                onClick={() => setSelectedRequest(null)}
               />
-            )}
-          </div>
-        </>,
-        document.body,
+
+              {/* Slide-in panel */}
+              <motion.div
+                initial={{ x: "100%" }}
+                animate={{ x: 0 }}
+                exit={{ x: "100%" }}
+                transition={{ type: "spring", damping: 30, stiffness: 300, mass: 0.8 }}
+                className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[560px] flex-col overflow-hidden bg-white shadow-2xl"
+              >
+                <CashRequestDetailPanel
+                  request={selectedRequest}
+                  loading={detailLoading}
+                  onClose={() => setSelectedRequest(null)}
+                  onViewAttachment={(url) => {
+                    setAttachmentUrl(url);
+                    setImageModalOpen(true);
+                  }}
+                />
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>,
+        document.body
       )}
     </div>
   );

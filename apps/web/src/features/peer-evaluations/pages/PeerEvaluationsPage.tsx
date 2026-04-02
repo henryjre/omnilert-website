@@ -411,26 +411,35 @@ export function PeerEvaluationsPage() {
 
       {/* Detail panel */}
       {createPortal(
-        <>
+        <AnimatePresence>
           {selectedEvaluation && (
-            <div
-              className="fixed inset-0 z-40 bg-black/30"
-              onClick={handleClosePanel}
-            />
-          )}
-          <div
-            className={`fixed inset-y-0 right-0 z-50 w-full max-w-[560px] transform bg-white shadow-2xl transition-transform duration-300 ${
-              selectedEvaluation ? "translate-x-0" : "translate-x-full"
-            }`}
-          >
-            {selectedEvaluation && (
-              <PeerEvaluationDetailPanel
-                evaluation={selectedEvaluation}
-                onClose={handleClosePanel}
+            <>
+              {/* Backdrop */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px]"
+                onClick={handleClosePanel}
               />
-            )}
-          </div>
-        </>,
+
+              {/* Detail panel */}
+              <motion.div
+                initial={{ x: '100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '100%' }}
+                transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                className="fixed inset-y-0 right-0 z-50 w-full max-w-[560px] bg-white shadow-2xl"
+              >
+                <PeerEvaluationDetailPanel
+                  evaluation={selectedEvaluation}
+                  onClose={handleClosePanel}
+                />
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>,
         document.body,
       )}
     </div>

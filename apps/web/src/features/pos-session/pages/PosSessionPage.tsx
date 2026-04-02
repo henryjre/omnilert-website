@@ -1,4 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import type { ElementType } from 'react';
 import { Monitor, Layers, LayoutGrid, FolderOpen, FolderCheck, BadgeCheck, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -257,26 +259,41 @@ export function PosSessionPage() {
         )}
       </div>
 
-      {/* Backdrop */}
-      {selectedSession && (
-        <div className="fixed inset-0 z-40 bg-black/30" onClick={() => setSelectedSession(null)} />
-      )}
+      {/* Detail Panel via Portal */}
+      {createPortal(
+        <AnimatePresence>
+          {selectedSession && (
+            <>
+              {/* Side panel backdrop */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px]"
+                onClick={() => setSelectedSession(null)}
+              />
 
-      {/* Detail slide-in panel */}
-      <div
-        className={`fixed inset-y-0 right-0 z-50 w-full max-w-[600px] transform bg-white shadow-2xl transition-transform duration-300 ${
-          selectedSession ? 'translate-x-0' : 'translate-x-full'
-        }`}
-      >
-        {selectedSession && (
-          <SessionDetailPanel
-            session={selectedSession}
-            branchInfo={getBranchInfo(selectedSession)}
-            onClose={() => setSelectedSession(null)}
-            onUpdate={() => openDetail(selectedSession.id)}
-          />
-        )}
-      </div>
+              {/* Side panel */}
+              <motion.div
+                initial={{ x: "100%" }}
+                animate={{ x: 0 }}
+                exit={{ x: "100%" }}
+                transition={{ type: "spring", damping: 30, stiffness: 300, mass: 0.8 }}
+                className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[600px] flex-col overflow-hidden bg-white shadow-2xl"
+              >
+                <SessionDetailPanel
+                  session={selectedSession}
+                  branchInfo={getBranchInfo(selectedSession)}
+                  onClose={() => setSelectedSession(null)}
+                  onUpdate={() => openDetail(selectedSession.id)}
+                />
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
     </>
   );
 }

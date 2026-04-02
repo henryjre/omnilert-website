@@ -910,10 +910,30 @@ export function CssAuditDetailPanel({
                       }
 
                       if (newFiles.length > 0) {
-                        setSelectedFiles((prev) => {
-                          const combined = [...prev, ...newFiles];
-                          return combined.slice(0, 10);
-                        });
+                        // Auto-send logic for pasted images
+                        setSendingMessage(true);
+                        try {
+                          const allFiles = [...selectedFiles, ...newFiles];
+                          const form = new FormData();
+                          form.append('content', messageDraft.trim());
+                          for (const file of allFiles) {
+                            form.append('files', file);
+                          }
+
+                          await api.post(`/store-audits/${audit.id}/messages`, form);
+                          
+                          // Clear drafts and refetch
+                          setMessageDraft('');
+                          setSelectedFiles([]);
+                          await fetchMessages({ silent: true });
+                          try {
+                            localStorage.removeItem(draftKey);
+                          } catch {}
+                        } catch (err: any) {
+                          showErrorToast(err.response?.data?.error || 'Failed to send pasted image');
+                        } finally {
+                          setSendingMessage(false);
+                        }
                       }
                     }}
                     placeholder="Add observation, finding, or note…"

@@ -290,10 +290,6 @@ export function ChatSection({
                 const imageItems = items.filter((item) => item.type.startsWith('image/'));
                 if (imageItems.length === 0) return;
 
-                // Stop default paste (which might paste text if both are present, or do nothing)
-                // Actually, if we just want to ADD the image and let text paste normally, we don't preventDefault.
-                // But usually, when you paste an image, you don't want the raw binary bits as text.
-                
                 const newFiles: File[] = [];
                 for (const item of imageItems) {
                   const blob = item.getAsFile();
@@ -303,9 +299,31 @@ export function ChatSection({
                     newFiles.push(await normalizeFileForUpload(file));
                   }
                 }
-                
+
                 if (newFiles.length > 0) {
-                  setFiles((prev) => [...prev, ...newFiles]);
+                  // To "be uploaded" immediately, we trigger the send logic with the new files.
+                  // We combine them with any existing files in the current composer.
+                  const allFiles = [...files, ...newFiles];
+                  
+                  // Trigger send
+                  justSentRef.current = true;
+                  await onSend({
+                    content,
+                    parentMessageId: replyTo?.id ?? null,
+                    mentionedUserIds,
+                    mentionedRoleIds,
+                    files: allFiles
+                  });
+
+                  // Clear states (similar to handleSend)
+                  setContent('');
+                  setFiles([]);
+                  setReplyTo(null);
+                  setMentionOpen(false);
+                  setMentionQuery('');
+                  setMentionedUserIds([]);
+                  setMentionedRoleIds([]);
+                  setMentionTokens([]);
                 }
               }}
               onChange={(event) => {

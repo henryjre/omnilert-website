@@ -17,7 +17,7 @@ function formatDate(value: string | null): string {
   }).format(date);
 }
 
-export function AccountAuditResultCard({
+export const AccountAuditResultCard = React.memo(({
   audit,
   selected,
   onSelect,
@@ -25,7 +25,7 @@ export function AccountAuditResultCard({
   audit: AccountAuditResultListItem;
   selected: boolean;
   onSelect: () => void;
-}) {
+}) => {
   return (
     <button
       type="button"
@@ -68,4 +68,4 @@ export function AccountAuditResultCard({
       </div>
     </button>
   );
-}
+});

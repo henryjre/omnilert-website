@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useSearchParams } from 'react-router-dom';
 import type {
   AccountAuditResultDetail,
@@ -184,60 +186,72 @@ export function AuditResultsPage() {
         }}
       />
 
-      {/* Backdrop */}
-      {(selectedAudit || detailLoading) && (
-        <div
-          className="fixed inset-0 z-40 bg-black/30"
-          onClick={() => setSelectedAuditId(null)}
-        />
-      )}
-
-      {/* Slide-in detail panel */}
-      <div
-        className={`fixed inset-y-0 right-0 z-50 w-full max-w-[680px] transform overflow-y-auto bg-white shadow-2xl transition-transform duration-300 ${
-          selectedAuditId ? 'translate-x-0' : 'translate-x-full'
-        }`}
-      >
-        {(selectedAudit || detailLoading) && (
-          <div className="flex h-full flex-col">
-            {/* Panel header */}
-            <div className="flex items-start justify-between border-b border-gray-200 px-6 py-4">
-              <div>
-                <p className="text-lg font-semibold text-gray-900">
-                  {selectedAudit?.type_label ?? 'Audit Result'}
-                </p>
-                {selectedAudit && (
-                  <p className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-500">
-                    <GitBranch className="h-3 w-3 shrink-0" />
-                    {selectedAudit.branch.name}
-                    {selectedAudit.company?.name && (
-                      <>
-                        <span className="text-gray-300">·</span>
-                        {selectedAudit.company.name}
-                      </>
-                    )}
-                  </p>
-                )}
-              </div>
-              <button
-                type="button"
+      {/* Detail Panel via Portal */}
+      {createPortal(
+        <AnimatePresence>
+          {selectedAuditId && (
+            <>
+              {/* Side panel backdrop */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px]"
                 onClick={() => setSelectedAuditId(null)}
-                className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
+              />
 
-            {detailLoading || !selectedAudit ? (
-              <div className="flex flex-1 items-center justify-center">
-                <Spinner size="lg" />
-              </div>
-            ) : (
-              <AccountAuditResultDetailPanel audit={selectedAudit} />
-            )}
-          </div>
-        )}
-      </div>
+              {/* Side panel */}
+              <motion.div
+                initial={{ x: "100%" }}
+                animate={{ x: 0 }}
+                exit={{ x: "100%" }}
+                transition={{ type: "spring", damping: 30, stiffness: 300, mass: 0.8 }}
+                className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[680px] flex-col overflow-hidden bg-white shadow-2xl"
+              >
+                <div className="flex h-full flex-col">
+                  {/* Panel header */}
+                  <div className="flex items-start justify-between border-b border-gray-200 px-6 py-4">
+                    <div>
+                      <p className="text-lg font-semibold text-gray-900">
+                        {selectedAudit?.type_label ?? 'Audit Result'}
+                      </p>
+                      {selectedAudit && (
+                        <p className="mt-0.5 flex items-center gap-1.5 text-xs text-gray-500">
+                          <GitBranch className="h-3 w-3 shrink-0" />
+                          {selectedAudit.branch.name}
+                          {selectedAudit.company?.name && (
+                            <>
+                              <span className="text-gray-300">·</span>
+                              {selectedAudit.company.name}
+                            </>
+                          )}
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedAuditId(null)}
+                      className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                    >
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+
+                  {detailLoading || !selectedAudit ? (
+                    <div className="flex flex-1 items-center justify-center">
+                      <Spinner size="lg" />
+                    </div>
+                  ) : (
+                    <AccountAuditResultDetailPanel audit={selectedAudit} />
+                  )}
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
     </>
   );
 }

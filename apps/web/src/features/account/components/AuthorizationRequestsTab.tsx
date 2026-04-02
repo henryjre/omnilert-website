@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, memo } from 'react';
 import type { ElementType } from 'react';
 import { ViewToggle, type ViewOption } from '@/shared/components/ui/ViewToggle';
 import { createPortal } from 'react-dom';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useSearchParams } from "react-router-dom";
 import { Badge } from '@/shared/components/ui/Badge';
 import { Button } from '@/shared/components/ui/Button';
@@ -91,9 +91,55 @@ function fmtDate(iso: string): string {
   });
 }
 
+// ─── Request Card Component ──────────────────────────────────────────────────
+
+interface AuthRequestCardProps {
+  request: AuthRequest;
+  onClick: (id: string) => void;
+}
+
+const AuthRequestCard = memo(({ request, onClick }: AuthRequestCardProps) => {
+  return (
+    <button
+      type="button"
+      onClick={() => onClick(request.id)}
+      className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3.5 text-left transition-colors hover:border-primary-200 hover:bg-primary-50/30 group"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium text-gray-900 group-hover:text-primary-700 transition-colors">
+            {REQUEST_TYPE_LABELS[request.request_type] ?? request.request_type}
+          </p>
+          {request.branch_name && (
+            <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-gray-500">
+              <GitBranch className="h-3 w-3 shrink-0" />
+              {request.branch_name}
+            </p>
+          )}
+          <p className="mt-0.5 text-xs text-gray-400">{fmtDate(request.created_at)}</p>
+        </div>
+
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          <Badge variant={statusVariant(request.status)}>
+            {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
+          </Badge>
+          {request.requested_amount != null && (
+            <p className="text-sm font-semibold text-gray-800">
+              {fmtAmount(request.requested_amount)}
+            </p>
+          )}
+        </div>
+
+        <ChevronRight className="h-4 w-4 shrink-0 text-gray-300 group-hover:translate-x-0.5 transition-transform" />
+      </div>
+    </button>
+  );
+});
+
+AuthRequestCard.displayName = 'AuthRequestCard';
+
 // ─── Skeleton ─────────────────────────────────────────────────────────────────
 
-/** Mirrors the slim metadata card while data is loading. */
 function AuthRequestSkeleton() {
   return (
     <div className="w-full animate-pulse rounded-xl border border-gray-200 bg-white px-4 py-3.5">
@@ -175,11 +221,6 @@ function NewRequestModal({ onClose, onCreated }: NewRequestModalProps) {
         },
       );
       const createdReq = res.data.data as AuthRequest;
-      /**
-       * The POST response may not include branch_name.
-       * Look it up from the store using the branchId we just submitted,
-       * so the newly prepended card shows the branch immediately.
-       */
       if (!createdReq.branch_name) {
         const resolvedBranch = companyBranchGroups
           .flatMap((g) => g.branches.map((b) => ({ id: b.id, name: b.name, companyId: g.id })))
@@ -220,7 +261,6 @@ function NewRequestModal({ onClose, onCreated }: NewRequestModalProps) {
         </button>
       </div>
 
-      {/* Step 1 — choose request type */}
       {step === 'type' && (
         <div className="space-y-3 p-6">
           {REQUEST_TYPES.map((t) => (
@@ -237,10 +277,8 @@ function NewRequestModal({ onClose, onCreated }: NewRequestModalProps) {
         </div>
       )}
 
-      {/* Step 2 — select branch + fill in details */}
       {step === 'form' && (
         <form onSubmit={handleSubmit} className="space-y-4 p-6">
-          {/* Branch picker — first field */}
           <CompanyBranchPicker
             label="Branch"
             value={branchValue}
@@ -300,7 +338,6 @@ function AuthRequestDetailPanel({ request, loading, onClose }: AuthRequestDetail
   const typeLabel = REQUEST_TYPE_LABELS[request.request_type] ?? request.request_type;
   const [copiedNumber, setCopiedNumber] = useState(false);
 
-  /** Copy text to clipboard with an execCommand fallback for non-HTTPS dev environments. */
   function copyToClipboard(text: string) {
     const markCopied = () => {
       setCopiedNumber(true);
@@ -338,7 +375,6 @@ function AuthRequestDetailPanel({ request, loading, onClose }: AuthRequestDetail
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header */}
       <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
         <div className="flex items-center gap-3">
           <FileText className="h-5 w-5 text-primary-600" />
@@ -362,14 +398,12 @@ function AuthRequestDetailPanel({ request, loading, onClose }: AuthRequestDetail
         </div>
       </div>
 
-      {/* Body */}
       {loading ? (
         <div className="flex flex-1 items-center justify-center">
           <Spinner size="lg" />
         </div>
       ) : (
-        <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6">
-          {/* Rejection reason callout */}
+        <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6 font-sans">
           {request.status === 'rejected' && request.rejection_reason && (
             <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
@@ -380,7 +414,6 @@ function AuthRequestDetailPanel({ request, loading, onClose }: AuthRequestDetail
             </div>
           )}
 
-          {/* Branch */}
           <section>
             <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Branch</h3>
             <div className="flex items-center gap-2 text-sm text-gray-800">
@@ -389,7 +422,6 @@ function AuthRequestDetailPanel({ request, loading, onClose }: AuthRequestDetail
             </div>
           </section>
 
-          {/* Financial details */}
           <section>
             <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Financial Details</h3>
             <dl className="space-y-3">
@@ -442,7 +474,6 @@ function AuthRequestDetailPanel({ request, loading, onClose }: AuthRequestDetail
             </dl>
           </section>
 
-          {/* Timeline */}
           <section>
             <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Timeline</h3>
             <dl className="space-y-3">
@@ -486,7 +517,6 @@ export function AuthorizationRequestsTab() {
   const [page, setPage] = useState(1);
   const [searchParams, setSearchParams] = useSearchParams();
 
-  /** Detail panel state */
   const [selectedRequest, setSelectedRequest] = useState<AuthRequest | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
@@ -498,14 +528,6 @@ export function AuthorizationRequestsTab() {
   const canSubmitPrivateRequest = hasPermission(PERMISSIONS.ACCOUNT_SUBMIT_PRIVATE_AUTH_REQUEST);
 
   useEffect(() => {
-    /**
-     * On hard reload, branches hydrate async and our API client only attaches X-Company-Id
-     * once branches are loaded. If we fetch too early, the request can be scoped to the
-     * user's "default" company and return an empty list, and we won't refetch.
-     *
-     * Fix: wait for branches to be available, then fetch for each selected company
-     * (or all accessible companies when selection is empty) and merge results.
-     */
     if (branchesLoading) return;
     if (branches.length === 0) return;
 
@@ -566,10 +588,8 @@ export function AuthorizationRequestsTab() {
     };
   }, [branchesLoading, branches, selectedBranchIds, showErrorToast]);
 
-  /** Fetch full detail for the selected request. */
   const openDetail = async (id: string) => {
     setDetailLoading(true);
-    // Optimistically show the partial data from the list while full data loads.
     const partial = requests.find((r) => r.id === id) ?? null;
     setSelectedRequest(partial);
     try {
@@ -578,7 +598,9 @@ export function AuthorizationRequestsTab() {
         `/account/authorization-requests/${id}`,
         companyId ? { headers: { "X-Company-Id": companyId } } : undefined,
       );
-      setSelectedRequest(res.data.data as AuthRequest);
+      if (res.data?.data) {
+        setSelectedRequest(res.data.data as AuthRequest);
+      }
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { error?: string; message?: string } } };
       showErrorToast(
@@ -591,8 +613,6 @@ export function AuthorizationRequestsTab() {
     }
   };
 
-  // Deep-link: open the request detail panel when ?requestId= is present.
-  // We remove the param immediately so back-navigation doesn't re-open the panel.
   useEffect(() => {
     const requestId = searchParams.get("requestId");
     if (!requestId) return;
@@ -604,11 +624,8 @@ export function AuthorizationRequestsTab() {
     }, { replace: true });
 
     void openDetail(requestId);
-    // openDetail is intentionally omitted to avoid re-running this effect on each render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
-  /** Client-side branch + status filter. */
   const selectedBranchIdSet = useMemo(() => new Set(selectedBranchIds), [selectedBranchIds]);
 
   const filteredRequests = useMemo(() => {
@@ -625,35 +642,27 @@ export function AuthorizationRequestsTab() {
   const totalPages = Math.max(1, Math.ceil(filteredRequests.length / PAGE_SIZE));
   const pagedRequests = filteredRequests.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  /** Reset to page 1 whenever filter or branch selection changes. */
   useEffect(() => { setPage(1); }, [statusFilter, selectedBranchIds]);
 
-  /** Keep current page within bounds when total shrinks. */
   useEffect(() => {
     setPage((prev) => Math.min(prev, totalPages));
   }, [totalPages]);
 
-  // ── Main render ───────────────────────────────────────────────────────────
-
   return (
     <div className="space-y-5">
-      {/* Page header */}
       <div>
         <div className="flex items-center gap-3">
           <FileText className="h-6 w-6 text-primary-600" />
           <h1 className="text-2xl font-bold text-gray-900">My Authorization Requests</h1>
         </div>
-        {/* Mobile: active tab name as a compact subtitle */}
         <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
           {STATUS_TABS.find((t) => t.id === statusFilter)?.label}
         </p>
-        {/* Desktop: full description */}
         <p className="mt-1 hidden text-sm text-gray-500 sm:block">
           Submit and track your payment and replenishment requests.
         </p>
       </div>
 
-      {/* Status tabs + New Request button */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
         <ViewToggle
           options={STATUS_TABS}
@@ -678,7 +687,6 @@ export function AuthorizationRequestsTab() {
         )}
       </div>
 
-      {/* Modal — AnimatePresence enables exit animation */}
       <AnimatePresence>
         {showModal && (
           <NewRequestModal
@@ -687,14 +695,12 @@ export function AuthorizationRequestsTab() {
               setRequests((prev) => [req, ...prev]);
               setStatusFilter('all');
               setPage(1);
-              // Keep the user's branch filter unchanged; open the new request immediately.
               void openDetail(req.id);
             }}
           />
         )}
       </AnimatePresence>
 
-      {/* Content area */}
       {loading ? (
         <div className="space-y-3">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -711,42 +717,11 @@ export function AuthorizationRequestsTab() {
       ) : (
         <div className="space-y-3">
           {pagedRequests.map((r) => (
-            <button
+            <AuthRequestCard
               key={r.id}
-              type="button"
-              onClick={() => void openDetail(r.id)}
-              className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3.5 text-left transition-colors hover:border-primary-200 hover:bg-primary-50/30"
-            >
-              <div className="flex items-center justify-between gap-3">
-                {/* Left: type, branch, date */}
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium text-gray-900">
-                    {REQUEST_TYPE_LABELS[r.request_type] ?? r.request_type}
-                  </p>
-                  {r.branch_name && (
-                    <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-gray-500">
-                      <GitBranch className="h-3 w-3 shrink-0" />
-                      {r.branch_name}
-                    </p>
-                  )}
-                  <p className="mt-0.5 text-xs text-gray-400">{fmtDate(r.created_at)}</p>
-                </div>
-
-                {/* Right: status badge + amount + chevron */}
-                <div className="flex shrink-0 flex-col items-end gap-1.5">
-                  <Badge variant={statusVariant(r.status)}>
-                    {r.status.charAt(0).toUpperCase() + r.status.slice(1)}
-                  </Badge>
-                  {r.requested_amount != null && (
-                    <p className="text-sm font-semibold text-gray-800">
-                      {fmtAmount(r.requested_amount)}
-                    </p>
-                  )}
-                </div>
-
-                <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" />
-              </div>
-            </button>
+              request={r}
+              onClick={openDetail}
+            />
           ))}
 
           {totalPages > 1 && (
@@ -775,33 +750,36 @@ export function AuthorizationRequestsTab() {
         </div>
       )}
 
-      {/* Detail panel — portalled so it escapes any stacking context */}
       {createPortal(
-        <>
-          {/* Backdrop */}
+        <AnimatePresence>
           {selectedRequest && (
-            <div
-              className="fixed inset-0 z-40 bg-black/30"
-              onClick={() => { setSelectedRequest(null); setDetailLoading(false); }}
-            />
-          )}
-
-          {/* Slide-in panel */}
-          <div
-            className={`fixed inset-y-0 right-0 z-50 w-full max-w-[560px] transform bg-white shadow-2xl transition-transform duration-300 ${
-              selectedRequest ? 'translate-x-0' : 'translate-x-full'
-            }`}
-          >
-            {selectedRequest && (
-              <AuthRequestDetailPanel
-                request={selectedRequest}
-                loading={detailLoading}
-                onClose={() => { setSelectedRequest(null); setDetailLoading(false); }}
+            <>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px]"
+                onClick={() => setSelectedRequest(null)}
               />
-            )}
-          </div>
-        </>,
-        document.body,
+
+              <motion.div
+                initial={{ x: "100%" }}
+                animate={{ x: 0 }}
+                exit={{ x: "100%" }}
+                transition={{ type: "spring", damping: 30, stiffness: 300, mass: 0.8 }}
+                className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[560px] flex-col overflow-hidden bg-white shadow-2xl"
+              >
+                <AuthRequestDetailPanel
+                  request={selectedRequest}
+                  loading={detailLoading}
+                  onClose={() => setSelectedRequest(null)}
+                />
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>,
+        document.body
       )}
     </div>
   );

@@ -60,7 +60,7 @@ interface PayslipCardProps {
  * Clickable card that shows payslip metadata in the list view.
  * Follows the AccountAuditResultCard pattern.
  */
-export function PayslipCard({ payslip, selected, onSelect }: PayslipCardProps) {
+export const PayslipCard = React.memo(({ payslip, selected, onSelect }: PayslipCardProps) => {
   const badge = getStatusBadge(payslip.status);
   const cutoffLabel = payslip.cutoff === 1 ? "1st Cutoff" : "2nd Cutoff";
   const periodLabel = `${formatShortDate(payslip.date_from)} – ${formatShortDate(payslip.date_to)}`;
@@ -109,4 +109,4 @@ export function PayslipCard({ payslip, selected, onSelect }: PayslipCardProps) {
       </div>
     </button>
   );
-}
+});

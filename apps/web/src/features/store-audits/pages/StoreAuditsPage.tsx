@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence } from 'framer-motion';
 import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import type { ViewOption } from '@/shared/components/ui/ViewToggle';
 import { useSearchParams } from 'react-router-dom';
@@ -12,6 +11,7 @@ import type {
   ListStoreAuditsResponse,
 } from '@omnilert/shared';
 import { PERMISSIONS } from '@omnilert/shared';
+import { AnimatePresence, motion } from 'framer-motion';
 import { AlertTriangle, CheckCircle, CheckCircle2, ClipboardList, Clock, LayoutGrid, Loader2, ShieldCheck, Star, X, XCircle } from 'lucide-react';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useSocket } from '@/shared/hooks/useSocket';
@@ -694,21 +694,24 @@ export function StoreAuditsPage() {
         </div>
       </div>
 
-      {/* Backdrop */}
-      {(selectedAudit || actionLoading) && (
-        <div
-          className="fixed inset-0 z-40 bg-black/30"
-          onClick={() => setSelectedAuditId(null)}
-        />
-      )}
+      <AnimatePresence>
+        {selectedAudit && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px]"
+              onClick={() => !actionLoading && setSelectedAuditId(null)}
+            />
 
-      {/* Detail panel */}
-      <div
-        className={`fixed inset-y-0 right-0 z-50 w-full max-w-[680px] transform overflow-hidden bg-white shadow-2xl transition-transform duration-300 ${
-          selectedAudit ? 'translate-x-0' : 'translate-x-full'
-        }`}
-      >
-            {selectedAudit && (
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[680px] flex-col overflow-hidden bg-white shadow-2xl"
+            >
               <div className="flex h-full flex-col">
                 <div className="flex items-start justify-between border-b border-gray-200 px-6 py-4">
                   <div>
@@ -722,66 +725,68 @@ export function StoreAuditsPage() {
                     </p>
                   </div>
                   <button
-                type="button"
-                onClick={() => setSelectedAuditId(null)}
-                className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
+                    type="button"
+                    onClick={() => setSelectedAuditId(null)}
+                    className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
 
-            <div className="flex flex-col flex-1 min-h-0">
-              {selectedAudit.type === 'customer_service' ? (
-                <CssAuditDetailPanel
-                  audit={selectedAudit}
-                  currentUserId={currentUserId}
-                  canProcess={canClaimAudit && selectedAudit.status === 'pending'}
-                  canComplete={
-                    canProcessAudit
-                    && selectedAudit.status === 'processing'
-                    && selectedAudit.auditor_user_id === currentUserId
-                  }
-                  canReject={
-                    canProcessAudit
-                    && selectedAudit.status === 'processing'
-                    && selectedAudit.auditor_user_id === currentUserId
-                  }
-                  canRequestVN={canRequestVN && selectedAudit.status === 'completed' && !selectedAudit.vn_requested}
-                  actionLoading={actionLoading}
-                  panelError=""
-                  onProcess={() => void handleProcess(selectedAudit.id)}
-                  onComplete={(payload) => setPendingCompleteData({ id: selectedAudit.id, payload })}
-                  onReject={() => setShowRejectModal(true)}
-                  onRequestVN={() => setShowRequestVNModal(true)}
-                />
-              ) : (
-                <ServiceCrewCctvAuditDetailPanel
-                  audit={selectedAudit}
-                  currentUserId={currentUserId}
-                  canProcess={canClaimAudit && selectedAudit.status === 'pending'}
-                  canComplete={
-                    canProcessAudit
-                    && selectedAudit.status === 'processing'
-                    && selectedAudit.auditor_user_id === currentUserId
-                  }
-                  canReject={
-                    canProcessAudit
-                    && selectedAudit.status === 'processing'
-                    && selectedAudit.auditor_user_id === currentUserId
-                  }
-                  canRequestVN={canRequestVN && selectedAudit.status === 'completed' && !selectedAudit.vn_requested}
-                  actionLoading={actionLoading}
-                  panelError=""
-                  onProcess={() => void handleProcess(selectedAudit.id)}
-                  onComplete={(payload) => setPendingCompleteData({ id: selectedAudit.id, payload })}
-                  onReject={() => setShowRejectModal(true)}
-                  onRequestVN={() => setShowRequestVNModal(true)}
-                />
-              )}
-            </div>
-          </div>
+                <div className="flex flex-1 flex-col min-h-0">
+                  {selectedAudit.type === 'customer_service' ? (
+                    <CssAuditDetailPanel
+                      audit={selectedAudit}
+                      currentUserId={currentUserId}
+                      canProcess={canClaimAudit && selectedAudit.status === 'pending'}
+                      canComplete={
+                        canProcessAudit
+                        && selectedAudit.status === 'processing'
+                        && selectedAudit.auditor_user_id === currentUserId
+                      }
+                      canReject={
+                        canProcessAudit
+                        && selectedAudit.status === 'processing'
+                        && selectedAudit.auditor_user_id === currentUserId
+                      }
+                      canRequestVN={canRequestVN && selectedAudit.status === 'completed' && !selectedAudit.vn_requested}
+                      actionLoading={actionLoading}
+                      panelError=""
+                      onProcess={() => void handleProcess(selectedAudit.id)}
+                      onComplete={(payload) => setPendingCompleteData({ id: selectedAudit.id, payload })}
+                      onReject={() => setShowRejectModal(true)}
+                      onRequestVN={() => setShowRequestVNModal(true)}
+                    />
+                  ) : (
+                    <ServiceCrewCctvAuditDetailPanel
+                      audit={selectedAudit}
+                      currentUserId={currentUserId}
+                      canProcess={canClaimAudit && selectedAudit.status === 'pending'}
+                      canComplete={
+                        canProcessAudit
+                        && selectedAudit.status === 'processing'
+                        && selectedAudit.auditor_user_id === currentUserId
+                      }
+                      canReject={
+                        canProcessAudit
+                        && selectedAudit.status === 'processing'
+                        && selectedAudit.auditor_user_id === currentUserId
+                      }
+                      canRequestVN={canRequestVN && selectedAudit.status === 'completed' && !selectedAudit.vn_requested}
+                      actionLoading={actionLoading}
+                      panelError=""
+                      onProcess={() => void handleProcess(selectedAudit.id)}
+                      onComplete={(payload) => setPendingCompleteData({ id: selectedAudit.id, payload })}
+                      onReject={() => setShowRejectModal(true)}
+                      onRequestVN={() => setShowRequestVNModal(true)}
+                    />
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          </>
         )}
-      </div>
+      </AnimatePresence>
 
       {showRequestVNModal && selectedAudit && (
         <RequestVNModal

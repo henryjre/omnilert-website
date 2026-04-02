@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState, memo } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import {
   Building2,
@@ -29,7 +29,7 @@ interface SessionCardProps {
   onOpenDetail: () => void;
 }
 
-export function SessionCard({ session, branchInfo, onUpdate, onOpenDetail }: SessionCardProps) {
+export const SessionCard = memo(({ session, branchInfo, onUpdate, onOpenDetail }: SessionCardProps) => {
   const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const [actionLoading, setActionLoading] = useState(false);
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
@@ -214,4 +214,4 @@ export function SessionCard({ session, branchInfo, onUpdate, onOpenDetail }: Ses
       </AnimatePresence>
     </>
   );
-}
+});

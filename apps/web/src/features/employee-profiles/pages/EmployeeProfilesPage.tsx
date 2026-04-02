@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Button } from '@/shared/components/ui/Button';
@@ -455,6 +456,169 @@ function companyPillsWithOverflow(
   );
 }
 
+// --- Employee Card ---
+
+const EmployeeCard = memo(({
+  item,
+  selected,
+  onClick,
+  canApproveRequirements,
+}: {
+  item: EmployeeCard;
+  selected: boolean;
+  onClick: (id: string) => void;
+  canApproveRequirements: boolean;
+}) => {
+  const badge = getStatusBadge(item.employment_status);
+  const deptPosition = [item.department_name, item.position_title].filter(Boolean).join(' · ');
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick(item.id);
+        }
+      }}
+      onClick={() => onClick(item.id)}
+      className={`flex flex-col rounded-xl border bg-white p-4 text-left transition hover:shadow-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${
+        selected
+          ? 'border-primary-300 ring-1 ring-primary-300 bg-primary-50/50'
+          : 'border-gray-200 hover:border-gray-300'
+      }`}
+    >
+      {/* Identity row */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          {item.avatar_url ? (
+            <img
+              src={item.avatar_url}
+              alt={`${item.first_name} ${item.last_name}`}
+              className="h-12 w-12 shrink-0 rounded-full object-cover"
+            />
+          ) : (
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary-100 text-sm font-semibold text-primary-700">
+              {getInitials(item.first_name, item.last_name)}
+            </div>
+          )}
+          <div className="min-w-0">
+            <p className="truncate font-semibold text-gray-900">
+              {item.first_name} {item.last_name}
+            </p>
+            {deptPosition ? (
+              <p className="mt-0.5 truncate text-xs text-gray-500">{deptPosition}</p>
+            ) : (
+              <p className="mt-0.5 text-xs text-gray-400 italic">No department · No position</p>
+            )}
+          </div>
+        </div>
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${badge.className}`}>
+          {badge.label}
+        </span>
+      </div>
+
+      {/* Metadata block */}
+      <div className="mt-3 border-t border-gray-100 pt-3 space-y-2 pb-3">
+        {/* PIN */}
+        <div className="flex items-center gap-2">
+          <span title="PIN"><Hash className="h-4 w-4 shrink-0 text-gray-400" /></span>
+          <span className="font-mono text-sm text-gray-800">{item.pin || <span className="text-gray-400 font-sans text-xs">Not set</span>}</span>
+        </div>
+
+        {/* Companies */}
+        <div className="flex items-start gap-2">
+          <span title="Companies"><Building2 className="mt-0.5 h-4 w-4 shrink-0 text-indigo-400" /></span>
+          <div className="min-w-0">
+            {item.companies.length > 0
+              ? companyPillsWithOverflow(
+                item.companies.map((company) => ({
+                  key: company.company_id,
+                  label: company.company_name,
+                  themeColor: company.company_theme_color,
+                })),
+                2,
+              )
+              : <span className="text-xs text-gray-400">Not assigned</span>}
+          </div>
+        </div>
+
+        {/* Resident branch */}
+        <div className="flex items-center gap-2">
+          <span title="Resident Branch"><MapPin className="h-4 w-4 shrink-0 text-emerald-500" /></span>
+          <div className="min-w-0">
+            {item.resident_branch ? (
+              <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                {item.resident_branch.branch_name}
+              </span>
+            ) : (
+              <span className="text-xs text-gray-400">No resident branch</span>
+            )}
+          </div>
+        </div>
+
+        {/* Borrow branches */}
+        <div className="flex items-start gap-2">
+          <span title="Borrow Branches"><GitBranch className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" /></span>
+          <div className="min-w-0">
+            {item.borrow_branches.length > 0
+              ? pillsWithOverflow(
+                item.borrow_branches.map((branch) => ({
+                  key: `${branch.company_id}:${branch.branch_id}`,
+                  label: branch.branch_name,
+                })),
+                2,
+                'slate',
+              )
+              : <span className="text-xs text-gray-400">None</span>}
+          </div>
+        </div>
+      </div>
+
+      {/* Requirements — pinned to bottom */}
+      {canApproveRequirements && item.requirement_summary && (
+        <div className="mt-auto border-t border-gray-100 pt-3">
+          <div className="mb-1.5 flex items-center justify-between text-xs font-medium text-gray-500">
+            <span>Requirements</span>
+            <span>
+              {item.requirement_summary.complete}/{item.requirement_summary.total}
+              {' '}
+              ({item.requirement_summary.total > 0
+                ? Math.round((item.requirement_summary.complete / item.requirement_summary.total) * 100)
+                : 0}%)
+            </span>
+          </div>
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+            <div
+              className="h-full rounded-full bg-green-500 transition-all duration-500"
+              style={{
+                width: `${item.requirement_summary.total > 0
+                  ? Math.round((item.requirement_summary.complete / item.requirement_summary.total) * 100)
+                  : 0}%`,
+              }}
+            />
+          </div>
+          <div className="mt-2 flex items-center gap-1.5">
+            <div title="Complete" className="flex items-center justify-center min-w-8 gap-1 rounded bg-green-50 px-1.5 py-0.5 text-[10px] font-medium text-green-700 ring-1 ring-inset ring-green-600/20">
+              C <span className="text-green-600">{item.requirement_summary.complete}</span>
+            </div>
+            <div title="Verification" className="flex items-center justify-center min-w-8 gap-1 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 ring-1 ring-inset ring-blue-600/20">
+              V <span className="text-blue-600">{item.requirement_summary.verification}</span>
+            </div>
+            <div title="Rejected" className="flex items-center justify-center min-w-8 gap-1 rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700 ring-1 ring-inset ring-red-600/20">
+              R <span className="text-red-600">{item.requirement_summary.rejected}</span>
+            </div>
+            <div title="Incomplete" className="flex items-center justify-center min-w-8 gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20">
+              I <span className="text-amber-600">{item.requirement_summary.pending}</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+});
+
 export function EmployeeProfilesPage() {
   const DESKTOP_PAGE_SIZE = 12;
   const MOBILE_PAGE_SIZE = 6;
@@ -464,7 +628,6 @@ export function EmployeeProfilesPage() {
     sortBy: '',
     sortDirection: 'desc',
   };
-  const PANEL_ANIMATION_MS = 300;
   const { hasPermission } = usePermission();
   const authUser = useAuthStore((s) => s.user);
   const selectedBranchIds = useBranchStore((s) => s.selectedBranchIds);
@@ -495,7 +658,6 @@ export function EmployeeProfilesPage() {
   const detailCacheRef = useRef<Record<string, EmployeeDetail>>({});
   const activeDetailRequestRef = useRef(0);
   const selectedUserIdRef = useRef<string | null>(null);
-  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const openTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [workEditMode, setWorkEditMode] = useState(false);
   const workEditModeRef = useRef(false);
@@ -878,10 +1040,6 @@ export function EmployeeProfilesPage() {
 
   const openPanel = (userId: string) => {
     const card = items.find((item) => item.id === userId);
-    if (closeTimerRef.current) {
-      clearTimeout(closeTimerRef.current);
-      closeTimerRef.current = null;
-    }
     if (openTimerRef.current) {
       clearTimeout(openTimerRef.current);
       openTimerRef.current = null;
@@ -926,20 +1084,15 @@ export function EmployeeProfilesPage() {
       openTimerRef.current = null;
     }
     setPanelOpen(false);
+    setSelectedUserId(null);
+    setDetail(null);
     setDetailLoading(false);
-    workEditModeRef.current = false; setWorkEditMode(false);
-    closeTimerRef.current = window.setTimeout(() => {
-      selectedUserIdRef.current = null;
-      setSelectedUserId(null);
-      setDetail(null);
-      closeTimerRef.current = null;
-    }, PANEL_ANIMATION_MS);
+    workEditModeRef.current = false;
+    setWorkEditMode(false);
+    selectedUserIdRef.current = null;
   };
 
   useEffect(() => () => {
-    if (closeTimerRef.current) {
-      clearTimeout(closeTimerRef.current);
-    }
     if (openTimerRef.current) {
       clearTimeout(openTimerRef.current);
     }
@@ -1376,154 +1529,15 @@ export function EmployeeProfilesPage() {
         ) : (
           <>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {filteredItems.map((item) => {
-                const badge = getStatusBadge(item.employment_status);
-                const deptPosition = [item.department_name, item.position_title].filter(Boolean).join(' · ');
-                return (
-                <div
+              {filteredItems.map((item) => (
+                <EmployeeCard
                   key={item.id}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      openPanel(item.id);
-                    }
-                  }}
-                  onClick={() => openPanel(item.id)}
-                  className={`flex flex-col rounded-xl border bg-white p-4 text-left transition hover:shadow-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${
-                    selectedUserId === item.id ? 'border-primary-300 ring-1 ring-primary-300 bg-primary-50/50' : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  {/* Identity row */}
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 items-start gap-3">
-                      {item.avatar_url ? (
-                        <img
-                          src={item.avatar_url}
-                          alt={`${item.first_name} ${item.last_name}`}
-                          className="h-12 w-12 shrink-0 rounded-full object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary-100 text-sm font-semibold text-primary-700">
-                          {getInitials(item.first_name, item.last_name)}
-                        </div>
-                      )}
-                      <div className="min-w-0">
-                        <p className="truncate font-semibold text-gray-900">
-                          {item.first_name} {item.last_name}
-                        </p>
-                        {deptPosition ? (
-                          <p className="mt-0.5 truncate text-xs text-gray-500">{deptPosition}</p>
-                        ) : (
-                          <p className="mt-0.5 text-xs text-gray-400 italic">No department · No position</p>
-                        )}
-                      </div>
-                    </div>
-                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${badge.className}`}>
-                      {badge.label}
-                    </span>
-                  </div>
-
-                  {/* Metadata block */}
-                  <div className="mt-3 border-t border-gray-100 pt-3 space-y-2 pb-3">
-                    {/* PIN */}
-                    <div className="flex items-center gap-2">
-                      <span title="PIN"><Hash className="h-4 w-4 shrink-0 text-gray-400" /></span>
-                      <span className="font-mono text-sm text-gray-800">{item.pin || <span className="text-gray-400 font-sans text-xs">Not set</span>}</span>
-                    </div>
-
-                    {/* Companies */}
-                    <div className="flex items-start gap-2">
-                      <span title="Companies"><Building2 className="mt-0.5 h-4 w-4 shrink-0 text-indigo-400" /></span>
-                      <div className="min-w-0">
-                        {item.companies.length > 0
-                          ? companyPillsWithOverflow(
-                            item.companies.map((company) => ({
-                              key: company.company_id,
-                              label: company.company_name,
-                              themeColor: company.company_theme_color,
-                            })),
-                            2,
-                          )
-                          : <span className="text-xs text-gray-400">Not assigned</span>}
-                      </div>
-                    </div>
-
-                    {/* Resident branch */}
-                    <div className="flex items-center gap-2">
-                      <span title="Resident Branch"><MapPin className="h-4 w-4 shrink-0 text-emerald-500" /></span>
-                      <div className="min-w-0">
-                        {item.resident_branch ? (
-                          <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
-                            {item.resident_branch.branch_name}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-gray-400">No resident branch</span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Borrow branches */}
-                    <div className="flex items-start gap-2">
-                      <span title="Borrow Branches"><GitBranch className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" /></span>
-                      <div className="min-w-0">
-                        {item.borrow_branches.length > 0
-                          ? pillsWithOverflow(
-                            item.borrow_branches.map((branch) => ({
-                              key: `${branch.company_id}:${branch.branch_id}`,
-                              label: branch.branch_name,
-                            })),
-                            2,
-                            'slate',
-                          )
-                          : <span className="text-xs text-gray-400">None</span>}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Requirements — pinned to bottom */}
-                  {hasPermission(PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_REQUIREMENTS) && item.requirement_summary && (
-                    <div className="mt-auto border-t border-gray-100 pt-3">
-                      <div className="mb-1.5 flex items-center justify-between text-xs font-medium text-gray-500">
-                        <span>Requirements</span>
-                        <span>
-                          {item.requirement_summary.complete}/{item.requirement_summary.total}
-                          {' '}
-                          ({item.requirement_summary.total > 0
-                            ? Math.round((item.requirement_summary.complete / item.requirement_summary.total) * 100)
-                            : 0}%)
-                        </span>
-                      </div>
-                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
-                        <div
-                          className="h-full rounded-full bg-green-500 transition-all duration-500"
-                          style={{
-                            width: `${item.requirement_summary.total > 0
-                              ? Math.round((item.requirement_summary.complete / item.requirement_summary.total) * 100)
-                              : 0}%`,
-                          }}
-                        />
-                      </div>
-                      <div className="mt-2 flex items-center gap-1.5">
-                        <div title="Complete" className="flex items-center justify-center min-w-8 gap-1 rounded bg-green-50 px-1.5 py-0.5 text-[10px] font-medium text-green-700 ring-1 ring-inset ring-green-600/20">
-                          C <span className="text-green-600">{item.requirement_summary.complete}</span>
-                        </div>
-                        <div title="Verification" className="flex items-center justify-center min-w-8 gap-1 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 ring-1 ring-inset ring-blue-600/20">
-                          V <span className="text-blue-600">{item.requirement_summary.verification}</span>
-                        </div>
-                        <div title="Rejected" className="flex items-center justify-center min-w-8 gap-1 rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700 ring-1 ring-inset ring-red-600/20">
-                          R <span className="text-red-600">{item.requirement_summary.rejected}</span>
-                        </div>
-                        <div title="Incomplete" className="flex items-center justify-center min-w-8 gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20">
-                          I <span className="text-amber-600">{item.requirement_summary.pending}</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                );
-              })}
+                  item={item}
+                  selected={selectedUserId === item.id}
+                  onClick={openPanel}
+                  canApproveRequirements={canApproveRequirements}
+                />
+              ))}
             </div>
 
             {pagination.totalPages > 1 && (
@@ -1595,20 +1609,29 @@ export function EmployeeProfilesPage() {
         </div>
       )}
 
-      {selectedUserId && (
-        <div
-          className="fixed inset-0 z-40 bg-black/30"
-          onClick={closePanel}
-        />
-      )}
+      {createPortal(
+        <AnimatePresence>
+          {selectedUserId && (
+            <>
+              {/* Backdrop */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px]"
+                onClick={closePanel}
+              />
 
-      <div
-        className={`fixed inset-y-0 right-0 z-50 w-full max-w-[560px] transform bg-white shadow-2xl transition-transform duration-300 ${
-          panelOpen ? 'translate-x-0' : 'translate-x-full'
-        }`}
-      >
-        {!selectedUserId ? null : (
-          <div className="flex h-full flex-col">
+              {/* Detail panel */}
+              <motion.div
+                initial={{ x: '100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '100%' }}
+                transition={{ type: 'spring', damping: 30, stiffness: 300, mass: 0.8 }}
+                className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[560px] flex-col bg-white shadow-2xl"
+              >
+                <div className="flex h-full flex-col">
               <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
                 <div>
                   <p className="text-xs uppercase tracking-wide text-gray-500">Employee Profile</p>
@@ -2212,9 +2235,13 @@ export function EmployeeProfilesPage() {
                   </>
                 )}
               </div>
-          </div>
+            </div>
+          </motion.div>
+          </>
         )}
-      </div>
+      </AnimatePresence>,
+      document.body,
+    )}
 
       <AnimatePresence>
         {previewDoc && (

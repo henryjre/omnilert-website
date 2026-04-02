@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { useEffect, useMemo, useState, useRef, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { ViewToggle, type ViewOption } from '@/shared/components/ui/ViewToggle';
 import { useSearchParams } from 'react-router-dom';
@@ -171,7 +171,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 // ─── Authorization Card ───────────────────────────────────────────────────────
 
-function AuthorizationCard({
+const AuthorizationCard = memo(({
   auth,
   currentUserId,
   canApprove,
@@ -187,7 +187,7 @@ function AuthorizationCard({
   onReasonSubmit: (id: string, reason: string) => Promise<void>;
   onApprove: (id: string, overtimeType?: string, hours?: number, minutes?: number) => Promise<void>;
   onReject: (id: string, reason: string) => Promise<void>;
-}) {
+}) => {
   const config = AUTH_TYPE_CONFIG[auth.auth_type] ?? { label: auth.auth_type, color: 'gray', Icon: Clock, diffLabel: '' };
   const { Icon } = config;
 
@@ -415,11 +415,11 @@ function AuthorizationCard({
       </AnimatePresence>
     </div>
   );
-}
+});
 
 // ─── Log Entry ────────────────────────────────────────────────────────────────
 
-function LogEntry({
+const LogEntry = memo(({
   log,
   isLast,
   highlight,
@@ -436,7 +436,7 @@ function LogEntry({
   shiftOwnerUserId: string | null;
   onOpenShiftExchangeRequest?: (requestId: string) => void;
   onOpenPeerEvaluation?: (evaluationId: string) => void;
-}) {
+}) => {
   const payload = log.odoo_payload as Record<string, unknown> | null;
   const empName = payload?.x_employee_contact_name
     ? parseEmployeeName(String(payload.x_employee_contact_name)).name
@@ -784,11 +784,11 @@ function LogEntry({
   }
 
   return null;
-}
+});
 
 // ─── Shift Detail Panel ───────────────────────────────────────────────────────
 
-function ShiftDetailPanel({
+const ShiftDetailPanel = memo(({
   shift,
   branchName,
   currentUserId,
@@ -814,7 +814,7 @@ function ShiftDetailPanel({
   onAuthorizationUpdate: (updatedAuth: any) => void;
   onOpenShiftExchangeRequest: (requestId: string) => void;
   onOpenPeerEvaluation: (evaluationId: string) => void;
-}) {
+}) => {
   const { prefix, name } = parseEmployeeName(shift.employee_name);
   const avatarUrl = resolveShiftAvatarUrl(shift);
   const dutyColor = DUTY_COLORS[shift.duty_color] ?? '#e5e7eb';
@@ -1004,11 +1004,11 @@ function ShiftDetailPanel({
       </div>
     </div>
   );
-}
+});
 
 // ─── Shift Card for My Account (mirrors Employee Schedule style) ──────────────
 
-function MyShiftCard({
+const MyShiftCard = memo(({
   shift,
   branchName,
   canExchangeShift,
@@ -1024,7 +1024,7 @@ function MyShiftCard({
   onClick: () => void;
   onEndShift: (id: string) => void;
   onExchangeShift: (shift: any) => void;
-}) {
+}) => {
   const { prefix, name } = parseEmployeeName(shift.employee_name);
   const avatarUrl = resolveShiftAvatarUrl(shift);
   const dutyColor = DUTY_COLORS[shift.duty_color] ?? "#e5e7eb";
@@ -1154,7 +1154,7 @@ function MyShiftCard({
       </div>
     </div>
   );
-}
+});
 
 // ─── Shift Card Skeleton ──────────────────────────────────────────────────────
 
@@ -1188,17 +1188,18 @@ function MyShiftCardSkeleton() {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
+type TabType = 'all' | 'open' | 'active' | 'ended';
+type SortBy = 'shift_start' | 'allocated_hours';
+type SortOrder = 'asc' | 'desc';
+interface Filters {
+  dateFrom: string;
+  dateTo: string;
+  dutyType: string;
+  sortBy: SortBy;
+  sortOrder: SortOrder;
+}
+
 export function ScheduleTab() {
-  type TabType = 'all' | 'open' | 'active' | 'ended';
-  type SortBy = 'shift_start' | 'allocated_hours';
-  type SortOrder = 'asc' | 'desc';
-  interface Filters {
-    dateFrom: string;
-    dateTo: string;
-    dutyType: string;
-    sortBy: SortBy;
-    sortOrder: SortOrder;
-  }
 
   const DEFAULT_FILTERS: Filters = {
     dateFrom: '',
@@ -1939,63 +1940,71 @@ export function ScheduleTab() {
       </div>
 
       {createPortal(
-        <>
-          {/* Backdrop */}
-          {(selectedShift || detailLoading) && (
-            <div
-              className="fixed inset-0 z-40 bg-black/30"
-              onClick={() => {
-                setSelectedShift(null);
-                setShiftExchangeDetailRequestId(null);
-                setHighlightLog(null);
-              }}
-            />
-          )}
-
-          {/* Detail panel */}
-          <div
-            className={`fixed inset-y-0 right-0 z-50 w-full max-w-[560px] transform bg-white shadow-2xl transition-transform duration-300 ${
-              selectedShift ? 'translate-x-0' : 'translate-x-full'
-            }`}
-          >
-            {detailLoading ? (
-              <div className="flex h-full items-center justify-center">
-                <Spinner size="lg" />
-              </div>
-            ) : selectedShift ? (
-              <ShiftDetailPanel
-                shift={selectedShift}
-                branchName={selectedShift.branch_name ?? 'Unknown Branch'}
-                currentUserId={currentUser?.id ?? ''}
-                canApprove={canApprove}
-                canSubmitPublicAuthRequest={canSubmitPublicAuthRequest}
-                highlightLog={highlightLog}
-                onClose={() => {
+        <AnimatePresence>
+          {selectedShift && (
+            <>
+              {/* Backdrop */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px]"
+                onClick={() => {
                   setSelectedShift(null);
                   setShiftExchangeDetailRequestId(null);
                   setHighlightLog(null);
                 }}
-                onAuthorizationUpdate={(updatedAuth) => {
-                  setSelectedShift((prev: any) => {
-                    if (!prev) return prev;
-                    return {
-                      ...prev,
-                      authorizations: (prev.authorizations || []).map((a: any) =>
-                        a.id === updatedAuth.id ? updatedAuth : a,
-                      ),
-                    };
-                  });
-                }}
-                onOpenShiftExchangeRequest={(requestId) => {
-                  setShiftExchangeDetailRequestId(requestId);
-                }}
-                onOpenPeerEvaluation={(evaluationId) => {
-                  setPeerEvaluationModalId(evaluationId);
-                }}
               />
-            ) : null}
-          </div>
-        </>,
+
+              {/* Detail panel */}
+              <motion.div
+                initial={{ x: '100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '100%' }}
+                transition={{ type: 'spring', damping: 30, stiffness: 300, mass: 0.8 }}
+                className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[560px] flex-col bg-white shadow-2xl"
+              >
+                {detailLoading ? (
+                  <div className="flex h-full items-center justify-center">
+                    <Spinner size="lg" />
+                  </div>
+                ) : (
+                  <ShiftDetailPanel
+                    shift={selectedShift}
+                    branchName={selectedShift.branch_name ?? 'Unknown Branch'}
+                    currentUserId={currentUser?.id ?? ''}
+                    canApprove={canApprove}
+                    canSubmitPublicAuthRequest={canSubmitPublicAuthRequest}
+                    highlightLog={highlightLog}
+                    onClose={() => {
+                      setSelectedShift(null);
+                      setShiftExchangeDetailRequestId(null);
+                      setHighlightLog(null);
+                    }}
+                    onAuthorizationUpdate={(updatedAuth) => {
+                      setSelectedShift((prev: any) => {
+                        if (!prev) return prev;
+                        return {
+                          ...prev,
+                          authorizations: (prev.authorizations || []).map((a: any) =>
+                            a.id === updatedAuth.id ? updatedAuth : a,
+                          ),
+                        };
+                      });
+                    }}
+                    onOpenShiftExchangeRequest={(requestId) => {
+                      setShiftExchangeDetailRequestId(requestId);
+                    }}
+                    onOpenPeerEvaluation={(evaluationId) => {
+                      setPeerEvaluationModalId(evaluationId);
+                    }}
+                  />
+                )}
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>,
         document.body,
       )}
 

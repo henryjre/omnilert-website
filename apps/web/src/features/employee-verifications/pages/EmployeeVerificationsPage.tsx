@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import { createPortal } from 'react-dom';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Badge } from '@/shared/components/ui/Badge';
 import { Button } from '@/shared/components/ui/Button';
 import { AnimatedModal } from '@/shared/components/ui/AnimatedModal';
@@ -1078,16 +1078,27 @@ export function EmployeeVerificationsPage() {
 
       {createPortal(
         <>
-          {selectedItem && (
-            <div className="fixed inset-0 z-40 bg-black/30" onClick={closePanel} />
-          )}
-
-          <div
-            className={`fixed inset-y-0 right-0 z-50 w-full max-w-[520px] transform bg-white shadow-2xl transition-transform duration-300 ${
-              selectedItem ? 'translate-x-0' : 'translate-x-full'
-            }`}
-          >
+          <AnimatePresence>
             {selectedItem && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px]"
+                onClick={closePanel}
+              />
+            )}
+          </AnimatePresence>
+
+          <AnimatePresence>
+            {selectedItem && (
+              <motion.div
+                initial={{ x: '100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '100%' }}
+                transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                className="fixed inset-y-0 right-0 z-50 w-full max-w-[520px] bg-white shadow-2xl"
+              >
           <div className="flex h-full flex-col">
             {(() => {
               const PanelIcon = PANEL_ICON[selectedItem.type];
@@ -1930,11 +1941,12 @@ export function EmployeeVerificationsPage() {
               </div>
             )}
           </div>
-        )}
-      </div>
-        </>,
-        document.body,
+        </motion.div>
       )}
+    </AnimatePresence>
+  </>,
+  document.body,
+)}
 
       <AnimatePresence>
         {confirmModal && (

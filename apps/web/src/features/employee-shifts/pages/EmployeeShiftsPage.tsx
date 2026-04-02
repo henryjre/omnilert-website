@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState, type ComponentType } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState, type ComponentType } from 'react';
+import { createPortal } from 'react-dom';
 import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AnimatedModal } from '@/shared/components/ui/AnimatedModal';
@@ -153,7 +154,7 @@ const OVERTIME_TYPE_LABELS: Record<string, string> = {
 
 // --- AuthorizationCard ---
 
-function AuthorizationCard({
+const AuthorizationCard = memo(({
   auth,
   currentUserId,
   canApprove,
@@ -169,7 +170,7 @@ function AuthorizationCard({
   onReasonSubmit: (id: string, reason: string) => Promise<void>;
   onApprove: (id: string, overtimeType?: string, hours?: number, minutes?: number) => Promise<void>;
   onReject: (id: string, reason: string) => Promise<void>;
-}) {
+}) => {
   const config = AUTH_TYPE_CONFIG[auth.auth_type] ?? { label: auth.auth_type, color: 'gray', Icon: Clock, diffLabel: '' };
   const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const { Icon } = config;
@@ -475,11 +476,11 @@ function AuthorizationCard({
       </AnimatePresence>
     </div>
   );
-}
+});
 
 // --- Shift Card ---
 
-function ShiftCard({
+const ShiftCard = memo(({
   shift,
   branchName,
   canEndShift,
@@ -495,7 +496,7 @@ function ShiftCard({
   onClick: () => void;
   onEndShift: (id: string) => void;
   onExchangeShift: (shift: any) => void;
-}) {
+}) => {
   const { prefix, name } = parseEmployeeName(shift.employee_name);
   const avatarUrl = resolveShiftAvatarUrl(shift);
   const dutyColor = DUTY_COLORS[shift.duty_color] ?? '#e5e7eb';
@@ -645,11 +646,11 @@ function ShiftCard({
       </div>
     </div>
   );
-}
+});
 
 // --- Log Entry ---
 
-function LogEntry({
+const LogEntry = memo(({
   log,
   isLast,
   currentUserId,
@@ -661,7 +662,7 @@ function LogEntry({
   currentUserId: string;
   shiftOwnerUserId: string | null;
   onOpenPeerEvaluation: (evaluationId: string) => void;
-}) {
+}) => {
   const payload = log.odoo_payload as Record<string, unknown> | null;
   const empName = payload?.x_employee_contact_name
     ? parseEmployeeName(String(payload.x_employee_contact_name)).name
@@ -936,11 +937,11 @@ function LogEntry({
   }
 
   return null;
-}
+});
 
 // --- Shift Detail Panel ---
 
-function ShiftDetailPanel({
+const ShiftDetailPanel = memo(({
   shift,
   branchName,
   currentUserId,
@@ -958,7 +959,7 @@ function ShiftDetailPanel({
   onClose: () => void;
   onAuthorizationUpdate: (updatedAuth: any) => void;
   onOpenPeerEvaluation: (evaluationId: string) => void;
-}) {
+}) => {
   const { prefix, name } = parseEmployeeName(shift.employee_name);
   const avatarUrl = resolveShiftAvatarUrl(shift);
   const [avatarError, setAvatarError] = useState(false);
@@ -1147,7 +1148,7 @@ function ShiftDetailPanel({
       </div>
     </div>
   );
-}
+});
 
 // --- Page ---
 
@@ -1206,6 +1207,11 @@ export function EmployeeShiftsPage() {
   const canApprove = canManageShift;
   const canEndShift = canManageShift;
   const canSubmitPublicAuthRequest = hasPermission(PERMISSIONS.ACCOUNT_MANAGE_SCHEDULE);
+
+  const closeDetailPanel = () => {
+    setSelectedShift(null);
+    setDetailLoading(false);
+  };
 
   type EndShiftConfirmStep = 1 | 2;
   interface EndShiftConfirmState {
@@ -1739,12 +1745,63 @@ export function EmployeeShiftsPage() {
         )}
       </div>
 
-      {/* Detail panel backdrop */}
-      {(selectedShift || detailLoading) && (
-        <div
-          className="fixed inset-0 z-40 bg-black/30"
-          onClick={() => setSelectedShift(null)}
-        />
+      {createPortal(
+        <AnimatePresence>
+          {(selectedShift || detailLoading) && (
+            <>
+              {/* Backdrop */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px]"
+                onClick={closeDetailPanel}
+              />
+
+              {/* Detail panel */}
+              <motion.div
+                initial={{ x: '100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '100%' }}
+                transition={{ type: 'spring', damping: 30, stiffness: 300, mass: 0.8 }}
+                className="fixed inset-y-0 right-0 z-50 w-full max-w-[560px] bg-white shadow-2xl"
+              >
+                {detailLoading ? (
+                  <div className="flex h-full items-center justify-center">
+                    <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-200 border-t-primary-600" />
+                  </div>
+                ) : selectedShift ? (
+                  <ShiftDetailPanel
+                    shift={selectedShift}
+                    branchName={branchMap[selectedShift.branch_id]}
+                    currentUserId={currentUser?.id ?? ''}
+                    canApprove={canApprove}
+                    canSubmitPublicAuthRequest={canSubmitPublicAuthRequest}
+                    onClose={closeDetailPanel}
+                    onAuthorizationUpdate={(updatedAuth) => {
+                      setSelectedShift((prev: any) => {
+                        if (!prev) return prev;
+                        const updatedAuths = (prev.authorizations || []).map((a: any) =>
+                          a.id === updatedAuth.id ? updatedAuth : a,
+                        );
+                        const newPending = updatedAuths.filter((a: any) => a.status === 'pending').length;
+                        setShifts((prevShifts) =>
+                          prevShifts.map((s) =>
+                            s.id === prev.id ? { ...s, pending_approvals: newPending } : s,
+                          ),
+                        );
+                        return { ...prev, authorizations: updatedAuths, pending_approvals: newPending };
+                      });
+                    }}
+                    onOpenPeerEvaluation={(evaluationId) => setPeerEvaluationModalId(evaluationId)}
+                  />
+                ) : null}
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>,
+        document.body,
       )}
 
       {/* End shift confirmation (2-step) */}
@@ -1811,44 +1868,6 @@ export function EmployeeShiftsPage() {
           </AnimatedModal>
         )}
       </AnimatePresence>
-
-      {/* Detail panel */}
-      <div
-        className={`fixed inset-y-0 right-0 z-50 w-full max-w-[560px] transform bg-white shadow-2xl transition-transform duration-300 ${
-          selectedShift ? 'translate-x-0' : 'translate-x-full'
-        }`}
-      >
-        {detailLoading ? (
-          <div className="flex h-full items-center justify-center">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-200 border-t-primary-600" />
-          </div>
-        ) : selectedShift ? (
-          <ShiftDetailPanel
-            shift={selectedShift}
-            branchName={branchMap[selectedShift.branch_id]}
-            currentUserId={currentUser?.id ?? ''}
-            canApprove={canApprove}
-            canSubmitPublicAuthRequest={canSubmitPublicAuthRequest}
-            onClose={() => setSelectedShift(null)}
-            onAuthorizationUpdate={(updatedAuth) => {
-              setSelectedShift((prev: any) => {
-                if (!prev) return prev;
-                const updatedAuths = (prev.authorizations || []).map((a: any) =>
-                  a.id === updatedAuth.id ? updatedAuth : a,
-                );
-                const newPending = updatedAuths.filter((a: any) => a.status === 'pending').length;
-                setShifts((prevShifts) =>
-                  prevShifts.map((s) =>
-                    s.id === prev.id ? { ...s, pending_approvals: newPending } : s,
-                  ),
-                );
-                return { ...prev, authorizations: updatedAuths, pending_approvals: newPending };
-              });
-            }}
-            onOpenPeerEvaluation={(evaluationId) => setPeerEvaluationModalId(evaluationId)}
-          />
-        ) : null}
-      </div>
 
       <ShiftExchangeFlowModal
         isOpen={Boolean(exchangeShiftSource)}

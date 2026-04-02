@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import { useSearchParams } from 'react-router-dom';
 import type { ViolationNotice, ViolationNoticeDetail, ViolationNoticeMessage, GroupedUsersResponse } from '@omnilert/shared';
@@ -627,43 +627,53 @@ export function ViolationNoticesPage() {
         )}
       </div>
 
-      {/* Overlay backdrop */}
-      {selectedVn && (
-        <div className="fixed inset-0 z-40 bg-black/30" onClick={closeDetailPanel} />
-      )}
+      <AnimatePresence>
+        {selectedVnId && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px]"
+              onClick={closeDetailPanel}
+            />
 
-      {/* Detail slide-in panel */}
-      <div
-        className={`fixed inset-y-0 right-0 z-50 w-full max-w-[680px] transform bg-white shadow-2xl transition-transform duration-300 ${
-          selectedVn ? 'translate-x-0' : 'translate-x-full'
-        }`}
-      >
-        {selectedVn && (
-          <ViolationNoticeDetailPanel
-            vn={selectedVn}
-            messages={messages}
-            onClose={closeDetailPanel}
-            onUpdate={(updated) => setSelectedVn(updated)}
-            onSilentRefetch={() => void fetchReports(true)}
-            onLeave={async () => { await handleLeave(selectedVn.id); }}
-            onToggleMute={async () => { await handleToggleMute(selectedVn.id); }}
-            onSendMessage={handleSendMessage}
-            onEditMessage={handleEditMessage}
-            onDeleteMessage={handleDeleteMessage}
-            onToggleReaction={handleToggleReaction}
-            mentionables={mentionables}
-            initialFlashMessageId={initialFlashMessageId}
-            onFlashMessageConsumed={() => setInitialFlashMessageId(null)}
-            canConfirm={canManage}
-            canReject={canManage}
-            canIssue={canManage}
-            canComplete={canManage}
-            canManage={canManage}
-            currentUserId={user?.id ?? ''}
-            currentUserRoleIds={user?.roles.map((r) => r.id)}
-          />
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[680px] flex-col bg-white shadow-2xl"
+            >
+              {selectedVn && (
+                <ViolationNoticeDetailPanel
+                  vn={selectedVn}
+                  messages={messages}
+                  onClose={closeDetailPanel}
+                  onUpdate={(updated) => setSelectedVn(updated)}
+                  onSilentRefetch={() => void fetchReports(true)}
+                  onLeave={async () => { await handleLeave(selectedVn.id); }}
+                  onToggleMute={async () => { await handleToggleMute(selectedVn.id); }}
+                  onSendMessage={handleSendMessage}
+                  onEditMessage={handleEditMessage}
+                  onDeleteMessage={handleDeleteMessage}
+                  onToggleReaction={handleToggleReaction}
+                  mentionables={mentionables}
+                  initialFlashMessageId={initialFlashMessageId}
+                  onFlashMessageConsumed={() => setInitialFlashMessageId(null)}
+                  canConfirm={canManage}
+                  canReject={canManage}
+                  canIssue={canManage}
+                  canComplete={canManage}
+                  canManage={canManage}
+                  currentUserId={user?.id ?? ''}
+                  currentUserRoleIds={user?.roles.map((r) => r.id)}
+                />
+              )}
+            </motion.div>
+          </>
         )}
-      </div>
+      </AnimatePresence>
 
       {/* Create VN modal */}
       {(showCreateModal || createModalOpen) && (

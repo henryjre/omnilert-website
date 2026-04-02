@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import { AnimatePresence, motion } from "framer-motion";
 import type { PayslipDetailResponse, PayslipListItem, PayslipStatus } from "@omnilert/shared";
 import { X } from "lucide-react";
 import { api } from "@/shared/services/api.client";
@@ -175,62 +177,72 @@ export function PayslipPage() {
         onPageChange={setPage}
       />
 
-      {/* Side panel backdrop */}
-      {panelOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/30"
-          onClick={handleClosePanel}
-        />
-      )}
-
-      {/* Side panel */}
-      <div
-        className={`fixed inset-y-0 right-0 z-50 flex w-full max-w-[680px] transform flex-col overflow-hidden bg-white shadow-2xl transition-transform duration-300 ${
-          panelOpen ? "translate-x-0" : "translate-x-full"
-        }`}
-      >
-        {panelOpen && (
-          <>
-            {/* Panel header */}
-            <div className="flex items-start justify-between border-b border-gray-200 px-6 py-4">
-              <div>
-                <p className="text-lg font-semibold text-gray-900">
-                  {selectedPayslipMeta
-                    ? `${selectedPayslipMeta.cutoff === 1 ? "1st" : "2nd"} Cutoff Payslip`
-                    : "Payslip Detail"}
-                </p>
-                {selectedPayslipMeta && (
-                  <p className="text-xs text-gray-500">
-                    {selectedPayslipMeta.company_name}
-                    {" · "}
-                    {selectedPayslipMeta.date_from} to {selectedPayslipMeta.date_to}
-                  </p>
-                )}
-              </div>
-              <button
-                type="button"
+      {/* Detail Panel via Portal */}
+      {createPortal(
+        <AnimatePresence>
+          {panelOpen && (
+            <>
+              {/* Side panel backdrop */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="fixed inset-0 z-40 bg-black/30 backdrop-blur-[2px]"
                 onClick={handleClosePanel}
-                className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-                aria-label="Close payslip detail"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {/* Panel body */}
-            {detailLoading && !selectedPayslipDetail ? (
-              <div className="flex flex-1 items-center justify-center">
-                <Spinner size="lg" />
-              </div>
-            ) : (
-              <PayslipDetailPanel
-                detail={selectedPayslipDetail}
-                loading={detailLoading}
               />
-            )}
-          </>
-        )}
-      </div>
+
+              {/* Side panel */}
+              <motion.div
+                initial={{ x: "100%" }}
+                animate={{ x: 0 }}
+                exit={{ x: "100%" }}
+                transition={{ type: "spring", damping: 30, stiffness: 300, mass: 0.8 }}
+                className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[680px] flex-col overflow-hidden bg-white shadow-2xl"
+              >
+                {/* Panel header */}
+                <div className="flex items-start justify-between border-b border-gray-200 px-6 py-4">
+                  <div>
+                    <h2 className="text-lg font-semibold text-gray-900">
+                      {selectedPayslipMeta
+                        ? `${selectedPayslipMeta.cutoff === 1 ? "1st" : "2nd"} Cutoff Payslip`
+                        : "Payslip Detail"}
+                    </h2>
+                    {selectedPayslipMeta && (
+                      <p className="text-xs text-gray-500">
+                        {selectedPayslipMeta.company_name}
+                        {" · "}
+                        {selectedPayslipMeta.date_from} to {selectedPayslipMeta.date_to}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleClosePanel}
+                    className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                    aria-label="Close payslip detail"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                {/* Panel body */}
+                {detailLoading && !selectedPayslipDetail ? (
+                  <div className="flex flex-1 items-center justify-center">
+                    <Spinner size="lg" />
+                  </div>
+                ) : (
+                  <PayslipDetailPanel
+                    detail={selectedPayslipDetail}
+                    loading={detailLoading}
+                  />
+                )}
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
     </>
   );
 }

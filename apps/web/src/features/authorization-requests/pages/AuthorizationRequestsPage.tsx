@@ -1399,43 +1399,55 @@ export function AuthorizationRequestsPage() {
       {/* ─── Detail panel + backdrop (portalled to document.body) ──── */}
       {createPortal(
         <>
-          {selectedItem && (
-            <div
-              className="fixed inset-0 z-40 bg-black/30"
-              onClick={() => setSelectedItem(null)}
-            />
-          )}
-          <div
-            className={`fixed inset-y-0 right-0 z-50 w-full max-w-[560px] transform bg-white shadow-2xl transition-transform duration-300 ${
-              selectedItem ? 'translate-x-0' : 'translate-x-full'
-            }`}
-          >
-            {selectedItem?.type === 'management' && (
-              <ManagementDetailPanel
-                request={selectedItem.data}
-                canApprove={canApproveManagement}
-                onClose={() => setSelectedItem(null)}
-                onUpdated={handleManagementUpdated}
+          <AnimatePresence>
+            {selectedItem && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px]"
+                onClick={() => setSelectedItem(null)}
               />
             )}
-            {selectedItem?.type === 'service_crew' && (
-              <ServiceCrewDetailPanel
-                auth={selectedItem.data}
-                canApprove={canApproveServiceCrew}
-                onClose={() => setSelectedItem(null)}
-                onUpdated={handleServiceCrewUpdated}
-              />
+          </AnimatePresence>
+
+          <AnimatePresence>
+            {selectedItem && (
+              <motion.div
+                initial={{ x: '100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '100%' }}
+                transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                className="fixed inset-y-0 right-0 z-50 w-full max-w-[560px] bg-white shadow-2xl"
+              >
+                {selectedItem?.type === 'management' && (
+                  <ManagementDetailPanel
+                    request={selectedItem.data}
+                    canApprove={canApproveManagement}
+                    onClose={() => setSelectedItem(null)}
+                    onUpdated={handleManagementUpdated}
+                  />
+                )}
+                {selectedItem?.type === 'service_crew' && (
+                  <ServiceCrewDetailPanel
+                    auth={selectedItem.data}
+                    canApprove={canApproveServiceCrew}
+                    onClose={() => setSelectedItem(null)}
+                    onUpdated={handleServiceCrewUpdated}
+                  />
+                )}
+                {selectedItem?.type === 'shift_exchange' && (
+                  <ShiftExchangeDetailModal
+                    isOpen
+                    mode="panel"
+                    requestId={selectedItem.data.id}
+                    onClose={() => setSelectedItem(null)}
+                    onUpdated={() => { void fetchRequests(); }}
+                  />
+                )}
+              </motion.div>
             )}
-            {selectedItem?.type === 'shift_exchange' && (
-              <ShiftExchangeDetailModal
-                isOpen
-                mode="panel"
-                requestId={selectedItem.data.id}
-                onClose={() => setSelectedItem(null)}
-                onUpdated={() => { void fetchRequests(); }}
-              />
-            )}
-          </div>
+          </AnimatePresence>
         </>,
         document.body,
       )}

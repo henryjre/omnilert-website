@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import { createPortal } from 'react-dom';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { AnimatedModal } from '@/shared/components/ui/AnimatedModal';
 import { Badge } from '@/shared/components/ui/Badge';
 import { Button } from '@/shared/components/ui/Button';
@@ -670,31 +670,40 @@ export function CashRequestsPage() {
         onClose={() => setPreviewItems(null)}
       />
 
-      {/* Detail panel — portalled to escape stacking context */}
       {createPortal(
         <>
-          {selectedRequest && (
-            <div
-              className="fixed inset-0 z-40 bg-black/30"
-              onClick={() => { setSelectedRequest(null); setDetailLoading(false); }}
-            />
-          )}
-          <div
-            className={`fixed inset-y-0 right-0 z-50 w-full max-w-[560px] transform bg-white shadow-2xl transition-transform duration-300 ${
-              selectedRequest ? 'translate-x-0' : 'translate-x-full'
-            }`}
-          >
+          <AnimatePresence>
             {selectedRequest && (
-              <DetailPanel
-                request={selectedRequest}
-                detailLoading={detailLoading}
-                canApprove={canApprove}
-                onClose={() => { setSelectedRequest(null); setDetailLoading(false); }}
-                onUpdated={handleUpdated}
-                onViewAttachment={(url) => { setPreviewItems([{ url, fileName: 'receipt' }]); setPreviewIndex(0); }}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px]"
+                onClick={() => { setSelectedRequest(null); setDetailLoading(false); }}
               />
             )}
-          </div>
+          </AnimatePresence>
+
+          <AnimatePresence>
+            {selectedRequest && (
+              <motion.div
+                initial={{ x: '100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '100%' }}
+                transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                className="fixed inset-y-0 right-0 z-50 w-full max-w-[560px] bg-white shadow-2xl"
+              >
+                <DetailPanel
+                  request={selectedRequest}
+                  detailLoading={detailLoading}
+                  canApprove={canApprove}
+                  onClose={() => { setSelectedRequest(null); setDetailLoading(false); }}
+                  onUpdated={handleUpdated}
+                  onViewAttachment={(url) => { setPreviewItems([{ url, fileName: 'receipt' }]); setPreviewIndex(0); }}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
         </>,
         document.body,
       )}
