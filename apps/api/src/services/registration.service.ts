@@ -1018,7 +1018,7 @@ export async function approveRegistrationRequest(input: {
     .where({ is_active: true, employment_status: 'active' })
     .avg('epi_score as avg')
     .first();
-  const avgEpi = Math.round(Number(avgResult?.avg ?? 100) * 10) / 10;
+  const avgEpi = Math.round(Number(avgResult?.avg ?? 100) * 100) / 100;
 
   const result = await masterDb.transaction(async (trx) => {
     const existingByEmail = (await trx('users')

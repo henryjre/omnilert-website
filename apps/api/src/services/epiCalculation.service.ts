@@ -346,7 +346,7 @@ function calcComplianceRate(
   const count = recent.length;
   if (count < minRecords) return { rate: null, count };
   const trueCount = recent.filter((a) => a.answers[field] === true).length;
-  const rate = Math.round((trueCount / count) * 1000) / 10;
+  const rate = Math.round((trueCount / count) * 10000) / 100;
   return { rate, count };
 }
 
@@ -393,7 +393,7 @@ function calcAttendanceFromRecords(
     }
   }
 
-  const rate = Math.round(((scheduledHours - absentHours) / scheduledHours) * 1000) / 10;
+  const rate = Math.round(((scheduledHours - absentHours) / scheduledHours) * 10000) / 100;
   return { rate, impact: attendanceImpact(rate), count };
 }
 
@@ -440,7 +440,7 @@ function calcPunctualityFromRecords(
 
   if (scheduledMinutes === 0) return { rate: null, impact: 0, count };
 
-  const rate = Math.round(((scheduledMinutes - totalLateMinutes) / scheduledMinutes) * 1000) / 10;
+  const rate = Math.round(((scheduledMinutes - totalLateMinutes) / scheduledMinutes) * 10000) / 100;
   return { rate, impact: punctualityImpact(rate), count };
 }
 

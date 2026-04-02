@@ -650,7 +650,7 @@ export async function runWeeklyEpiSnapshot(input?: { scheduledFor?: Date }): Pro
       const { breakdown, delta, raw_delta, capped } = await calculateKpiScores(kpiData);
 
       const epiBefore = Number(user.epi_score ?? 100);
-      const epiAfter = Math.round((epiBefore + delta) * 10) / 10;
+      const epiAfter = Math.round((epiBefore + delta) * 100) / 100;
 
       const entry: EpiHistoryEntry = {
         type: 'weekly',

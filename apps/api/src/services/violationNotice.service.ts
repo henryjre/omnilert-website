@@ -1112,8 +1112,8 @@ export async function completeViolationNotice(input: {
         if (!user) continue;
 
         const epiBefore = user.epi_score !== null ? Number(user.epi_score) : 100;
-        const epiAfter = Math.round(Math.max(0, epiBefore - input.epiDecrease) * 10) / 10;
-        const delta = Number((epiAfter - epiBefore).toFixed(1));
+        const epiAfter = Math.round(Math.max(0, epiBefore - input.epiDecrease) * 100) / 100;
+        const delta = Number((epiAfter - epiBefore).toFixed(2));
 
         const historyEntry = {
           type: 'violation',

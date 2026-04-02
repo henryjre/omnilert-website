@@ -141,6 +141,12 @@ function toNumberOrNull(value: unknown): number | null {
   return null;
 }
 
+function roundToTwo(value: unknown): number | null {
+  const num = toNumberOrNull(value);
+  if (num === null) return null;
+  return Math.round(num * 100) / 100;
+}
+
 function countDailyViolations(
   violationNotices: Array<{ completed_at?: string | null }> | null,
   fromInclusive: Date,
@@ -384,9 +390,9 @@ export async function runDailyEmployeeRollingMetricSnapshot(input?: { scheduledF
           uniform_compliance_rate: values.uniformComplianceRate,
           hygiene_compliance_rate: values.hygieneComplianceRate,
           sop_compliance_rate: values.sopComplianceRate,
-          epi_score: nonRolling.epiScore,
-          awards_count: nonRolling.awardsCount,
-          violations_count: nonRolling.violationsCount,
+          epi_score: db.getDb().raw('COALESCE(employee_metric_daily_snapshots.epi_score, EXCLUDED.epi_score)'),
+          awards_count: db.getDb().raw('COALESCE(employee_metric_daily_snapshots.awards_count, EXCLUDED.awards_count)'),
+          violations_count: db.getDb().raw('COALESCE(employee_metric_daily_snapshots.violations_count, EXCLUDED.violations_count)'),
           generated_at: generatedAt,
           calculation_version: SNAPSHOT_CALCULATION_VERSION,
           updated_at: generatedAt,
@@ -554,22 +560,22 @@ async function fetchLiveSnapshotRows(
       windowStartDate,
       windowEndDate: targetYmd,
       // Metrics with live aggregation + snapshot fallback
-      serviceEfficiencyScore: toNumberOrNull(scc?.avg_service_efficiency ?? snap?.service_efficiency),
-      customerInteractionScore: toNumberOrNull(scc?.avg_customer_interaction ?? snap?.customer_interaction),
-      cashieringScore: toNumberOrNull(scc?.avg_cashiering ?? snap?.cashiering),
-      suggestiveSellingAndUpsellingScore: toNumberOrNull(scc?.avg_suggestive_selling ?? snap?.suggestive_selling_and_upselling),
-      productivityRate: toNumberOrNull(scc?.avg_productivity_rate ?? snap?.productivity_rate),
-      uniformComplianceRate: toNumberOrNull(scc?.avg_uniform_compliance ?? snap?.uniform_compliance_rate),
-      hygieneComplianceRate: toNumberOrNull(scc?.avg_hygiene_compliance ?? snap?.hygiene_compliance_rate),
-      sopComplianceRate: toNumberOrNull(scc?.avg_sop_compliance ?? snap?.sop_compliance_rate),
-      workplaceRelationsScore: toNumberOrNull(wrs?.avg_wrs ?? snap?.workplace_relations_score),
+      serviceEfficiencyScore: roundToTwo(scc?.avg_service_efficiency ?? snap?.service_efficiency),
+      customerInteractionScore: roundToTwo(scc?.avg_customer_interaction ?? snap?.customer_interaction),
+      cashieringScore: roundToTwo(scc?.avg_cashiering ?? snap?.cashiering),
+      suggestiveSellingAndUpsellingScore: roundToTwo(scc?.avg_suggestive_selling ?? snap?.suggestive_selling_and_upselling),
+      productivityRate: roundToTwo(scc?.avg_productivity_rate ?? snap?.productivity_rate),
+      uniformComplianceRate: roundToTwo(scc?.avg_uniform_compliance ?? snap?.uniform_compliance_rate),
+      hygieneComplianceRate: roundToTwo(scc?.avg_hygiene_compliance ?? snap?.hygiene_compliance_rate),
+      sopComplianceRate: roundToTwo(scc?.avg_sop_compliance ?? snap?.sop_compliance_rate),
+      workplaceRelationsScore: roundToTwo(wrs?.avg_wrs ?? snap?.workplace_relations_score),
       // Pure fallback metrics (Attendance & Punctuality per user request)
-      attendanceRate: toNumberOrNull(snap?.attendance_rate),
-      punctualityRate: toNumberOrNull(snap?.punctuality_rate),
+      attendanceRate: roundToTwo(snap?.attendance_rate),
+      punctualityRate: roundToTwo(snap?.punctuality_rate),
       // Live EPI from users table
-      epiScore: toNumberOrNull(userInfo.epi_score ?? snap?.epi_score),
-      averageOrderValue: toNumberOrNull(snap?.average_order_value),
-      branchAov: toNumberOrNull(snap?.branch_aov),
+      epiScore: roundToTwo(userInfo.epi_score ?? snap?.epi_score),
+      averageOrderValue: roundToTwo(snap?.average_order_value),
+      branchAov: roundToTwo(snap?.branch_aov),
       awardsCount: 0, // Stay 0 for live, per user request
       violationsCount: viol?.violations_count ?? 0,
       generatedAt: now.toISOString(),
