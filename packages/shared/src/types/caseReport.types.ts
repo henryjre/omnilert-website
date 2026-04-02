@@ -61,4 +61,5 @@ export interface CaseAttachment {
 export interface CaseMention {
   mentioned_user_id: string | null;
   mentioned_role_id: string | null;
+  mentioned_name?: string;
 }

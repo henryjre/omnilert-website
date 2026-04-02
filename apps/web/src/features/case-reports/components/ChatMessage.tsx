@@ -135,14 +135,26 @@ export function ChatMessage({
   }
 
   function handlePointerUp() {
-    if (highlightTimer.current) { clearTimeout(highlightTimer.current); highlightTimer.current = null; }
-    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+    if (highlightTimer.current) {
+      clearTimeout(highlightTimer.current);
+      highlightTimer.current = null;
+    }
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
     setIsLongPressing(false);
   }
 
   function handlePointerCancel() {
-    if (highlightTimer.current) { clearTimeout(highlightTimer.current); highlightTimer.current = null; }
-    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+    if (highlightTimer.current) {
+      clearTimeout(highlightTimer.current);
+      highlightTimer.current = null;
+    }
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
     setIsLongPressing(false);
   }
 
@@ -176,8 +188,14 @@ export function ChatMessage({
       swipeX.set(clamped);
       setSwipeProgress(Math.min(1, Math.abs(clamped) / 60));
       // Cancel long-press when swiping
-      if (highlightTimer.current) { clearTimeout(highlightTimer.current); highlightTimer.current = null; }
-      if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+      if (highlightTimer.current) {
+        clearTimeout(highlightTimer.current);
+        highlightTimer.current = null;
+      }
+      if (longPressTimer.current) {
+        clearTimeout(longPressTimer.current);
+        longPressTimer.current = null;
+      }
       setIsLongPressing(false);
     }
   }
@@ -199,15 +217,14 @@ export function ChatMessage({
   // ── Mention rendering ─────────────────────────────────────────────────────
 
   function renderContent(text: string): React.ReactNode {
-    if (!users && !roles) return text;
-
     const mentionNames = new Set<string>();
     for (const m of message.mentions) {
-      if (m.mentioned_user_id) {
+      if (m.mentioned_name) {
+        mentionNames.add(m.mentioned_name);
+      } else if (m.mentioned_user_id) {
         const u = users?.find((u) => u.id === m.mentioned_user_id);
         if (u) mentionNames.add(u.name);
-      }
-      if (m.mentioned_role_id) {
+      } else if (m.mentioned_role_id) {
         const r = roles?.find((r) => r.id === m.mentioned_role_id);
         if (r) mentionNames.add(r.name);
       }
@@ -218,6 +235,7 @@ export function ChatMessage({
     const pattern = new RegExp(
       `(@(?:${Array.from(mentionNames)
         .map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+        .sort((a, b) => b.length - a.length) // Sort by length descending to match longest possible name first
         .join('|')}))`,
       'g',
     );
@@ -226,11 +244,17 @@ export function ChatMessage({
     return parts.map((part, i) => {
       if (!part.startsWith('@')) return <span key={i}>{part}</span>;
       const name = part.slice(1);
+
+      const mentionObj = message.mentions.find((m) => m.mentioned_name === name);
       const matchedUser = users?.find((u) => u.name === name);
       const matchedRole = roles?.find((r) => r.name === name);
 
-      if (matchedRole) {
-        const color = matchedRole.color ?? undefined;
+      // Priority: Roles first (often have specific colors), then Users
+      if (matchedRole || mentionObj?.mentioned_role_id) {
+        const roleFromList = roles?.find(
+          (r) => r.id === mentionObj?.mentioned_role_id || r.name === name,
+        );
+        const color = roleFromList?.color ?? undefined;
         return (
           <span
             key={i}
@@ -241,7 +265,7 @@ export function ChatMessage({
           </span>
         );
       }
-      if (matchedUser) {
+      if (matchedUser || mentionObj?.mentioned_user_id) {
         return (
           <span key={i} className="rounded bg-primary-100 px-1 font-medium text-primary-700">
             {part}
@@ -300,7 +324,9 @@ export function ChatMessage({
         <div className="min-w-0 flex-1">
           {!isGrouped && (
             <div className="flex flex-wrap items-baseline gap-2">
-              <span className="text-sm font-semibold text-gray-400">{message.user_name ?? 'Unknown'}</span>
+              <span className="text-sm font-semibold text-gray-400">
+                {message.user_name ?? 'Unknown'}
+              </span>
               <span className="text-xs text-gray-300">Sending…</span>
             </div>
           )}
@@ -311,7 +337,12 @@ export function ChatMessage({
                   key={i}
                   className="block h-1.5 w-1.5 rounded-full bg-gray-400"
                   animate={{ y: [0, -4, 0] }}
-                  transition={{ duration: 0.6, repeat: Infinity, delay: i * 0.15, ease: 'easeInOut' }}
+                  transition={{
+                    duration: 0.6,
+                    repeat: Infinity,
+                    delay: i * 0.15,
+                    ease: 'easeInOut',
+                  }}
                 />
               ))}
             </span>
@@ -326,7 +357,10 @@ export function ChatMessage({
 
   if (message.is_deleted) {
     return (
-      <div data-message-id={message.id} className={`flex gap-3 rounded-xl py-0.5 ${isPending ? 'opacity-60' : ''}`}>
+      <div
+        data-message-id={message.id}
+        className={`flex gap-3 rounded-xl py-0.5 ${isPending ? 'opacity-60' : ''}`}
+      >
         {isGrouped ? (
           /* Grouped: narrow gutter, no avatar */
           <div className="w-10 shrink-0" />
@@ -353,11 +387,15 @@ export function ChatMessage({
         <div className="min-w-0 flex-1">
           {!isGrouped && (
             <div className="flex flex-wrap items-baseline gap-2">
-              <span className="text-sm font-semibold text-gray-400">{message.user_name ?? 'Unknown'}</span>
+              <span className="text-sm font-semibold text-gray-400">
+                {message.user_name ?? 'Unknown'}
+              </span>
               <span className="text-xs text-gray-300">{formatTimestamp(message.created_at)}</span>
             </div>
           )}
-          <p className={`text-sm italic text-gray-400 ${isGrouped ? '' : 'mt-0.5'}`}>{message.content}</p>
+          <p className={`text-sm italic text-gray-400 ${isGrouped ? '' : 'mt-0.5'}`}>
+            {message.content}
+          </p>
         </div>
       </div>
     );
@@ -389,7 +427,11 @@ export function ChatMessage({
                   : { scale: 1, backgroundColor: '#ffffff' }
         }
         initial={{ scale: 1, backgroundColor: isMentioned ? '#ede9fe' : '#ffffff' }}
-        transition={isFlashing || isLongPressing ? { duration: 0.2 } : { type: 'spring', stiffness: 400, damping: 25 }}
+        transition={
+          isFlashing || isLongPressing
+            ? { duration: 0.2 }
+            : { type: 'spring', stiffness: 400, damping: 25 }
+        }
         style={{ x: swipeX }}
         className={`group relative flex gap-3 rounded-xl sm:hover:bg-gray-50 ${isGrouped ? 'py-0.5' : 'py-1'}`}
         onPointerDown={handlePointerDown}
@@ -431,31 +473,32 @@ export function ChatMessage({
           {/* Name + timestamp — only for first message in a group */}
           {!isGrouped && (
             <div className="flex flex-wrap items-baseline gap-2">
-              <span className="text-sm font-semibold text-gray-900">{message.user_name ?? 'Unknown'}</span>
+              <span className="text-sm font-semibold text-gray-900">
+                {message.user_name ?? 'Unknown'}
+              </span>
               <span className="text-xs text-gray-400">{formatTimestamp(message.created_at)}</span>
-              {message.is_edited && (
-                <span className="text-xs italic text-gray-400">edited</span>
-              )}
+              {message.is_edited && <span className="text-xs italic text-gray-400">edited</span>}
             </div>
           )}
 
           {/* Quoted reply block */}
-          {message.parent_message_id && (() => {
-            const parent = findInTree(allMessages, message.parent_message_id);
-            return (
-              <div
-                className="mt-1 cursor-pointer border-l-2 border-gray-300 pl-2 hover:border-primary-400"
-                onClick={() => onScrollToMessage(message.parent_message_id!)}
-              >
-                <p className="text-xs font-medium text-gray-500">
-                  {parent ? (parent.user_name ?? 'Unknown') : 'Unknown'}
-                </p>
-                <p className="truncate text-xs text-gray-400">
-                  {parent ? parent.content : '(message deleted)'}
-                </p>
-              </div>
-            );
-          })()}
+          {message.parent_message_id &&
+            (() => {
+              const parent = findInTree(allMessages, message.parent_message_id);
+              return (
+                <div
+                  className="mt-1 cursor-pointer border-l-2 border-gray-300 pl-2 hover:border-primary-400"
+                  onClick={() => onScrollToMessage(message.parent_message_id!)}
+                >
+                  <p className="text-xs font-medium text-gray-500">
+                    {parent ? (parent.user_name ?? 'Unknown') : 'Unknown'}
+                  </p>
+                  <p className="truncate text-xs text-gray-400">
+                    {parent ? parent.content : '(message deleted)'}
+                  </p>
+                </div>
+              );
+            })()}
 
           {/* Message content or inline edit */}
           {isEditing ? (
@@ -498,74 +541,87 @@ export function ChatMessage({
           )}
 
           {/* Attachments */}
-          {message.attachments.length > 0 && (() => {
-            const mediaItems = message.attachments
-              .filter((a) => {
-                const isImg = /\.(png|jpe?g|gif|webp|svg)$/i.test(a.file_name) || a.content_type?.startsWith('image/');
-                const isVid = /\.(mp4|webm|ogg|mov)$/i.test(a.file_name) || a.content_type?.startsWith('video/');
-                return isImg || isVid;
-              })
-              .map((a) => ({ url: a.file_url, fileName: a.file_name }));
+          {message.attachments.length > 0 &&
+            (() => {
+              const mediaItems = message.attachments
+                .filter((a) => {
+                  const isImg =
+                    /\.(png|jpe?g|gif|webp|svg)$/i.test(a.file_name) ||
+                    a.content_type?.startsWith('image/');
+                  const isVid =
+                    /\.(mp4|webm|ogg|mov)$/i.test(a.file_name) ||
+                    a.content_type?.startsWith('video/');
+                  return isImg || isVid;
+                })
+                .map((a) => ({ url: a.file_url, fileName: a.file_name }));
 
-            return (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {message.attachments.map((att) => {
-                  const isImage = /\.(png|jpe?g|gif|webp|svg)$/i.test(att.file_name) || att.content_type?.startsWith('image/');
-                  const isVideo = /\.(mp4|webm|ogg|mov)$/i.test(att.file_name) || att.content_type?.startsWith('video/');
-                  const mediaIndex = mediaItems.findIndex((m) => m.url === att.file_url);
+              return (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {message.attachments.map((att) => {
+                    const isImage =
+                      /\.(png|jpe?g|gif|webp|svg)$/i.test(att.file_name) ||
+                      att.content_type?.startsWith('image/');
+                    const isVideo =
+                      /\.(mp4|webm|ogg|mov)$/i.test(att.file_name) ||
+                      att.content_type?.startsWith('video/');
+                    const mediaIndex = mediaItems.findIndex((m) => m.url === att.file_url);
 
-                  if (isImage) {
-                    return (
-                      <img
-                        key={att.id}
-                        src={att.file_url}
-                        alt={att.file_name}
-                        className="max-h-[180px] max-w-[240px] cursor-pointer rounded-xl object-cover hover:opacity-90"
-                        onClick={() => onPreviewImage?.(mediaItems, mediaIndex)}
-                      />
-                    );
-                  }
-
-                  if (isVideo) {
-                    return (
-                      <div
-                        key={att.id}
-                        className="relative cursor-pointer overflow-hidden rounded-xl bg-black"
-                        style={{ maxWidth: 240, maxHeight: 180 }}
-                        onClick={() => onPreviewImage?.(mediaItems, mediaIndex)}
-                      >
-                        <video
+                    if (isImage) {
+                      return (
+                        <img
+                          key={att.id}
                           src={att.file_url}
-                          className="max-h-[180px] max-w-[240px] object-cover opacity-80"
-                          muted
-                          preload="metadata"
+                          alt={att.file_name}
+                          className="max-h-[180px] max-w-[240px] cursor-pointer rounded-xl object-cover hover:opacity-90"
+                          onClick={() => onPreviewImage?.(mediaItems, mediaIndex)}
                         />
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white">
-                            <svg viewBox="0 0 24 24" fill="currentColor" className="h-5 w-5 pl-0.5">
-                              <path d="M8 5v14l11-7z" />
-                            </svg>
+                      );
+                    }
+
+                    if (isVideo) {
+                      return (
+                        <div
+                          key={att.id}
+                          className="relative cursor-pointer overflow-hidden rounded-xl bg-black"
+                          style={{ maxWidth: 240, maxHeight: 180 }}
+                          onClick={() => onPreviewImage?.(mediaItems, mediaIndex)}
+                        >
+                          <video
+                            src={att.file_url}
+                            className="max-h-[180px] max-w-[240px] object-cover opacity-80"
+                            muted
+                            preload="metadata"
+                          />
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white">
+                              <svg
+                                viewBox="0 0 24 24"
+                                fill="currentColor"
+                                className="h-5 w-5 pl-0.5"
+                              >
+                                <path d="M8 5v14l11-7z" />
+                              </svg>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  }
+                      );
+                    }
 
-                  return (
-                    <a
-                      key={att.id}
-                      href={att.file_url}
-                      download={att.file_name}
-                      className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-primary-700 hover:bg-gray-100"
-                    >
-                      <Download className="h-3.5 w-3.5" />
-                      {att.file_name}
-                    </a>
-                  );
-                })}
-              </div>
-            );
-          })()}
+                    return (
+                      <a
+                        key={att.id}
+                        href={att.file_url}
+                        download={att.file_name}
+                        className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-primary-700 hover:bg-gray-100"
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        {att.file_name}
+                      </a>
+                    );
+                  })}
+                </div>
+              );
+            })()}
 
           {/* Reaction pills */}
           {message.reactions.length > 0 && (
@@ -639,9 +695,17 @@ export function ChatMessage({
                   canManage={canManage}
                   chatLocked={chatLocked}
                   onReply={() => onReply(message)}
-                  onCopyText={() => { void navigator.clipboard.writeText(message.content); }}
-                  onAddReaction={() => { setMenuOpen(false); setEmojiPickerOpen(true); }}
-                  onEdit={() => { setEditContent(message.content); setIsEditing(true); }}
+                  onCopyText={() => {
+                    void navigator.clipboard.writeText(message.content);
+                  }}
+                  onAddReaction={() => {
+                    setMenuOpen(false);
+                    setEmojiPickerOpen(true);
+                  }}
+                  onEdit={() => {
+                    setEditContent(message.content);
+                    setIsEditing(true);
+                  }}
                   onDelete={handleDelete}
                   onClose={() => setMenuOpen(false)}
                   portalMode={true}
@@ -651,7 +715,6 @@ export function ChatMessage({
             </div>
           </div>
         )}
-
       </motion.div>
 
       {/* Mobile drawer — outside the transform div so fixed positioning works correctly */}
@@ -668,8 +731,13 @@ export function ChatMessage({
         }
         onReact={(emoji) => onReact(message.id, emoji)}
         onReply={() => onReply(message)}
-        onCopyText={() => { void navigator.clipboard.writeText(message.content); }}
-        onEdit={() => { setEditContent(message.content); setIsEditing(true); }}
+        onCopyText={() => {
+          void navigator.clipboard.writeText(message.content);
+        }}
+        onEdit={() => {
+          setEditContent(message.content);
+          setIsEditing(true);
+        }}
         onDelete={handleDelete}
         onClose={() => setDrawerOpen(false)}
       />

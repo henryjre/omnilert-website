@@ -239,8 +239,9 @@ export async function mute(req: Request, res: Response, next: NextFunction) {
 
 export async function mentionables(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     const data = await caseReportService.getMentionables({
-      companyId: req.user!.companyId,
+      companyId,
     });
     res.json({ success: true, data });
   } catch (error) {

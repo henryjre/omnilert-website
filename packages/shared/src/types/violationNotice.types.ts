@@ -37,6 +37,7 @@ export interface ViolationNoticeAttachment {
 export interface ViolationNoticeMention {
   mentioned_user_id: string | null;
   mentioned_role_id: string | null;
+  mentioned_name?: string;
 }
 
 export interface ViolationNoticeMessage {

@@ -7,8 +7,18 @@ import { PERMISSIONS } from '@omnilert/shared';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import {
-  ArrowDown, ArrowUp, FileWarning, Filter, FolderCheck, FolderOpen,
-  LayoutGrid, MessageCircle, Plus, Search, CheckCircle2, XCircle
+  ArrowDown,
+  ArrowUp,
+  FileWarning,
+  Filter,
+  FolderCheck,
+  FolderOpen,
+  LayoutGrid,
+  MessageCircle,
+  Plus,
+  Search,
+  CheckCircle2,
+  XCircle,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/shared/components/ui/Button';
@@ -53,8 +63,8 @@ type OptimisticMessage = CaseMessage & { isPending?: boolean };
 const DEFAULT_FILTERS: CaseReportFilters = { sort_order: 'desc' };
 
 const STATUS_TABS: { id: StatusTab; label: string; icon: LucideIcon }[] = [
-  { id: 'all',    label: 'All',    icon: LayoutGrid  },
-  { id: 'open',   label: 'Open',   icon: FolderOpen  },
+  { id: 'all', label: 'All', icon: LayoutGrid },
+  { id: 'open', label: 'Open', icon: FolderOpen },
   { id: 'closed', label: 'Closed', icon: FolderCheck },
 ];
 
@@ -87,8 +97,12 @@ export function CaseReportsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [reports, setReports] = useState<CaseReport[]>([]);
-  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(() => searchParams.get('caseId'));
-  const [initialFlashMessageId, setInitialFlashMessageId] = useState<string | null>(() => searchParams.get('messageId'));
+  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(() =>
+    searchParams.get('caseId'),
+  );
+  const [initialFlashMessageId, setInitialFlashMessageId] = useState<string | null>(() =>
+    searchParams.get('messageId'),
+  );
 
   // Sync state when URL params change externally
   useEffect(() => {
@@ -119,7 +133,10 @@ export function CaseReportsPage() {
   const canCreate = hasPermission(PERMISSIONS.CASE_REPORT_MANAGE);
   const canClose = hasPermission(PERMISSIONS.CASE_REPORT_MANAGE);
   const canManage = hasPermission(PERMISSIONS.CASE_REPORT_MANAGE);
-  const canRequestVN = hasAnyPermission(PERMISSIONS.CASE_REPORT_MANAGE, PERMISSIONS.VIOLATION_NOTICE_MANAGE);
+  const canRequestVN = hasAnyPermission(
+    PERMISSIONS.CASE_REPORT_MANAGE,
+    PERMISSIONS.VIOLATION_NOTICE_MANAGE,
+  );
 
   const hasActiveFilters =
     Boolean(filters.search) ||
@@ -128,46 +145,64 @@ export function CaseReportsPage() {
     Boolean(filters.vn_only) ||
     filters.sort_order !== 'desc';
 
-  const appliedFilters = useMemo(() => ({
-    ...filters,
-    status: statusTab === 'all' ? undefined : statusTab,
-  }), [filters, statusTab]);
+  const appliedFilters = useMemo(
+    () => ({
+      ...filters,
+      status: statusTab === 'all' ? undefined : statusTab,
+    }),
+    [filters, statusTab],
+  );
 
-  const fetchReports = useCallback(async (silent?: boolean) => {
-    if (!silent) setLoading(true);
-    try {
-      const data = await listCaseReports(appliedFilters);
-      setReports(data.items);
-    } catch (err: any) {
-      if (!silent) {
-        showErrorToast(err.response?.data?.error || 'Failed to load case reports');
+  const fetchReports = useCallback(
+    async (silent?: boolean) => {
+      if (!silent) setLoading(true);
+      try {
+        const data = await listCaseReports(appliedFilters);
+        setReports(data.items);
+      } catch (err: any) {
+        if (!silent) {
+          showErrorToast(err.response?.data?.error || 'Failed to load case reports');
+        }
+      } finally {
+        if (!silent) setLoading(false);
       }
-    } finally {
-      if (!silent) setLoading(false);
-    }
-  }, [appliedFilters, showErrorToast]);
+    },
+    [appliedFilters, showErrorToast],
+  );
 
-  const fetchDetail = useCallback(async (caseId: string) => {
-    try {
-      const [detail, nextMessages] = await Promise.all([getCaseReport(caseId), listCaseMessages(caseId)]);
-      setSelectedReport(detail);
-      setMessages(nextMessages);
-      await markCaseRead(caseId);
-      setReports((prev) => prev.map((r) => r.id === caseId ? { ...r, unread_count: 0, unread_reply_count: 0 } : r));
-    } catch (err: any) {
-      showErrorToast(err.response?.data?.error || 'Failed to load case detail');
-    }
-  }, [showErrorToast]);
+  const fetchDetail = useCallback(
+    async (caseId: string) => {
+      try {
+        const [detail, nextMessages] = await Promise.all([
+          getCaseReport(caseId),
+          listCaseMessages(caseId),
+        ]);
+        setSelectedReport(detail);
+        setMessages(nextMessages);
+        await markCaseRead(caseId);
+        setReports((prev) =>
+          prev.map((r) => (r.id === caseId ? { ...r, unread_count: 0, unread_reply_count: 0 } : r)),
+        );
+      } catch (err: any) {
+        showErrorToast(err.response?.data?.error || 'Failed to load case detail');
+      }
+    },
+    [showErrorToast],
+  );
 
   useEffect(() => {
     void fetchReports();
   }, [fetchReports]);
 
   useEffect(() => {
-    void getMentionables().then((data) => {
-      setUsers(data.users);
-      setRoles(data.roles);
-    }).catch(() => undefined);
+    getMentionables()
+      .then((data) => {
+        setUsers(data.users || []);
+        setRoles(data.roles || []);
+      })
+      .catch((err) => {
+        console.error('[CaseReportsPage] Failed to fetch mentionables:', err);
+      });
   }, []);
 
   useEffect(() => {
@@ -206,7 +241,9 @@ export function CaseReportsPage() {
 
   useEffect(() => {
     if (!socket) return;
-    const refresh = () => { void fetchReports(true); };
+    const refresh = () => {
+      void fetchReports(true);
+    };
     const refreshDetail = (payload: { caseId?: string }) => {
       void fetchReports(true);
       if (payload.caseId && payload.caseId === selectedCaseId) {
@@ -334,9 +371,7 @@ export function CaseReportsPage() {
           </div>
         </div>
 
-        {hasActiveFilters && (
-          <div className="text-xs text-gray-500">Filters applied</div>
-        )}
+        {hasActiveFilters && <div className="text-xs text-gray-500">Filters applied</div>}
 
         {/* Animated filter panel */}
         <AnimatePresence initial={false}>
@@ -368,7 +403,9 @@ export function CaseReportsPage() {
                     <DateRangePicker
                       dateFrom={draftFilters.date_from ?? ''}
                       dateTo={draftFilters.date_to ?? ''}
-                      onChange={(from, to) => setDraftFilters((f) => ({ ...f, date_from: from, date_to: to }))}
+                      onChange={(from, to) =>
+                        setDraftFilters((f) => ({ ...f, date_from: from, date_to: to }))
+                      }
                     />
                   </div>
 
@@ -437,13 +474,23 @@ export function CaseReportsPage() {
                 </div>
 
                 <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                  <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={clearFilters}>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="w-full sm:w-auto"
+                    onClick={clearFilters}
+                  >
                     Clear
                   </Button>
                   <Button type="button" className="w-full sm:w-auto" onClick={applyFilters}>
                     Apply
                   </Button>
-                  <Button type="button" variant="ghost" className="w-full sm:w-auto" onClick={cancelFilters}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="w-full sm:w-auto"
+                    onClick={cancelFilters}
+                  >
                     Cancel
                   </Button>
                 </div>
@@ -506,130 +553,135 @@ export function CaseReportsPage() {
               className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[680px] flex-col bg-white shadow-2xl"
             >
               <CaseReportDetailPanel
-          report={selectedReport}
-          messages={messages}
-          currentUserId={user?.id ?? ''}
-          currentUserRoleIds={user?.roles.map((r) => r.id)}
-          users={users}
-          roles={roles}
-          canManage={canManage}
-          canRequestVN={canRequestVN}
-          canClose={canClose}
-          initialFlashMessageId={initialFlashMessageId}
-          onFlashMessageConsumed={() => setInitialFlashMessageId(null)}
-          onClosePanel={() => {
-            setSelectedCaseId(null);
-            setSelectedReport(null);
-            setSearchParams({});
-          }}
-          onLeave={async () => {
-            if (!selectedCaseId) return;
-            await leaveCaseDiscussion(selectedCaseId);
-            await fetchReports(true);
-            setSelectedCaseId(null);
-            setSelectedReport(null);
-            setSearchParams({});
-          }}
-          onToggleMute={async () => {
-            if (!selectedCaseId) return;
-            await toggleCaseMute(selectedCaseId);
-            await fetchReports(true);
-            if (selectedCaseId) await fetchDetail(selectedCaseId);
-          }}
-          onUpdateCorrectiveAction={async (value) => {
-            if (!selectedCaseId) return;
-            const detail = await updateCorrectiveAction(selectedCaseId, value);
-            setSelectedReport(detail);
-            await fetchReports(true);
-          }}
-          onUpdateResolution={async (value) => {
-            if (!selectedCaseId) return;
-            const detail = await updateResolution(selectedCaseId, value);
-            setSelectedReport(detail);
-            await fetchReports(true);
-          }}
-          onCloseCase={async () => {
-            if (!selectedCaseId) return;
-            const detail = await closeCase(selectedCaseId);
-            setSelectedReport(detail);
-            await fetchReports(true);
-          }}
-          onRequestVN={async () => {
-            if (!selectedCaseId || !canRequestVN) return;
-            setShowRequestVNModal(true);
-          }}
-          onUploadAttachment={async (file) => {
-            if (!selectedCaseId) return;
-            await uploadCaseAttachment(selectedCaseId, file);
-            await fetchDetail(selectedCaseId);
-            await fetchReports(true);
-          }}
-          onDeleteAttachment={async (attachmentId) => {
-            if (!selectedCaseId) return;
-            await deleteCaseAttachment(selectedCaseId, attachmentId);
-            await fetchDetail(selectedCaseId);
-          }}
-          onSendMessage={async (input) => {
-            if (!selectedCaseId) return;
-            const tempId = `optimistic-${Date.now()}`;
-            const optimistic: OptimisticMessage = {
-              id: tempId,
-              case_id: selectedCaseId,
-              user_id: user?.id ?? '',
-              user_name: user ? `${user.firstName} ${user.lastName}`.trim() : undefined,
-              user_avatar: user?.avatarUrl ?? undefined,
-              content: input.content,
-              is_system: false,
-              is_deleted: false,
-              is_edited: false,
-              parent_message_id: input.parentMessageId ?? null,
-              reactions: [],
-              attachments: [],
-              mentions: [],
-              created_at: new Date().toISOString(),
-              isPending: true,
-            };
-            setMessages((prev) => [...prev, optimistic]);
-            try {
-              await sendCaseMessage({ caseId: selectedCaseId, ...input });
-              await fetchDetail(selectedCaseId);
-              await fetchReports(true);
-            } catch {
-              setMessages((prev) => prev.filter((m) => m.id !== tempId));
-            }
-          }}
-          onReactMessage={async (messageId, emoji) => {
-            if (!selectedCaseId) return;
-            await toggleCaseReaction(selectedCaseId, messageId, emoji);
-            await fetchDetail(selectedCaseId);
-          }}
-          onEditMessage={async (messageId, newContent) => {
-            if (!selectedCaseId) return;
-            await editCaseMessage(selectedCaseId, messageId, newContent);
-            await fetchDetail(selectedCaseId);
-          }}
-          onDeleteMessage={async (messageId) => {
-            if (!selectedCaseId) return;
-            const original = messages.find((m) => m.id === messageId);
-            if (original) {
-              setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === messageId
-                    ? { ...m, is_deleted: true, content: `${m.user_name ?? 'Someone'} deleted this message`, isPending: true }
-                    : m,
-                ),
-              );
-            }
-            try {
-              await deleteCaseMessage(selectedCaseId, messageId);
-              await fetchDetail(selectedCaseId);
-            } catch {
-              if (original) {
-                setMessages((prev) => prev.map((m) => m.id === messageId ? original : m));
-              }
-            }
-          }}
-          />
+                report={selectedReport}
+                messages={messages}
+                currentUserId={user?.id ?? ''}
+                currentUserRoleIds={user?.roles.map((r) => r.id)}
+                users={users}
+                roles={roles}
+                canManage={canManage}
+                canRequestVN={canRequestVN}
+                canClose={canClose}
+                initialFlashMessageId={initialFlashMessageId}
+                onFlashMessageConsumed={() => setInitialFlashMessageId(null)}
+                onClosePanel={() => {
+                  setSelectedCaseId(null);
+                  setSelectedReport(null);
+                  setSearchParams({});
+                }}
+                onLeave={async () => {
+                  if (!selectedCaseId) return;
+                  await leaveCaseDiscussion(selectedCaseId);
+                  await fetchReports(true);
+                  setSelectedCaseId(null);
+                  setSelectedReport(null);
+                  setSearchParams({});
+                }}
+                onToggleMute={async () => {
+                  if (!selectedCaseId) return;
+                  await toggleCaseMute(selectedCaseId);
+                  await fetchReports(true);
+                  if (selectedCaseId) await fetchDetail(selectedCaseId);
+                }}
+                onUpdateCorrectiveAction={async (value) => {
+                  if (!selectedCaseId) return;
+                  const detail = await updateCorrectiveAction(selectedCaseId, value);
+                  setSelectedReport(detail);
+                  await fetchReports(true);
+                }}
+                onUpdateResolution={async (value) => {
+                  if (!selectedCaseId) return;
+                  const detail = await updateResolution(selectedCaseId, value);
+                  setSelectedReport(detail);
+                  await fetchReports(true);
+                }}
+                onCloseCase={async () => {
+                  if (!selectedCaseId) return;
+                  const detail = await closeCase(selectedCaseId);
+                  setSelectedReport(detail);
+                  await fetchReports(true);
+                }}
+                onRequestVN={async () => {
+                  if (!selectedCaseId || !canRequestVN) return;
+                  setShowRequestVNModal(true);
+                }}
+                onUploadAttachment={async (file) => {
+                  if (!selectedCaseId) return;
+                  await uploadCaseAttachment(selectedCaseId, file);
+                  await fetchDetail(selectedCaseId);
+                  await fetchReports(true);
+                }}
+                onDeleteAttachment={async (attachmentId) => {
+                  if (!selectedCaseId) return;
+                  await deleteCaseAttachment(selectedCaseId, attachmentId);
+                  await fetchDetail(selectedCaseId);
+                }}
+                onSendMessage={async (input) => {
+                  if (!selectedCaseId) return;
+                  const tempId = `optimistic-${Date.now()}`;
+                  const optimistic: OptimisticMessage = {
+                    id: tempId,
+                    case_id: selectedCaseId,
+                    user_id: user?.id ?? '',
+                    user_name: user ? `${user.firstName} ${user.lastName}`.trim() : undefined,
+                    user_avatar: user?.avatarUrl ?? undefined,
+                    content: input.content,
+                    is_system: false,
+                    is_deleted: false,
+                    is_edited: false,
+                    parent_message_id: input.parentMessageId ?? null,
+                    reactions: [],
+                    attachments: [],
+                    mentions: [],
+                    created_at: new Date().toISOString(),
+                    isPending: true,
+                  };
+                  setMessages((prev) => [...prev, optimistic]);
+                  try {
+                    await sendCaseMessage({ caseId: selectedCaseId, ...input });
+                    await fetchDetail(selectedCaseId);
+                    await fetchReports(true);
+                  } catch {
+                    setMessages((prev) => prev.filter((m) => m.id !== tempId));
+                  }
+                }}
+                onReactMessage={async (messageId, emoji) => {
+                  if (!selectedCaseId) return;
+                  await toggleCaseReaction(selectedCaseId, messageId, emoji);
+                  await fetchDetail(selectedCaseId);
+                }}
+                onEditMessage={async (messageId, newContent) => {
+                  if (!selectedCaseId) return;
+                  await editCaseMessage(selectedCaseId, messageId, newContent);
+                  await fetchDetail(selectedCaseId);
+                }}
+                onDeleteMessage={async (messageId) => {
+                  if (!selectedCaseId) return;
+                  const original = messages.find((m) => m.id === messageId);
+                  if (original) {
+                    setMessages((prev) =>
+                      prev.map((m) =>
+                        m.id === messageId
+                          ? {
+                              ...m,
+                              is_deleted: true,
+                              content: `${m.user_name ?? 'Someone'} deleted this message`,
+                              isPending: true,
+                            }
+                          : m,
+                      ),
+                    );
+                  }
+                  try {
+                    await deleteCaseMessage(selectedCaseId, messageId);
+                    await fetchDetail(selectedCaseId);
+                  } catch {
+                    if (original) {
+                      setMessages((prev) => prev.map((m) => (m.id === messageId ? original : m)));
+                    }
+                  }
+                }}
+              />
             </motion.div>
           </>
         )}

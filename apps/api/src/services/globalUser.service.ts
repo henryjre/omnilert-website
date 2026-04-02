@@ -217,3 +217,55 @@ export async function loadUserWorkScope(
     borrow_branches: borrowBranches,
   };
 }
+export async function resolveCompanyUsersWithPermission(
+  companyId: string,
+  permissionKey: string,
+): Promise<Array<{ id: string; name: string; avatar_url: string | null }>> {
+  const users = await db
+    .getDb()('user_company_access as uca')
+    .join('users as u', 'uca.user_id', 'u.id')
+    .join('user_roles as ur', 'u.id', 'ur.user_id')
+    .join('role_permissions as rp', 'ur.role_id', 'rp.role_id')
+    .join('permissions as p', 'rp.permission_id', 'p.id')
+    .where('uca.company_id', companyId)
+    .andWhere('uca.is_active', true)
+    .andWhere('u.is_active', true)
+    .andWhere('p.key', permissionKey)
+    .select('u.id', 'u.first_name', 'u.last_name', 'u.avatar_url')
+    .distinct();
+
+  // Super admins implicitly have all permissions
+  const superAdmins = await db.getDb()('super_admins').select('email');
+  const superAdminUsers = (await db
+    .getDb()('users')
+    .whereIn(
+      'email',
+      superAdmins.map((s) => s.email),
+    )
+    .andWhere('is_active', true)
+    .select('id', 'first_name', 'last_name', 'avatar_url')) as any[];
+
+  const allMap = new Map<string, { id: string; name: string; avatar_url: string | null }>();
+  [...users, ...superAdminUsers].forEach((u) => {
+    allMap.set(String(u.id), {
+      id: String(u.id),
+      name: `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() || 'Unknown User',
+      avatar_url: (u.avatar_url as string | null) ?? null,
+    });
+  });
+
+  return Array.from(allMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function resolveRolesWithPermission(
+  permissionKey: string,
+): Promise<Array<{ id: string; name: string; color: string | null }>> {
+  return await db
+    .getDb()('roles as r')
+    .join('role_permissions as rp', 'r.id', 'rp.role_id')
+    .join('permissions as p', 'rp.permission_id', 'p.id')
+    .where('p.key', permissionKey)
+    .select('r.id', 'r.name', 'r.color')
+    .orderBy('r.priority', 'desc')
+    .orderBy('r.name', 'asc');
+}

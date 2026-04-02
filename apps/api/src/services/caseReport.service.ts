@@ -6,13 +6,17 @@ import type {
   CaseReport,
 } from '@omnilert/shared';
 import type { Knex } from 'knex';
-import { PERMISSIONS } from '@omnilert/shared';
+import { PERMISSIONS, SYSTEM_ROLES } from '@omnilert/shared';
 import { db } from '../config/database.js';
 import { getIO } from '../config/socket.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { createAndDispatchNotification } from './notification.service.js';
 import { buildTenantStoragePrefix, deleteFile, uploadFile } from './storage.service.js';
-import { hydrateUsersByIds } from './globalUser.service.js';
+import {
+  hydrateUsersByIds,
+  resolveCompanyUsersWithPermission,
+  resolveRolesWithPermission,
+} from './globalUser.service.js';
 import { logger } from '../utils/logger.js';
 import * as violationNoticeService from './violationNotice.service.js';
 
@@ -92,15 +96,17 @@ function normalizeSortOrder(value?: string): 'asc' | 'desc' {
 }
 
 function isAllowedMessageAttachment(contentType: string): boolean {
-  return contentType.startsWith('image/')
-    || contentType.startsWith('video/')
-    || [
+  return (
+    contentType.startsWith('image/') ||
+    contentType.startsWith('video/') ||
+    [
       'application/pdf',
       'application/msword',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'application/vnd.ms-excel',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    ].includes(contentType);
+    ].includes(contentType)
+  );
 }
 
 function emitCaseReportEvent(event: string, companyId: string, payload: unknown): void {
@@ -124,7 +130,9 @@ async function upsertParticipant(
   trx?: Knex.Transaction,
 ): Promise<void> {
   const knex = trx ?? db.getDb();
-  const existing = await knex('case_participants').where({ case_id: caseId, user_id: userId }).first();
+  const existing = await knex('case_participants')
+    .where({ case_id: caseId, user_id: userId })
+    .first();
   const next = {
     is_joined: patch.is_joined ?? existing?.is_joined ?? true,
     is_muted: patch.is_muted ?? existing?.is_muted ?? false,
@@ -175,25 +183,23 @@ async function getNextCompanySequence(
     .onConflict(['company_id', 'sequence_name'])
     .ignore();
 
-  const sequenceRow = await trx('company_sequences')
+  const sequenceRow = (await trx('company_sequences')
     .where({
       company_id: companyId,
       sequence_name: sequenceName,
     })
     .forUpdate()
-    .first('id', 'current_value') as { id: string; current_value: number } | undefined;
+    .first('id', 'current_value')) as { id: string; current_value: number } | undefined;
 
   if (!sequenceRow) {
     throw new AppError(500, `Failed to allocate ${sequenceName}`);
   }
 
   const nextValue = Number(sequenceRow.current_value) + 1;
-  await trx('company_sequences')
-    .where({ id: sequenceRow.id })
-    .update({
-      current_value: nextValue,
-      updated_at: new Date(),
-    });
+  await trx('company_sequences').where({ id: sequenceRow.id }).update({
+    current_value: nextValue,
+    updated_at: new Date(),
+  });
 
   return nextValue;
 }
@@ -202,31 +208,18 @@ async function resolveUserNames(userIds: string[]): Promise<Record<string, strin
   const users = await hydrateUsersByIds(userIds);
   const map: Record<string, string> = {};
   for (const [id, user] of Object.entries(users)) {
-    map[id] = `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim() || String(user.email ?? 'Unknown User');
+    map[id] =
+      `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim() ||
+      String(user.email ?? 'Unknown User');
   }
   return map;
 }
 
 async function resolveCompanyUsers(companyId: string): Promise<MentionableUser[]> {
-  const rows = await db.getDb()('user_company_access as uca')
-    .join('users', 'uca.user_id', 'users.id')
-    .where('uca.company_id', companyId)
-    .andWhere('uca.is_active', true)
-    .andWhere('users.is_active', true)
-    .select('users.id', 'users.first_name', 'users.last_name', 'users.avatar_url')
-    .orderBy('users.first_name', 'asc')
-    .orderBy('users.last_name', 'asc');
-
-  return rows.map((row: any) => ({
-    id: String(row.id),
-    name: `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim(),
-    avatar_url: (row.avatar_url as string | null) ?? null,
-  }));
+  return resolveCompanyUsersWithPermission(companyId, PERMISSIONS.CASE_REPORT_VIEW);
 }
 
-async function resolveMessageDecorations(
-  messageIds: string[],
-): Promise<{
+async function resolveMessageDecorations(messageIds: string[]): Promise<{
   reactionsByMessage: Map<string, CaseReaction[]>;
   attachmentsByMessage: Map<string, CaseAttachment[]>;
   mentionsByMessage: Map<string, CaseMention[]>;
@@ -239,7 +232,12 @@ async function resolveMessageDecorations(
       ? db.getDb()('case_attachments').whereIn('message_id', messageIds).select('*')
       : Promise.resolve([]),
     messageIds.length > 0
-      ? db.getDb()('case_mentions').whereIn('message_id', messageIds).select('*')
+      ? db
+          .getDb()('case_mentions as cm')
+          .leftJoin('users as u', 'cm.mentioned_user_id', 'u.id')
+          .leftJoin('roles as r', 'cm.mentioned_role_id', 'r.id')
+          .whereIn('cm.message_id', messageIds)
+          .select('cm.*', 'u.first_name', 'u.last_name', 'r.name as role_name')
       : Promise.resolve([]),
   ]);
 
@@ -250,7 +248,8 @@ async function resolveMessageDecorations(
   const reactionsGrouped = new Map<string, Map<string, Array<{ id: string; name: string }>>>();
   for (const row of reactionRows as any[]) {
     const messageId = String(row.message_id);
-    const byEmoji = reactionsGrouped.get(messageId) ?? new Map<string, Array<{ id: string; name: string }>>();
+    const byEmoji =
+      reactionsGrouped.get(messageId) ?? new Map<string, Array<{ id: string; name: string }>>();
     const users = byEmoji.get(String(row.emoji)) ?? [];
     users.push({
       id: String(row.user_id),
@@ -285,9 +284,17 @@ async function resolveMessageDecorations(
   const mentionsByMessage = new Map<string, CaseMention[]>();
   for (const row of mentionRows as any[]) {
     const list = mentionsByMessage.get(String(row.message_id)) ?? [];
+    let mentioned_name: string | undefined;
+    if (row.mentioned_user_id) {
+      mentioned_name = `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim() || 'Unknown User';
+    } else if (row.mentioned_role_id) {
+      mentioned_name = row.role_name ?? 'Unknown Role';
+    }
+
     list.push({
       mentioned_user_id: row.mentioned_user_id ? String(row.mentioned_user_id) : null,
       mentioned_role_id: row.mentioned_role_id ? String(row.mentioned_role_id) : null,
+      mentioned_name,
     });
     mentionsByMessage.set(String(row.message_id), list);
   }
@@ -296,16 +303,19 @@ async function resolveMessageDecorations(
 }
 
 async function buildCaseMessageTree(caseId: string): Promise<CaseMessage[]> {
-  const rows = await db.getDb()('case_messages').where({ case_id: caseId }).orderBy('created_at', 'asc').select('*');
+  const rows = await db
+    .getDb()('case_messages')
+    .where({ case_id: caseId })
+    .orderBy('created_at', 'asc')
+    .select('*');
   const messageRows = rows as CaseMessageRow[];
   const messageIds = messageRows.map((row) => row.id);
   const userMap = await hydrateUsersByIds(
     messageRows.filter((row) => !row.is_system).map((row) => row.user_id),
     ['id', 'first_name', 'last_name', 'avatar_url'],
   );
-  const { reactionsByMessage, attachmentsByMessage, mentionsByMessage } = await resolveMessageDecorations(
-    messageIds,
-  );
+  const { reactionsByMessage, attachmentsByMessage, mentionsByMessage } =
+    await resolveMessageDecorations(messageIds);
 
   const items = new Map<string, CaseMessage>();
   const roots: CaseMessage[] = [];
@@ -316,7 +326,9 @@ async function buildCaseMessageTree(caseId: string): Promise<CaseMessage[]> {
       id: row.id,
       case_id: row.case_id,
       user_id: row.user_id,
-      user_name: row.is_system ? 'System' : `${user?.first_name ?? ''} ${user?.last_name ?? ''}`.trim() || undefined,
+      user_name: row.is_system
+        ? 'System'
+        : `${user?.first_name ?? ''} ${user?.last_name ?? ''}`.trim() || undefined,
       user_avatar: typeof user?.avatar_url === 'string' ? user.avatar_url : undefined,
       content: row.content,
       is_system: row.is_system,
@@ -341,10 +353,7 @@ async function buildCaseMessageTree(caseId: string): Promise<CaseMessage[]> {
   return roots;
 }
 
-async function enrichCaseReports(
-  rows: CaseReportRow[],
-  userId: string,
-): Promise<CaseReport[]> {
+async function enrichCaseReports(rows: CaseReportRow[], userId: string): Promise<CaseReport[]> {
   if (rows.length === 0) return [];
 
   const caseIds = rows.map((row) => row.id);
@@ -352,51 +361,59 @@ async function enrichCaseReports(
     ...new Set(rows.flatMap((row) => [row.created_by, row.closed_by].filter(Boolean) as string[])),
   ];
 
-  const [participants, messageCounts, unreadCounts, unreadReplyCounts, userNames, linkedVns] = await Promise.all([
-    db.getDb()('case_participants')
-      .whereIn('case_id', caseIds)
-      .andWhere({ user_id: userId })
-      .select('case_id', 'is_joined', 'is_muted', 'last_read_at'),
-    db.getDb()('case_messages')
-      .whereIn('case_id', caseIds)
-      .where('is_system', false)
-      .groupBy('case_id')
-      .select('case_id')
-      .count<{ count: string }[]>({ count: '*' }),
-    db.getDb()('case_participants as cp')
-      .leftJoin('case_messages as cm', 'cp.case_id', 'cm.case_id')
-      .where('cp.user_id', userId)
-      .whereIn('cp.case_id', caseIds)
-      .andWhere('cm.user_id', '!=', userId)
-      .andWhere((builder) => {
-        builder.whereNull('cp.last_read_at').orWhereRaw('cm.created_at > cp.last_read_at');
-      })
-      .groupBy('cp.case_id')
-      .select('cp.case_id')
-      .count<{ count: string }[]>({ count: 'cm.id' }),
-    // Count replies to the current user's messages that are unread
-    db.getDb()('case_messages as reply')
-      .join('case_messages as parent', 'reply.parent_message_id', 'parent.id')
-      .join('case_participants as cp', (join) => {
-        join.on('cp.case_id', 'reply.case_id').andOnVal('cp.user_id', userId);
-      })
-      .whereIn('reply.case_id', caseIds)
-      .where('parent.user_id', userId)
-      .where('reply.user_id', '!=', userId)
-      .andWhere((builder) => {
-        builder.whereNull('cp.last_read_at').orWhereRaw('reply.created_at > cp.last_read_at');
-      })
-      .groupBy('reply.case_id')
-      .select('reply.case_id')
-      .count<{ count: string }[]>({ count: 'reply.id' }),
-    resolveUserNames(userIds),
-    db.getDb()('violation_notices')
-      .whereIn('source_case_report_id', caseIds)
-      .whereNotNull('source_case_report_id')
-      .select('id', 'source_case_report_id'),
-  ]);
+  const [participants, messageCounts, unreadCounts, unreadReplyCounts, userNames, linkedVns] =
+    await Promise.all([
+      db
+        .getDb()('case_participants')
+        .whereIn('case_id', caseIds)
+        .andWhere({ user_id: userId })
+        .select('case_id', 'is_joined', 'is_muted', 'last_read_at'),
+      db
+        .getDb()('case_messages')
+        .whereIn('case_id', caseIds)
+        .where('is_system', false)
+        .groupBy('case_id')
+        .select('case_id')
+        .count<{ count: string }[]>({ count: '*' }),
+      db
+        .getDb()('case_participants as cp')
+        .leftJoin('case_messages as cm', 'cp.case_id', 'cm.case_id')
+        .where('cp.user_id', userId)
+        .whereIn('cp.case_id', caseIds)
+        .andWhere('cm.user_id', '!=', userId)
+        .andWhere((builder) => {
+          builder.whereNull('cp.last_read_at').orWhereRaw('cm.created_at > cp.last_read_at');
+        })
+        .groupBy('cp.case_id')
+        .select('cp.case_id')
+        .count<{ count: string }[]>({ count: 'cm.id' }),
+      // Count replies to the current user's messages that are unread
+      db
+        .getDb()('case_messages as reply')
+        .join('case_messages as parent', 'reply.parent_message_id', 'parent.id')
+        .join('case_participants as cp', (join) => {
+          join.on('cp.case_id', 'reply.case_id').andOnVal('cp.user_id', userId);
+        })
+        .whereIn('reply.case_id', caseIds)
+        .where('parent.user_id', userId)
+        .where('reply.user_id', '!=', userId)
+        .andWhere((builder) => {
+          builder.whereNull('cp.last_read_at').orWhereRaw('reply.created_at > cp.last_read_at');
+        })
+        .groupBy('reply.case_id')
+        .select('reply.case_id')
+        .count<{ count: string }[]>({ count: 'reply.id' }),
+      resolveUserNames(userIds),
+      db
+        .getDb()('violation_notices')
+        .whereIn('source_case_report_id', caseIds)
+        .whereNotNull('source_case_report_id')
+        .select('id', 'source_case_report_id'),
+    ]);
 
-  const vnMap = new Map(linkedVns.map((vn: any) => [vn.source_case_report_id as string, vn.id as string]));
+  const vnMap = new Map(
+    linkedVns.map((vn: any) => [vn.source_case_report_id as string, vn.id as string]),
+  );
 
   const participantMap = new Map(
     participants.map((row: any) => [String(row.case_id), row as CaseParticipantRow]),
@@ -426,7 +443,7 @@ async function enrichCaseReports(
       created_by: row.created_by,
       created_by_name: userNames[row.created_by] ?? undefined,
       closed_by: row.closed_by,
-      closed_by_name: row.closed_by ? userNames[row.closed_by] ?? undefined : undefined,
+      closed_by_name: row.closed_by ? (userNames[row.closed_by] ?? undefined) : undefined,
       closed_at: toIso(row.closed_at),
       message_count: messageCountMap.get(row.id) ?? 0,
       unread_count: unreadCountMap.get(row.id) ?? 0,
@@ -442,10 +459,7 @@ async function enrichCaseReports(
   });
 }
 
-async function assertCanMutateCase(
-  caseId: string,
-  permissions: string[],
-): Promise<CaseReportRow> {
+async function assertCanMutateCase(caseId: string, permissions: string[]): Promise<CaseReportRow> {
   const record = await getCaseOrThrow(caseId);
   if (record.status === 'closed' && !hasManagePermission(permissions)) {
     throw new AppError(403, 'This case is already closed');
@@ -462,27 +476,28 @@ async function maybeNotifyMentionedUsers(input: {
   mentionedRoleIds: string[];
 }): Promise<void> {
   const masterDb = db.getDb();
-  const roleMentionUsers = input.mentionedRoleIds.length > 0
-    ? await masterDb('user_roles as ur')
-      .join('user_company_access as uca', 'ur.user_id', 'uca.user_id')
-      .join('users', 'ur.user_id', 'users.id')
-      .whereIn('ur.role_id', input.mentionedRoleIds)
-      .andWhere('uca.company_id', input.companyId)
-      .andWhere('uca.is_active', true)
-      .andWhere('users.is_active', true)
-      .select('users.id')
-    : [];
+  const roleMentionUsers =
+    input.mentionedRoleIds.length > 0
+      ? await masterDb('user_roles as ur')
+          .join('user_company_access as uca', 'ur.user_id', 'uca.user_id')
+          .join('users', 'ur.user_id', 'users.id')
+          .whereIn('ur.role_id', input.mentionedRoleIds)
+          .andWhere('uca.company_id', input.companyId)
+          .andWhere('uca.is_active', true)
+          .andWhere('users.is_active', true)
+          .select('users.id')
+      : [];
 
-  const targets = Array.from(new Set([
-    ...input.mentionedUserIds,
-    ...roleMentionUsers.map((row: any) => String(row.id)),
-  ])).filter((id) => id !== input.senderId);
+  const targets = Array.from(
+    new Set([...input.mentionedUserIds, ...roleMentionUsers.map((row: any) => String(row.id))]),
+  ).filter((id) => id !== input.senderId);
 
   if (targets.length === 0) return;
 
   const senderNames = await resolveUserNames([input.senderId]);
   const senderName = senderNames[input.senderId] ?? 'Someone';
-  const participantRows = await db.getDb()('case_participants')
+  const participantRows = await db
+    .getDb()('case_participants')
     .whereIn('user_id', targets)
     .andWhere({ case_id: input.caseId })
     .select('user_id', 'is_muted');
@@ -561,7 +576,8 @@ export async function getCaseReport(input: {
     });
   }
 
-  const recordWithCompany = await db.getDb()('case_reports')
+  const recordWithCompany = await db
+    .getDb()('case_reports')
     .where('case_reports.id', input.caseId)
     .leftJoin('branches', 'case_reports.branch_id', 'branches.id')
     .leftJoin('companies', 'case_reports.company_id', 'companies.id')
@@ -570,7 +586,8 @@ export async function getCaseReport(input: {
 
   const record = recordWithCompany ?? rawRecord;
   const [report] = await enrichCaseReports([record], input.userId);
-  const attachments = await db.getDb()('case_attachments')
+  const attachments = await db
+    .getDb()('case_attachments')
     .where({ case_id: input.caseId })
     .whereNull('message_id')
     .orderBy('created_at', 'desc')
@@ -611,15 +628,23 @@ export async function createCaseReport(input: {
         branch_id: input.branchId ?? null,
       })
       .returning('*');
-    await upsertParticipant(created.id, input.userId, {
-      is_joined: true,
-      last_read_at: new Date(),
-    }, trx);
-    await createSystemMessage({
-      caseId: created.id,
-      userId: input.userId,
-      content: `${userNames[input.userId] ?? 'Someone'} created this case`,
-    }, trx);
+    await upsertParticipant(
+      created.id,
+      input.userId,
+      {
+        is_joined: true,
+        last_read_at: new Date(),
+      },
+      trx,
+    );
+    await createSystemMessage(
+      {
+        caseId: created.id,
+        userId: input.userId,
+        content: `${userNames[input.userId] ?? 'Someone'} created this case`,
+      },
+      trx,
+    );
     return created as CaseReportRow;
   });
 
@@ -631,12 +656,14 @@ export async function createCaseReport(input: {
     createdBy: report.created_by,
   });
 
-  const reportWithNames = await db.getDb()('case_reports')
-    .where('case_reports.id', report.id)
-    .leftJoin('branches', 'case_reports.branch_id', 'branches.id')
-    .leftJoin('companies', 'case_reports.company_id', 'companies.id')
-    .select('case_reports.*', 'branches.name as branch_name', 'companies.name as company_name')
-    .first() ?? report;
+  const reportWithNames =
+    (await db
+      .getDb()('case_reports')
+      .where('case_reports.id', report.id)
+      .leftJoin('branches', 'case_reports.branch_id', 'branches.id')
+      .leftJoin('companies', 'case_reports.company_id', 'companies.id')
+      .select('case_reports.*', 'branches.name as branch_name', 'companies.name as company_name')
+      .first()) ?? report;
 
   const [enriched] = await enrichCaseReports([reportWithNames], input.userId);
   return enriched;
@@ -655,7 +682,9 @@ export async function updateCorrectiveAction(input: {
   }
   const nextText = ensureNonEmpty(input.correctiveAction, 'Corrective action');
   const userNames = await resolveUserNames([input.userId]);
-  const verb = current.corrective_action ? 'updated the corrective action' : 'added a corrective action';
+  const verb = current.corrective_action
+    ? 'updated the corrective action'
+    : 'added a corrective action';
 
   await db.getDb().transaction(async (trx) => {
     await trx('case_reports').where({ id: input.caseId }).update({
@@ -860,10 +889,11 @@ export async function deleteAttachment(input: {
   caseId: string;
   attachmentId: string;
 }): Promise<void> {
-  const attachment = await db.getDb()('case_attachments')
+  const attachment = (await db
+    .getDb()('case_attachments')
     .where({ id: input.attachmentId, case_id: input.caseId })
     .whereNull('message_id')
-    .first() as CaseAttachmentRow | undefined;
+    .first()) as CaseAttachmentRow | undefined;
   if (!attachment) throw new AppError(404, 'Attachment not found');
 
   const report = await getCaseOrThrow(input.caseId);
@@ -886,9 +916,7 @@ export async function deleteAttachment(input: {
   emitCaseReportEvent('case-report:attachment', input.companyId, { caseId: input.caseId });
 }
 
-export async function listMessages(input: {
-  caseId: string;
-}): Promise<CaseMessage[]> {
+export async function listMessages(input: { caseId: string }): Promise<CaseMessage[]> {
   await getCaseOrThrow(input.caseId);
   return buildCaseMessageTree(input.caseId);
 }
@@ -1004,12 +1032,14 @@ export async function toggleReaction(input: {
   emoji: string;
 }): Promise<{ messageId: string; reactions: CaseReaction[] }> {
   ensureNonEmpty(input.emoji, 'Emoji');
-  const message = await db.getDb()('case_messages')
+  const message = await db
+    .getDb()('case_messages')
     .where({ id: input.messageId, case_id: input.caseId })
     .first();
   if (!message) throw new AppError(404, 'Message not found');
 
-  const existing = await db.getDb()('case_reactions')
+  const existing = await db
+    .getDb()('case_reactions')
     .where({ message_id: input.messageId, user_id: input.userId, emoji: input.emoji })
     .first();
 
@@ -1050,7 +1080,8 @@ export async function toggleMute(input: {
   caseId: string;
 }): Promise<{ is_muted: boolean }> {
   await getCaseOrThrow(input.caseId);
-  const existing = await db.getDb()('case_participants')
+  const existing = await db
+    .getDb()('case_participants')
     .where({ case_id: input.caseId, user_id: input.userId })
     .first();
   const nextMuted = !(existing?.is_muted ?? false);
@@ -1063,15 +1094,18 @@ export async function toggleMute(input: {
   return { is_muted: nextMuted };
 }
 
-export async function getMentionables(input: {
-  companyId: string;
-}): Promise<{
+export async function getMentionables(input: { companyId: string }): Promise<{
   users: MentionableUser[];
   roles: Array<{ id: string; name: string; color: string | null }>;
 }> {
   const [users, roles] = await Promise.all([
     resolveCompanyUsers(input.companyId),
-    db.getDb()('roles').select('id', 'name', 'color').orderBy('priority', 'desc').orderBy('name', 'asc'),
+    db
+      .getDb()('roles')
+      .whereNot('name', SYSTEM_ROLES.SERVICE_CREW)
+      .select('id', 'name', 'color')
+      .orderBy('priority', 'desc')
+      .orderBy('name', 'asc'),
   ]);
 
   return {
@@ -1116,14 +1150,17 @@ export async function editMessage(input: {
   content: string;
 }): Promise<CaseMessage> {
   const content = ensureNonEmpty(input.content, 'Message content');
-  const message = await db.getDb()('case_messages')
+  const message = (await db
+    .getDb()('case_messages')
     .where({ id: input.messageId, case_id: input.caseId })
-    .first() as CaseMessageRow | undefined;
+    .first()) as CaseMessageRow | undefined;
   if (!message) throw new AppError(404, 'Message not found');
   if (message.is_system) throw new AppError(400, 'Cannot edit system messages');
-  if (message.user_id !== input.userId) throw new AppError(403, 'You can only edit your own messages');
+  if (message.user_id !== input.userId)
+    throw new AppError(403, 'You can only edit your own messages');
 
-  await db.getDb()('case_messages')
+  await db
+    .getDb()('case_messages')
     .where({ id: input.messageId })
     .update({ content, updated_at: new Date() });
 
@@ -1146,9 +1183,10 @@ export async function deleteMessage(input: {
   caseId: string;
   messageId: string;
 }): Promise<void> {
-  const message = await db.getDb()('case_messages')
+  const message = (await db
+    .getDb()('case_messages')
     .where({ id: input.messageId, case_id: input.caseId })
-    .first() as CaseMessageRow | undefined;
+    .first()) as CaseMessageRow | undefined;
   if (!message) throw new AppError(404, 'Message not found');
   if (message.is_system) throw new AppError(400, 'Cannot delete system messages');
 
@@ -1157,20 +1195,23 @@ export async function deleteMessage(input: {
   if (!isOwn && !canManage) throw new AppError(403, 'Permission denied');
 
   // Fetch attachments before deleting so we can remove them from S3
-  const attachments = await db.getDb()('case_attachments')
+  const attachments = (await db
+    .getDb()('case_attachments')
     .where({ message_id: input.messageId })
-    .select('file_url') as { file_url: string }[];
+    .select('file_url')) as { file_url: string }[];
 
   const userNames = await resolveUserNames([input.userId]);
   const deleterName = userNames[input.userId] ?? 'Someone';
 
   await db.getDb().transaction(async (trx) => {
-    await trx('case_messages').where({ id: input.messageId }).update({
-      content: `${deleterName} deleted this message`,
-      is_deleted: true,
-      deleted_by: input.userId,
-      updated_at: new Date(),
-    });
+    await trx('case_messages')
+      .where({ id: input.messageId })
+      .update({
+        content: `${deleterName} deleted this message`,
+        is_deleted: true,
+        deleted_by: input.userId,
+        updated_at: new Date(),
+      });
   });
 
   // Delete S3 files after DB update (best-effort)
