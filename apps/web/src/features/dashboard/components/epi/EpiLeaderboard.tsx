@@ -3,7 +3,15 @@ import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, Star, AlertCircle } from 'lucide-react';
 import type { EpiCriteria, LeaderboardDetailEntry, LeaderboardSummaryEntry } from './types';
-import { getAovZone, getEpiZone, getRateZone, getScoreZone, getZoneColors } from './epiUtils';
+import {
+  getAovZone,
+  getEpiZone,
+  getRateZone,
+  getScoreZone,
+  getZoneColors,
+  formatRate,
+  formatThreshold,
+} from './epiUtils';
 import { SectionLabel } from './SectionLabel';
 import { AvatarFallback } from './AvatarFallback';
 import { resolveLeaderboardPaginationState } from './leaderboardPagination';
@@ -120,7 +128,7 @@ function PodiumCard({
       <p
         className={`text-sm font-bold ${entry.displayEpiScore !== null ? `${colors.text} ${colors.darkText}` : 'text-gray-400'}`}
       >
-        {entry.displayEpiScore !== null ? entry.displayEpiScore.toFixed(1) : '--'}
+        {entry.displayEpiScore !== null ? formatThreshold(entry.displayEpiScore) : '--'}
       </p>
       <ChevronDown
         className={`mt-1 h-3 w-3 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
@@ -300,9 +308,9 @@ function ExpandedMetrics({
                 ? 'Historical monthly EPI'
                 : 'Official EPI'}
             {showProjectedEpi
-              ? `: ${(detail.projectedEpiScore ?? detail.epiScore ?? 0).toFixed(1)}`
+              ? `: ${(detail.projectedEpiScore ?? detail.epiScore ?? 0).toFixed(2)}`
               : detail.epiScore !== null
-                ? `: ${detail.epiScore.toFixed(1)}`
+                ? `: ${detail.epiScore.toFixed(2)}`
                 : ''}
           </p>
           <p>
@@ -324,7 +332,7 @@ function ExpandedMetrics({
               label="Customer Interaction"
               value={criteria.customerInteractionScore}
               max={5}
-              format={`${criteria.customerInteractionScore.toFixed(1)}/5`}
+              format={`${formatThreshold(criteria.customerInteractionScore)}/5`}
             />
           ) : (
             <NullMetric label="Customer Interaction" />
@@ -334,7 +342,7 @@ function ExpandedMetrics({
               label="Cashiering"
               value={criteria.cashieringScore}
               max={5}
-              format={`${criteria.cashieringScore.toFixed(1)}/5`}
+              format={`${formatThreshold(criteria.cashieringScore)}/5`}
             />
           ) : (
             <NullMetric label="Cashiering" />
@@ -344,7 +352,7 @@ function ExpandedMetrics({
               label="Suggestive Selling & Upselling"
               value={criteria.suggestiveSellingUpsellingScore}
               max={5}
-              format={`${criteria.suggestiveSellingUpsellingScore.toFixed(1)}/5`}
+              format={`${formatThreshold(criteria.suggestiveSellingUpsellingScore)}/5`}
             />
           ) : (
             <NullMetric label="Suggestive Selling & Upselling" />
@@ -354,7 +362,7 @@ function ExpandedMetrics({
               label="Service Efficiency"
               value={criteria.serviceEfficiencyScore}
               max={5}
-              format={`${criteria.serviceEfficiencyScore.toFixed(1)}/5`}
+              format={`${formatThreshold(criteria.serviceEfficiencyScore)}/5`}
             />
           ) : (
             <NullMetric label="Service Efficiency" />
@@ -364,7 +372,7 @@ function ExpandedMetrics({
               label="Workplace Relations"
               value={criteria.workplaceRelationsScore}
               max={5}
-              format={`${criteria.workplaceRelationsScore.toFixed(1)}/5`}
+              format={`${formatThreshold(criteria.workplaceRelationsScore)}/5`}
             />
           ) : (
             <NullMetric label="Workplace Relations" />
@@ -374,7 +382,7 @@ function ExpandedMetrics({
               label="Professional Conduct"
               value={criteria.professionalConductScore}
               max={5}
-              format={`${criteria.professionalConductScore.toFixed(1)}/5`}
+              format={`${formatThreshold(criteria.professionalConductScore)}/5`}
             />
           ) : (
             <NullMetric label="Professional Conduct" />
@@ -392,7 +400,7 @@ function ExpandedMetrics({
               label="Attendance Rate"
               value={criteria.attendanceRate}
               max={100}
-              format={`${criteria.attendanceRate.toFixed(0)}%`}
+              format={formatRate(criteria.attendanceRate)}
             />
           ) : (
             <NullMetric label="Attendance Rate" />
@@ -402,7 +410,7 @@ function ExpandedMetrics({
               label="Punctuality Rate"
               value={criteria.punctualityRate}
               max={100}
-              format={`${criteria.punctualityRate.toFixed(0)}%`}
+              format={formatRate(criteria.punctualityRate)}
             />
           ) : (
             <NullMetric label="Punctuality Rate" />
@@ -412,7 +420,7 @@ function ExpandedMetrics({
               label="Productivity Rate"
               value={criteria.productivityRate}
               max={100}
-              format={`${criteria.productivityRate.toFixed(0)}%`}
+              format={formatRate(criteria.productivityRate)}
             />
           ) : (
             <NullMetric label="Productivity Rate" />
@@ -422,11 +430,11 @@ function ExpandedMetrics({
               <div className="mb-0.5 flex items-center justify-between">
                 <span className="text-gray-500 dark:text-gray-400">Avg Order Value</span>
                 <span className={`font-semibold ${aovColors.text} ${aovColors.darkText}`}>
-                  P{criteria.aov.toFixed(0)}
+                  P{formatThreshold(criteria.aov)}
                   {criteria.branchAov ? (
                     <span className="font-normal text-gray-400">
                       {' '}
-                      / Branch P{criteria.branchAov.toFixed(0)}
+                      / Branch P{formatThreshold(criteria.branchAov)}
                     </span>
                   ) : null}
                 </span>
@@ -448,7 +456,7 @@ function ExpandedMetrics({
               label="Uniform Compliance"
               value={criteria.uniformComplianceRate}
               max={100}
-              format={`${criteria.uniformComplianceRate.toFixed(0)}%`}
+              format={formatRate(criteria.uniformComplianceRate)}
             />
           ) : (
             <NullMetric label="Uniform Compliance" />
@@ -458,7 +466,7 @@ function ExpandedMetrics({
               label="Hygiene Compliance"
               value={criteria.hygieneComplianceRate}
               max={100}
-              format={`${criteria.hygieneComplianceRate.toFixed(0)}%`}
+              format={formatRate(criteria.hygieneComplianceRate)}
             />
           ) : (
             <NullMetric label="Hygiene Compliance" />
@@ -468,7 +476,7 @@ function ExpandedMetrics({
               label="SOP Compliance"
               value={criteria.sopComplianceRate}
               max={100}
-              format={`${criteria.sopComplianceRate.toFixed(0)}%`}
+              format={formatRate(criteria.sopComplianceRate)}
             />
           ) : (
             <NullMetric label="SOP Compliance" />
@@ -554,9 +562,15 @@ export function EpiLeaderboard({
   const rankedEntries = useMemo(() => {
     const sorted = [...entries].sort((a, b) => {
       if (a.hasData && b.hasData) {
+        // Primary sort: Display Score (Official)
         if (a.displayEpiScore !== b.displayEpiScore) {
           return (b.displayEpiScore ?? 0) - (a.displayEpiScore ?? 0);
         }
+        // Secondary sort: Projected Score (Tie-breaker)
+        if (a.projectedEpiScore !== b.projectedEpiScore) {
+          return (b.projectedEpiScore ?? 0) - (a.projectedEpiScore ?? 0);
+        }
+        // Tertiary sort: Name
         return `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`);
       }
 
@@ -745,7 +759,7 @@ export function EpiLeaderboard({
                             className={`text-sm font-semibold ${entry.displayEpiScore !== null ? `${colors.text} ${colors.darkText}` : 'text-gray-400'}`}
                           >
                             {entry.displayEpiScore !== null
-                              ? entry.displayEpiScore.toFixed(1)
+                              ? entry.displayEpiScore.toFixed(2)
                               : '--'}
                           </span>
                           <ChevronDown

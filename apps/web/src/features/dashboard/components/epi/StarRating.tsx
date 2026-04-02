@@ -2,7 +2,7 @@ import { useId } from 'react';
 import { motion, useInView } from 'framer-motion';
 import { useRef } from 'react';
 import type { EpiZone } from './types';
-import { getZoneColors } from './epiUtils';
+import { getZoneColors, formatThreshold } from './epiUtils';
 
 interface StarRatingProps {
   /** Score out of 5, supports decimals e.g. 4.2 */
@@ -114,7 +114,7 @@ export function StarRating({ score, zone, delay = 0, size = 22, gap = 4 }: StarR
         <span
           className={`text-2xl font-bold tabular-nums leading-none ${colors.text} ${colors.darkText}`}
         >
-          {score.toFixed(1)}
+          {formatThreshold(score)}
         </span>
         <span className="text-xs text-gray-400 font-medium">/ 5</span>
       </div>

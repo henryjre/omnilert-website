@@ -25,25 +25,6 @@ export interface OdooPosOrder {
 
 // ─── Odoo Employee ID resolution ─────────────────────────────────────────────
 
-/**
- * Returns all Odoo hr.employee IDs linked to a user's website key.
- * Covers both partner-linked and legacy x_website_key employees across all branches.
- */
-export async function getOdooEmployeeIdsByWebsiteKey(websiteKey: string): Promise<number[]> {
-  const rows = (await callOdooKw(
-    'hr.employee',
-    'search_read',
-    [],
-    {
-      domain: [['x_website_key', '=', websiteKey]],
-      fields: ['id'],
-      limit: 1000,
-    },
-  )) as Array<{ id: number }>;
-
-  return rows.map((r) => r.id);
-}
-
 // ─── Planning Slots ───────────────────────────────────────────────────────────
 
 /**
@@ -72,8 +53,6 @@ export async function getScheduledSlots(
   )) as OdooPlanningSlot[];
 }
 
-// ─── Attendance Records ───────────────────────────────────────────────────────
-
 /**
  * Returns hr.attendance records for the given employee IDs within a date range.
  */
@@ -100,31 +79,31 @@ export async function getAttendanceRecords(
   )) as OdooAttendanceRecord[];
 }
 
-// ─── POS Orders ───────────────────────────────────────────────────────────────
-
 /**
- * Returns pos.order records for a specific employee (by x_website_key) within a date range.
+ * Returns pos.order records for specific employees (by x_website_keys) within a date range.
  */
-export async function getPosOrders(
-  websiteKey: string,
+export async function getPosOrdersBatch(
+  websiteKeys: string[],
   dateFrom: string,
   dateTo: string,
 ): Promise<OdooPosOrder[]> {
+  if (websiteKeys.length === 0) return [];
+
   return (await callOdooKw(
     'pos.order',
     'search_read',
     [],
     {
       domain: [
-        ['x_website_key', '=', websiteKey],
+        ['x_website_key', 'in', websiteKeys],
         ['date_order', '>=', dateFrom],
         ['date_order', '<=', dateTo],
         ['state', 'in', ['done', 'invoiced']],
       ],
-      fields: ['amount_total', 'company_id', 'date_order'],
+      fields: ['amount_total', 'company_id', 'date_order', 'x_website_key' as any],
       limit: 50000,
     },
-  )) as OdooPosOrder[];
+  )) as (OdooPosOrder & { x_website_key: string })[];
 }
 
 /**
@@ -151,4 +130,43 @@ export async function getBranchPosOrders(
       limit: 50000,
     },
   )) as { amount_total: number }[];
+}
+
+/**
+ * Resolves Odoo hr.employee IDs for multiple website keys in one call.
+ */
+export async function getOdooEmployeeIdsByWebsiteKeys(websiteKeys: string[]): Promise<Array<{ id: number; website_key: string }>> {
+  if (websiteKeys.length === 0) return [];
+
+  const rows = (await callOdooKw(
+    'hr.employee',
+    'search_read',
+    [],
+    {
+      domain: [['x_website_key', 'in', websiteKeys]],
+      fields: ['id', 'x_website_key'],
+      limit: 10000,
+    },
+  )) as Array<{ id: number; x_website_key: string }>;
+
+  return rows.map((r) => ({ id: r.id, website_key: r.x_website_key }));
+}
+
+/**
+ * Legacy single-key version (for backward compatibility)
+ */
+export async function getOdooEmployeeIdsByWebsiteKey(websiteKey: string): Promise<number[]> {
+  const res = await getOdooEmployeeIdsByWebsiteKeys([websiteKey]);
+  return res.map((r) => r.id);
+}
+
+/**
+ * Legacy single-key version (for backward compatibility)
+ */
+export async function getPosOrders(
+  websiteKey: string,
+  dateFrom: string,
+  dateTo: string,
+): Promise<OdooPosOrder[]> {
+  return getPosOrdersBatch([websiteKey], dateFrom, dateTo);
 }

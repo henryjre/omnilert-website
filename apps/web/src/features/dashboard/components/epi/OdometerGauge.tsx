@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import type { EpiZone } from './types';
+import { formatThreshold } from './epiUtils';
 
 type OdometerZone = EpiZone | 'blue';
 
@@ -50,11 +51,12 @@ export function OdometerGauge({
 }: OdometerGaugeProps) {
   const toRad = (deg: number) => (deg * Math.PI) / 180;
 
+  // Arc sweep: 210deg -> 330deg (120deg total), symmetric around 270deg.
+  const neutralLabel = formatThreshold(neutralAt);
+
   // Guard against bad input that would break piecewise interpolation.
   const safeMax = Math.max(max, 2);
   const safeNeutralAt = Math.min(Math.max(neutralAt, 1), safeMax - 1);
-  const roundedNeutralAt = Math.round(neutralAt * 10) / 10;
-  const neutralLabel = Number.isInteger(roundedNeutralAt) ? roundedNeutralAt.toFixed(0) : roundedNeutralAt.toFixed(1);
 
   // Arc sweep: 210deg -> 330deg (120deg total), symmetric around 270deg.
   const arcStart = 210;
@@ -190,7 +192,7 @@ export function OdometerGauge({
             fontWeight="700"
             letterSpacing="-1"
           >
-            {value.toFixed(1)}
+            {formatThreshold(value)}
           </text>
 
           {label && (

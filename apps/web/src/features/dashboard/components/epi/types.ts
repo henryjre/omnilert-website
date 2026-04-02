@@ -50,6 +50,7 @@ export interface LeaderboardSummaryEntry {
   avatarUrl: string | null;
   monthKey: string;
   displayEpiScore: number | null;
+  projectedEpiScore: number | null;
   hasData: boolean;
   isCurrentUser: boolean;
 }

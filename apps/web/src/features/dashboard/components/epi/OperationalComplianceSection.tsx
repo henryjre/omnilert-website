@@ -7,6 +7,7 @@ import {
   getUniformImpact,
   getHygieneImpact,
   getSopImpact,
+  formatRate,
   renderEpiImpact,
 } from './epiUtils';
 import { SectionLabel } from './SectionLabel';
@@ -40,10 +41,10 @@ function MetricIcon({ icon: Icon, zone }: { icon: React.ElementType; zone: EpiZo
   const colors = getZoneColors(zone);
   return (
     <div
-      className="flex h-9 w-9 items-center justify-center rounded-full"
+      className="flex h-7 w-7 items-center justify-center rounded-full"
       style={{ backgroundColor: `${colors.stroke}15` }}
     >
-      <Icon size={18} style={{ color: colors.stroke }} strokeWidth={2} />
+      <Icon size={14} style={{ color: colors.stroke }} strokeWidth={2} />
     </div>
   );
 }
@@ -78,10 +79,10 @@ function ComplianceCard({
             <RadialGauge
               value={value}
               max={100}
-              size={80}
+              size={96}
               strokeWidth={8}
               zone={zone}
-              valueFormat={(v) => `${v.toFixed(0)}%`}
+              valueFormat={formatRate}
               delay={delay}
             />
             <ZoneBadge zone={zone} />
@@ -92,11 +93,11 @@ function ComplianceCard({
           </>
         ) : (
           <>
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
-              <Icon size={18} className="text-gray-400" />
+            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
+              <Icon size={14} className="text-gray-400" />
             </div>
-            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
-              <span className="text-2xl font-bold text-gray-400">—</span>
+            <div className="flex h-24 w-24 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
+              <span className="text-2xl font-bold text-gray-400">---</span>
             </div>
             <p className="text-xs font-medium text-gray-700 dark:text-gray-300">{label}</p>
             <p className="text-xs italic text-gray-400">No data this period</p>

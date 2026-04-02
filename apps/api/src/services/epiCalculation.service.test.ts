@@ -153,7 +153,7 @@ test('calculateKpiScoresWithQueryDeps benchmarks AOV against weighted attended b
   assert.deepEqual(branchOrderLookups, [12, 99, 55]);
   assert.equal(result.breakdown.aov.value, 225);
   assert.equal(result.breakdown.aov.branch_avg, 166.67);
-  assert.equal(result.breakdown.aov.impact, 2);
+  assert.equal(result.breakdown.aov.impact, 0.3);
 });
 
 test('calculateKpiScoresWithQueryDeps keeps employee AOV visible when no attendance-derived branch benchmark can be built', async () => {

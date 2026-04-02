@@ -32,7 +32,7 @@ function impactColor(impact: number): string {
 }
 
 function rateText(rate: number | null): string {
-  return rate !== null ? `${rate.toFixed(1)}%` : 'No data';
+  return rate !== null ? `${rate.toFixed(2)}%` : 'No data';
 }
 
 function scoreText(score: number | null): string {
@@ -71,7 +71,7 @@ function renderKpiRow(
     .fillColor(impactColor(impact))
     .fontSize(9)
     .font('DM-Sans-Bold')
-    .text(`${sign}${impact.toFixed(1)}`, 460, y, { width: 85, align: 'right' });
+    .text(`${sign}${impact.toFixed(2)}`, 460, y, { width: 85, align: 'right' });
 }
 
 // ─── Individual Employee Report ───────────────────────────────────────────────
@@ -142,7 +142,7 @@ export async function generateEpiReportPdf(data: EpiReportData): Promise<Buffer>
       .fillColor(OMNILERT_NAVY)
       .fontSize(20)
       .font('DM-Sans-Bold')
-      .text(data.epiBefore.toFixed(1), 50, summaryY + 30, { width: 165, align: 'center' });
+      .text(data.epiBefore.toFixed(2), 50, summaryY + 30, { width: 165, align: 'center' });
 
     // Shift
     doc
@@ -155,7 +155,7 @@ export async function generateEpiReportPdf(data: EpiReportData): Promise<Buffer>
       .fillColor(impactColor(data.rawDelta))
       .fontSize(20)
       .font('DM-Sans-Bold')
-      .text(`${rawSign}${data.rawDelta.toFixed(1)}`, 215, summaryY + 30, {
+      .text(`${rawSign}${data.rawDelta.toFixed(2)}`, 215, summaryY + 30, {
         width: 165,
         align: 'center',
       });
@@ -170,7 +170,7 @@ export async function generateEpiReportPdf(data: EpiReportData): Promise<Buffer>
       .fillColor(OMNILERT_NAVY)
       .fontSize(20)
       .font('DM-Sans-Bold')
-      .text(data.epiAfter.toFixed(1), 380, summaryY + 30, { width: 165, align: 'center' });
+      .text(data.epiAfter.toFixed(2), 380, summaryY + 30, { width: 165, align: 'center' });
 
     // ── Table Headers
     const tableHeaderY = 270;
@@ -196,8 +196,8 @@ export async function generateEpiReportPdf(data: EpiReportData): Promise<Buffer>
       return `${val.toFixed(2)} / 5.00`;
     };
     const rateText = (val: number | null | undefined) => {
-      if (val === null || val === undefined || isNaN(val)) return '0.0%';
-      return `${val.toFixed(1)}%`;
+      if (val === null || val === undefined || isNaN(val)) return '0.00%';
+      return `${val.toFixed(2)}%`;
     };
 
     const sections: Array<{ label: string; rows: Array<[string, string, number]> }> = [
@@ -282,7 +282,7 @@ export async function generateEpiReportPdf(data: EpiReportData): Promise<Buffer>
       .fillColor(impactColor(data.rawDelta))
       .fontSize(11)
       .font('DM-Sans-Bold')
-      .text(`${rawSign}${data.rawDelta.toFixed(1)}`, 460, rowY, { width: 85, align: 'right' });
+      .text(`${rawSign}${data.rawDelta.toFixed(2)}`, 460, rowY, { width: 85, align: 'right' });
 
     doc.fontSize(8).fillColor('#94a3b8').text('OMNILERT ANALYTICS · CONFIDENTIAL · 2026', 50, 770, {
       align: 'center',
@@ -392,7 +392,7 @@ export async function generateManagerSummaryPdf(
       .fillColor(OMNILERT_NAVY)
       .fontSize(20)
       .font('DM-Sans-Bold')
-      .text(globalAvgEpi.toFixed(1), 380, rowY + 38, { width: 165, align: 'center' });
+      .text(globalAvgEpi.toFixed(2), 380, rowY + 38, { width: 165, align: 'center' });
 
     // ── Leaderboard Table
     rowY += 120;
@@ -425,17 +425,17 @@ export async function generateManagerSummaryPdf(
       doc
         .fillColor(NEUTRAL_GRAY)
         .font('DM-Sans-Regular')
-        .text(item.epiBefore.toFixed(1), 290, rowY, { width: 80, align: 'right' });
+        .text(item.epiBefore.toFixed(2), 290, rowY, { width: 80, align: 'right' });
       doc
         .fillColor('#1e293b')
         .font('DM-Sans-Bold')
-        .text(item.epiAfter.toFixed(1), 375, rowY, { width: 80, align: 'right' });
+        .text(item.epiAfter.toFixed(2), 375, rowY, { width: 80, align: 'right' });
 
       const sign = item.delta >= 0 ? '+' : '';
       doc
         .fillColor(impactColor(item.delta))
         .font('DM-Sans-Bold')
-        .text(`${sign}${item.delta.toFixed(1)}`, 460, rowY, { width: 85, align: 'right' });
+        .text(`${sign}${item.delta.toFixed(2)}`, 460, rowY, { width: 85, align: 'right' });
 
       rowY += 22;
       if (rowY > 750) {

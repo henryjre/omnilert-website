@@ -20,6 +20,22 @@ export function getRateZone(rate: number): EpiZone {
   return 'red';
 }
 
+/**
+ * Formats a percentage rate, removing trailing .00 for whole numbers
+ * e.g. 100.00 -> 100%, 98.30 -> 98.3%, 57.15 -> 57.15%
+ */
+export function formatRate(v: number): string {
+  return parseFloat(v.toFixed(2)).toString() + '%';
+}
+
+/**
+ * Formats a score or threshold, removing trailing .00
+ * e.g. 4.00 -> 4, 4.75 -> 4.75
+ */
+export function formatThreshold(v: number): string {
+  return parseFloat(v.toFixed(2)).toString();
+}
+
 export function getAovZone(yours: number, branchAvg: number): EpiZone {
   if (branchAvg === 0) return 'amber';
   const ratio = yours / branchAvg;
@@ -95,98 +111,163 @@ export function getGreeting(): string {
 // ─── EPI Impact Calculations (Matching Backend epiCalculation.service.ts) ──────
 
 export function getWrsImpact(score: number): number {
-  if (score >= 4.5) return 1;
-  if (score >= 4.0) return 0.5;
-  if (score >= 3.7) return 0;
-  if (score >= 3.3) return -0.5;
-  return -1;
+  if (score >= 4.70) return 0.25;
+  if (score >= 4.45) return 0.20;
+  if (score >= 4.20) return 0.15;
+  if (score >= 3.95) return 0.10;
+  if (score >= 3.70) return 0.05;
+  if (score >= 3.40) return 0.00;
+  if (score >= 3.10) return -0.05;
+  if (score >= 2.80) return -0.10;
+  if (score >= 2.50) return -0.15;
+  return -0.25;
+}
+
+export function getPcsImpact(score: number): number {
+  if (score >= 4.75) return 0.35;
+  if (score >= 4.50) return 0.28;
+  if (score >= 4.25) return 0.21;
+  if (score >= 4.00) return 0.14;
+  if (score >= 3.75) return 0.07;
+  if (score >= 3.45) return 0.00;
+  if (score >= 3.15) return -0.07;
+  if (score >= 2.85) return -0.14;
+  if (score >= 2.55) return -0.21;
+  return -0.35;
 }
 
 export function getAttendanceImpact(rate: number): number {
-  if (rate >= 99) return 2;
-  if (rate >= 98) return 1;
-  if (rate >= 95) return 0;
-  if (rate >= 90) return -1;
-  if (rate >= 85) return -2;
-  if (rate >= 80) return -3;
-  if (rate >= 70) return -4;
-  return -5;
+  if (rate >= 99.50) return 0.40;
+  if (rate >= 98.50) return 0.32;
+  if (rate >= 97.50) return 0.24;
+  if (rate >= 96.50) return 0.16;
+  if (rate >= 95.50) return 0.08;
+  if (rate >= 94.00) return 0.00;
+  if (rate >= 92.00) return -0.08;
+  if (rate >= 89.00) return -0.16;
+  if (rate >= 85.00) return -0.24;
+  return -0.40;
 }
 
 export function getPunctualityImpact(rate: number): number {
-  if (rate >= 98) return 1;
-  if (rate >= 95) return 0;
-  if (rate >= 90) return -1;
-  if (rate >= 85) return -2;
-  return -3;
+  if (rate >= 99.50) return 0.30;
+  if (rate >= 98.50) return 0.24;
+  if (rate >= 97.50) return 0.18;
+  if (rate >= 96.50) return 0.12;
+  if (rate >= 95.50) return 0.06;
+  if (rate >= 94.00) return 0.00;
+  if (rate >= 92.00) return -0.06;
+  if (rate >= 89.00) return -0.12;
+  if (rate >= 85.00) return -0.18;
+  return -0.30;
 }
 
 export function getProductivityImpact(rate: number): number {
-  if (rate >= 95) return 1;
-  if (rate >= 90) return 0;
-  if (rate >= 85) return -0.5;
-  if (rate >= 80) return -1;
-  return -2;
+  if (rate >= 98.00) return 0.40;
+  if (rate >= 96.00) return 0.32;
+  if (rate >= 94.00) return 0.24;
+  if (rate >= 92.00) return 0.16;
+  if (rate >= 90.00) return 0.08;
+  if (rate >= 88.00) return 0.00;
+  if (rate >= 85.00) return -0.08;
+  if (rate >= 81.00) return -0.16;
+  if (rate >= 76.00) return -0.24;
+  return -0.40;
 }
 
 export function getAovImpact(pct: number): number {
-  if (pct >= 10) return 2;
-  if (pct > 0) return 1;
-  if (pct >= -5) return 0;
-  if (pct >= -10) return -1;
-  return -2;
+  if (pct >= 20.00) return 0.30;
+  if (pct >= 15.00) return 0.24;
+  if (pct >= 10.00) return 0.18;
+  if (pct >= 6.00) return 0.12;
+  if (pct >= 2.00) return 0.06;
+  if (pct > -2.00) return 0.00;
+  if (pct >= -6.00) return -0.06;
+  if (pct >= -10.00) return -0.12;
+  if (pct >= -15.00) return -0.18;
+  return -0.30;
 }
 
 export function getUniformImpact(rate: number): number {
-  if (rate >= 95) return 1;
-  if (rate >= 90) return 0;
-  if (rate >= 85) return -0.5;
-  if (rate >= 80) return -1;
-  return -2;
+  if (rate >= 99.50) return 0.20;
+  if (rate >= 98.50) return 0.16;
+  if (rate >= 97.50) return 0.12;
+  if (rate >= 96.50) return 0.08;
+  if (rate >= 95.50) return 0.04;
+  if (rate >= 94.00) return 0.00;
+  if (rate >= 91.00) return -0.04;
+  if (rate >= 87.00) return -0.08;
+  if (rate >= 82.00) return -0.12;
+  return -0.20;
 }
 
 export function getHygieneImpact(rate: number): number {
-  return getUniformImpact(rate);
+  if (rate >= 99.50) return 0.40;
+  if (rate >= 98.50) return 0.32;
+  if (rate >= 97.50) return 0.24;
+  if (rate >= 96.50) return 0.16;
+  if (rate >= 95.50) return 0.08;
+  if (rate >= 94.00) return 0.00;
+  if (rate >= 92.00) return -0.08;
+  if (rate >= 89.00) return -0.16;
+  if (rate >= 85.00) return -0.24;
+  return -0.40;
 }
 
 export function getSopImpact(rate: number): number {
-  return getUniformImpact(rate);
+  return getUniformImpact(rate); // Same table (±0.20)
 }
 
 export function getCustomerInteractionImpact(score: number): number {
-  if (score >= 4.60) return 3;
-  if (score >= 4.30) return 2;
-  if (score >= 4.00) return 1;
-  if (score >= 3.70) return 0;
-  if (score >= 3.40) return -2;
-  return -3;
+  if (score >= 4.70) return 0.70;
+  if (score >= 4.45) return 0.56;
+  if (score >= 4.20) return 0.42;
+  if (score >= 3.95) return 0.28;
+  if (score >= 3.70) return 0.14;
+  if (score >= 3.40) return 0.00;
+  if (score >= 3.10) return -0.14;
+  if (score >= 2.80) return -0.28;
+  if (score >= 2.50) return -0.42;
+  return -0.70;
 }
 
 export function getCashieringImpact(score: number): number {
-  if (score >= 4.60) return 2;
-  if (score >= 4.30) return 1;
-  if (score >= 4.00) return 0;
-  if (score >= 3.70) return -1;
-  if (score >= 3.40) return -2;
-  return -3;
+  if (score >= 4.75) return 0.60;
+  if (score >= 4.50) return 0.48;
+  if (score >= 4.25) return 0.36;
+  if (score >= 4.00) return 0.24;
+  if (score >= 3.75) return 0.12;
+  if (score >= 3.45) return 0.00;
+  if (score >= 3.15) return -0.12;
+  if (score >= 2.85) return -0.24;
+  if (score >= 2.55) return -0.36;
+  return -0.60;
 }
 
 export function getSuggestiveSellingImpact(score: number): number {
-  if (score >= 4.50) return 2;
-  if (score >= 4.20) return 1;
-  if (score >= 3.80) return 0;
-  if (score >= 3.50) return -1;
-  if (score >= 3.20) return -2;
-  return -3;
+  if (score >= 4.70) return 0.40;
+  if (score >= 4.45) return 0.32;
+  if (score >= 4.20) return 0.24;
+  if (score >= 3.95) return 0.16;
+  if (score >= 3.70) return 0.08;
+  if (score >= 3.40) return 0.00;
+  if (score >= 3.10) return -0.08;
+  if (score >= 2.80) return -0.16;
+  if (score >= 2.50) return -0.24;
+  return -0.40;
 }
 
 export function getServiceEfficiencyImpact(score: number): number {
-  if (score >= 4.5) return 2;
-  if (score >= 4.2) return 1;
-  if (score >= 3.9) return 0;
-  if (score >= 3.6) return -1;
-  if (score >= 3.3) return -2;
-  return -3;
+  if (score >= 4.75) return 0.50;
+  if (score >= 4.50) return 0.40;
+  if (score >= 4.25) return 0.30;
+  if (score >= 4.00) return 0.20;
+  if (score >= 3.75) return 0.10;
+  if (score >= 3.45) return 0.00;
+  if (score >= 3.15) return -0.10;
+  if (score >= 2.85) return -0.20;
+  if (score >= 2.55) return -0.30;
+  return -0.50;
 }
 
 export interface RenderedImpact {
@@ -216,7 +297,7 @@ export function renderEpiImpact(impact: number | null): RenderedImpact {
   const colorClass = impact > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400';
 
   return {
-    text: `${sign}${impact} EPI points`,
+    text: `${sign}${impact.toFixed(2)} EPI points`,
     className: colorClass,
     value: impact,
   };

@@ -1795,7 +1795,7 @@ function PersonalEpiCard({
                   <Minus className="h-3 w-3" />
                 )}
                 {epiDelta > 0 ? '+' : ''}
-                {epiDelta.toFixed(1)}
+                {epiDelta.toFixed(1)} pts
               </span>
               <span className="text-[10px] font-semibold uppercase tracking-widest text-white/40">
                 {comparisonCaption}
@@ -4370,7 +4370,7 @@ function MetricTopBottomCard({
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="w-4 text-[10px] font-bold text-gray-300 tabular-nums flex-shrink-0">
-                      {validEmployees.length - bottom5.length + 1 + idx}
+                      {idx + 1}
                     </span>
                     <span className="text-sm font-medium text-gray-700 truncate">{emp.name}</span>
                   </div>

@@ -9,7 +9,7 @@ import {
   type TooltipProps,
 } from 'recharts';
 import type { EpiMonthEntry, EpiZone } from './types';
-import { getZoneColors } from './epiUtils';
+import { getZoneColors, formatThreshold } from './epiUtils';
 
 interface TrendChartProps {
   history: EpiMonthEntry[];
@@ -31,7 +31,7 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
   return (
     <div className="rounded-md bg-gray-900 px-2 py-1 text-xs text-white shadow-lg">
       <p className="font-semibold">{label}</p>
-      <p>{payload[0].value?.toFixed(1)}</p>
+      <p>{payload[0].value !== undefined ? formatThreshold(payload[0].value) : ''}</p>
     </div>
   );
 }

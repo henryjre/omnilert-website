@@ -1,8 +1,10 @@
 import {
   getOdooEmployeeIdsByWebsiteKey,
+  getOdooEmployeeIdsByWebsiteKeys,
   getScheduledSlots,
   getAttendanceRecords,
   getPosOrders,
+  getPosOrdersBatch,
   getBranchPosOrders,
   type OdooPosOrder,
   type OdooAttendanceRecord,
@@ -66,98 +68,163 @@ const defaultKpiQueryDeps: KpiQueryDeps = {
 // ─── Impact Tables ────────────────────────────────────────────────────────────
 
 function wrsImpact(score: number): number {
-  if (score >= 4.5) return 1;
-  if (score >= 4.0) return 0.5;
-  if (score >= 3.7) return 0;
-  if (score >= 3.3) return -0.5;
-  return -1;
+  if (score >= 4.70) return 0.25;
+  if (score >= 4.45) return 0.20;
+  if (score >= 4.20) return 0.15;
+  if (score >= 3.95) return 0.10;
+  if (score >= 3.70) return 0.05;
+  if (score >= 3.40) return 0.00;
+  if (score >= 3.10) return -0.05;
+  if (score >= 2.80) return -0.10;
+  if (score >= 2.50) return -0.15;
+  return -0.25;
+}
+
+function pcsImpact(score: number): number {
+  if (score >= 4.75) return 0.35;
+  if (score >= 4.50) return 0.28;
+  if (score >= 4.25) return 0.21;
+  if (score >= 4.00) return 0.14;
+  if (score >= 3.75) return 0.07;
+  if (score >= 3.45) return 0.00;
+  if (score >= 3.15) return -0.07;
+  if (score >= 2.85) return -0.14;
+  if (score >= 2.55) return -0.21;
+  return -0.35;
 }
 
 function attendanceImpact(rate: number): number {
-  if (rate >= 99) return 2;
-  if (rate >= 98) return 1;
-  if (rate >= 95) return 0;
-  if (rate >= 90) return -1;
-  if (rate >= 85) return -2;
-  if (rate >= 80) return -3;
-  if (rate >= 70) return -4;
-  return -5;
+  if (rate >= 99.50) return 0.40;
+  if (rate >= 98.50) return 0.32;
+  if (rate >= 97.50) return 0.24;
+  if (rate >= 96.50) return 0.16;
+  if (rate >= 95.50) return 0.08;
+  if (rate >= 94.00) return 0.00;
+  if (rate >= 92.00) return -0.08;
+  if (rate >= 89.00) return -0.16;
+  if (rate >= 85.00) return -0.24;
+  return -0.40;
 }
 
 function punctualityImpact(rate: number): number {
-  if (rate >= 98) return 1;
-  if (rate >= 95) return 0;
-  if (rate >= 90) return -1;
-  if (rate >= 85) return -2;
-  return -3;
+  if (rate >= 99.50) return 0.30;
+  if (rate >= 98.50) return 0.24;
+  if (rate >= 97.50) return 0.18;
+  if (rate >= 96.50) return 0.12;
+  if (rate >= 95.50) return 0.06;
+  if (rate >= 94.00) return 0.00;
+  if (rate >= 92.00) return -0.06;
+  if (rate >= 89.00) return -0.12;
+  if (rate >= 85.00) return -0.18;
+  return -0.30;
 }
 
 function productivityImpact(rate: number): number {
-  if (rate >= 95) return 1;
-  if (rate >= 90) return 0;
-  if (rate >= 85) return -0.5;
-  if (rate >= 80) return -1;
-  return -2;
+  if (rate >= 98.00) return 0.40;
+  if (rate >= 96.00) return 0.32;
+  if (rate >= 94.00) return 0.24;
+  if (rate >= 92.00) return 0.16;
+  if (rate >= 90.00) return 0.08;
+  if (rate >= 88.00) return 0.00;
+  if (rate >= 85.00) return -0.08;
+  if (rate >= 81.00) return -0.16;
+  if (rate >= 76.00) return -0.24;
+  return -0.40;
 }
 
 function aovImpact(pct: number): number {
-  if (pct >= 10) return 2;
-  if (pct > 0) return 1;
-  if (pct >= -5) return 0;
-  if (pct >= -10) return -1;
-  return -2;
+  if (pct >= 20.00) return 0.30;
+  if (pct >= 15.00) return 0.24;
+  if (pct >= 10.00) return 0.18;
+  if (pct >= 6.00) return 0.12;
+  if (pct >= 2.00) return 0.06;
+  if (pct > -2.00) return 0.00;
+  if (pct >= -6.00) return -0.06;
+  if (pct >= -10.00) return -0.12;
+  if (pct >= -15.00) return -0.18;
+  return -0.30;
 }
 
 function uniformImpact(rate: number): number {
-  if (rate >= 95) return 1;
-  if (rate >= 90) return 0;
-  if (rate >= 85) return -0.5;
-  if (rate >= 80) return -1;
-  return -2;
+  if (rate >= 99.50) return 0.20;
+  if (rate >= 98.50) return 0.16;
+  if (rate >= 97.50) return 0.12;
+  if (rate >= 96.50) return 0.08;
+  if (rate >= 95.50) return 0.04;
+  if (rate >= 94.00) return 0.00;
+  if (rate >= 91.00) return -0.04;
+  if (rate >= 87.00) return -0.08;
+  if (rate >= 82.00) return -0.12;
+  return -0.20;
 }
 
 function hygieneImpact(rate: number): number {
-  return uniformImpact(rate); // Same table
+  if (rate >= 99.50) return 0.40;
+  if (rate >= 98.50) return 0.32;
+  if (rate >= 97.50) return 0.24;
+  if (rate >= 96.50) return 0.16;
+  if (rate >= 95.50) return 0.08;
+  if (rate >= 94.00) return 0.00;
+  if (rate >= 92.00) return -0.08;
+  if (rate >= 89.00) return -0.16;
+  if (rate >= 85.00) return -0.24;
+  return -0.40;
 }
 
 function sopImpact(rate: number): number {
-  return uniformImpact(rate); // Same table
+  return uniformImpact(rate); // Same table (±0.20)
 }
 
 function customerInteractionImpact(score: number): number {
-  if (score >= 4.60) return 3;
-  if (score >= 4.30) return 2;
-  if (score >= 4.00) return 1;
-  if (score >= 3.70) return 0;
-  if (score >= 3.40) return -2;
-  return -3;
+  if (score >= 4.70) return 0.70;
+  if (score >= 4.45) return 0.56;
+  if (score >= 4.20) return 0.42;
+  if (score >= 3.95) return 0.28;
+  if (score >= 3.70) return 0.14;
+  if (score >= 3.40) return 0.00;
+  if (score >= 3.10) return -0.14;
+  if (score >= 2.80) return -0.28;
+  if (score >= 2.50) return -0.42;
+  return -0.70;
 }
 
 function cashieringImpact(score: number): number {
-  if (score >= 4.60) return 2;
-  if (score >= 4.30) return 1;
-  if (score >= 4.00) return 0;
-  if (score >= 3.70) return -1;
-  if (score >= 3.40) return -2;
-  return -3;
+  if (score >= 4.75) return 0.60;
+  if (score >= 4.50) return 0.48;
+  if (score >= 4.25) return 0.36;
+  if (score >= 4.00) return 0.24;
+  if (score >= 3.75) return 0.12;
+  if (score >= 3.45) return 0.00;
+  if (score >= 3.15) return -0.12;
+  if (score >= 2.85) return -0.24;
+  if (score >= 2.55) return -0.36;
+  return -0.60;
 }
 
 function suggestiveSellingImpact(score: number): number {
-  if (score >= 4.50) return 2;
-  if (score >= 4.20) return 1;
-  if (score >= 3.80) return 0;
-  if (score >= 3.50) return -1;
-  if (score >= 3.20) return -2;
-  return -3;
+  if (score >= 4.70) return 0.40;
+  if (score >= 4.45) return 0.32;
+  if (score >= 4.20) return 0.24;
+  if (score >= 3.95) return 0.16;
+  if (score >= 3.70) return 0.08;
+  if (score >= 3.40) return 0.00;
+  if (score >= 3.10) return -0.08;
+  if (score >= 2.80) return -0.16;
+  if (score >= 2.50) return -0.24;
+  return -0.40;
 }
 
 function serviceEfficiencyImpact(score: number): number {
-  if (score >= 4.50) return 2;
-  if (score >= 4.20) return 1;
-  if (score >= 3.90) return 0;
-  if (score >= 3.60) return -1;
-  if (score >= 3.30) return -2;
-  return -3;
+  if (score >= 4.75) return 0.50;
+  if (score >= 4.50) return 0.40;
+  if (score >= 4.25) return 0.30;
+  if (score >= 4.00) return 0.20;
+  if (score >= 3.75) return 0.10;
+  if (score >= 3.45) return 0.00;
+  if (score >= 3.15) return -0.10;
+  if (score >= 2.85) return -0.20;
+  if (score >= 2.55) return -0.30;
+  return -0.50;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -549,7 +616,10 @@ export async function calculateKpiScoresWithQueryDeps(
   );
 
   const wrs = calcWrs(userData.peerEvaluations, from, to, minRecords);
-  const pcs: KpiBreakdown['pcs'] = { score: null, impact: 0 }; // Not yet implemented
+  const pcs: KpiBreakdown['pcs'] = {
+    score: null, // PCS sourcing to be implemented once management evaluation system is live
+    impact: 0, // Placeholder impact for now until score is sourced
+  };
 
   const complianceProductivity = calcComplianceRate(userData.complianceAudit, 'scc_productivity_rate', from, to, minRecords);
   const complianceUniform = calcComplianceRate(userData.complianceAudit, 'scc_uniform_compliance', from, to, minRecords);
@@ -634,7 +704,7 @@ export async function calculateKpiScoresWithQueryDeps(
     violations.impact;
 
   const capped = false;
-  const delta = raw_delta;
+  const delta = Math.round(raw_delta * 100) / 100;
 
   return { breakdown, delta, raw_delta, capped };
 }
@@ -647,4 +717,177 @@ export async function calculateKpiScores(
   },
 ): Promise<EpiDeltaResult> {
   return calculateKpiScoresWithQueryDeps(userData, defaultKpiQueryDeps, options);
+}
+
+/**
+ * Batch version of KPI calculation.
+ * Fetches Odoo data for all users in one go to minimize network round-trips.
+ */
+export async function calculateKpiScoresBatch(
+  usersData: UserKpiData[],
+  options?: {
+    window?: KpiComputationWindow;
+    minRecords?: number;
+  },
+): Promise<Map<string, EpiDeltaResult>> {
+  const { from, to, fromStr, toStr } = resolveKpiComputationWindow(options?.window);
+  const minRecords = options?.minRecords ?? 10;
+  const queryDeps = defaultKpiQueryDeps;
+
+  if (usersData.length === 0) return new Map();
+
+  // 1. Resolve all Odoo employee IDs in one call
+  const userKeys = usersData.map((u) => u.userKey);
+  const employeeIdMappings = await getOdooEmployeeIdsByWebsiteKeys(userKeys);
+  
+  const websiteKeyToOdooIds = new Map<string, number[]>();
+  const allOdooEmployeeIds: number[] = [];
+  
+  for (const mapping of employeeIdMappings) {
+    const ids = websiteKeyToOdooIds.get(mapping.website_key) ?? [];
+    ids.push(mapping.id);
+    websiteKeyToOdooIds.set(mapping.website_key, ids);
+    allOdooEmployeeIds.push(mapping.id);
+  }
+
+  // 2. Fetch Odoo data in batch
+  const [allSlots, allAttendances, allOrders] = await Promise.all([
+    queryDeps.getScheduledSlots(allOdooEmployeeIds, fromStr, toStr),
+    queryDeps.getAttendanceRecords(allOdooEmployeeIds, fromStr, toStr),
+    getPosOrdersBatch(userKeys, fromStr, toStr),
+  ]);
+
+  // 3. Map batch data back to specific users
+  const slotsByOdooId = new Map<number, OdooPlanningSlot[]>();
+  for (const slot of allSlots) {
+    const empId = Array.isArray(slot.employee_id) ? slot.employee_id[0] : slot.employee_id;
+    const list = slotsByOdooId.get(empId) ?? [];
+    list.push(slot);
+    slotsByOdooId.set(empId, list);
+  }
+
+  const attendancesByOdooId = new Map<number, OdooAttendanceRecord[]>();
+  for (const att of allAttendances) {
+    const empId = Array.isArray(att.employee_id) ? att.employee_id[0] : att.employee_id;
+    const list = attendancesByOdooId.get(empId) ?? [];
+    list.push(att);
+    attendancesByOdooId.set(empId, list);
+  }
+
+  const ordersByWebsiteKey = new Map<string, OdooPosOrder[]>();
+  for (const order of allOrders as (OdooPosOrder & { x_website_key: string })[]) {
+    const list = ordersByWebsiteKey.get(order.x_website_key) ?? [];
+    list.push(order);
+    ordersByWebsiteKey.set(order.x_website_key, list);
+  }
+
+  // 4. Calculate for each user using the local (batched) data
+  const results = new Map<string, EpiDeltaResult>();
+  
+  for (const userData of usersData) {
+    const odooIds = websiteKeyToOdooIds.get(userData.userKey) ?? [];
+    const userSlots = odooIds.flatMap((id) => slotsByOdooId.get(id) ?? []);
+    const userAttendances = odooIds.flatMap((id) => attendancesByOdooId.get(id) ?? []);
+    const userOrders = ordersByWebsiteKey.get(userData.userKey) ?? [];
+
+    const aovResult = await calcAov(
+      userOrders,
+      userAttendances,
+      fromStr,
+      toStr,
+      queryDeps,
+      minRecords,
+    );
+
+    const attendanceResult = calcAttendanceFromRecords(userSlots, userAttendances, minRecords);
+    const punctualityResult = calcPunctualityFromRecords(userSlots, userAttendances, minRecords);
+
+    const wrs = calcWrs(userData.peerEvaluations, from, to, minRecords);
+    const pcs: KpiBreakdown['pcs'] = { score: null, impact: 0 };
+
+    const complianceProductivity = calcComplianceRate(userData.complianceAudit, 'scc_productivity_rate', from, to, minRecords);
+    const complianceUniform = calcComplianceRate(userData.complianceAudit, 'scc_uniform_compliance', from, to, minRecords);
+    const complianceHygiene = calcComplianceRate(userData.complianceAudit, 'scc_hygiene_compliance', from, to, minRecords);
+    const complianceSop = calcComplianceRate(userData.complianceAudit, 'scc_sop_compliance', from, to, minRecords);
+    const complianceCustomerInteraction = calcAverageScore(userData.complianceAudit, 'scc_customer_interaction', from, to, minRecords);
+    const complianceCashiering = calcAverageScore(userData.complianceAudit, 'scc_cashiering', from, to, minRecords);
+    const complianceSuggestiveSelling = calcAverageScore(userData.complianceAudit, 'scc_suggestive_selling_and_upselling', from, to, minRecords);
+    const complianceServiceEfficiency = calcAverageScore(userData.complianceAudit, 'scc_service_efficiency', from, to, minRecords);
+
+    const productivity: KpiBreakdown['productivity'] = {
+      rate: complianceProductivity.rate,
+      impact: complianceProductivity.rate !== null ? productivityImpact(complianceProductivity.rate) : 0,
+    };
+    const uniform: KpiBreakdown['uniform'] = {
+      rate: complianceUniform.rate,
+      impact: complianceUniform.rate !== null ? uniformImpact(complianceUniform.rate) : 0,
+    };
+    const hygiene: KpiBreakdown['hygiene'] = {
+      rate: complianceHygiene.rate,
+      impact: complianceHygiene.rate !== null ? hygieneImpact(complianceHygiene.rate) : 0,
+    };
+    const sop: KpiBreakdown['sop'] = {
+      rate: complianceSop.rate,
+      impact: complianceSop.rate !== null ? sopImpact(complianceSop.rate) : 0,
+    };
+    const customer_interaction: KpiBreakdown['customer_interaction'] = {
+      score: complianceCustomerInteraction.score,
+      impact: complianceCustomerInteraction.score !== null ? customerInteractionImpact(complianceCustomerInteraction.score) : 0,
+    };
+    const cashiering: KpiBreakdown['cashiering'] = {
+      score: complianceCashiering.score,
+      impact: complianceCashiering.score !== null ? cashieringImpact(complianceCashiering.score) : 0,
+    };
+    const suggestive_selling_and_upselling: KpiBreakdown['suggestive_selling_and_upselling'] = {
+      score: complianceSuggestiveSelling.score,
+      impact: complianceSuggestiveSelling.score !== null ? suggestiveSellingImpact(complianceSuggestiveSelling.score) : 0,
+    };
+    const service_efficiency: KpiBreakdown['service_efficiency'] = {
+      score: complianceServiceEfficiency.score,
+      impact: complianceServiceEfficiency.score !== null ? serviceEfficiencyImpact(complianceServiceEfficiency.score) : 0,
+    };
+
+    const awards: KpiBreakdown['awards'] = { count: 0, impact: 0 };
+    const violations = calcViolations(userData.violationNotices, from, to);
+
+    const breakdown: KpiBreakdown = {
+      wrs,
+      pcs,
+      attendance: attendanceResult,
+      punctuality: punctualityResult,
+      productivity,
+      aov: aovResult,
+      uniform,
+      hygiene,
+      sop,
+      customer_interaction,
+      cashiering,
+      suggestive_selling_and_upselling,
+      service_efficiency,
+      awards,
+      violations,
+    };
+
+    const raw_delta =
+      wrs.impact +
+      pcs.impact +
+      attendanceResult.impact +
+      punctualityResult.impact +
+      productivity.impact +
+      aovResult.impact +
+      uniform.impact +
+      hygiene.impact +
+      sop.impact +
+      customer_interaction.impact +
+      cashiering.impact +
+      suggestive_selling_and_upselling.impact +
+      service_efficiency.impact +
+      awards.impact +
+      violations.impact;
+
+    const delta = Math.round(raw_delta * 100) / 100;
+    results.set(userData.userId, { breakdown, delta, raw_delta, capped: false });
+  }
+
+  return results;
 }

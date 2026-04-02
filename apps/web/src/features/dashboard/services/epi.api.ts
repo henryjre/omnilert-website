@@ -55,6 +55,7 @@ interface BackendLeaderboardEntry {
   avatarUrl: string | null;
   monthKey: string;
   displayEpiScore: number | null;
+  projectedEpiScore: number | null;
   hasData: boolean;
   isCurrentUser: boolean;
   rank: number;
@@ -289,6 +290,7 @@ export async function fetchEpiLeaderboardSummary(monthKey: string): Promise<Lead
       avatarUrl: entry.avatarUrl,
       monthKey: entry.monthKey,
       displayEpiScore: entry.displayEpiScore,
+      projectedEpiScore: entry.projectedEpiScore,
       hasData: entry.hasData,
       isCurrentUser: entry.isCurrentUser,
     } satisfies LeaderboardSummaryEntry;

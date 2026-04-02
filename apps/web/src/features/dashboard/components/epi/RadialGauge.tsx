@@ -114,9 +114,20 @@ export function RadialGauge({
             {valueFormat ? (
               <span
                 className={`font-bold leading-none ${valueColor ? '' : `${colors.text} ${colors.darkText}`}`}
-                style={{ fontSize: size * 0.2 }}
+                style={{ fontSize: size * 0.19 }}
               >
-                {valueFormat(clampedValue)}
+                {(() => {
+                  const formatted = valueFormat(clampedValue);
+                  if (formatted.endsWith('%')) {
+                    return (
+                      <>
+                        {formatted.slice(0, -1)}
+                        <span className="ml-0.5 text-[0.6em] font-medium opacity-80">%</span>
+                      </>
+                    );
+                  }
+                  return formatted;
+                })()}
               </span>
             ) : (
               <AnimatedCounter
@@ -125,7 +136,7 @@ export function RadialGauge({
                 delay={delay}
                 duration={duration}
                 className={`font-bold leading-none ${valueColor ? '' : `${colors.text} ${colors.darkText}`}`}
-                style={{ fontSize: size * 0.2 }}
+                style={{ fontSize: size * 0.22 }}
               />
             )}
             {label && (

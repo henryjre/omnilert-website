@@ -2,10 +2,12 @@ import { db } from '../config/database.js';
 import { logger } from '../utils/logger.js';
 import {
   calculateKpiScores,
+  calculateKpiScoresBatch,
   getWrsStatusSummary,
   type KpiBreakdown,
   type UserKpiData,
   type WrsStatusSummary,
+  type EpiDeltaResult,
 } from './epiCalculation.service.js';
 import { getOdooEmployeeIdsByWebsiteKey } from './odooQuery.service.js';
 
@@ -123,6 +125,7 @@ interface LeaderboardIdentityRow extends DashboardUserRow {
 
 interface LeaderboardSummaryDbRow {
   userId: string;
+  user_key: string;
   first_name: string | null;
   last_name: string | null;
   avatar_url: string | null;
@@ -195,6 +198,7 @@ export interface EpiDashboardResponse {
 
 export interface LeaderboardSummaryUserRow {
   userId: string;
+  userKey: string;
   fullName: string;
   avatarUrl: string | null;
   officialEpiScore: number;
@@ -214,6 +218,7 @@ export interface EpiLeaderboardSummaryEntry {
   avatarUrl: string | null;
   monthKey: string;
   displayEpiScore: number | null;
+  projectedEpiScore: number | null;
   hasData: boolean;
   isCurrentUser: boolean;
   rank: number;
@@ -535,9 +540,15 @@ export async function getGlobalAverageHistory(): Promise<Record<string, number>>
 
 function compareLeaderboardSummaryEntries(a: EpiLeaderboardSummaryEntry, b: EpiLeaderboardSummaryEntry): number {
   if (a.hasData && b.hasData) {
+    // Primary sort: Official EPI Score
     if (a.displayEpiScore !== b.displayEpiScore) {
       return (b.displayEpiScore ?? 0) - (a.displayEpiScore ?? 0);
     }
+    // Secondary sort: Projected EPI Score (Tie-breaker)
+    if (a.projectedEpiScore !== b.projectedEpiScore) {
+      return (b.projectedEpiScore ?? 0) - (a.projectedEpiScore ?? 0);
+    }
+    // Tertiary sort: Full Name
     return a.fullName.localeCompare(b.fullName);
   }
 
@@ -562,12 +573,17 @@ export function createLeaderboardSummaryEntries(
     const displayEpiScore = isCurrentMonth ? row.officialEpiScore : historicalMonth?.epiScore ?? null;
     const hasData = isCurrentMonth ? true : historicalMonth !== null;
 
+    // Use the latest snapshot from the current month as the "Projected" score in summary
+    const currentMonthSnap = isCurrentMonth ? getHistoricalMonth(row.monthlyHistory, monthKey) : null;
+    const projectedEpiScore = isCurrentMonth ? currentMonthSnap?.epiScore ?? row.officialEpiScore : null;
+
     return {
       userId: row.userId,
       fullName: row.fullName,
       avatarUrl: row.avatarUrl,
       monthKey,
       displayEpiScore,
+      projectedEpiScore,
       hasData,
       isCurrentUser: row.userId === currentUserId,
       rank: 0,
@@ -717,6 +733,7 @@ export async function getEpiLeaderboard(currentUserId: string, monthKey: string)
   const rows = await applyGlobalLeaderboardFilters(masterDb('users as u'), masterDb)
     .select(
       'u.id as userId',
+      'u.user_key',
       'u.first_name',
       'u.last_name',
       'u.avatar_url',
@@ -773,17 +790,58 @@ export async function getEpiLeaderboard(currentUserId: string, monthKey: string)
 
     return {
       userId: row.userId,
+      userKey: row.user_key,
       fullName: formatFullName(row.first_name, row.last_name),
       avatarUrl: row.avatar_url ?? null,
       officialEpiScore: toNumber(row.epi_score, 100),
       monthlyHistory,
     };
   });
-  return createLeaderboardSummaryEntries(summaryRows, {
+  const summaryEntries = createLeaderboardSummaryEntries(summaryRows, {
     currentUserId,
     monthKey,
     currentMonthKey,
   });
+
+  // ── LIVE PROJECTION BATCHING (Only for current month)
+  // This ensures the summary ranking uses the EXACT same live scores as the details
+  if (isCurrentMonthSelection(monthKey, currentMonthKey) && summaryEntries.length > 0) {
+    try {
+      const activeUserIds = summaryEntries.map(e => e.userId);
+      const userKeyMap = new Map(summaryRows.map(r => [r.userId, r.userKey]));
+      
+      // Batch fetch DB KPI data for all users
+      const batchDataPromises = activeUserIds.map(async (userId) => {
+        const userKey = userKeyMap.get(userId);
+        if (!userKey) return null;
+        return fetchUserKpiData(userId, userKey);
+      });
+      
+      const usersKpiData = (await Promise.all(batchDataPromises)).filter((d): d is UserKpiData => d !== null);
+      
+      // Batch calculate live scores from Odoo (minRecords: 0 to match individual dashboard)
+      const liveResults = await calculateKpiScoresBatch(usersKpiData, { minRecords: 0 });
+      
+      // Update the summary entries with live projected scores
+      for (const entry of summaryEntries) {
+        const live = liveResults.get(entry.userId);
+        if (live) {
+          entry.projectedEpiScore = roundToTenth(entry.displayEpiScore! + live.delta);
+        }
+      }
+      
+      // Re-rank now that we have accurate live projected scores
+      summaryEntries.sort(compareLeaderboardSummaryEntries);
+      summaryEntries.forEach((entry, index) => {
+        entry.rank = index + 1;
+      });
+    } catch (err) {
+      logger.error({ err }, 'Failed to compute live batch projections for leaderboard');
+      // Fall back to the snapshot-based ranking already in summaryEntries
+    }
+  }
+
+  return summaryEntries;
 }
 
 export async function getEpiLeaderboardDetail(
@@ -811,6 +869,7 @@ export async function getEpiLeaderboardDetail(
 
   const detailRow: LeaderboardDetailUserRow = {
     userId: row.userId,
+    userKey: row.userKey,
     fullName: formatFullName(row.first_name, row.last_name),
     avatarUrl: row.avatar_url ?? null,
     officialEpiScore: toNumber(row.epi_score, 100),

@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import type { EpiCriteria, WrsStatusSummary } from './types';
-import { getScoreZone, getZoneColors, renderEpiImpact, getCustomerInteractionImpact, getCashieringImpact, getSuggestiveSellingImpact, getServiceEfficiencyImpact, getWrsImpact, type RenderedImpact } from './epiUtils';
+import { getScoreZone, getZoneColors, renderEpiImpact, getCustomerInteractionImpact, getCashieringImpact, getSuggestiveSellingImpact, getServiceEfficiencyImpact, getWrsImpact, getPcsImpact, type RenderedImpact } from './epiUtils';
 import { SectionLabel } from './SectionLabel';
 import { StarRating } from './StarRating';
 import { Card, CardBody } from '@/shared/components/ui/Card';
@@ -71,7 +71,7 @@ export function PerformanceScoresSection({ criteria, wrsStatus }: PerformanceSco
   const ssImpact = renderEpiImpact(criteria.suggestiveSellingUpsellingScore !== null ? getSuggestiveSellingImpact(criteria.suggestiveSellingUpsellingScore) : null);
   const seImpact = renderEpiImpact(criteria.serviceEfficiencyScore !== null ? getServiceEfficiencyImpact(criteria.serviceEfficiencyScore) : null);
   const wrsImpact = renderEpiImpact(criteria.workplaceRelationsScore !== null ? getWrsImpact(criteria.workplaceRelationsScore) : null);
-  const pcsImpact = renderEpiImpact(null); // Not implemented yet
+  const pcsImpact = renderEpiImpact(criteria.professionalConductScore !== null ? getPcsImpact(criteria.professionalConductScore) : null);
 
   return (
     <div>

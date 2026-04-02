@@ -1,6 +1,6 @@
 import { TrendingDown, TrendingUp, Minus } from 'lucide-react';
 import type { EpiDashboardData, EpiMonthEntry } from './types';
-import { getEpiZone } from './epiUtils';
+import { getEpiZone, formatThreshold } from './epiUtils';
 import { OdometerGauge } from './OdometerGauge';
 import { TrendChart } from './TrendChart';
 import { getHeroZoneLabel, resolveHeroEpiComparison, type HeroEpiZone } from './heroEpiComparison';
@@ -18,9 +18,9 @@ interface EpiHeroCardProps {
   selectedEntry: EpiMonthEntry;
 }
 
-function formatEpiScore(score: number, fractionDigits = 1): string {
+function formatEpiScore(score: number): string {
   if (!Number.isFinite(score)) return '-';
-  return score.toFixed(fractionDigits);
+  return formatThreshold(score);
 }
 
 function getNextWeeklySnapshotDate(now: Date = new Date()): Date {
