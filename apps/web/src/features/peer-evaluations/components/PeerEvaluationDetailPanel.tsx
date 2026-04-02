@@ -335,6 +335,11 @@ export function PeerEvaluationDetailPanel({ evaluation, onClose }: PeerEvaluatio
             <p>Expires: {formatDateTime(String(evaluation.expires_at))}</p>
           )}
           {evaluation.submitted_at && <p>Submitted: {formatDateTime(String(evaluation.submitted_at))}</p>}
+          {evaluation.wrs_effective_at && (
+            <p className="font-medium text-primary-600">
+              WRS Effective: {formatDateTime(String(evaluation.wrs_effective_at))}
+            </p>
+          )}
         </div>
       </div>
     </div>

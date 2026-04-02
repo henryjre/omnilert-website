@@ -22,6 +22,7 @@ export interface PeerEvaluation {
   overlap_minutes: number;
   expires_at: string;
   submitted_at: string | null;
+  wrs_effective_at: string | null;
   created_at: string;
   updated_at: string;
   evaluator: PeerEvaluationUser | null;

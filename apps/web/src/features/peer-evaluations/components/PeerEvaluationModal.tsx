@@ -92,27 +92,54 @@ function isEvaluationExpired(evaluation: Pick<PendingEvaluation, 'status' | 'exp
 const QUESTIONS = [
   {
     key: 'q1_score' as const,
-    label: 'Cooperation During Shift',
-    description: 'How well did this person support the team during this shift?',
+    en: {
+      label: 'Cooperation During Shift',
+      description: 'How well did this person support the team during this shift?',
+    },
+    tl: {
+      label: 'Pagtulong sa Team',
+      description: 'Maayos ba siyang nakisama at tumulong sa mga kasama sa shift?',
+    },
   },
   {
     key: 'q2_score' as const,
-    label: 'Professional Communication',
-    description: "How was this person's tone and interaction with teammates?",
+    en: {
+      label: 'Professional Communication',
+      description: "How was this person's tone and interaction with teammates?",
+    },
+    tl: {
+      label: 'Pakikipag-usap',
+      description: 'Maayos ba ang kaniyang pananalita at pakikitungo sa inyo?',
+    },
   },
   {
     key: 'q3_score' as const,
-    label: 'Reliability & Accountability',
-    description: 'How dependable was this person during this shift?',
+    en: {
+      label: 'Reliability & Accountability',
+      description: 'How dependable was this person during this shift?',
+    },
+    tl: {
+      label: 'Pagiging Maaasahan',
+      description: 'Nagawa ba niya nang maayos ang kaniyang trabaho sa buong shift?',
+    },
   },
 ] as const;
 
-const SCORE_LABELS: Record<number, string> = {
-  1: 'Poor',
-  2: 'Fair',
-  3: 'Good',
-  4: 'Very Good',
-  5: 'Excellent',
+const SCORE_LABELS: Record<'en' | 'tl', Record<number, string>> = {
+  en: {
+    1: 'Poor',
+    2: 'Fair',
+    3: 'Good',
+    4: 'Very Good',
+    5: 'Excellent',
+  },
+  tl: {
+    1: 'Hindi Maayos',
+    2: 'Pwede na',
+    3: 'Maayos',
+    4: 'Magaling',
+    5: 'Sobrang Galing',
+  },
 };
 
 function EvaluatedAvatar({ user }: { user: EvaluatedUser }) {
@@ -142,9 +169,10 @@ interface LikertQuestionProps {
   value: number;
   onChange: (score: number) => void;
   disabled?: boolean;
+  language: 'en' | 'tl';
 }
 
-function LikertQuestion({ label, description, value, onChange, disabled }: LikertQuestionProps) {
+function LikertQuestion({ label, description, value, onChange, disabled, language }: LikertQuestionProps) {
   return (
     <div className="space-y-2">
       <div>
@@ -160,7 +188,7 @@ function LikertQuestion({ label, description, value, onChange, disabled }: Liker
               type="button"
               disabled={disabled}
               onClick={() => onChange(score)}
-              aria-label={`${score} - ${SCORE_LABELS[score]}`}
+              aria-label={`${score} - ${SCORE_LABELS[language][score]}`}
               className={`flex min-w-[56px] flex-1 flex-col items-center gap-1 rounded-lg border px-1 py-2 transition-all focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50 ${
                 selected
                   ? 'border-primary-600 bg-primary-50'
@@ -188,7 +216,7 @@ function LikertQuestion({ label, description, value, onChange, disabled }: Liker
                   selected ? 'text-primary-600' : 'text-gray-400'
                 }`}
               >
-                {SCORE_LABELS[score]}
+                {SCORE_LABELS[language][score]}
               </span>
             </button>
           );
@@ -196,7 +224,7 @@ function LikertQuestion({ label, description, value, onChange, disabled }: Liker
       </div>
       {value >= 1 && (
         <p className="text-xs font-medium text-primary-600 sm:hidden">
-          {SCORE_LABELS[value]}
+          {SCORE_LABELS[language][value]}
         </p>
       )}
     </div>
@@ -219,6 +247,7 @@ export function PeerEvaluationModal({
 
   const [scores, setScores] = useState<Record<string, { q1: number; q2: number; q3: number }>>({});
   const [messages, setMessages] = useState<Record<string, string>>({});
+  const [language, setLanguage] = useState<'en' | 'tl'>('en');
 
   const fetchEvaluationDetail = useCallback(async (id: string): Promise<PendingEvaluation | null> => {
     try {
@@ -454,20 +483,20 @@ export function PeerEvaluationModal({
   const questionValues = [
     {
       id: 'q1' as const,
-      label: QUESTIONS[0].label,
-      description: QUESTIONS[0].description,
+      label: QUESTIONS[0][language].label,
+      description: QUESTIONS[0][language].description,
       value: currentScore.q1,
     },
     {
       id: 'q2' as const,
-      label: QUESTIONS[1].label,
-      description: QUESTIONS[1].description,
+      label: QUESTIONS[1][language].label,
+      description: QUESTIONS[1][language].description,
       value: currentScore.q2,
     },
     {
       id: 'q3' as const,
-      label: QUESTIONS[2].label,
-      description: QUESTIONS[2].description,
+      label: QUESTIONS[2][language].label,
+      description: QUESTIONS[2][language].description,
       value: currentScore.q3,
     },
   ];
@@ -501,6 +530,26 @@ export function PeerEvaluationModal({
               </div>
             </div>
             <div className="flex shrink-0 items-start gap-2">
+              <div className="mt-0.5 flex items-center overflow-hidden rounded-md border border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => setLanguage('en')}
+                  className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                    language === 'en' ? 'bg-primary-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  EN
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLanguage('tl')}
+                  className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider transition-colors ${
+                    language === 'tl' ? 'bg-primary-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  TL
+                </button>
+              </div>
               {!isReadOnly && stableTotal > 1 && (
                 <span className="mt-0.5 whitespace-nowrap rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
                   {currentPositionLabel} of {stableTotal}
@@ -527,6 +576,7 @@ export function PeerEvaluationModal({
                 value={question.value}
                 onChange={(v) => setQ(question.id, v)}
                 disabled={submitting || isReadOnly}
+                language={language}
               />
               {isReadOnly && question.value < 1 && (
                 <p className="text-xs italic text-gray-400">No score submitted.</p>

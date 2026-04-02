@@ -1,6 +1,7 @@
 import { db } from '../config/database.js';
 import { getIO } from '../config/socket.js';
 import { enqueueEarlyCheckInAuthJob } from './attendanceQueue.service.js';
+import { enqueuePeerEvaluationJob } from './peerEvaluationQueue.service.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import { createAndDispatchNotification } from './notification.service.js';
@@ -1358,6 +1359,20 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
       deps.emitSocketEvent('user:check-in-status-updated', {
         userId: resolvedIdentity.userId,
       });
+    }
+
+    if (isCheckOut && activeShift?.id && activeShift.user_id && branch.odoo_branch_id) {
+      enqueuePeerEvaluationJob({
+        companyId: String(branch.company_id),
+        shiftId: activeShift.id,
+        branchId: branch.id,
+        shiftUserId: activeShift.user_id as string,
+        shiftStart: new Date(activeShift.shift_start as string | Date).toISOString(),
+        shiftEnd: new Date(activeShift.shift_end as string | Date).toISOString(),
+        branchOdooId: String(branch.odoo_branch_id),
+      }).catch((err) =>
+        logger.error({ err, shiftId: activeShift.id }, 'Failed to enqueue peer evaluation job from webhook'),
+      );
     }
 
     return log;

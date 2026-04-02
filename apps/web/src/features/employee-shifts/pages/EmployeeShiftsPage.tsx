@@ -950,6 +950,8 @@ const ShiftDetailPanel = memo(({
   onClose,
   onAuthorizationUpdate,
   onOpenPeerEvaluation,
+  onEndShift,
+  canEndShift,
 }: {
   shift: any;
   branchName?: string;
@@ -959,6 +961,8 @@ const ShiftDetailPanel = memo(({
   onClose: () => void;
   onAuthorizationUpdate: (updatedAuth: any) => void;
   onOpenPeerEvaluation: (evaluationId: string) => void;
+  onEndShift?: (shiftId: string) => void;
+  canEndShift?: boolean;
 }) => {
   const { prefix, name } = parseEmployeeName(shift.employee_name);
   const avatarUrl = resolveShiftAvatarUrl(shift);
@@ -1145,6 +1149,22 @@ const ShiftDetailPanel = memo(({
             </div>
           </div>
         </div>
+
+        {/* Footer actions */}
+        {shift.status === 'active' && canEndShift && (
+          <div className="border-t border-gray-100 bg-gray-50/50 px-6 py-4 shrink-0">
+            <Button
+              className="w-full"
+              variant="primary"
+              onClick={() => {
+                onClose();
+                onEndShift?.(shift.id);
+              }}
+            >
+              End Shift
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1777,8 +1797,10 @@ export function EmployeeShiftsPage() {
                     branchName={branchMap[selectedShift.branch_id]}
                     currentUserId={currentUser?.id ?? ''}
                     canApprove={canApprove}
+                    canEndShift={canEndShift}
                     canSubmitPublicAuthRequest={canSubmitPublicAuthRequest}
                     onClose={closeDetailPanel}
+                    onEndShift={requestEndShift}
                     onAuthorizationUpdate={(updatedAuth) => {
                       setSelectedShift((prev: any) => {
                         if (!prev) return prev;

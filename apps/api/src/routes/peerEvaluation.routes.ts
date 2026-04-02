@@ -21,7 +21,6 @@ router.use(authenticate, resolveCompany);
 // IMPORTANT: static routes before /:id
 router.get(
   '/pending-mine',
-  requirePermission(PERMISSIONS.WORKPLACE_RELATIONS_VIEW),
   peerEvaluationController.getMyPending,
 );
 router.get(
@@ -31,12 +30,10 @@ router.get(
 );
 router.get(
   '/:id',
-  requirePermission(PERMISSIONS.WORKPLACE_RELATIONS_VIEW),
   peerEvaluationController.getById,
 );
 router.post(
   '/:id/submit',
-  requirePermission(PERMISSIONS.WORKPLACE_RELATIONS_VIEW),
   validateBody(submitSchema),
   peerEvaluationController.submit,
 );
