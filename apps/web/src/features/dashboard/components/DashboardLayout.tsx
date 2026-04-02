@@ -79,11 +79,13 @@ export function DashboardLayout() {
 
       <motion.div
         className="flex flex-1 flex-col overflow-hidden"
+        style={{ touchAction: 'pan-y' }}
         onPanStart={(_, info) => setPanStartX(info.point.x)}
         onPanEnd={(_, info) => {
           if (!mobileSidebarOpen && panStartX !== null) {
-            // If swipe started from the left edge (< 60px) and moved right (> 50px)
-            if (panStartX < 60 && info.offset.x > 50 && Math.abs(info.offset.y) < 60) {
+            // Started within 80px of left edge, swiped right by at least 40px
+            // and vertical movement was minimal (ignoring unintentional vertical drags)
+            if (panStartX < 80 && info.offset.x > 40 && Math.abs(info.offset.y) < 60) {
               setMobileSidebarOpen(true);
             }
           }
@@ -91,7 +93,10 @@ export function DashboardLayout() {
         }}
       >
         <TopBar onOpenSidebar={() => setMobileSidebarOpen(true)} />
-        <main data-dashboard-scroll-container="true" className="flex-1 overflow-y-auto bg-gray-50 p-4 sm:p-6">
+        <main
+          data-dashboard-scroll-container="true"
+          className="flex-1 overflow-y-auto bg-gray-50 p-4 sm:p-6"
+        >
           <Outlet />
         </main>
       </motion.div>
