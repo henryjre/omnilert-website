@@ -92,3 +92,132 @@ export function getGreeting(): string {
   return 'Good evening';
 }
 
+// ─── EPI Impact Calculations (Matching Backend epiCalculation.service.ts) ──────
+
+export function getWrsImpact(score: number): number {
+  if (score >= 4.5) return 1;
+  if (score >= 4.0) return 0.5;
+  if (score >= 3.7) return 0;
+  if (score >= 3.3) return -0.5;
+  return -1;
+}
+
+export function getAttendanceImpact(rate: number): number {
+  if (rate >= 99) return 2;
+  if (rate >= 98) return 1;
+  if (rate >= 95) return 0;
+  if (rate >= 90) return -1;
+  if (rate >= 85) return -2;
+  if (rate >= 80) return -3;
+  if (rate >= 70) return -4;
+  return -5;
+}
+
+export function getPunctualityImpact(rate: number): number {
+  if (rate >= 98) return 1;
+  if (rate >= 95) return 0;
+  if (rate >= 90) return -1;
+  if (rate >= 85) return -2;
+  return -3;
+}
+
+export function getProductivityImpact(rate: number): number {
+  if (rate >= 95) return 1;
+  if (rate >= 90) return 0;
+  if (rate >= 85) return -0.5;
+  if (rate >= 80) return -1;
+  return -2;
+}
+
+export function getAovImpact(pct: number): number {
+  if (pct >= 10) return 2;
+  if (pct > 0) return 1;
+  if (pct >= -5) return 0;
+  if (pct >= -10) return -1;
+  return -2;
+}
+
+export function getUniformImpact(rate: number): number {
+  if (rate >= 95) return 1;
+  if (rate >= 90) return 0;
+  if (rate >= 85) return -0.5;
+  if (rate >= 80) return -1;
+  return -2;
+}
+
+export function getHygieneImpact(rate: number): number {
+  return getUniformImpact(rate);
+}
+
+export function getSopImpact(rate: number): number {
+  return getUniformImpact(rate);
+}
+
+export function getCustomerInteractionImpact(score: number): number {
+  if (score >= 4.60) return 3;
+  if (score >= 4.30) return 2;
+  if (score >= 4.00) return 1;
+  if (score >= 3.70) return 0;
+  if (score >= 3.40) return -2;
+  return -3;
+}
+
+export function getCashieringImpact(score: number): number {
+  if (score >= 4.60) return 2;
+  if (score >= 4.30) return 1;
+  if (score >= 4.00) return 0;
+  if (score >= 3.70) return -1;
+  if (score >= 3.40) return -2;
+  return -3;
+}
+
+export function getSuggestiveSellingImpact(score: number): number {
+  if (score >= 4.50) return 2;
+  if (score >= 4.20) return 1;
+  if (score >= 3.80) return 0;
+  if (score >= 3.50) return -1;
+  if (score >= 3.20) return -2;
+  return -3;
+}
+
+export function getServiceEfficiencyImpact(score: number): number {
+  if (score >= 4.5) return 2;
+  if (score >= 4.2) return 1;
+  if (score >= 3.9) return 0;
+  if (score >= 3.6) return -1;
+  if (score >= 3.3) return -2;
+  return -3;
+}
+
+export interface RenderedImpact {
+  text: string;
+  className: string;
+  value: number;
+}
+
+export function renderEpiImpact(impact: number | null): RenderedImpact {
+  if (impact === null) {
+    return {
+      text: 'No data',
+      className: 'text-gray-400 italic',
+      value: 0,
+    };
+  }
+
+  if (impact === 0) {
+    return {
+      text: 'No EPI change',
+      className: 'text-gray-400',
+      value: 0,
+    };
+  }
+
+  const sign = impact > 0 ? '+' : '';
+  const colorClass = impact > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400';
+
+  return {
+    text: `${sign}${impact} EPI points`,
+    className: colorClass,
+    value: impact,
+  };
+}

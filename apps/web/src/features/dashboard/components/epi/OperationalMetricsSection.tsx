@@ -1,7 +1,16 @@
 import { motion } from 'framer-motion';
 import { CalendarCheck, Clock, Zap, ShoppingCart } from 'lucide-react';
 import type { EpiCriteria, EpiZone } from './types';
-import { getRateZone, getAovZone, getZoneColors } from './epiUtils';
+import {
+  getRateZone,
+  getAovZone,
+  getZoneColors,
+  getAttendanceImpact,
+  getPunctualityImpact,
+  getProductivityImpact,
+  getAovImpact,
+  renderEpiImpact,
+} from './epiUtils';
 import { SectionLabel } from './SectionLabel';
 import { RadialGauge } from './RadialGauge';
 import { AnimatedCounter } from './AnimatedCounter';
@@ -9,9 +18,12 @@ import { Card, CardBody } from '@/shared/components/ui/Card';
 
 function getStatusLabel(zone: EpiZone): string {
   switch (zone) {
-    case 'green': return 'On Track';
-    case 'amber': return 'At Risk';
-    case 'red': return 'Critical';
+    case 'green':
+      return 'On Track';
+    case 'amber':
+      return 'At Risk';
+    case 'red':
+      return 'Critical';
   }
 }
 
@@ -19,7 +31,7 @@ function ZoneBadge({ zone }: { zone: EpiZone }) {
   const colors = getZoneColors(zone);
   return (
     <span
-      className="rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-widest"
+      className="rounded-full px-2.5 py-0.5 -mt-3 mb-1 text-[10px] font-semibold uppercase tracking-widest"
       style={{ backgroundColor: `${colors.stroke}18`, color: colors.stroke }}
     >
       {getStatusLabel(zone)}
@@ -27,13 +39,7 @@ function ZoneBadge({ zone }: { zone: EpiZone }) {
   );
 }
 
-function MetricIcon({
-  icon: Icon,
-  zone,
-}: {
-  icon: React.ElementType;
-  zone: EpiZone;
-}) {
+function MetricIcon({ icon: Icon, zone }: { icon: React.ElementType; zone: EpiZone }) {
   const colors = getZoneColors(zone);
   return (
     <div
@@ -50,22 +56,24 @@ interface OperationalMetricsSectionProps {
 }
 
 export function OperationalMetricsSection({ criteria }: OperationalMetricsSectionProps) {
-  const aovZone = criteria.aov !== null && criteria.branchAov !== null
-    ? getAovZone(criteria.aov, criteria.branchAov)
-    : 'amber';
+  const aovZone =
+    criteria.aov !== null && criteria.branchAov !== null
+      ? getAovZone(criteria.aov, criteria.branchAov)
+      : 'amber';
   const aovColors = getZoneColors(aovZone);
-  const aovPercent = criteria.aov !== null && criteria.branchAov !== null && criteria.branchAov > 0
-    ? Math.min(100, (criteria.aov / (criteria.branchAov * 1.5)) * 100)
-    : 0;
-  const branchPercent = criteria.branchAov !== null
-    ? Math.min(100, (criteria.branchAov / (criteria.branchAov * 1.5)) * 100)
-    : 0;
+  const aovPercent =
+    criteria.aov !== null && criteria.branchAov !== null && criteria.branchAov > 0
+      ? Math.min(100, (criteria.aov / (criteria.branchAov * 1.5)) * 100)
+      : 0;
+  const branchPercent =
+    criteria.branchAov !== null
+      ? Math.min(100, (criteria.branchAov / (criteria.branchAov * 1.5)) * 100)
+      : 0;
 
   return (
     <div>
       <SectionLabel>Operational Performance Metrics</SectionLabel>
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 items-stretch">
-
         {/* Attendance Rate */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -87,8 +95,17 @@ export function OperationalMetricsSection({ criteria }: OperationalMetricsSectio
                     valueFormat={(v) => `${v.toFixed(0)}%`}
                     delay={0.1}
                   />
-                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Attendance Rate</p>
                   <ZoneBadge zone={getRateZone(criteria.attendanceRate)} />
+                  <div>
+                    <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                      Attendance Rate
+                    </p>
+                    <p
+                      className={`text-[11px] ${renderEpiImpact(getAttendanceImpact(criteria.attendanceRate)).className}`}
+                    >
+                      {renderEpiImpact(getAttendanceImpact(criteria.attendanceRate)).text}
+                    </p>
+                  </div>
                 </>
               ) : (
                 <>
@@ -98,7 +115,9 @@ export function OperationalMetricsSection({ criteria }: OperationalMetricsSectio
                   <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
                     <span className="text-2xl font-bold text-gray-400">--</span>
                   </div>
-                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Attendance Rate</p>
+                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                    Attendance Rate
+                  </p>
                   <p className="text-xs italic text-gray-400">No data this period</p>
                 </>
               )}
@@ -127,8 +146,17 @@ export function OperationalMetricsSection({ criteria }: OperationalMetricsSectio
                     valueFormat={(v) => `${v.toFixed(0)}%`}
                     delay={0}
                   />
-                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Punctuality Rate</p>
                   <ZoneBadge zone={getRateZone(criteria.punctualityRate)} />
+                  <div>
+                    <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                      Punctuality Rate
+                    </p>
+                    <p
+                      className={`text-[11px] ${renderEpiImpact(getPunctualityImpact(criteria.punctualityRate)).className}`}
+                    >
+                      {renderEpiImpact(getPunctualityImpact(criteria.punctualityRate)).text}
+                    </p>
+                  </div>
                 </>
               ) : (
                 <>
@@ -138,7 +166,9 @@ export function OperationalMetricsSection({ criteria }: OperationalMetricsSectio
                   <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
                     <span className="text-2xl font-bold text-gray-400">--</span>
                   </div>
-                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Punctuality Rate</p>
+                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                    Punctuality Rate
+                  </p>
                   <p className="text-xs italic text-gray-400">No data this period</p>
                 </>
               )}
@@ -167,8 +197,17 @@ export function OperationalMetricsSection({ criteria }: OperationalMetricsSectio
                     valueFormat={(v) => `${v.toFixed(0)}%`}
                     delay={0.2}
                   />
-                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Productivity Rate</p>
                   <ZoneBadge zone={getRateZone(criteria.productivityRate)} />
+                  <div>
+                    <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                      Productivity Rate
+                    </p>
+                    <p
+                      className={`text-[11px] ${renderEpiImpact(getProductivityImpact(criteria.productivityRate)).className}`}
+                    >
+                      {renderEpiImpact(getProductivityImpact(criteria.productivityRate)).text}
+                    </p>
+                  </div>
                 </>
               ) : (
                 <>
@@ -178,7 +217,9 @@ export function OperationalMetricsSection({ criteria }: OperationalMetricsSectio
                   <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
                     <span className="text-2xl font-bold text-gray-400">--</span>
                   </div>
-                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Productivity Rate</p>
+                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                    Productivity Rate
+                  </p>
                   <p className="text-xs italic text-gray-400">No data this period</p>
                 </>
               )}
@@ -208,6 +249,7 @@ export function OperationalMetricsSection({ criteria }: OperationalMetricsSectio
                       className={`text-xl lg:text-2xl font-bold ${aovColors.text} ${aovColors.darkText}`}
                     />
                   </div>
+                  <ZoneBadge zone={aovZone} />
                   {/* Comparison bars */}
                   <div className="w-full space-y-1">
                     <div className="flex items-center gap-1.5">
@@ -237,8 +279,26 @@ export function OperationalMetricsSection({ criteria }: OperationalMetricsSectio
                       Branch avg: P{criteria.branchAov?.toFixed(0) ?? '--'}
                     </p>
                   </div>
-                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Average Order Value</p>
-                  <ZoneBadge zone={aovZone} />
+                  <div>
+                    <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                      Average Order Value
+                    </p>
+                    <p
+                      className={`text-[11px] ${renderEpiImpact(criteria.aov !== null && criteria.branchAov !== null && criteria.branchAov > 0 ? getAovImpact(((criteria.aov - criteria.branchAov) / criteria.branchAov) * 100) : null).className}`}
+                    >
+                      {
+                        renderEpiImpact(
+                          criteria.aov !== null &&
+                            criteria.branchAov !== null &&
+                            criteria.branchAov > 0
+                            ? getAovImpact(
+                                ((criteria.aov - criteria.branchAov) / criteria.branchAov) * 100,
+                              )
+                            : null,
+                        ).text
+                      }
+                    </p>
+                  </div>
                 </>
               ) : (
                 <>
@@ -248,7 +308,9 @@ export function OperationalMetricsSection({ criteria }: OperationalMetricsSectio
                   <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gray-100 dark:bg-gray-800">
                     <span className="text-2xl font-bold text-gray-400">--</span>
                   </div>
-                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300">Average Order Value</p>
+                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                    Average Order Value
+                  </p>
                   <p className="text-xs italic text-gray-400">No data this period</p>
                 </>
               )}

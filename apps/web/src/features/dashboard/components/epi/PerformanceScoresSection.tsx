@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import type { EpiCriteria, WrsStatusSummary } from './types';
-import { getScoreZone, getZoneColors } from './epiUtils';
+import { getScoreZone, getZoneColors, renderEpiImpact, getCustomerInteractionImpact, getCashieringImpact, getSuggestiveSellingImpact, getServiceEfficiencyImpact, getWrsImpact, type RenderedImpact } from './epiUtils';
 import { SectionLabel } from './SectionLabel';
 import { StarRating } from './StarRating';
 import { Card, CardBody } from '@/shared/components/ui/Card';
@@ -13,11 +13,12 @@ interface PerformanceScoresSectionProps {
 interface StarTileProps {
   label: string;
   score: number | null;
-  subtext: string;
+  impact?: RenderedImpact;
+  fallbackText: string;
   delay: number;
 }
 
-function StarTile({ label, score, subtext, delay }: StarTileProps) {
+function StarTile({ label, score, impact, fallbackText, delay }: StarTileProps) {
   const zone = score !== null ? getScoreZone(score) : 'amber';
   const colors = getZoneColors(zone);
 
@@ -35,7 +36,9 @@ function StarTile({ label, score, subtext, delay }: StarTileProps) {
               <StarRating score={score} zone={zone} delay={delay} size={24} gap={5} />
               <div>
                 <p className="text-xs font-medium text-gray-700 dark:text-gray-300">{label}</p>
-                <p className={`text-xs ${colors.text} ${colors.darkText}`}>{subtext}</p>
+                <p className={`text-xs ${impact?.className ?? `${colors.text} ${colors.darkText}`}`}>
+                  {impact?.text ?? fallbackText}
+                </p>
               </div>
             </>
           ) : (
@@ -52,7 +55,7 @@ function StarTile({ label, score, subtext, delay }: StarTileProps) {
               </div>
               <div>
                 <p className="text-xs font-medium text-gray-700 dark:text-gray-300">{label}</p>
-                <p className="text-xs italic text-gray-400">{subtext}</p>
+                <p className="text-xs italic text-gray-400">{fallbackText}</p>
               </div>
             </>
           )}
@@ -63,14 +66,12 @@ function StarTile({ label, score, subtext, delay }: StarTileProps) {
 }
 
 export function PerformanceScoresSection({ criteria, wrsStatus }: PerformanceScoresSectionProps) {
-  const wrsDelayedText =
-    wrsStatus && wrsStatus.delayedCount > 0
-      ? `${wrsStatus.delayedCount} submission(s) delayed for privacy`
-      : 'Contributes to EPI';
-  const wrsEmptyText =
-    wrsStatus && wrsStatus.delayedCount > 0
-      ? `${wrsStatus.delayedCount} submission(s) delayed for privacy`
-      : 'No effective peer evaluations yet';
+  const ciImpact = renderEpiImpact(criteria.customerInteractionScore !== null ? getCustomerInteractionImpact(criteria.customerInteractionScore) : null);
+  const cashieringImpact = renderEpiImpact(criteria.cashieringScore !== null ? getCashieringImpact(criteria.cashieringScore) : null);
+  const ssImpact = renderEpiImpact(criteria.suggestiveSellingUpsellingScore !== null ? getSuggestiveSellingImpact(criteria.suggestiveSellingUpsellingScore) : null);
+  const seImpact = renderEpiImpact(criteria.serviceEfficiencyScore !== null ? getServiceEfficiencyImpact(criteria.serviceEfficiencyScore) : null);
+  const wrsImpact = renderEpiImpact(criteria.workplaceRelationsScore !== null ? getWrsImpact(criteria.workplaceRelationsScore) : null);
+  const pcsImpact = renderEpiImpact(null); // Not implemented yet
 
   return (
     <div>
@@ -79,37 +80,43 @@ export function PerformanceScoresSection({ criteria, wrsStatus }: PerformanceSco
         <StarTile
           label="Customer Interaction"
           score={criteria.customerInteractionScore}
-          subtext={criteria.customerInteractionScore !== null ? 'Contributes to EPI' : 'Awaiting CCTV audits'}
+          impact={criteria.customerInteractionScore !== null ? ciImpact : undefined}
+          fallbackText="Awaiting CCTV audits"
           delay={0}
         />
         <StarTile
           label="Cashiering"
           score={criteria.cashieringScore}
-          subtext={criteria.cashieringScore !== null ? 'Contributes to EPI' : 'Awaiting CCTV audits'}
+          impact={criteria.cashieringScore !== null ? cashieringImpact : undefined}
+          fallbackText="Awaiting CCTV audits"
           delay={0.1}
         />
         <StarTile
           label="Suggestive Selling & Upselling"
           score={criteria.suggestiveSellingUpsellingScore}
-          subtext={criteria.suggestiveSellingUpsellingScore !== null ? 'Contributes to EPI' : 'Awaiting CCTV audits'}
+          impact={criteria.suggestiveSellingUpsellingScore !== null ? ssImpact : undefined}
+          fallbackText="Awaiting CCTV audits"
           delay={0.2}
         />
         <StarTile
           label="Service Efficiency"
           score={criteria.serviceEfficiencyScore}
-          subtext={criteria.serviceEfficiencyScore !== null ? 'Contributes to EPI' : 'Awaiting CCTV audits'}
+          impact={criteria.serviceEfficiencyScore !== null ? seImpact : undefined}
+          fallbackText="Awaiting CCTV audits"
           delay={0.3}
         />
         <StarTile
           label="Workplace Relations Score"
           score={criteria.workplaceRelationsScore}
-          subtext={criteria.workplaceRelationsScore !== null ? wrsDelayedText : wrsEmptyText}
+          impact={criteria.workplaceRelationsScore !== null ? wrsImpact : undefined}
+          fallbackText={wrsStatus && wrsStatus.delayedCount > 0 ? "No EPI change" : "No effective evaluations yet"}
           delay={0.4}
         />
         <StarTile
           label="Professional Conduct Score"
           score={criteria.professionalConductScore}
-          subtext={criteria.professionalConductScore !== null ? 'Contributes to EPI' : 'Awaiting management evaluations'}
+          impact={criteria.professionalConductScore !== null ? pcsImpact : undefined}
+          fallbackText="Awaiting management evaluations"
           delay={0.5}
         />
       </div>

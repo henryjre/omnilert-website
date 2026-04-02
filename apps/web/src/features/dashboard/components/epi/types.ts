@@ -8,6 +8,7 @@ export interface EpiCriteria {
   aov: number | null;
   branchAov: number | null;
   violationCount: number;
+  violationTotalDecrease: number;
   awardCount: number;
   uniformComplianceRate: number | null;
   hygieneComplianceRate: number | null;

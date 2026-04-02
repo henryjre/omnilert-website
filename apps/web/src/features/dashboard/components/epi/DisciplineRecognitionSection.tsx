@@ -11,7 +11,7 @@ interface DisciplineRecognitionSectionProps {
 }
 
 export function DisciplineRecognitionSection({ criteria }: DisciplineRecognitionSectionProps) {
-  const violationImpact = criteria.violationCount * VIOLATION_DEDUCTION;
+  const violationImpact = criteria.violationTotalDecrease;
   const awardImpact = criteria.awardCount * AWARD_BONUS;
 
   return (
@@ -40,7 +40,7 @@ export function DisciplineRecognitionSection({ criteria }: DisciplineRecognition
                     />
                     <span className="text-xs text-gray-500 dark:text-gray-400">this period</span>
                   </div>
-                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                  <p className="text-[11px] sm:text-xs text-amber-600 dark:text-amber-400">
                     {criteria.awardCount === 0 ? 'No bonus yet' : `+${awardImpact} pts to EPI`}
                   </p>
                 </div>
@@ -71,8 +71,10 @@ export function DisciplineRecognitionSection({ criteria }: DisciplineRecognition
                     />
                     <span className="text-xs text-gray-500 dark:text-gray-400">this period</span>
                   </div>
-                  <p className="text-xs text-red-600 dark:text-red-400">
-                    {criteria.violationCount === 0 ? '✓ Clean record!' : `-${violationImpact} pts to EPI`}
+                  <p className="text-[11px] sm:text-xs text-red-600 dark:text-red-400">
+                    {criteria.violationCount === 0
+                      ? '✓ Clean record!'
+                      : `-${violationImpact} EPI points applied`}
                   </p>
                 </div>
               </div>

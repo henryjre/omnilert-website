@@ -34,6 +34,7 @@ function getEmptyCriteria(): EpiCriteria {
     aov: null,
     branchAov: null,
     violationCount: 0,
+    violationTotalDecrease: 0,
     awardCount: 0,
     uniformComplianceRate: null,
     hygieneComplianceRate: null,
@@ -47,13 +48,18 @@ function getEmptyCriteria(): EpiCriteria {
 
 function RankBadge({ rank }: { rank: number }) {
   const badgeClass =
-    rank === 1 ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
-      rank === 2 ? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300' :
-        rank === 3 ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' :
-          'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400';
+    rank === 1
+      ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
+      : rank === 2
+        ? 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+        : rank === 3
+          ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
+          : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400';
 
   return (
-    <span className={`inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold ${badgeClass}`}>
+    <span
+      className={`inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold ${badgeClass}`}
+    >
       {rank}
     </span>
   );
@@ -111,7 +117,9 @@ function PodiumCard({
       <p className="mt-2 max-w-[80px] truncate text-xs font-semibold text-gray-800 dark:text-gray-200">
         {entry.firstName}
       </p>
-      <p className={`text-sm font-bold ${entry.displayEpiScore !== null ? `${colors.text} ${colors.darkText}` : 'text-gray-400'}`}>
+      <p
+        className={`text-sm font-bold ${entry.displayEpiScore !== null ? `${colors.text} ${colors.darkText}` : 'text-gray-400'}`}
+      >
         {entry.displayEpiScore !== null ? entry.displayEpiScore.toFixed(1) : '--'}
       </p>
       <ChevronDown
@@ -121,7 +129,12 @@ function PodiumCard({
   );
 }
 
-function MetricBar({ label, value, max, format }: {
+function MetricBar({
+  label,
+  value,
+  max,
+  format,
+}: {
   label: string;
   value: number;
   max: number;
@@ -190,12 +203,16 @@ function ExpandedMetricsLoading() {
   return (
     <div className="space-y-4 text-xs">
       <div className="rounded-lg border border-gray-100 bg-gray-50/80 px-3 py-2 text-[11px] text-gray-500 dark:border-gray-800 dark:bg-gray-900/30 dark:text-gray-400">
-        <p className="font-semibold text-gray-600 dark:text-gray-300">Fetching employee metrics...</p>
+        <p className="font-semibold text-gray-600 dark:text-gray-300">
+          Fetching employee metrics...
+        </p>
         <p>Live or historical breakdown is loading.</p>
       </div>
 
       <div>
-        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">Performance Scores</p>
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">
+          Performance Scores
+        </p>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <LoadingMetric label="Customer Interaction" />
           <LoadingMetric label="Cashiering" />
@@ -207,7 +224,9 @@ function ExpandedMetricsLoading() {
       </div>
 
       <div>
-        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">Operational Metrics</p>
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">
+          Operational Metrics
+        </p>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <LoadingMetric label="Attendance Rate" />
           <LoadingMetric label="Punctuality Rate" />
@@ -217,7 +236,9 @@ function ExpandedMetricsLoading() {
       </div>
 
       <div>
-        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">Operational Compliance</p>
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">
+          Operational Compliance
+        </p>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <LoadingMetric label="Uniform Compliance" />
           <LoadingMetric label="Hygiene Compliance" />
@@ -226,7 +247,9 @@ function ExpandedMetricsLoading() {
       </div>
 
       <div>
-        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">Discipline &amp; Recognition</p>
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">
+          Discipline &amp; Recognition
+        </p>
         <div className="grid grid-cols-2 gap-3">
           <div className="h-12 animate-pulse rounded-lg bg-gray-200 dark:bg-gray-700" />
           <div className="h-12 animate-pulse rounded-lg bg-gray-200 dark:bg-gray-700" />
@@ -254,14 +277,17 @@ function ExpandedMetrics({
     );
   }
 
-  const aovZone = criteria.aov !== null && criteria.branchAov !== null
-    ? getAovZone(criteria.aov, criteria.branchAov)
-    : null;
+  const aovZone =
+    criteria.aov !== null && criteria.branchAov !== null
+      ? getAovZone(criteria.aov, criteria.branchAov)
+      : null;
   const aovColors = aovZone ? getZoneColors(aovZone) : null;
-  const violationImpact = criteria.violationCount * VIOLATION_DEDUCTION;
+  const violationImpact = criteria.violationTotalDecrease;
   const awardImpact = criteria.awardCount * AWARD_BONUS;
   const asOfDateTime = formatAsOfDateTime(detail?.asOfDateTime ?? null);
-  const showProjectedEpi = detail?.criteriaSource === 'live' && (detail?.projectedEpiScore !== null || detail?.asOfDateTime !== null);
+  const showProjectedEpi =
+    detail?.criteriaSource === 'live' &&
+    (detail?.projectedEpiScore !== null || detail?.asOfDateTime !== null);
 
   return (
     <div className="space-y-4 text-xs">
@@ -280,99 +306,203 @@ function ExpandedMetrics({
                 : ''}
           </p>
           <p>
-            {detail.criteriaSource === 'live' ? 'Live rolling 30-day criteria' : 'Saved monthly snapshot criteria'}
+            {detail.criteriaSource === 'live'
+              ? 'Live rolling 30-day criteria'
+              : 'Saved monthly snapshot criteria'}
             {asOfDateTime ? ` as of ${asOfDateTime}` : ''}
           </p>
         </div>
       )}
 
       <div>
-        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">Performance Scores</p>
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">
+          Performance Scores
+        </p>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {criteria.customerInteractionScore !== null
-            ? <MetricBar label="Customer Interaction" value={criteria.customerInteractionScore} max={5} format={`${criteria.customerInteractionScore.toFixed(1)}/5`} />
-            : <NullMetric label="Customer Interaction" />}
-          {criteria.cashieringScore !== null
-            ? <MetricBar label="Cashiering" value={criteria.cashieringScore} max={5} format={`${criteria.cashieringScore.toFixed(1)}/5`} />
-            : <NullMetric label="Cashiering" />}
-          {criteria.suggestiveSellingUpsellingScore !== null
-            ? <MetricBar label="Suggestive Selling & Upselling" value={criteria.suggestiveSellingUpsellingScore} max={5} format={`${criteria.suggestiveSellingUpsellingScore.toFixed(1)}/5`} />
-            : <NullMetric label="Suggestive Selling & Upselling" />}
-          {criteria.serviceEfficiencyScore !== null
-            ? <MetricBar label="Service Efficiency" value={criteria.serviceEfficiencyScore} max={5} format={`${criteria.serviceEfficiencyScore.toFixed(1)}/5`} />
-            : <NullMetric label="Service Efficiency" />}
-          {criteria.workplaceRelationsScore !== null
-            ? <MetricBar label="Workplace Relations" value={criteria.workplaceRelationsScore} max={5} format={`${criteria.workplaceRelationsScore.toFixed(1)}/5`} />
-            : <NullMetric label="Workplace Relations" />}
-          {criteria.professionalConductScore !== null
-            ? <MetricBar label="Professional Conduct" value={criteria.professionalConductScore} max={5} format={`${criteria.professionalConductScore.toFixed(1)}/5`} />
-            : <NullMetric label="Professional Conduct" />}
+          {criteria.customerInteractionScore !== null ? (
+            <MetricBar
+              label="Customer Interaction"
+              value={criteria.customerInteractionScore}
+              max={5}
+              format={`${criteria.customerInteractionScore.toFixed(1)}/5`}
+            />
+          ) : (
+            <NullMetric label="Customer Interaction" />
+          )}
+          {criteria.cashieringScore !== null ? (
+            <MetricBar
+              label="Cashiering"
+              value={criteria.cashieringScore}
+              max={5}
+              format={`${criteria.cashieringScore.toFixed(1)}/5`}
+            />
+          ) : (
+            <NullMetric label="Cashiering" />
+          )}
+          {criteria.suggestiveSellingUpsellingScore !== null ? (
+            <MetricBar
+              label="Suggestive Selling & Upselling"
+              value={criteria.suggestiveSellingUpsellingScore}
+              max={5}
+              format={`${criteria.suggestiveSellingUpsellingScore.toFixed(1)}/5`}
+            />
+          ) : (
+            <NullMetric label="Suggestive Selling & Upselling" />
+          )}
+          {criteria.serviceEfficiencyScore !== null ? (
+            <MetricBar
+              label="Service Efficiency"
+              value={criteria.serviceEfficiencyScore}
+              max={5}
+              format={`${criteria.serviceEfficiencyScore.toFixed(1)}/5`}
+            />
+          ) : (
+            <NullMetric label="Service Efficiency" />
+          )}
+          {criteria.workplaceRelationsScore !== null ? (
+            <MetricBar
+              label="Workplace Relations"
+              value={criteria.workplaceRelationsScore}
+              max={5}
+              format={`${criteria.workplaceRelationsScore.toFixed(1)}/5`}
+            />
+          ) : (
+            <NullMetric label="Workplace Relations" />
+          )}
+          {criteria.professionalConductScore !== null ? (
+            <MetricBar
+              label="Professional Conduct"
+              value={criteria.professionalConductScore}
+              max={5}
+              format={`${criteria.professionalConductScore.toFixed(1)}/5`}
+            />
+          ) : (
+            <NullMetric label="Professional Conduct" />
+          )}
         </div>
-        {wrsStatus && wrsStatus.delayedCount > 0 && (
-          <p className="mt-2 text-[10px] font-medium text-gray-400">
-            {wrsStatus.delayedCount} peer evaluation submission(s) are still delayed for privacy.
-          </p>
-        )}
       </div>
 
       <div>
-        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">Operational Metrics</p>
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">
+          Operational Metrics
+        </p>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {criteria.attendanceRate !== null
-            ? <MetricBar label="Attendance Rate" value={criteria.attendanceRate} max={100} format={`${criteria.attendanceRate.toFixed(0)}%`} />
-            : <NullMetric label="Attendance Rate" />}
-          {criteria.punctualityRate !== null
-            ? <MetricBar label="Punctuality Rate" value={criteria.punctualityRate} max={100} format={`${criteria.punctualityRate.toFixed(0)}%`} />
-            : <NullMetric label="Punctuality Rate" />}
-          {criteria.productivityRate !== null
-            ? <MetricBar label="Productivity Rate" value={criteria.productivityRate} max={100} format={`${criteria.productivityRate.toFixed(0)}%`} />
-            : <NullMetric label="Productivity Rate" />}
-          {criteria.aov !== null && aovColors
-            ? (
-              <div>
-                <div className="mb-0.5 flex items-center justify-between">
-                  <span className="text-gray-500 dark:text-gray-400">Avg Order Value</span>
-                  <span className={`font-semibold ${aovColors.text} ${aovColors.darkText}`}>
-                    P{criteria.aov.toFixed(0)}
-                    {criteria.branchAov ? <span className="font-normal text-gray-400"> / Branch P{criteria.branchAov.toFixed(0)}</span> : null}
-                  </span>
-                </div>
+          {criteria.attendanceRate !== null ? (
+            <MetricBar
+              label="Attendance Rate"
+              value={criteria.attendanceRate}
+              max={100}
+              format={`${criteria.attendanceRate.toFixed(0)}%`}
+            />
+          ) : (
+            <NullMetric label="Attendance Rate" />
+          )}
+          {criteria.punctualityRate !== null ? (
+            <MetricBar
+              label="Punctuality Rate"
+              value={criteria.punctualityRate}
+              max={100}
+              format={`${criteria.punctualityRate.toFixed(0)}%`}
+            />
+          ) : (
+            <NullMetric label="Punctuality Rate" />
+          )}
+          {criteria.productivityRate !== null ? (
+            <MetricBar
+              label="Productivity Rate"
+              value={criteria.productivityRate}
+              max={100}
+              format={`${criteria.productivityRate.toFixed(0)}%`}
+            />
+          ) : (
+            <NullMetric label="Productivity Rate" />
+          )}
+          {criteria.aov !== null && aovColors ? (
+            <div>
+              <div className="mb-0.5 flex items-center justify-between">
+                <span className="text-gray-500 dark:text-gray-400">Avg Order Value</span>
+                <span className={`font-semibold ${aovColors.text} ${aovColors.darkText}`}>
+                  P{criteria.aov.toFixed(0)}
+                  {criteria.branchAov ? (
+                    <span className="font-normal text-gray-400">
+                      {' '}
+                      / Branch P{criteria.branchAov.toFixed(0)}
+                    </span>
+                  ) : null}
+                </span>
               </div>
-            )
-            : <NullMetric label="Avg Order Value" />}
+            </div>
+          ) : (
+            <NullMetric label="Avg Order Value" />
+          )}
         </div>
       </div>
 
       <div>
-        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">Operational Compliance</p>
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">
+          Operational Compliance
+        </p>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {criteria.uniformComplianceRate !== null
-            ? <MetricBar label="Uniform Compliance" value={criteria.uniformComplianceRate} max={100} format={`${criteria.uniformComplianceRate.toFixed(0)}%`} />
-            : <NullMetric label="Uniform Compliance" />}
-          {criteria.hygieneComplianceRate !== null
-            ? <MetricBar label="Hygiene Compliance" value={criteria.hygieneComplianceRate} max={100} format={`${criteria.hygieneComplianceRate.toFixed(0)}%`} />
-            : <NullMetric label="Hygiene Compliance" />}
-          {criteria.sopComplianceRate !== null
-            ? <MetricBar label="SOP Compliance" value={criteria.sopComplianceRate} max={100} format={`${criteria.sopComplianceRate.toFixed(0)}%`} />
-            : <NullMetric label="SOP Compliance" />}
+          {criteria.uniformComplianceRate !== null ? (
+            <MetricBar
+              label="Uniform Compliance"
+              value={criteria.uniformComplianceRate}
+              max={100}
+              format={`${criteria.uniformComplianceRate.toFixed(0)}%`}
+            />
+          ) : (
+            <NullMetric label="Uniform Compliance" />
+          )}
+          {criteria.hygieneComplianceRate !== null ? (
+            <MetricBar
+              label="Hygiene Compliance"
+              value={criteria.hygieneComplianceRate}
+              max={100}
+              format={`${criteria.hygieneComplianceRate.toFixed(0)}%`}
+            />
+          ) : (
+            <NullMetric label="Hygiene Compliance" />
+          )}
+          {criteria.sopComplianceRate !== null ? (
+            <MetricBar
+              label="SOP Compliance"
+              value={criteria.sopComplianceRate}
+              max={100}
+              format={`${criteria.sopComplianceRate.toFixed(0)}%`}
+            />
+          ) : (
+            <NullMetric label="SOP Compliance" />
+          )}
         </div>
       </div>
 
       <div>
-        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">Discipline &amp; Recognition</p>
+        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">
+          Discipline &amp; Recognition
+        </p>
         <div className="grid grid-cols-2 gap-3">
           <div className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 dark:bg-amber-900/10">
             <Star className="h-4 w-4 flex-shrink-0 text-amber-500" />
             <div>
-              <p className="font-bold text-amber-600 dark:text-amber-400">{criteria.awardCount} Awards</p>
-              <p className="text-[10px] text-amber-500">{criteria.awardCount === 0 ? 'No bonus' : `+${awardImpact} pts`}</p>
+              <p className="font-bold text-amber-600 dark:text-amber-400">
+                {criteria.awardCount} Awards
+              </p>
+              <p className="text-[10px] text-amber-500">
+                {criteria.awardCount === 0 ? 'No bonus' : `+${awardImpact} pts`}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 dark:bg-red-900/10">
             <AlertCircle className="h-4 w-4 flex-shrink-0 text-red-500" />
             <div>
-              <p className="font-bold text-red-600 dark:text-red-400">{criteria.violationCount} Violations</p>
-              <p className="text-[10px] text-red-500">{criteria.violationCount === 0 ? 'Clean record' : `-${violationImpact} pts`}</p>
+              <p className="font-bold text-red-600 dark:text-red-400">
+                {criteria.violationCount} Violations
+              </p>
+              <p className="text-[10px] text-red-500">
+                {criteria.violationCount === 0
+                  ? 'Clean record'
+                  : `-${violationImpact} EPI points applied`}
+              </p>
             </div>
           </div>
         </div>
@@ -402,17 +532,18 @@ function ExpandedLeaderboardPanel({
     );
   }
 
-  return (
-    <ExpandedMetrics
-      detail={detail}
-      isMissingData={detail?.hasData === false}
-    />
-  );
+  return <ExpandedMetrics detail={detail} isMissingData={detail?.hasData === false} />;
 }
 
 const PAGE_SIZE = 10;
 
-export function EpiLeaderboard({ entries, currentMonthKey, selectedMonthKey, loading, error }: EpiLeaderboardProps) {
+export function EpiLeaderboard({
+  entries,
+  currentMonthKey,
+  selectedMonthKey,
+  loading,
+  error,
+}: EpiLeaderboardProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const detailRefreshPolicy = useMemo(
@@ -444,16 +575,17 @@ export function EpiLeaderboard({ entries, currentMonthKey, selectedMonthKey, loa
   const rest = useMemo(() => rankedEntries.filter((entry) => entry.rank > 3), [rankedEntries]);
   const totalPages = Math.ceil(rest.length / PAGE_SIZE);
   const pageEntries = rest.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-  const podiumOrder = [top3[1], top3[0], top3[2]].filter(
-    (entry): entry is RankedLeaderboardEntry => Boolean(entry),
+  const podiumOrder = [top3[1], top3[0], top3[2]].filter((entry): entry is RankedLeaderboardEntry =>
+    Boolean(entry),
   );
   const resolvedPaginationState = useMemo(
-    () => resolveLeaderboardPaginationState({
-      entries: rankedEntries,
-      expandedId,
-      page,
-      pageSize: PAGE_SIZE,
-    }),
+    () =>
+      resolveLeaderboardPaginationState({
+        entries: rankedEntries,
+        expandedId,
+        page,
+        pageSize: PAGE_SIZE,
+      }),
     [expandedId, page, rankedEntries],
   );
 
@@ -503,7 +635,7 @@ export function EpiLeaderboard({ entries, currentMonthKey, selectedMonthKey, loa
     );
   }
 
-  const expandedDetail = expandedId ? detailQuery.data ?? null : null;
+  const expandedDetail = expandedId ? (detailQuery.data ?? null) : null;
   const detailError = detailQuery.isError ? 'Failed to load employee details.' : null;
   const isDetailLoading = expandedId !== null && detailQuery.isPending;
 
@@ -518,7 +650,13 @@ export function EpiLeaderboard({ entries, currentMonthKey, selectedMonthKey, loa
                 <PodiumCard
                   key={entry.id}
                   entry={entry}
-                  height={entry.rank === 1 ? 'min-h-[140px] w-[130px]' : entry.rank === 2 ? 'min-h-[120px] w-[110px]' : 'min-h-[100px] w-[110px]'}
+                  height={
+                    entry.rank === 1
+                      ? 'min-h-[140px] w-[130px]'
+                      : entry.rank === 2
+                        ? 'min-h-[120px] w-[110px]'
+                        : 'min-h-[100px] w-[110px]'
+                  }
                   isExpanded={expandedId === entry.id}
                   onToggle={() => setExpandedId(expandedId === entry.id ? null : entry.id)}
                 />
@@ -536,13 +674,15 @@ export function EpiLeaderboard({ entries, currentMonthKey, selectedMonthKey, loa
                     transition={{ duration: 0.25, ease: 'easeInOut' }}
                     style={{ overflow: 'hidden' }}
                   >
-                    <div className={`rounded-xl border px-4 py-3 ${
-                      entry.rank === 1
-                        ? 'border-yellow-200 bg-yellow-50/50 dark:border-yellow-800 dark:bg-yellow-900/10'
-                        : entry.rank === 2
-                          ? 'border-gray-200 bg-gray-50/50 dark:border-gray-700 dark:bg-gray-800/20'
-                          : 'border-orange-100 bg-orange-50/50 dark:border-orange-900 dark:bg-orange-900/10'
-                    }`}>
+                    <div
+                      className={`rounded-xl border px-4 py-3 ${
+                        entry.rank === 1
+                          ? 'border-yellow-200 bg-yellow-50/50 dark:border-yellow-800 dark:bg-yellow-900/10'
+                          : entry.rank === 2
+                            ? 'border-gray-200 bg-gray-50/50 dark:border-gray-700 dark:bg-gray-800/20'
+                            : 'border-orange-100 bg-orange-50/50 dark:border-orange-900 dark:bg-orange-900/10'
+                      }`}
+                    >
                       <p className="mb-2 text-xs font-semibold text-gray-500 dark:text-gray-400">
                         {entry.firstName} {entry.lastName} - Metrics
                       </p>
@@ -569,7 +709,8 @@ export function EpiLeaderboard({ entries, currentMonthKey, selectedMonthKey, loa
                 className="space-y-1"
               >
                 {pageEntries.map((entry) => {
-                  const zone = entry.displayEpiScore !== null ? getEpiZone(entry.displayEpiScore) : 'amber';
+                  const zone =
+                    entry.displayEpiScore !== null ? getEpiZone(entry.displayEpiScore) : 'amber';
                   const colors = getZoneColors(zone);
                   const isExpanded = expandedId === entry.id;
                   const isHighlighted = entry.isCurrentUser;
@@ -595,11 +736,17 @@ export function EpiLeaderboard({ entries, currentMonthKey, selectedMonthKey, loa
                           <span className="flex-1 truncate text-sm font-medium text-gray-800 dark:text-gray-200">
                             {entry.firstName} {entry.lastName}
                             {isHighlighted && (
-                              <span className="ml-1 text-xs font-normal text-primary-600 dark:text-primary-400">(You)</span>
+                              <span className="ml-1 text-xs font-normal text-primary-600 dark:text-primary-400">
+                                (You)
+                              </span>
                             )}
                           </span>
-                          <span className={`text-sm font-semibold ${entry.displayEpiScore !== null ? `${colors.text} ${colors.darkText}` : 'text-gray-400'}`}>
-                            {entry.displayEpiScore !== null ? entry.displayEpiScore.toFixed(1) : '--'}
+                          <span
+                            className={`text-sm font-semibold ${entry.displayEpiScore !== null ? `${colors.text} ${colors.darkText}` : 'text-gray-400'}`}
+                          >
+                            {entry.displayEpiScore !== null
+                              ? entry.displayEpiScore.toFixed(1)
+                              : '--'}
                           </span>
                           <ChevronDown
                             className={`h-4 w-4 flex-shrink-0 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
@@ -637,7 +784,8 @@ export function EpiLeaderboard({ entries, currentMonthKey, selectedMonthKey, loa
           {totalPages > 1 && (
             <div className="flex items-center justify-between border-t border-gray-100 pt-3 dark:border-gray-800">
               <p className="text-xs text-gray-400">
-                Showing {page * PAGE_SIZE + 1}-{Math.min((page + 1) * PAGE_SIZE, rest.length)} of {rest.length} employees
+                Showing {page * PAGE_SIZE + 1}-{Math.min((page + 1) * PAGE_SIZE, rest.length)} of{' '}
+                {rest.length} employees
               </p>
               <div className="flex items-center gap-1">
                 <button

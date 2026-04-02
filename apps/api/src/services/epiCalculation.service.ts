@@ -479,7 +479,7 @@ function calcViolations(
   const recent = violationNotices.filter(
     (vn) => vn.completed_at && dateRangeFilter(vn.completed_at, from, to),
   );
-  const totalDecrease = recent.reduce((s, vn) => s + (vn.epi_decrease ?? 0), 0);
+  const totalDecrease = recent.reduce((s, vn) => s + Number(vn.epi_decrease ?? 0), 0);
   return {
     count: recent.length,
     total_decrease: totalDecrease,

@@ -153,6 +153,7 @@ export interface DashboardCriteria {
   aov: number | null;
   branchAov: number | null;
   violationCount: number;
+  violationTotalDecrease: number;
   awardCount: number;
   uniformComplianceRate: number | null;
   hygieneComplianceRate: number | null;
@@ -294,6 +295,7 @@ function createEmptyCriteria(): DashboardCriteria {
     aov: null,
     branchAov: null,
     violationCount: 0,
+    violationTotalDecrease: 0,
     awardCount: 0,
     uniformComplianceRate: null,
     hygieneComplianceRate: null,
@@ -330,6 +332,7 @@ function breakdownToCriteria(kpi: KpiBreakdown | null | undefined): DashboardCri
     aov: kpi.aov.value,
     branchAov: kpi.aov.branch_avg,
     violationCount: kpi.violations.count,
+    violationTotalDecrease: kpi.violations.total_decrease,
     awardCount: kpi.awards.count,
     uniformComplianceRate: kpi.uniform.rate,
     hygieneComplianceRate: kpi.hygiene.rate,
@@ -359,6 +362,7 @@ function snapshotToCriteria(s: any): DashboardCriteria {
     aov: toNullableNumber(s.average_order_value),
     branchAov: toNullableNumber(s.branch_aov),
     violationCount: toNumber(s.violations_count, 0),
+    violationTotalDecrease: toNumber(s.violations_count, 0) * 5,
     awardCount: toNumber(s.awards_count, 0),
     uniformComplianceRate: toNullableNumber(s.uniform_compliance_rate),
     hygieneComplianceRate: toNullableNumber(s.hygiene_compliance_rate),

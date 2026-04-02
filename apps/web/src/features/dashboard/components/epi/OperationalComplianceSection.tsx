@@ -1,16 +1,26 @@
 import { motion } from 'framer-motion';
 import { ShieldCheck, Sparkles, ClipboardList } from 'lucide-react';
 import type { EpiCriteria, EpiZone } from './types';
-import { getRateZone, getZoneColors } from './epiUtils';
+import {
+  getRateZone,
+  getZoneColors,
+  getUniformImpact,
+  getHygieneImpact,
+  getSopImpact,
+  renderEpiImpact,
+} from './epiUtils';
 import { SectionLabel } from './SectionLabel';
 import { RadialGauge } from './RadialGauge';
 import { Card, CardBody } from '@/shared/components/ui/Card';
 
 function getStatusLabel(zone: EpiZone): string {
   switch (zone) {
-    case 'green': return 'On Track';
-    case 'amber': return 'At Risk';
-    case 'red': return 'Critical';
+    case 'green':
+      return 'On Track';
+    case 'amber':
+      return 'At Risk';
+    case 'red':
+      return 'Critical';
   }
 }
 
@@ -18,7 +28,7 @@ function ZoneBadge({ zone }: { zone: EpiZone }) {
   const colors = getZoneColors(zone);
   return (
     <span
-      className="rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-widest"
+      className="rounded-full px-2.5 py-0.5 -mt-3 mb-1 text-[10px] font-semibold uppercase tracking-widest"
       style={{ backgroundColor: `${colors.stroke}18`, color: colors.stroke }}
     >
       {getStatusLabel(zone)}
@@ -26,13 +36,7 @@ function ZoneBadge({ zone }: { zone: EpiZone }) {
   );
 }
 
-function MetricIcon({
-  icon: Icon,
-  zone,
-}: {
-  icon: React.ElementType;
-  zone: EpiZone;
-}) {
+function MetricIcon({ icon: Icon, zone }: { icon: React.ElementType; zone: EpiZone }) {
   const colors = getZoneColors(zone);
   return (
     <div
@@ -49,12 +53,21 @@ interface ComplianceCardProps {
   value: number | null;
   icon: React.ElementType;
   delay: number;
+  impactValue: number | null;
   /** When true, the card spans full width on mobile (2 cols) and is constrained + centered */
   centerOnMobile?: boolean;
 }
 
-function ComplianceCard({ label, value, icon: Icon, delay, centerOnMobile }: ComplianceCardProps) {
+function ComplianceCard({
+  label,
+  value,
+  icon: Icon,
+  delay,
+  impactValue,
+  centerOnMobile,
+}: ComplianceCardProps) {
   const zone = value !== null ? getRateZone(value) : 'amber';
+  const impact = renderEpiImpact(impactValue);
 
   const card = (
     <Card className="h-full">
@@ -71,8 +84,11 @@ function ComplianceCard({ label, value, icon: Icon, delay, centerOnMobile }: Com
               valueFormat={(v) => `${v.toFixed(0)}%`}
               delay={delay}
             />
-            <p className="text-xs font-medium text-gray-700 dark:text-gray-300">{label}</p>
             <ZoneBadge zone={zone} />
+            <div>
+              <p className="text-xs font-medium text-gray-700 dark:text-gray-300">{label}</p>
+              <p className={`text-[11px] ${impact.className}`}>{impact.text}</p>
+            </div>
           </>
         ) : (
           <>
@@ -97,11 +113,7 @@ function ComplianceCard({ label, value, icon: Icon, delay, centerOnMobile }: Com
       transition={{ duration: 0.5, delay, ease: 'easeOut' }}
       className={centerOnMobile ? 'col-span-2 flex justify-center lg:col-span-1' : 'h-full'}
     >
-      {centerOnMobile ? (
-        <div className="h-full w-[calc(50%-8px)] lg:w-full">
-          {card}
-        </div>
-      ) : card}
+      {centerOnMobile ? <div className="h-full w-[calc(50%-8px)] lg:w-full">{card}</div> : card}
     </motion.div>
   );
 }
@@ -119,18 +131,31 @@ export function OperationalComplianceSection({ criteria }: OperationalCompliance
           label="Uniform Compliance"
           value={criteria.uniformComplianceRate}
           icon={ShieldCheck}
+          impactValue={
+            criteria.uniformComplianceRate !== null
+              ? getUniformImpact(criteria.uniformComplianceRate)
+              : null
+          }
           delay={0}
         />
         <ComplianceCard
           label="Hygiene Compliance"
           value={criteria.hygieneComplianceRate}
           icon={Sparkles}
+          impactValue={
+            criteria.hygieneComplianceRate !== null
+              ? getHygieneImpact(criteria.hygieneComplianceRate)
+              : null
+          }
           delay={0.1}
         />
         <ComplianceCard
           label="SOP Compliance"
           value={criteria.sopComplianceRate}
           icon={ClipboardList}
+          impactValue={
+            criteria.sopComplianceRate !== null ? getSopImpact(criteria.sopComplianceRate) : null
+          }
           delay={0.2}
           centerOnMobile
         />

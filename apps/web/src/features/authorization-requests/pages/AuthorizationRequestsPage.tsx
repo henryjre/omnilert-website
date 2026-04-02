@@ -465,8 +465,14 @@ function ServiceCrewDetailPanel({
   const [confirmModal, setConfirmModal] = useState<{ action: 'approve' | 'reject'; message: string; onConfirm: () => Promise<void> } | null>(null);
   const [showOvertimeModal, setShowOvertimeModal] = useState(false);
 
-  const canAct = canApprove && auth.status === 'pending' && (!auth.needs_employee_reason || auth.employee_reason);
   const isOvertime = auth.auth_type === 'overtime';
+  const isLateOrTardiness = auth.auth_type === 'late_check_out' || auth.auth_type === 'tardiness';
+  const hoursSinceCreation = (new Date().getTime() - new Date(auth.created_at).getTime()) / (1000 * 60 * 60);
+
+  const canActNormally = canApprove && auth.status === 'pending' && (!auth.needs_employee_reason || auth.employee_reason);
+  const canForceReject = canApprove && auth.status === 'pending' && auth.needs_employee_reason && !auth.employee_reason && isLateOrTardiness && hoursSinceCreation >= 24;
+
+  const canAct = canActNormally || canForceReject;
 
   const iconColorCls: Record<string, string> = {
     blue: 'bg-blue-100 text-blue-600',
@@ -686,26 +692,28 @@ function ServiceCrewDetailPanel({
           {!rejectMode ? (
             <div className="space-y-3">
               <div className="flex gap-3">
-                <Button
-                  className="flex-1"
-                  variant="success"
-                  onClick={() => {
-                    if (isOvertime) {
-                      setShowOvertimeModal(true);
-                    } else {
-                      setConfirmModal({
-                        action: 'approve',
-                        message: 'Confirm approval of this request?',
-                        onConfirm: handleApprove,
-                      });
-                    }
-                  }}
-                >
-                  <span className="flex items-center justify-center gap-1.5">
-                    <CheckCircle className="h-4 w-4" />
-                    Approve
-                  </span>
-                </Button>
+                {canActNormally && (
+                  <Button
+                    className="flex-1"
+                    variant="success"
+                    onClick={() => {
+                      if (isOvertime) {
+                        setShowOvertimeModal(true);
+                      } else {
+                        setConfirmModal({
+                          action: 'approve',
+                          message: 'Confirm approval of this request?',
+                          onConfirm: handleApprove,
+                        });
+                      }
+                    }}
+                  >
+                    <span className="flex items-center justify-center gap-1.5">
+                      <CheckCircle className="h-4 w-4" />
+                      Approve
+                    </span>
+                  </Button>
+                )}
                 <Button className="flex-1" variant="danger" onClick={() => setRejectMode(true)}>
                   <span className="flex items-center justify-center gap-1.5">
                     <XCircle className="h-4 w-4" /> Reject
