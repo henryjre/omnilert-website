@@ -7,6 +7,7 @@ import { TopBar } from './TopBar';
 
 export function DashboardLayout() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [panStartX, setPanStartX] = useState<number | null>(null);
   const location = useLocation();
 
   useEffect(() => {
@@ -54,6 +55,12 @@ export function DashboardLayout() {
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              onPanEnd={(_, info) => {
+                // Swipe left to close
+                if (info.offset.x < -60) {
+                  setMobileSidebarOpen(false);
+                }
+              }}
               className="absolute inset-y-0 left-0 flex h-[100dvh] w-72 max-w-[85vw] flex-col bg-white shadow-2xl shadow-black/20"
             >
               <Sidebar className="h-full w-full border-r-0" />
@@ -70,12 +77,24 @@ export function DashboardLayout() {
         )}
       </AnimatePresence>
 
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <motion.div
+        className="flex flex-1 flex-col overflow-hidden"
+        onPanStart={(_, info) => setPanStartX(info.point.x)}
+        onPanEnd={(_, info) => {
+          if (!mobileSidebarOpen && panStartX !== null) {
+            // If swipe started from the left edge (< 60px) and moved right (> 50px)
+            if (panStartX < 60 && info.offset.x > 50 && Math.abs(info.offset.y) < 60) {
+              setMobileSidebarOpen(true);
+            }
+          }
+          setPanStartX(null);
+        }}
+      >
         <TopBar onOpenSidebar={() => setMobileSidebarOpen(true)} />
         <main data-dashboard-scroll-container="true" className="flex-1 overflow-y-auto bg-gray-50 p-4 sm:p-6">
           <Outlet />
         </main>
-      </div>
+      </motion.div>
     </div>
   );
 }
