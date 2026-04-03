@@ -14,7 +14,7 @@ const managedSockets = new Map<string, ManagedSocket>();
 function createManagedSocket(namespace: string, token: string): ManagedSocket {
   const socket = io(namespace, {
     auth: { token },
-    transports: ["websocket"],
+    transports: ["polling", "websocket"],
   });
 
   socket.on("connect", () => {

@@ -1,7 +1,7 @@
 import React, { type ButtonHTMLAttributes, forwardRef } from 'react';
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'standard' | 'success' | 'secondary' | 'danger' | 'ghost';
+  variant?: 'primary' | 'standard' | 'success' | 'secondary' | 'danger' | 'ghost' | 'outline-danger';
   size?: 'sm' | 'md' | 'lg';
 }
 
@@ -12,6 +12,7 @@ const variants = {
   secondary: 'bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-gray-500',
   danger: 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500',
   ghost: 'bg-transparent text-gray-700 hover:bg-gray-100 focus:ring-gray-500',
+  'outline-danger': 'border border-red-200 bg-transparent text-red-600 hover:bg-red-50 hover:border-red-300 focus:ring-red-500',
 };
 
 const sizes = {

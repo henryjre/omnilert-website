@@ -199,7 +199,21 @@ export async function getSchedule(req: Request, res: Response, next: NextFunctio
       )
       .orderBy('shift_start', 'asc');
 
-    res.json({ success: true, data: shifts });
+    const shiftIds = shifts.map((s: any) => s.id);
+    const activeActivities = shiftIds.length > 0
+      ? await tenantDb('shift_activities')
+          .whereIn('shift_id', shiftIds)
+          .where('user_id', userId)
+          .whereNull('end_time')
+      : [];
+
+    const activityMap = Object.fromEntries(activeActivities.map((a: any) => [a.shift_id, a]));
+    const shiftsWithActivities = shifts.map((s: any) => ({
+      ...s,
+      active_activity: activityMap[s.id] || null,
+    }));
+
+    res.json({ success: true, data: shiftsWithActivities });
   } catch (err) {
     next(err);
   }
@@ -262,7 +276,28 @@ export async function getScheduleShift(req: Request, res: Response, next: NextFu
       resolved_by_name: a.resolved_by ? (resolvers[a.resolved_by as string] ?? null) : null,
     }));
 
-    res.json({ success: true, data: { ...shift, logs, authorizations: authorizationsWithResolver } });
+    const activeActivity = await tenantDb('shift_activities')
+      .where({ shift_id: id, user_id: userId })
+      .whereNull('end_time')
+      .first();
+
+    const completedBreaks = await tenantDb('shift_activities')
+      .where({ shift_id: id, activity_type: 'break' })
+      .whereNotNull('end_time')
+      .select('duration_minutes');
+    const totalBreakMinutes = completedBreaks.reduce((sum: number, a: any) => sum + (Number(a.duration_minutes) || 0), 0);
+    const totalBreakHours = totalBreakMinutes / 60;
+
+    res.json({
+      success: true,
+      data: {
+        ...shift,
+        total_break_hours: totalBreakHours,
+        logs,
+        authorizations: authorizationsWithResolver,
+        active_activity: activeActivity || null,
+      },
+    });
   } catch (err) {
     next(err);
   }

@@ -16,7 +16,34 @@ import { OvertimeTypePicker } from '@/shared/components/OvertimeTypePicker';
 import { ShiftExchangeFlowModal } from '@/features/shift-exchange/components/ShiftExchangeFlowModal';
 import { PeerEvaluationModal } from '@/features/peer-evaluations/components/PeerEvaluationModal';
 import { PERMISSIONS } from '@omnilert/shared';
-import { AlertTriangle, ArrowDown, ArrowUp, BadgeCheck, Briefcase, CalendarDays, Check, CheckCircle, ChevronDown, ChevronUp, Clock, Clock3, Filter, GitBranch, LogIn, LogOut, MapPin, RefreshCw, Square, Users, X, XCircle } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowLeftRight,
+  ArrowUp,
+  BadgeCheck,
+  Briefcase,
+  CalendarDays,
+  Check,
+  CheckCircle,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  Clock3,
+  Filter,
+  GitBranch,
+  LogIn,
+  LogOut,
+  MapPin,
+  RefreshCw,
+  Square,
+  Users,
+  X,
+  XCircle,
+  Coffee,
+  Play,
+  ClipboardCheck,
+} from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 // --- Constants ---
@@ -43,20 +70,22 @@ const SHIFT_STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
   open: { label: 'Open', cls: 'bg-blue-100 text-blue-700' },
   active: { label: 'Active', cls: 'bg-green-100 text-green-700' },
   ended: { label: 'Closed', cls: 'bg-red-100 text-red-700' },
+  on_break: { label: 'On Break', cls: 'bg-gray-100 text-gray-700' },
+  field_task: { label: 'Field Task', cls: 'bg-purple-100 text-purple-700' },
 };
 
 // --- Helpers ---
 
 function fmtShift(iso: string) {
   const d = new Date(iso);
-  const date = d.toLocaleString("en-US", {
-    month: "long",
-    day: "2-digit",
-    year: "numeric",
+  const date = d.toLocaleString('en-US', {
+    month: 'long',
+    day: '2-digit',
+    year: 'numeric',
   });
-  const time = d.toLocaleString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
+  const time = d.toLocaleString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
     hour12: true,
   });
   return `${date} at ${time}`;
@@ -72,13 +101,14 @@ function fmtTime(iso: string) {
 }
 
 function fmtShiftUpdatedValue(field: string, value: unknown): string {
-  if (value == null) return "—";
-  if (typeof value !== "string") return String(value);
+  if (value == null) return '—';
+  if (typeof value !== 'string') return String(value);
 
-  const isShiftDateTimeField = field === "start_datetime"
-    || field === "end_datetime"
-    || field === "shift_start"
-    || field === "shift_end";
+  const isShiftDateTimeField =
+    field === 'start_datetime' ||
+    field === 'end_datetime' ||
+    field === 'shift_start' ||
+    field === 'shift_end';
 
   if (!isShiftDateTimeField) return value;
 
@@ -123,13 +153,31 @@ function formatDiffMinutes(minutes: number): string {
   return `${minutes}m`;
 }
 
-const AUTH_TYPE_CONFIG: Record<string, { label: string; color: string; Icon: ComponentType<{ className?: string }>; diffLabel: string }> = {
-  early_check_in: { label: 'Early Check In', color: 'blue', Icon: Clock, diffLabel: 'before shift start' },
+const AUTH_TYPE_CONFIG: Record<
+  string,
+  { label: string; color: string; Icon: ComponentType<{ className?: string }>; diffLabel: string }
+> = {
+  early_check_in: {
+    label: 'Early Check In',
+    color: 'blue',
+    Icon: Clock,
+    diffLabel: 'before shift start',
+  },
   tardiness: { label: 'Tardiness', color: 'orange', Icon: AlertTriangle, diffLabel: 'late' },
   early_check_out: { label: 'Early Check Out', color: 'yellow', Icon: LogOut, diffLabel: 'early' },
-  late_check_out: { label: 'Late Check Out', color: 'purple', Icon: Clock, diffLabel: 'after shift end' },
+  late_check_out: {
+    label: 'Late Check Out',
+    color: 'purple',
+    Icon: Clock,
+    diffLabel: 'after shift end',
+  },
   overtime: { label: 'Overtime', color: 'red', Icon: Clock, diffLabel: 'overtime' },
-  interim_duty: { label: 'Interim Duty', color: 'indigo', Icon: Briefcase, diffLabel: 'interim duty duration' },
+  interim_duty: {
+    label: 'Interim Duty',
+    color: 'indigo',
+    Icon: Briefcase,
+    diffLabel: 'interim duty duration',
+  },
   shift_exchange: { label: 'Shift Exchange', color: 'indigo', Icon: RefreshCw, diffLabel: '' },
 };
 
@@ -154,472 +202,557 @@ const OVERTIME_TYPE_LABELS: Record<string, string> = {
 
 // --- AuthorizationCard ---
 
-const AuthorizationCard = memo(({
-  auth,
-  currentUserId,
-  canApprove,
-  canSubmitPublicAuthRequest,
-  onReasonSubmit,
-  onApprove,
-  onReject,
-}: {
-  auth: any;
-  currentUserId: string;
-  canApprove: boolean;
-  canSubmitPublicAuthRequest: boolean;
-  onReasonSubmit: (id: string, reason: string) => Promise<void>;
-  onApprove: (id: string, overtimeType?: string, hours?: number, minutes?: number) => Promise<void>;
-  onReject: (id: string, reason: string) => Promise<void>;
-}) => {
-  const config = AUTH_TYPE_CONFIG[auth.auth_type] ?? { label: auth.auth_type, color: 'gray', Icon: Clock, diffLabel: '' };
-  const { success: showSuccessToast, error: showErrorToast } = useAppToast();
-  const { Icon } = config;
+const AuthorizationCard = memo(
+  ({
+    auth,
+    currentUserId,
+    canApprove,
+    canSubmitPublicAuthRequest,
+    onReasonSubmit,
+    onApprove,
+    onReject,
+  }: {
+    auth: any;
+    currentUserId: string;
+    canApprove: boolean;
+    canSubmitPublicAuthRequest: boolean;
+    onReasonSubmit: (id: string, reason: string) => Promise<void>;
+    onApprove: (
+      id: string,
+      overtimeType?: string,
+      hours?: number,
+      minutes?: number,
+    ) => Promise<void>;
+    onReject: (id: string, reason: string) => Promise<void>;
+  }) => {
+    const config = AUTH_TYPE_CONFIG[auth.auth_type] ?? {
+      label: auth.auth_type,
+      color: 'gray',
+      Icon: Clock,
+      diffLabel: '',
+    };
+    const { success: showSuccessToast, error: showErrorToast } = useAppToast();
+    const { Icon } = config;
 
-  const [reasonText, setReasonText] = useState('');
-  const [reasonLoading, setReasonLoading] = useState(false);
-  const [rejectMode, setRejectMode] = useState(false);
-  const [rejectText, setRejectText] = useState('');
-  const [rejectLoading, setRejectLoading] = useState(false);
-  const [approveLoading, setApproveLoading] = useState(false);
-  const [selectedOvertimeType, setSelectedOvertimeType] = useState('normal_overtime');
-  const [overtimeHours, setOvertimeHours] = useState(Math.floor((auth.diff_minutes || 0) / 60));
-  const [overtimeMinutes, setOvertimeMinutes] = useState((auth.diff_minutes || 0) % 60);
-  const [confirmModal, setConfirmModal] = useState<{ action: 'approve' | 'reject'; message: string; onConfirm: () => Promise<void> } | null>(null);
-  const [showOvertimeModal, setShowOvertimeModal] = useState(false);
+    const [reasonText, setReasonText] = useState('');
+    const [reasonLoading, setReasonLoading] = useState(false);
+    const [rejectMode, setRejectMode] = useState(false);
+    const [rejectText, setRejectText] = useState('');
+    const [rejectLoading, setRejectLoading] = useState(false);
+    const [approveLoading, setApproveLoading] = useState(false);
+    const [selectedOvertimeType, setSelectedOvertimeType] = useState('normal_overtime');
+    const [overtimeHours, setOvertimeHours] = useState(Math.floor((auth.diff_minutes || 0) / 60));
+    const [overtimeMinutes, setOvertimeMinutes] = useState((auth.diff_minutes || 0) % 60);
+    const [confirmModal, setConfirmModal] = useState<{
+      action: 'approve' | 'reject';
+      message: string;
+      onConfirm: () => Promise<void>;
+    } | null>(null);
+    const [showOvertimeModal, setShowOvertimeModal] = useState(false);
 
-  const isOwner = auth.user_id === currentUserId;
-  const needsReason = auth.needs_employee_reason && !auth.employee_reason;
-  const canManagerAct = canApprove && auth.status === 'pending' && (!auth.needs_employee_reason || auth.employee_reason);
-  const canSubmitReason = auth.status === 'pending' && isOwner && needsReason && canSubmitPublicAuthRequest;
-  const showSubmitReasonPermissionHint = auth.status === 'pending' && isOwner && needsReason && !canSubmitPublicAuthRequest;
-  const isOvertime = auth.auth_type === 'overtime';
+    const isOwner = auth.user_id === currentUserId;
+    const needsReason = auth.needs_employee_reason && !auth.employee_reason;
+    const canManagerAct =
+      canApprove &&
+      auth.status === 'pending' &&
+      (!auth.needs_employee_reason || auth.employee_reason);
+    const canSubmitReason =
+      auth.status === 'pending' && isOwner && needsReason && canSubmitPublicAuthRequest;
+    const showSubmitReasonPermissionHint =
+      auth.status === 'pending' && isOwner && needsReason && !canSubmitPublicAuthRequest;
+    const isOvertime = auth.auth_type === 'overtime';
 
-  const iconColorCls: Record<string, string> = {
-    blue: 'bg-blue-100 text-blue-600',
-    orange: 'bg-orange-100 text-orange-600',
-    yellow: 'bg-yellow-100 text-yellow-600',
-    indigo: 'bg-indigo-100 text-indigo-600',
-    purple: 'bg-purple-100 text-purple-600',
-    red: 'bg-red-100 text-red-600',
-    gray: 'bg-gray-100 text-gray-600',
-  };
+    const iconColorCls: Record<string, string> = {
+      blue: 'bg-blue-100 text-blue-600',
+      orange: 'bg-orange-100 text-orange-600',
+      yellow: 'bg-yellow-100 text-yellow-600',
+      indigo: 'bg-indigo-100 text-indigo-600',
+      purple: 'bg-purple-100 text-purple-600',
+      red: 'bg-red-100 text-red-600',
+      gray: 'bg-gray-100 text-gray-600',
+    };
 
-  return (
-    <div className="rounded-lg border border-gray-200 p-4 space-y-3">
-      {/* Header row */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${iconColorCls[config.color] ?? iconColorCls.gray}`}>
-            <Icon className="h-4 w-4" />
+    return (
+      <div className="rounded-lg border border-gray-200 p-4 space-y-3">
+        {/* Header row */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <div
+              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${iconColorCls[config.color] ?? iconColorCls.gray}`}
+            >
+              <Icon className="h-4 w-4" />
+            </div>
+            <div>
+              <p className="font-medium text-gray-900 text-sm">{config.label}</p>
+              <p className="text-xs text-gray-500">
+                {formatDiffMinutes(auth.diff_minutes)} {config.diffLabel}
+              </p>
+            </div>
           </div>
-          <div>
-            <p className="font-medium text-gray-900 text-sm">{config.label}</p>
-            <p className="text-xs text-gray-500">{formatDiffMinutes(auth.diff_minutes)} {config.diffLabel}</p>
-          </div>
+          <Badge variant={STATUS_VARIANT[auth.status] ?? 'default'}>
+            {STATUS_LABEL[auth.status] ?? auth.status}
+          </Badge>
         </div>
-        <Badge variant={STATUS_VARIANT[auth.status] ?? 'default'}>
-          {STATUS_LABEL[auth.status] ?? auth.status}
-        </Badge>
-      </div>
 
-      {/* Pending — awaiting employee reason */}
-      {auth.status === 'pending' && auth.needs_employee_reason && !auth.employee_reason && (
-        <p className="text-xs text-orange-600">Awaiting employee reason before approval</p>
-      )}
+        {/* Pending — awaiting employee reason */}
+        {auth.status === 'pending' && auth.needs_employee_reason && !auth.employee_reason && (
+          <p className="text-xs text-orange-600">Awaiting employee reason before approval</p>
+        )}
 
-      {/* Employee submits reason */}
-      {canSubmitReason && (
-        <div className="space-y-2">
-          <textarea
-            rows={2}
-            placeholder="Enter your reason..."
-            value={reasonText}
-            onChange={(e) => setReasonText(e.target.value)}
-            className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-          />
-          <Button
-            size="sm"
-            disabled={!reasonText.trim() || reasonLoading}
-            onClick={async () => {
-              setReasonLoading(true);
-              try {
-                await onReasonSubmit(auth.id, reasonText);
-                setReasonText('');
-                showSuccessToast('Reason submitted.');
-              } catch (err: any) {
-                showErrorToast(err?.response?.data?.error || 'Failed to submit reason.');
-              } finally {
-                setReasonLoading(false);
-              }
-            }}
-          >
-            {reasonLoading ? 'Submitting...' : 'Submit Reason'}
-          </Button>
-        </div>
-      )}
-
-      {showSubmitReasonPermissionHint && (
-        <p className="text-xs text-amber-700">
-          You do not have permission to submit a reason for this request.
-        </p>
-      )}
-
-      {/* Show submitted reason */}
-      {auth.employee_reason && (
-        <div className="rounded bg-gray-50 p-2 text-xs text-gray-700">
-          <span className="font-medium">Employee reason: </span>{auth.employee_reason}
-        </div>
-      )}
-
-      {/* Show rejection reason */}
-      {auth.status === 'rejected' && auth.rejection_reason && (
-        <div className="rounded bg-red-50 p-2 text-xs text-red-700">
-          <span className="font-medium">Rejection reason: </span>{auth.rejection_reason}
-        </div>
-      )}
-
-      {/* Show approved overtime type */}
-      {auth.status === 'approved' && auth.overtime_type && (
-        <div className="rounded bg-blue-50 p-2 text-xs text-blue-700">
-          <span className="font-medium">Overtime Type: </span>
-          {OVERTIME_TYPE_LABELS[auth.overtime_type] ?? auth.overtime_type}
-        </div>
-      )}
-
-      {/* Resolved by */}
-      {auth.resolved_by_name && (
-        <p className="text-xs text-gray-500">
-          {auth.status === 'approved' ? 'Approved' : 'Rejected'} by {auth.resolved_by_name}
-        </p>
-      )}
-
-      {/* Manager overtime approve */}
-      {canManagerAct && isOvertime && !rejectMode && (
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant="success"
-            onClick={() => setShowOvertimeModal(true)}
-          >
-            <span className="flex items-center gap-1"><CheckCircle className="h-3.5 w-3.5" /> Approve</span>
-          </Button>
-          <Button size="sm" variant="danger" onClick={() => setRejectMode(true)}>
-            <span className="flex items-center gap-1"><XCircle className="h-3.5 w-3.5" /> Reject</span>
-          </Button>
-        </div>
-      )}
-
-      {/* Manager standard approve/reject */}
-      {canManagerAct && !isOvertime && !rejectMode && (
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant="success"
-            onClick={() => setConfirmModal({
-              action: 'approve',
-              message: 'Confirm approval of this request?',
-              onConfirm: async () => {
-                setApproveLoading(true);
+        {/* Employee submits reason */}
+        {canSubmitReason && (
+          <div className="space-y-2">
+            <textarea
+              rows={2}
+              placeholder="Enter your reason..."
+              value={reasonText}
+              onChange={(e) => setReasonText(e.target.value)}
+              className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            />
+            <Button
+              size="sm"
+              disabled={!reasonText.trim() || reasonLoading}
+              onClick={async () => {
+                setReasonLoading(true);
                 try {
-                  await onApprove(auth.id);
-                  showSuccessToast('Authorization approved.');
+                  await onReasonSubmit(auth.id, reasonText);
+                  setReasonText('');
+                  showSuccessToast('Reason submitted.');
                 } catch (err: any) {
-                  showErrorToast(err?.response?.data?.error || 'Failed to approve request.');
+                  showErrorToast(err?.response?.data?.error || 'Failed to submit reason.');
                 } finally {
-                  setApproveLoading(false);
+                  setReasonLoading(false);
                 }
-              },
-            })}
-          >
-            <span className="flex items-center gap-1"><CheckCircle className="h-3.5 w-3.5" /> Approve</span>
-          </Button>
-          <Button size="sm" variant="danger" onClick={() => setRejectMode(true)}>
-            <span className="flex items-center gap-1"><XCircle className="h-3.5 w-3.5" /> Reject</span>
-          </Button>
-        </div>
-      )}
+              }}
+            >
+              {reasonLoading ? 'Submitting...' : 'Submit Reason'}
+            </Button>
+          </div>
+        )}
 
-      {/* Reject form */}
-      {canManagerAct && rejectMode && (
-        <div className="space-y-2">
-          <textarea
-            rows={2}
-            placeholder="Reason for rejection..."
-            value={rejectText}
-            onChange={(e) => setRejectText(e.target.value)}
-            className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-          />
+        {showSubmitReasonPermissionHint && (
+          <p className="text-xs text-amber-700">
+            You do not have permission to submit a reason for this request.
+          </p>
+        )}
+
+        {/* Show submitted reason */}
+        {auth.employee_reason && (
+          <div className="rounded bg-gray-50 p-2 text-xs text-gray-700">
+            <span className="font-medium">Employee reason: </span>
+            {auth.employee_reason}
+          </div>
+        )}
+
+        {/* Show rejection reason */}
+        {auth.status === 'rejected' && auth.rejection_reason && (
+          <div className="rounded bg-red-50 p-2 text-xs text-red-700">
+            <span className="font-medium">Rejection reason: </span>
+            {auth.rejection_reason}
+          </div>
+        )}
+
+        {/* Show approved overtime type */}
+        {auth.status === 'approved' && auth.overtime_type && (
+          <div className="rounded bg-blue-50 p-2 text-xs text-blue-700">
+            <span className="font-medium">Overtime Type: </span>
+            {OVERTIME_TYPE_LABELS[auth.overtime_type] ?? auth.overtime_type}
+          </div>
+        )}
+
+        {/* Resolved by */}
+        {auth.resolved_by_name && (
+          <p className="text-xs text-gray-500">
+            {auth.status === 'approved' ? 'Approved' : 'Rejected'} by {auth.resolved_by_name}
+          </p>
+        )}
+
+        {/* Manager overtime approve */}
+        {canManagerAct && isOvertime && !rejectMode && (
+          <div className="flex gap-2">
+            <Button size="sm" variant="success" onClick={() => setShowOvertimeModal(true)}>
+              <span className="flex items-center gap-1">
+                <CheckCircle className="h-3.5 w-3.5" /> Approve
+              </span>
+            </Button>
+            <Button size="sm" variant="danger" onClick={() => setRejectMode(true)}>
+              <span className="flex items-center gap-1">
+                <XCircle className="h-3.5 w-3.5" /> Reject
+              </span>
+            </Button>
+          </div>
+        )}
+
+        {/* Manager standard approve/reject */}
+        {canManagerAct && !isOvertime && !rejectMode && (
           <div className="flex gap-2">
             <Button
               size="sm"
-              variant="danger"
-              disabled={!rejectText.trim()}
-              onClick={() => setConfirmModal({
-                action: 'reject',
-                message: `Reject with reason: "${rejectText}"?`,
-                onConfirm: async () => {
-                  setRejectLoading(true);
-                  try {
-                    await onReject(auth.id, rejectText);
-                    setRejectText('');
-                    setRejectMode(false);
-                    showSuccessToast('Authorization rejected.');
-                  } catch (err: any) {
-                    showErrorToast(err?.response?.data?.error || 'Failed to reject request.');
-                  } finally {
-                    setRejectLoading(false);
-                  }
-                },
-              })}
+              variant="success"
+              onClick={() =>
+                setConfirmModal({
+                  action: 'approve',
+                  message: 'Confirm approval of this request?',
+                  onConfirm: async () => {
+                    setApproveLoading(true);
+                    try {
+                      await onApprove(auth.id);
+                      showSuccessToast('Authorization approved.');
+                    } catch (err: any) {
+                      showErrorToast(err?.response?.data?.error || 'Failed to approve request.');
+                    } finally {
+                      setApproveLoading(false);
+                    }
+                  },
+                })
+              }
             >
-              Confirm Reject
+              <span className="flex items-center gap-1">
+                <CheckCircle className="h-3.5 w-3.5" /> Approve
+              </span>
             </Button>
-            <Button size="sm" variant="secondary" onClick={() => { setRejectMode(false); setRejectText(''); }}>
-              Cancel
+            <Button size="sm" variant="danger" onClick={() => setRejectMode(true)}>
+              <span className="flex items-center gap-1">
+                <XCircle className="h-3.5 w-3.5" /> Reject
+              </span>
             </Button>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Confirmation Modal */}
-      <AnimatePresence>
-        {confirmModal && (
-          <AnimatedModal
-            maxWidth="max-w-sm"
-            zIndexClass="z-[60]"
-            onBackdropClick={approveLoading || rejectLoading ? undefined : () => setConfirmModal(null)}
-          >
-            <div className="border-b border-gray-200 px-5 py-4">
-              <p className="font-semibold text-gray-900">
-                {confirmModal.action === 'approve' ? 'Confirm Approval' : 'Confirm Rejection'}
-              </p>
-            </div>
-            <div className="px-5 py-4">
-              <p className="text-sm text-gray-700">{confirmModal.message}</p>
-            </div>
-            <div className="flex gap-3 border-t border-gray-200 px-5 py-4">
+        {/* Reject form */}
+        {canManagerAct && rejectMode && (
+          <div className="space-y-2">
+            <textarea
+              rows={2}
+              placeholder="Reason for rejection..."
+              value={rejectText}
+              onChange={(e) => setRejectText(e.target.value)}
+              className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            />
+            <div className="flex gap-2">
               <Button
-                className="flex-1"
-                variant={confirmModal.action === 'approve' ? 'success' : 'danger'}
-                disabled={approveLoading || rejectLoading}
-                onClick={async () => {
-                  await confirmModal.onConfirm();
-                  setConfirmModal(null);
-                }}
+                size="sm"
+                variant="danger"
+                disabled={!rejectText.trim()}
+                onClick={() =>
+                  setConfirmModal({
+                    action: 'reject',
+                    message: `Reject with reason: "${rejectText}"?`,
+                    onConfirm: async () => {
+                      setRejectLoading(true);
+                      try {
+                        await onReject(auth.id, rejectText);
+                        setRejectText('');
+                        setRejectMode(false);
+                        showSuccessToast('Authorization rejected.');
+                      } catch (err: any) {
+                        showErrorToast(err?.response?.data?.error || 'Failed to reject request.');
+                      } finally {
+                        setRejectLoading(false);
+                      }
+                    },
+                  })
+                }
               >
-                {(approveLoading || rejectLoading) ? 'Processing...' : (confirmModal.action === 'approve' ? 'Approve' : 'Reject')}
+                Confirm Reject
               </Button>
               <Button
-                className="flex-1"
+                size="sm"
                 variant="secondary"
-                disabled={approveLoading || rejectLoading}
-                onClick={() => setConfirmModal(null)}
+                onClick={() => {
+                  setRejectMode(false);
+                  setRejectText('');
+                }}
               >
                 Cancel
               </Button>
             </div>
-          </AnimatedModal>
+          </div>
         )}
 
-        {showOvertimeModal && (
-          <AnimatedModal
-            maxWidth="max-w-sm"
-            zIndexClass="z-[60]"
-            onBackdropClick={approveLoading ? undefined : () => setShowOvertimeModal(false)}
-          >
-            <div className="border-b border-gray-200 px-5 py-4">
-              <p className="font-semibold text-gray-900">Approve Overtime</p>
-              <p className="mt-0.5 text-xs text-gray-500">Please select the overtime type to apply for this request.</p>
-            </div>
-            <div className="space-y-4 px-5 py-6">
-              <OvertimeTypePicker
-                value={selectedOvertimeType}
-                onChange={setSelectedOvertimeType}
-                hours={overtimeHours}
-                setHours={setOvertimeHours}
-                minutes={overtimeMinutes}
-                setMinutes={setOvertimeMinutes}
-                maxMinutes={auth.diff_minutes}
-              />
-            </div>
-            <div className="flex gap-3 border-t border-gray-200 px-5 py-4">
-              <Button
-                className="flex-1"
-                variant="success"
-                disabled={!selectedOvertimeType || approveLoading}
-                onClick={async () => {
-                  setApproveLoading(true);
-                  try {
-                    await onApprove(auth.id, selectedOvertimeType, overtimeHours, overtimeMinutes);
-                    showSuccessToast('Authorization approved.');
-                    setShowOvertimeModal(false);
-                  } catch (err: any) {
-                    showErrorToast(err?.response?.data?.error || 'Failed to approve request.');
-                  } finally {
-                    setApproveLoading(false);
-                  }
-                }}
-              >
-                {approveLoading ? 'Processing...' : 'Approve'}
-              </Button>
-              <Button
-                className="flex-1"
-                variant="secondary"
-                disabled={approveLoading}
-                onClick={() => setShowOvertimeModal(false)}
-              >
-                Cancel
-              </Button>
-            </div>
-          </AnimatedModal>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-});
+        {/* Confirmation Modal */}
+        <AnimatePresence>
+          {confirmModal && (
+            <AnimatedModal
+              maxWidth="max-w-sm"
+              zIndexClass="z-[60]"
+              onBackdropClick={
+                approveLoading || rejectLoading ? undefined : () => setConfirmModal(null)
+              }
+            >
+              <div className="border-b border-gray-200 px-5 py-4">
+                <p className="font-semibold text-gray-900">
+                  {confirmModal.action === 'approve' ? 'Confirm Approval' : 'Confirm Rejection'}
+                </p>
+              </div>
+              <div className="px-5 py-4">
+                <p className="text-sm text-gray-700">{confirmModal.message}</p>
+              </div>
+              <div className="flex gap-3 border-t border-gray-200 px-5 py-4">
+                <Button
+                  className="flex-1"
+                  variant={confirmModal.action === 'approve' ? 'success' : 'danger'}
+                  disabled={approveLoading || rejectLoading}
+                  onClick={async () => {
+                    await confirmModal.onConfirm();
+                    setConfirmModal(null);
+                  }}
+                >
+                  {approveLoading || rejectLoading
+                    ? 'Processing...'
+                    : confirmModal.action === 'approve'
+                      ? 'Approve'
+                      : 'Reject'}
+                </Button>
+                <Button
+                  className="flex-1"
+                  variant="secondary"
+                  disabled={approveLoading || rejectLoading}
+                  onClick={() => setConfirmModal(null)}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </AnimatedModal>
+          )}
+
+          {showOvertimeModal && (
+            <AnimatedModal
+              maxWidth="max-w-sm"
+              zIndexClass="z-[60]"
+              onBackdropClick={approveLoading ? undefined : () => setShowOvertimeModal(false)}
+            >
+              <div className="border-b border-gray-200 px-5 py-4">
+                <p className="font-semibold text-gray-900">Approve Overtime</p>
+                <p className="mt-0.5 text-xs text-gray-500">
+                  Please select the overtime type to apply for this request.
+                </p>
+              </div>
+              <div className="space-y-4 px-5 py-6">
+                <OvertimeTypePicker
+                  value={selectedOvertimeType}
+                  onChange={setSelectedOvertimeType}
+                  hours={overtimeHours}
+                  setHours={setOvertimeHours}
+                  minutes={overtimeMinutes}
+                  setMinutes={setOvertimeMinutes}
+                  maxMinutes={auth.diff_minutes}
+                />
+              </div>
+              <div className="flex gap-3 border-t border-gray-200 px-5 py-4">
+                <Button
+                  className="flex-1"
+                  variant="success"
+                  disabled={!selectedOvertimeType || approveLoading}
+                  onClick={async () => {
+                    setApproveLoading(true);
+                    try {
+                      await onApprove(
+                        auth.id,
+                        selectedOvertimeType,
+                        overtimeHours,
+                        overtimeMinutes,
+                      );
+                      showSuccessToast('Authorization approved.');
+                      setShowOvertimeModal(false);
+                    } catch (err: any) {
+                      showErrorToast(err?.response?.data?.error || 'Failed to approve request.');
+                    } finally {
+                      setApproveLoading(false);
+                    }
+                  }}
+                >
+                  {approveLoading ? 'Processing...' : 'Approve'}
+                </Button>
+                <Button
+                  className="flex-1"
+                  variant="secondary"
+                  disabled={approveLoading}
+                  onClick={() => setShowOvertimeModal(false)}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </AnimatedModal>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  },
+);
 
 // --- Shift Card ---
 
-const ShiftCard = memo(({
-  shift,
-  branchName,
-  canEndShift,
-  canExchangeShift,
-  onClick,
-  onEndShift,
-  onExchangeShift,
-}: {
-  shift: any;
-  branchName?: string;
-  canEndShift: boolean;
-  canExchangeShift: boolean;
-  onClick: () => void;
-  onEndShift: (id: string) => void;
-  onExchangeShift: (shift: any) => void;
-}) => {
-  const { prefix, name } = parseEmployeeName(shift.employee_name);
-  const avatarUrl = resolveShiftAvatarUrl(shift);
-  const dutyColor = DUTY_COLORS[shift.duty_color] ?? '#e5e7eb';
-  const [avatarError, setAvatarError] = useState(false);
-  const statusCfg = SHIFT_STATUS_CONFIG[shift.status] ?? { label: shift.status, cls: 'bg-gray-100 text-gray-700' };
+const ShiftCard = memo(
+  ({
+    shift,
+    branchName,
+    canEndShift,
+    canExchangeShift,
+    onClick,
+    onEndShift,
+    onExchangeShift,
+    onOpenActivityModal,
+  }: {
+    shift: any;
+    branchName?: string;
+    canEndShift: boolean;
+    canExchangeShift: boolean;
+    onClick: () => void;
+    onEndShift: (id: string) => void;
+    onExchangeShift: (shift: any) => void;
+    onOpenActivityModal: (id: string, type: 'break' | 'field_task', isEnd: boolean) => void;
+  }) => {
+    const { prefix, name } = parseEmployeeName(shift.employee_name);
+    const avatarUrl = resolveShiftAvatarUrl(shift);
+    const dutyColor = DUTY_COLORS[shift.duty_color] ?? '#e5e7eb';
+    const [avatarError, setAvatarError] = useState(false);
+    const statusCfg = SHIFT_STATUS_CONFIG[shift.status] ?? {
+      label: shift.status,
+      cls: 'bg-gray-100 text-gray-700',
+    };
 
-  return (
-    <div
-      className={`flex flex-col rounded-xl border bg-white transition hover:shadow-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${
-        'border-gray-200 hover:border-gray-300'
-      }`}
-      onClick={onClick}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => e.key === 'Enter' && onClick()}
-    >
-      {/* Colored duty type bar at top */}
+    return (
       <div
-        className="h-1 w-full rounded-t-xl"
-        style={{ backgroundColor: dutyColor }}
-      />
+        className={`flex flex-col rounded-xl border bg-white transition hover:shadow-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${'border-gray-200 hover:border-gray-300'}`}
+        onClick={onClick}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => e.key === 'Enter' && onClick()}
+      >
+        {/* Colored duty type bar at top */}
+        <div className="h-1 w-full rounded-t-xl" style={{ backgroundColor: dutyColor }} />
 
-      <div className="flex flex-col flex-1 p-4 gap-3">
-        {/* Identity row */}
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex items-start gap-2.5 min-w-0">
-            {avatarUrl && !avatarError ? (
-              <img
-                src={avatarUrl}
-                alt={name}
-                className="h-9 w-9 shrink-0 rounded-full object-cover"
-                onError={() => setAvatarError(true)}
-              />
-            ) : (
-              <AvatarFallback name={name} size="sm" />
-            )}
-            <div className="min-w-0">
-              <p className="truncate font-semibold text-sm text-gray-900">{name}</p>
-              {prefix && <p className="text-[11px] text-gray-400">ID: {prefix}</p>}
-            </div>
-          </div>
-          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${statusCfg.cls}`}>
-            {statusCfg.label}
-          </span>
-        </div>
-
-        {/* Metadata rows */}
-        <div className="space-y-1.5 border-t border-gray-100 pt-2.5">
-          {/* Duty type */}
-          {shift.duty_type && (
-            <div className="flex items-center gap-2">
-              <span title="Duty Type"><Briefcase className="h-3.5 w-3.5 shrink-0 text-indigo-400" /></span>
-              <span
-                className="rounded-full px-2 py-0.5 text-[11px] font-medium text-gray-800"
-                style={{ backgroundColor: dutyColor }}
-              >
-                {shift.duty_type}
-              </span>
-            </div>
-          )}
-          {/* Branch */}
-          {branchName && (
-            <div className="flex items-center gap-2">
-              <span title="Branch"><MapPin className="h-3.5 w-3.5 shrink-0 text-emerald-500" /></span>
-              <span className="text-xs text-gray-700 truncate">{branchName}</span>
-            </div>
-          )}
-          {/* Shift start */}
-          <div className="flex items-center gap-2">
-            <span title="Shift Start"><LogIn className="h-3.5 w-3.5 shrink-0 text-gray-400" /></span>
-            <span className="text-xs text-gray-700">{fmtShift(shift.shift_start)}</span>
-          </div>
-          {/* Shift end */}
-          <div className="flex items-center gap-2">
-            <span title="Shift End"><LogOut className="h-3.5 w-3.5 shrink-0 text-gray-400" /></span>
-            <span className="text-xs text-gray-700">{fmtShift(shift.shift_end)}</span>
-          </div>
-          {/* Hours */}
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span title="Allocated Hours"><Clock className="h-3.5 w-3.5 shrink-0 text-gray-400" /></span>
-              <span className="text-xs text-gray-700">{Number(shift.allocated_hours).toFixed(2)} hrs allocated</span>
-            </div>
-          </div>
-          {shift.total_worked_hours != null && (
-            <div className="flex items-center gap-2">
-              <span title="Worked Hours"><BadgeCheck className="h-3.5 w-3.5 shrink-0 text-green-500" /></span>
-              <span className="text-xs text-gray-700">{Number(shift.total_worked_hours).toFixed(2)} hrs worked</span>
-            </div>
-          )}
-          {/* Attendance */}
-          {shift.check_in_status && (
-            <div className="flex items-center gap-2">
-              {shift.check_in_status === 'checked_in' ? (
-                <>
-                  <span className="h-2 w-2 rounded-full bg-green-500 shrink-0" />
-                  <span className="text-[11px] font-medium text-green-700">Checked In</span>
-                </>
+        <div className="flex flex-col flex-1 p-4 gap-3">
+          {/* Identity row */}
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-start gap-2.5 min-w-0">
+              {avatarUrl && !avatarError ? (
+                <img
+                  src={avatarUrl}
+                  alt={name}
+                  className="h-9 w-9 shrink-0 rounded-full object-cover"
+                  onError={() => setAvatarError(true)}
+                />
               ) : (
-                <>
-                  <span className="h-2 w-2 rounded-full bg-gray-400 shrink-0" />
-                  <span className="text-[11px] font-medium text-gray-500">Checked Out</span>
-                </>
+                <AvatarFallback name={name} size="sm" />
+              )}
+              <div className="min-w-0">
+                <p className="truncate font-semibold text-sm text-gray-900">{name}</p>
+                {prefix && <p className="text-[11px] text-gray-400">ID: {prefix}</p>}
+              </div>
+            </div>
+            <div className="flex flex-col items-end gap-1 shrink-0">
+              <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${statusCfg.cls}`}>
+                {statusCfg.label}
+              </span>
+              {shift.active_activity?.activity_type === 'break' && (
+                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700">
+                  On Break
+                </span>
+              )}
+              {shift.active_activity?.activity_type === 'field_task' && (
+                <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[11px] font-medium text-purple-700">
+                  Field Task
+                </span>
               )}
             </div>
-          )}
-          {/* Pending approvals badge */}
-          {shift.pending_approvals > 0 && (
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" />
-              <span className="text-[11px] font-medium text-amber-700">{shift.pending_approvals} pending approval{shift.pending_approvals > 1 ? 's' : ''}</span>
-            </div>
-          )}
-        </div>
+          </div>
 
-        {/* Action buttons */}
-        {(canExchangeShift || (shift.status === 'active' && canEndShift)) && (
-          <div className="mt-auto border-t border-gray-100 pt-3 flex gap-2">
-            {canExchangeShift && (
+          {/* Metadata rows */}
+          <div className="space-y-1.5 border-t border-gray-100 pt-2.5">
+            {/* Duty type */}
+            {shift.duty_type && (
+              <div className="flex items-center gap-2">
+                <span title="Duty Type">
+                  <Briefcase className="h-3.5 w-3.5 shrink-0 text-indigo-400" />
+                </span>
+                <span
+                  className="rounded-full px-2 py-0.5 text-[11px] font-medium text-gray-800"
+                  style={{ backgroundColor: dutyColor }}
+                >
+                  {shift.duty_type}
+                </span>
+              </div>
+            )}
+            {/* Branch */}
+            {branchName && (
+              <div className="flex items-center gap-2">
+                <span title="Branch">
+                  <MapPin className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                </span>
+                <span className="text-xs text-gray-700 truncate">{branchName}</span>
+              </div>
+            )}
+            {/* Shift start */}
+            <div className="flex items-center gap-2">
+              <span title="Shift Start">
+                <LogIn className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+              </span>
+              <span className="text-xs text-gray-700">{fmtShift(shift.shift_start)}</span>
+            </div>
+            {/* Shift end */}
+            <div className="flex items-center gap-2">
+              <span title="Shift End">
+                <LogOut className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+              </span>
+              <span className="text-xs text-gray-700">{fmtShift(shift.shift_end)}</span>
+            </div>
+            {/* Hours */}
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span title="Allocated Hours">
+                  <Clock className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                </span>
+                <span className="text-xs text-gray-700">
+                  {Number(shift.allocated_hours).toFixed(2)} hrs allocated
+                </span>
+              </div>
+            </div>
+            {shift.total_worked_hours != null && (
+              <div className="flex items-center gap-2">
+                <span title="Worked Hours">
+                  <BadgeCheck className="h-3.5 w-3.5 shrink-0 text-green-500" />
+                </span>
+                <span className="text-xs text-gray-700">
+                  {Number(shift.total_worked_hours).toFixed(2)} hrs worked
+                </span>
+              </div>
+            )}
+            {/* Attendance */}
+            {shift.check_in_status && (
+              <div className="flex items-center gap-2">
+                {shift.check_in_status === 'checked_in' ? (
+                  <>
+                    <span className="h-2 w-2 rounded-full bg-green-500 shrink-0" />
+                    <span className="text-[11px] font-medium text-green-700">Checked In</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="h-2 w-2 rounded-full bg-gray-400 shrink-0" />
+                    <span className="text-[11px] font-medium text-gray-500">Checked Out</span>
+                  </>
+                )}
+              </div>
+            )}
+            {/* Pending approvals badge */}
+            {shift.pending_approvals > 0 && (
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+                <span className="text-[11px] font-medium text-amber-700">
+                  {shift.pending_approvals} pending approval{shift.pending_approvals > 1 ? 's' : ''}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Action buttons */}
+          {canExchangeShift && (
+            <div className="mt-auto border-t border-gray-100 pt-3">
               <Button
                 variant="secondary"
                 size="sm"
-                className="flex-1"
+                className="w-full"
                 onClick={(e) => {
                   e.stopPropagation();
                   onExchangeShift(shift);
@@ -627,548 +760,829 @@ const ShiftCard = memo(({
               >
                 Exchange Shift
               </Button>
-            )}
-            {shift.status === 'active' && canEndShift && (
-              <Button
-                variant="primary"
-                size="sm"
-                className="flex-1"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEndShift(shift.id);
-                }}
-              >
-                End Shift
-              </Button>
-            )}
-          </div>
-        )}
+            </div>
+          )}
+        </div>
       </div>
-    </div>
-  );
-});
+    );
+  },
+);
 
 // --- Log Entry ---
 
-const LogEntry = memo(({
-  log,
-  isLast,
-  currentUserId,
-  shiftOwnerUserId,
-  onOpenPeerEvaluation,
-}: {
-  log: any;
-  isLast: boolean;
-  currentUserId: string;
-  shiftOwnerUserId: string | null;
-  onOpenPeerEvaluation: (evaluationId: string) => void;
-}) => {
-  const payload = log.odoo_payload as Record<string, unknown> | null;
-  const empName = payload?.x_employee_contact_name
-    ? parseEmployeeName(String(payload.x_employee_contact_name)).name
-    : null;
+const LogEntry = memo(
+  ({
+    log,
+    isLast,
+    highlight,
+    currentUserId,
+    shiftOwnerUserId,
+    onOpenPeerEvaluation,
+  }: {
+    log: any;
+    isLast: boolean;
+    highlight?: boolean;
+    currentUserId: string;
+    shiftOwnerUserId: string | null;
+    onOpenPeerEvaluation: (evaluationId: string) => void;
+  }) => {
+    const payload = log.odoo_payload as Record<string, unknown> | null;
+    const empName = payload?.x_employee_contact_name
+      ? parseEmployeeName(String(payload.x_employee_contact_name)).name
+      : null;
 
-  if (log.log_type === 'check_in') {
-    return (
-      <div className="flex gap-3">
-        <div className="flex flex-col items-center">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-100">
-            <LogIn className="h-4 w-4 text-green-600" />
+    if (log.log_type === 'check_in') {
+      return (
+        <div className="flex gap-3">
+          <div className="flex flex-col items-center">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-100">
+              <LogIn className="h-4 w-4 text-green-600" />
+            </div>
+            {!isLast && <div className="w-px flex-1 bg-gray-200" />}
           </div>
-          {!isLast && <div className="w-px flex-1 bg-gray-200" />}
+          <div className="pb-4">
+            <p className="font-medium text-gray-900">Check In</p>
+            <p className="text-xs text-gray-500">{fmtTime(log.event_time)}</p>
+          </div>
         </div>
-        <div className="pb-4">
-          <p className="font-medium text-gray-900">Check In</p>
-          <p className="text-xs text-gray-500">{fmtTime(log.event_time)}</p>
-          {empName && <p className="mt-1 text-sm text-gray-700">{empName}</p>}
-          {log.cumulative_minutes != null && (
-            <p className="text-xs text-gray-500">Cumulative: {log.cumulative_minutes} min</p>
-          )}
-        </div>
-      </div>
-    );
-  }
+      );
+    }
 
-  if (log.log_type === 'check_out') {
-    return (
-      <div className="flex gap-3">
-        <div className="flex flex-col items-center">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-100">
-            <LogOut className="h-4 w-4 text-red-600" />
+    if (log.log_type === 'check_out') {
+      return (
+        <div className="flex gap-3">
+          <div className="flex flex-col items-center">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-100">
+              <LogOut className="h-4 w-4 text-red-600" />
+            </div>
+            {!isLast && <div className="w-px flex-1 bg-gray-200" />}
           </div>
-          {!isLast && <div className="w-px flex-1 bg-gray-200" />}
-        </div>
-        <div className="pb-4">
-          <p className="font-medium text-gray-900">Check Out</p>
-          <p className="text-xs text-gray-500">{fmtTime(log.event_time)}</p>
-          {empName && <p className="mt-1 text-sm text-gray-700">{empName}</p>}
-          <div className="mt-1 flex gap-4 text-xs text-gray-500">
-            {log.worked_hours != null && (
-              <span>Session: {Number(log.worked_hours).toFixed(2)} hrs</span>
-            )}
-            {log.cumulative_minutes != null && (
-              <span>Cumulative: {log.cumulative_minutes} min</span>
-            )}
+          <div className="pb-4">
+            <p className="font-medium text-gray-900">Check Out</p>
+            <p className="text-xs text-gray-500">{fmtTime(log.event_time)}</p>
+            {log.worked_hours != null && (() => {
+              const totalMins = Math.round(Number(log.worked_hours) * 60);
+              const h = Math.floor(totalMins / 60);
+              const m = totalMins % 60;
+              const label = h > 0 ? `${h} hrs ${m} mins` : `${totalMins} mins`;
+              return <p className="mt-1 text-xs text-gray-600">Duration: {label}</p>;
+            })()}
           </div>
         </div>
-      </div>
-    );
-  }
+      );
+    }
 
-  if (log.log_type === 'shift_updated') {
-    const changes = log.changes as Record<string, { from: unknown; to: unknown }> | null;
-    return (
-      <div className="flex gap-3">
-        <div className="flex flex-col items-center">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-yellow-100">
-            <RefreshCw className="h-4 w-4 text-yellow-600" />
+    if (log.log_type === 'shift_updated') {
+      const changes = log.changes as Record<string, { from: unknown; to: unknown }> | null;
+      const inner = (
+        <div className="flex gap-3">
+          <div className="flex flex-col items-center">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-yellow-100">
+              <RefreshCw className="h-4 w-4 text-yellow-600" />
+            </div>
+            {!isLast && <div className="w-px flex-1 bg-gray-200" />}
           </div>
-          {!isLast && <div className="w-px flex-1 bg-gray-200" />}
-        </div>
-        <div className="min-w-0 flex-1 pb-4">
-          <p className="font-medium text-gray-900">Shift Updated</p>
-          <p className="text-xs text-gray-500">{fmtTime(log.event_time)}</p>
-          {changes && Object.keys(changes).length > 0 && (
-            <div className="mt-2 overflow-x-auto rounded border border-gray-200 text-xs">
-              <table className="min-w-full whitespace-nowrap">
-                <thead>
-                  <tr className="bg-gray-50">
-                    <th className="px-3 py-1.5 text-left font-medium text-gray-500">Field</th>
-                    <th className="px-3 py-1.5 text-left font-medium text-gray-500">From</th>
-                    <th className="px-3 py-1.5 text-left font-medium text-gray-500">To</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.entries(changes).map(([field, { from, to }]) => (
-                    <tr key={field} className="border-t border-gray-100">
-                      <td className="px-3 py-1.5 font-medium text-gray-700">
-                        {FIELD_LABELS[field] ?? field}
-                      </td>
-                      <td className="px-3 py-1.5 text-gray-500 line-through">
-                        {fmtShiftUpdatedValue(field, from)}
-                      </td>
-                      <td className="px-3 py-1.5 font-medium text-gray-900">
-                        {fmtShiftUpdatedValue(field, to)}
-                      </td>
+          <div className="min-w-0 flex-1 pb-4">
+            <p className="font-medium text-gray-900">Shift Updated</p>
+            <p className="text-xs text-gray-500">{fmtTime(log.event_time)}</p>
+            {changes && Object.keys(changes).length > 0 && (
+              <div className="mt-2 overflow-x-auto rounded border border-gray-200 text-xs">
+                <table className="min-w-full whitespace-nowrap">
+                  <thead>
+                    <tr className="bg-gray-50">
+                      <th className="px-3 py-1.5 text-left font-medium text-gray-500">Field</th>
+                      <th className="px-3 py-1.5 text-left font-medium text-gray-500">From</th>
+                      <th className="px-3 py-1.5 text-left font-medium text-gray-500">To</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  </thead>
+                  <tbody>
+                    {Object.entries(changes).map(([field, { from, to }]) => (
+                      <tr key={field} className="border-t border-gray-100">
+                        <td className="px-3 py-1.5 font-medium text-gray-700">
+                          {FIELD_LABELS[field] ?? field}
+                        </td>
+                        <td className="px-3 py-1.5 text-gray-500 line-through">
+                          {fmtShiftUpdatedValue(field, from)}
+                        </td>
+                        <td className="px-3 py-1.5 font-medium text-gray-900">
+                          {fmtShiftUpdatedValue(field, to)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
-    );
-  }
+      );
 
-  if (log.log_type === 'authorization_resolved') {
-    const changes = log.changes as Record<string, unknown> | null;
-    const resolution = changes?.resolution as string | undefined;
-    const resolvedByName = typeof changes?.resolved_by_name === 'string'
-      ? changes.resolved_by_name
-      : null;
-    const counterpartName = typeof changes?.counterpart_name === 'string'
-      ? changes.counterpart_name
-      : null;
-    const showCounterpartLine = Boolean(counterpartName && counterpartName !== resolvedByName);
-    const isApproved = resolution === 'approved';
-    const isRejected = resolution === 'rejected';
-    const isPendingLike = !isApproved && !isRejected;
-    const authLabel = AUTH_TYPE_CONFIG[changes?.auth_type as string]?.label ?? (changes?.auth_type as string ?? '');
-    const shiftExchangeTitle = (() => {
-      switch (resolution) {
-        case 'requested':
-          return 'Shift Exchange Requested';
-        case 'awaiting_hr':
-          return 'Shift Exchange Awaiting Approval';
-        case 'approved':
-          return 'Shift Exchange Approved';
-        case 'rejected':
-          return 'Shift Exchange Rejected';
-        default:
-          return 'Shift Exchange Updated';
+      if (highlight) {
+        return (
+          <motion.div
+            className="-mx-2 rounded-lg px-2"
+            animate={{
+              backgroundColor: [
+                'rgba(254, 240, 138, 0)',
+                'rgba(254, 240, 138, 0.7)',
+                'rgba(254, 240, 138, 0)',
+                'rgba(254, 240, 138, 0.5)',
+                'rgba(254, 240, 138, 0)',
+              ],
+            }}
+            transition={{ duration: 2.8, ease: 'easeInOut', times: [0, 0.2, 0.5, 0.7, 1] }}
+          >
+            {inner}
+          </motion.div>
+        );
       }
-    })();
-    return (
-      <div className="flex gap-3">
-        <div className="flex flex-col items-center">
-          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
-            isApproved ? 'bg-green-100' : isRejected ? 'bg-red-100' : 'bg-yellow-100'
-          }`}>
-            {isApproved ? (
-              <CheckCircle className="h-4 w-4 text-green-600" />
-            ) : isRejected ? (
-              <XCircle className="h-4 w-4 text-red-600" />
-            ) : (
-              <Clock className="h-4 w-4 text-yellow-700" />
-            )}
-          </div>
-          {!isLast && <div className="w-px flex-1 bg-gray-200" />}
-        </div>
-        <div className="pb-4">
-          <p className="font-medium text-gray-900">
-            {changes?.auth_type === 'shift_exchange'
-              ? shiftExchangeTitle
-              : `${authLabel} ${isApproved ? 'Approved' : 'Rejected'}`}
-          </p>
-          <p className="text-xs text-gray-500">{fmtTime(log.event_time)}</p>
-          {resolvedByName && (
-            <p className="text-xs text-gray-500">By {resolvedByName}</p>
-          )}
-          {showCounterpartLine && counterpartName && (
-            <p className="text-xs text-gray-500">Counterpart: {counterpartName}</p>
-          )}
-          {!!changes?.note && (
-            <p className="mt-1 text-xs text-gray-600">{String(changes.note)}</p>
-          )}
-          {!isPendingLike && isApproved && !!changes?.overtime_type && (
-            <p className="text-xs text-blue-600">
-              Type: {OVERTIME_TYPE_LABELS[changes!.overtime_type as string] ?? String(changes!.overtime_type)}
-            </p>
-          )}
-          {isRejected && !!changes?.rejection_reason && (
-            <p className="mt-1 text-xs text-red-600">Reason: {String(changes!.rejection_reason)}</p>
-          )}
-        </div>
-      </div>
-    );
-  }
+      return inner;
+    }
 
-  if (log.log_type === 'shift_ended') {
-    return (
-      <div className="flex gap-3">
-        <div className="flex flex-col items-center">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100">
-            <Square className="h-4 w-4 text-gray-600" />
-          </div>
-          {!isLast && <div className="w-px flex-1 bg-gray-200" />}
-        </div>
-        <div className="pb-4">
-          <p className="font-medium text-gray-900">Shift Ended</p>
-          <p className="text-xs text-gray-500">{fmtTime(log.event_time)}</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (log.log_type === 'peer_evaluation_available') {
-    const changes = log.changes as Record<string, unknown> | null;
-    const evaluationId = typeof changes?.peer_evaluation_id === 'string'
-      ? changes.peer_evaluation_id
-      : null;
-    const evaluationCount = Number(changes?.peer_evaluation_count ?? 1);
-    const canReview = Boolean(
-      evaluationId
-      && shiftOwnerUserId
-      && currentUserId
-      && shiftOwnerUserId === currentUserId,
-    );
-
-    return (
-      <div className="flex gap-3">
-        <div className="flex flex-col items-center">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100">
-            <Clock className="h-4 w-4 text-blue-600" />
-          </div>
-          {!isLast && <div className="w-px flex-1 bg-gray-200" />}
-        </div>
-        <div className="pb-4">
-          <p className="font-medium text-gray-900">Peer Evaluation Available</p>
-          <p className="text-xs text-gray-500">{fmtTime(log.event_time)}</p>
-          <p className="mt-1 text-xs text-gray-600">
-            {evaluationCount === 1
-              ? 'You have a peer evaluation to complete for this shift.'
-              : `You have ${evaluationCount} peer evaluations to complete for this shift.`}
-          </p>
-          {canReview && evaluationId && (
-            <Button
-              size="sm"
-              variant="secondary"
-              className="mt-2"
-              onClick={() => onOpenPeerEvaluation(evaluationId)}
+    if (log.log_type === 'authorization_resolved') {
+      const changes = log.changes as Record<string, unknown> | null;
+      const resolution = changes?.resolution as string | undefined;
+      const shiftExchangeSideRaw = changes?.shift_exchange_side;
+      const shiftExchangeSide =
+        shiftExchangeSideRaw === 'requester' || shiftExchangeSideRaw === 'accepting'
+          ? shiftExchangeSideRaw
+          : null;
+      const resolvedByName =
+        typeof changes?.resolved_by_name === 'string' ? changes.resolved_by_name : null;
+      const counterpartName =
+        typeof changes?.counterpart_name === 'string' ? changes.counterpart_name : null;
+      const showCounterpartLine = Boolean(counterpartName && counterpartName !== resolvedByName);
+      const noteLower = String(changes?.note ?? '').toLowerCase();
+      const inferredSide =
+        shiftExchangeSide ??
+        (noteLower.startsWith('you ') || noteLower.includes('with you')
+          ? 'accepting'
+          : 'requester');
+      const isApproved = resolution === 'approved';
+      const isRejected = resolution === 'rejected';
+      const isPendingLike = !isApproved && !isRejected;
+      const authLabel =
+        AUTH_TYPE_CONFIG[changes?.auth_type as string]?.label ??
+        (changes?.auth_type as string) ??
+        '';
+      const shiftExchangeTitle = (() => {
+        switch (resolution) {
+          case 'requested':
+            return 'Shift Exchange Requested';
+          case 'awaiting_hr':
+            return 'Shift Exchange Approved – Awaiting HR Approval';
+          case 'approved':
+            return 'Shift Exchange Approved';
+          case 'rejected':
+            return 'Shift Exchange Rejected';
+          default:
+            return 'Shift Exchange Updated';
+        }
+      })();
+      const inner = (
+        <div className="flex gap-3">
+          <div className="flex flex-col items-center">
+            <div
+              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+                changes?.auth_type === 'shift_exchange'
+                  ? 'bg-orange-100'
+                  : isApproved ? 'bg-green-100' : isRejected ? 'bg-red-100' : 'bg-yellow-100'
+              }`}
             >
-              Review Evaluation
-            </Button>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  if (log.log_type === 'peer_evaluation_submitted') {
-    return (
-      <div className="flex gap-3">
-        <div className="flex flex-col items-center">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-100">
-            <CheckCircle className="h-4 w-4 text-green-600" />
+              {changes?.auth_type === 'shift_exchange' ? (
+                <ArrowLeftRight className="h-4 w-4 text-orange-600" />
+              ) : isApproved ? (
+                <CheckCircle className="h-4 w-4 text-green-600" />
+              ) : isRejected ? (
+                <XCircle className="h-4 w-4 text-red-600" />
+              ) : (
+                <Clock className="h-4 w-4 text-yellow-700" />
+              )}
+            </div>
+            {!isLast && <div className="w-px flex-1 bg-gray-200" />}
           </div>
-          {!isLast && <div className="w-px flex-1 bg-gray-200" />}
-        </div>
-        <div className="pb-4">
-          <p className="font-medium text-gray-900">Peer Evaluation Submitted</p>
-          <p className="text-xs text-gray-500">{fmtTime(log.event_time)}</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (log.log_type === 'peer_evaluation_expired') {
-    const changes = log.changes as Record<string, unknown> | null;
-    const evaluationCount = Number(changes?.peer_evaluation_count ?? 1);
-    return (
-      <div className="flex gap-3">
-        <div className="flex flex-col items-center">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-100">
-            <XCircle className="h-4 w-4 text-red-600" />
-          </div>
-          {!isLast && <div className="w-px flex-1 bg-gray-200" />}
-        </div>
-        <div className="pb-4">
-          <p className="font-medium text-gray-900">Peer Evaluation Expired</p>
-          <p className="text-xs text-gray-500">{fmtTime(log.event_time)}</p>
-          <p className="mt-1 text-xs text-gray-600">
-            {evaluationCount === 1
-              ? 'The pending peer evaluation for this shift has expired.'
-              : `${evaluationCount} pending peer evaluations for this shift have expired.`}
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  return null;
-});
-
-// --- Shift Detail Panel ---
-
-const ShiftDetailPanel = memo(({
-  shift,
-  branchName,
-  currentUserId,
-  canApprove,
-  canSubmitPublicAuthRequest,
-  onClose,
-  onAuthorizationUpdate,
-  onOpenPeerEvaluation,
-  onEndShift,
-  canEndShift,
-}: {
-  shift: any;
-  branchName?: string;
-  currentUserId: string;
-  canApprove: boolean;
-  canSubmitPublicAuthRequest: boolean;
-  onClose: () => void;
-  onAuthorizationUpdate: (updatedAuth: any) => void;
-  onOpenPeerEvaluation: (evaluationId: string) => void;
-  onEndShift?: (shiftId: string) => void;
-  canEndShift?: boolean;
-}) => {
-  const { prefix, name } = parseEmployeeName(shift.employee_name);
-  const avatarUrl = resolveShiftAvatarUrl(shift);
-  const [avatarError, setAvatarError] = useState(false);
-  const logs: any[] = shift.logs ?? [];
-  const authorizations: any[] = shift.authorizations ?? [];
-  const statusCfg = SHIFT_STATUS_CONFIG[shift.status] ?? { label: shift.status, cls: 'bg-gray-100 text-gray-700' };
-
-  const handleReasonSubmit = async (authId: string, reason: string) => {
-    const res = await api.post(`/shift-authorizations/${authId}/reason`, { reason });
-    onAuthorizationUpdate(res.data.data);
-  };
-
-  const handleApprove = async (authId: string, overtimeType?: string, hours?: number, minutes?: number) => {
-    const body = overtimeType ? { overtimeType, hours, minutes } : {};
-    const res = await api.post(`/shift-authorizations/${authId}/approve`, body);
-    onAuthorizationUpdate(res.data.data);
-  };
-
-  const handleReject = async (authId: string, reason: string) => {
-    const res = await api.post(`/shift-authorizations/${authId}/reject`, { reason });
-    onAuthorizationUpdate(res.data.data);
-  };
-
-  return (
-    <div className="flex h-full flex-col">
-      {/* Sticky top bar */}
-      <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3.5 shrink-0">
-        <p className="text-sm font-semibold text-gray-700">Shift Details</p>
-        <button
-          onClick={onClose}
-          className="rounded-full p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
-        >
-          <X className="h-5 w-5" />
-        </button>
-      </div>
-
-      {/* Scrollable body */}
-      <div className="flex-1 overflow-y-auto">
-        {/* Dossier header block */}
-        <div className="flex items-start gap-4 border-b border-gray-200 bg-white px-6 py-5">
-          <div className="shrink-0">
-            {avatarUrl && !avatarError ? (
-              <img
-                src={avatarUrl}
-                alt={name}
-                className="h-16 w-16 rounded-full object-cover"
-                onError={() => setAvatarError(true)}
-              />
-            ) : (
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gray-200 text-lg font-semibold text-gray-600">
-                {name.split(' ').slice(0, 2).map((w: string) => w[0]?.toUpperCase() ?? '').join('')}
-              </div>
+          <div className="pb-4">
+            <p className="font-medium text-gray-900">
+              {changes?.auth_type === 'shift_exchange'
+                ? shiftExchangeTitle
+                : `${authLabel} ${isApproved ? 'Approved' : 'Rejected'}`}
+            </p>
+            <p className="text-xs text-gray-500">{fmtTime(log.event_time)}</p>
+            {resolvedByName && <p className="text-xs text-gray-500">By {resolvedByName}</p>}
+            {showCounterpartLine && counterpartName && (
+              <p className="text-xs text-gray-500">
+                {changes?.auth_type === 'shift_exchange'
+                  ? `${inferredSide === 'accepting' ? 'Requester' : 'Receiver'}: ${counterpartName}`
+                  : `Counterpart: ${counterpartName}`}
+              </p>
+            )}
+            {!!changes?.note && (
+              <p className="mt-1 text-xs text-gray-600">{String(changes.note)}</p>
+            )}
+            {isRejected && !!changes?.rejection_reason && (
+              <p className="mt-1 text-xs text-red-600">
+                Reason: {String(changes!.rejection_reason)}
+              </p>
+            )}
+            {!isPendingLike && isApproved && !!changes?.overtime_type && (
+              <p className="mt-1 text-xs text-blue-600">
+                Type:{' '}
+                {OVERTIME_TYPE_LABELS[changes!.overtime_type as string] ??
+                  String(changes!.overtime_type)}
+              </p>
             )}
           </div>
-          <div className="min-w-0 flex-1">
-            <h2 className="text-lg font-bold text-gray-900 leading-tight">{name}</h2>
-            {prefix && <p className="text-xs text-gray-400 mt-0.5">ID: {prefix}</p>}
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusCfg.cls}`}>
-                {statusCfg.label}
-              </span>
-              {shift.duty_type && (
-                <span
-                  className="rounded-full px-2.5 py-0.5 text-xs font-medium text-gray-800"
-                  style={{ backgroundColor: DUTY_COLORS[shift.duty_color] ?? '#e5e7eb' }}
-                >
-                  {shift.duty_type}
-                </span>
-              )}
-              {branchName && (
-                <span className="flex items-center gap-1 text-xs text-gray-500">
-                  <MapPin className="h-3 w-3" />
-                  {branchName}
-                </span>
-              )}
+        </div>
+      );
+
+      if (highlight) {
+        return (
+          <motion.div
+            className="-mx-2 rounded-lg px-2"
+            animate={{
+              backgroundColor: [
+                'rgba(219, 234, 254, 0)',
+                'rgba(219, 234, 254, 0.85)',
+                'rgba(219, 234, 254, 0)',
+                'rgba(219, 234, 254, 0.6)',
+                'rgba(219, 234, 254, 0)',
+              ],
+            }}
+            transition={{ duration: 2.8, ease: 'easeInOut', times: [0, 0.2, 0.5, 0.7, 1] }}
+          >
+            {inner}
+          </motion.div>
+        );
+      }
+
+      return inner;
+    }
+
+    if (log.log_type === 'shift_ended') {
+      const changes = log.changes as Record<string, unknown> | null;
+      return (
+        <div className="flex gap-3">
+          <div className="flex flex-col items-center">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100">
+              <Square className="h-4 w-4 text-gray-600" />
             </div>
+            {!isLast && <div className="w-px flex-1 bg-gray-200" />}
+          </div>
+          <div className="pb-4">
+            <p className="font-medium text-gray-900">Shift Ended</p>
+            <p className="text-xs text-gray-500">{fmtTime(log.event_time)}</p>
+            {changes?.ended_by && (
+              <p className="text-xs text-gray-500">By {String(changes.ended_by)}</p>
+            )}
           </div>
         </div>
+      );
+    }
 
-        <div className="space-y-3 px-5 py-4">
-          {/* Shift Summary section */}
-          <div className="overflow-hidden rounded-lg border border-gray-200">
-            <div className="border-b border-gray-200 bg-gray-50 px-4 py-2.5">
-              <span className="text-xs font-semibold uppercase tracking-widest text-gray-400">Shift Summary</span>
+    if (log.log_type === 'peer_evaluation_available') {
+      const changes = log.changes as Record<string, unknown> | null;
+      const evaluationId =
+        typeof changes?.peer_evaluation_id === 'string' ? changes.peer_evaluation_id : null;
+      const evaluationCount = Number(changes?.peer_evaluation_count ?? 1);
+      const canReview = Boolean(
+        evaluationId && shiftOwnerUserId && currentUserId && shiftOwnerUserId === currentUserId,
+      );
+
+      return (
+        <div className="flex gap-3">
+          <div className="flex flex-col items-center">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-100">
+              <Clock className="h-4 w-4 text-blue-600" />
             </div>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-3 px-4 py-3">
-              <div>
-                <p className="text-[11px] uppercase tracking-wide text-gray-400">Shift Start</p>
-                <p className="mt-0.5 text-sm font-medium text-gray-800">{fmtShift(shift.shift_start)}</p>
+            {!isLast && <div className="w-px flex-1 bg-gray-200" />}
+          </div>
+          <div className="pb-4">
+            <p className="font-medium text-gray-900">Peer Evaluation Available</p>
+            <p className="text-xs text-gray-500">{fmtTime(log.event_time)}</p>
+            <p className="mt-1 text-xs text-gray-600">
+              {evaluationCount === 1
+                ? 'You have a peer evaluation to complete for this shift.'
+                : `You have ${evaluationCount} peer evaluations to complete for this shift.`}
+            </p>
+            {canReview && evaluationId && (
+              <Button
+                size="sm"
+                variant="secondary"
+                className="mt-2"
+                onClick={() => onOpenPeerEvaluation(evaluationId)}
+              >
+                Review Evaluation
+              </Button>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    if (log.log_type === 'peer_evaluation_submitted') {
+      return (
+        <div className="flex gap-3">
+          <div className="flex flex-col items-center">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-100">
+              <CheckCircle className="h-4 w-4 text-green-600" />
+            </div>
+            {!isLast && <div className="w-px flex-1 bg-gray-200" />}
+          </div>
+          <div className="pb-4">
+            <p className="font-medium text-gray-900">Peer Evaluation Submitted</p>
+            <p className="text-xs text-gray-500">{fmtTime(log.event_time)}</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (log.log_type === 'peer_evaluation_expired') {
+      const changes = log.changes as Record<string, unknown> | null;
+      const evaluationCount = Number(changes?.peer_evaluation_count ?? 1);
+      return (
+        <div className="flex gap-3">
+          <div className="flex flex-col items-center">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-100">
+              <XCircle className="h-4 w-4 text-red-600" />
+            </div>
+            {!isLast && <div className="w-px flex-1 bg-gray-200" />}
+          </div>
+          <div className="pb-4">
+            <p className="font-medium text-gray-900">Peer Evaluation Expired</p>
+            <p className="text-xs text-gray-500">{fmtTime(log.event_time)}</p>
+            <p className="mt-1 text-xs text-gray-600">
+              {evaluationCount === 1
+                ? 'The pending peer evaluation for this shift has expired.'
+                : `${evaluationCount} pending peer evaluations for this shift have expired.`}
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    if (log.log_type === 'break_start' || log.log_type === 'break_end') {
+      const isStart = log.log_type === 'break_start';
+      const changes = log.changes as any;
+      return (
+        <div className="flex gap-3">
+          <div className="flex flex-col items-center">
+            <div
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100"
+            >
+              <Coffee className="h-4 w-4 text-amber-600" />
+            </div>
+            {!isLast && <div className="w-px flex-1 bg-gray-200" />}
+          </div>
+          <div className="pb-4">
+            <p className="font-medium text-gray-900">{isStart ? 'Started Break' : 'Ended Break'}</p>
+            <p className="text-xs text-gray-500">{fmtTime(log.event_time)}</p>
+            {!isStart && changes?.duration_minutes != null && (() => {
+              const totalMins = Number(changes.duration_minutes);
+              const h = Math.floor(totalMins / 60);
+              const m = totalMins % 60;
+              const label = h > 0 ? `${h} hrs ${m} mins` : `${totalMins} mins`;
+              return <p className="mt-1 text-xs text-gray-600">Duration: {label}</p>;
+            })()}
+          </div>
+        </div>
+      );
+    }
+
+    if (log.log_type === 'field_task_start' || log.log_type === 'field_task_end') {
+      const isStart = log.log_type === 'field_task_start';
+      const changes = log.changes as any;
+      return (
+        <div className="flex gap-3">
+          <div className="flex flex-col items-center">
+            <div
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-100"
+            >
+              <Play className="h-4 w-4 text-purple-600" />
+            </div>
+            {!isLast && <div className="w-px flex-1 bg-gray-200" />}
+          </div>
+          <div className="pb-4">
+            <p className="font-medium text-gray-900">
+              {isStart ? 'Started Field Task' : 'Ended Field Task'}
+            </p>
+            <p className="text-xs text-gray-500">{fmtTime(log.event_time)}</p>
+            {isStart && changes?.details?.reason && (
+              <p className="mt-1 text-xs text-gray-600">Reason: {changes.details.reason}</p>
+            )}
+            {!isStart && changes?.duration_minutes != null && (() => {
+              const totalMins = Number(changes.duration_minutes);
+              const h = Math.floor(totalMins / 60);
+              const m = totalMins % 60;
+              const label = h > 0 ? `${h} hrs ${m} mins` : `${totalMins} mins`;
+              return <p className="mt-1 text-xs text-gray-600">Duration: {label}</p>;
+            })()}
+          </div>
+        </div>
+      );
+    }
+
+    return null;
+  },
+);
+
+const ShiftDetailPanel = memo(
+  ({
+    shift,
+    branchName,
+    currentUserId,
+    canApprove,
+    canSubmitPublicAuthRequest,
+    highlightLog,
+    onClose,
+    onAuthorizationUpdate,
+    onOpenPeerEvaluation,
+    onEndShift,
+    canEndShift,
+    onOpenActivityModal,
+    showActivityModal,
+    activityLoading,
+    activityReason,
+    onSetActivityReason,
+    onActivityStart,
+    onActivityEnd,
+    onCloseActivityModal,
+  }: {
+    shift: any;
+    branchName?: string;
+    currentUserId: string;
+    canApprove: boolean;
+    canSubmitPublicAuthRequest: boolean;
+    highlightLog?: string | null;
+    onClose: () => void;
+    onAuthorizationUpdate: (updatedAuth: any) => void;
+    onOpenPeerEvaluation: (evaluationId: string) => void;
+    onEndShift?: (shiftId: string) => void;
+    canEndShift?: boolean;
+    onOpenActivityModal: (id: string, type: 'break' | 'field_task', isEnd: boolean) => void;
+    showActivityModal: { id: string; type: 'break' | 'field_task'; isEnd: boolean } | null;
+    activityLoading: boolean;
+    activityReason: string;
+    onSetActivityReason: (val: string) => void;
+    onActivityStart: (type: 'break' | 'field_task') => void;
+    onActivityEnd: () => void;
+    onCloseActivityModal: () => void;
+  }) => {
+    const { prefix, name } = parseEmployeeName(shift.employee_name);
+    const avatarUrl = resolveShiftAvatarUrl(shift);
+    const [avatarError, setAvatarError] = useState(false);
+    const logs: any[] = shift.logs ?? [];
+    const authorizations: any[] = shift.authorizations ?? [];
+    const activeActivity = shift.active_activity;
+
+    const highlightIdx = useMemo(() => {
+      if (!highlightLog) return -1;
+      for (let i = logs.length - 1; i >= 0; i--) {
+        if ((logs[i] as any).log_type === highlightLog) return i;
+      }
+      return -1;
+    }, [logs, highlightLog]);
+
+    const handleReasonSubmit = async (authId: string, reason: string) => {
+      const res = await api.post(`/shift-authorizations/${authId}/reason`, { reason });
+      onAuthorizationUpdate(res.data.data);
+    };
+
+    const handleApprove = async (
+      authId: string,
+      overtimeType?: string,
+      hours?: number,
+      minutes?: number,
+    ) => {
+      const body = overtimeType ? { overtimeType, hours, minutes } : {};
+      const res = await api.post(`/shift-authorizations/${authId}/approve`, body);
+      onAuthorizationUpdate(res.data.data);
+    };
+
+    const handleReject = async (authId: string, reason: string) => {
+      const res = await api.post(`/shift-authorizations/${authId}/reject`, { reason });
+      onAuthorizationUpdate(res.data.data);
+    };
+
+    const statusCfg = SHIFT_STATUS_CONFIG[shift.status] ?? {
+      label: shift.status,
+      cls: 'bg-gray-100 text-gray-700',
+    };
+
+    return (
+      <div className="flex h-full flex-col">
+        {/* Sticky top bar */}
+        <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3.5 shrink-0">
+          <p className="text-sm font-semibold text-gray-700">Shift Details</p>
+          <button
+            onClick={onClose}
+            className="rounded-full p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="flex-1 overflow-y-auto">
+          {/* Dossier header block */}
+          <div className="flex items-start gap-4 border-b border-gray-200 bg-white px-6 py-5">
+            <div className="shrink-0">
+              {avatarUrl && !avatarError ? (
+                <img
+                  src={avatarUrl}
+                  alt={name}
+                  className="h-16 w-16 rounded-full object-cover"
+                  onError={() => setAvatarError(true)}
+                />
+              ) : (
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gray-200 text-lg font-semibold text-gray-600">
+                  {name
+                    .split(' ')
+                    .slice(0, 2)
+                    .map((w: string) => w[0]?.toUpperCase() ?? '')
+                    .join('')}
+                </div>
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-lg font-bold text-gray-900 leading-tight">{name}</h2>
+              {prefix && <p className="text-xs text-gray-400 mt-0.5">ID: {prefix}</p>}
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusCfg.cls}`}>
+                  {statusCfg.label}
+                </span>
+                {shift.duty_type && (
+                  <span
+                    className="rounded-full px-2.5 py-0.5 text-xs font-medium text-gray-800"
+                    style={{ backgroundColor: DUTY_COLORS[shift.duty_color] ?? '#e5e7eb' }}
+                  >
+                    {shift.duty_type}
+                  </span>
+                )}
+                {branchName && (
+                  <span className="flex items-center gap-1 text-xs text-gray-500">
+                    <MapPin className="h-3 w-3" />
+                    {branchName}
+                  </span>
+                )}
+                {activeActivity?.activity_type === 'break' && (
+                  <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">
+                    On Break
+                  </span>
+                )}
+                {activeActivity?.activity_type === 'field_task' && (
+                  <span className="rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-700">
+                    Field Task
+                  </span>
+                )}
               </div>
-              <div>
-                <p className="text-[11px] uppercase tracking-wide text-gray-400">Shift End</p>
-                <p className="mt-0.5 text-sm font-medium text-gray-800">{fmtShift(shift.shift_end)}</p>
+            </div>
+          </div>
+
+          <div className="space-y-3 px-5 py-4">
+            {/* Shift Summary section */}
+            <div className="overflow-hidden rounded-lg border border-gray-200">
+              <div className="border-b border-gray-200 bg-gray-50 px-4 py-2.5">
+                <span className="text-xs font-semibold uppercase tracking-widest text-gray-400">
+                  Shift Summary
+                </span>
               </div>
-              <div>
-                <p className="text-[11px] uppercase tracking-wide text-gray-400">Allocated Hours</p>
-                <p className="mt-0.5 text-sm font-medium text-gray-800">{Number(shift.allocated_hours).toFixed(2)} hrs</p>
-              </div>
-              <div>
-                <p className="text-[11px] uppercase tracking-wide text-gray-400">Total Worked</p>
-                <p className="mt-0.5 text-sm font-medium text-gray-800">
-                  {shift.total_worked_hours != null ? `${Number(shift.total_worked_hours).toFixed(2)} hrs` : '—'}
-                </p>
-              </div>
-              {shift.check_in_status && (
+              <div className="grid grid-cols-2 gap-x-6 gap-y-3 px-4 py-3">
                 <div>
-                  <p className="text-[11px] uppercase tracking-wide text-gray-400">Attendance</p>
-                  <p className="mt-0.5 text-sm font-medium">
-                    {shift.check_in_status === 'checked_in' ? (
-                      <span className="inline-flex items-center gap-1 text-green-700">
-                        <span className="h-2 w-2 rounded-full bg-green-500" /> Checked In
+                  <p className="text-[11px] uppercase tracking-wide text-gray-400">Shift Start</p>
+                  <p className="mt-0.5 text-sm font-medium text-gray-800">
+                    {fmtShift(shift.shift_start)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-gray-400">Shift End</p>
+                  <p className="mt-0.5 text-sm font-medium text-gray-800">
+                    {fmtShift(shift.shift_end)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-gray-400">
+                    Allocated Hours
+                  </p>
+                  <p className="mt-0.5 text-sm font-medium text-gray-800">
+                    {Number(shift.allocated_hours).toFixed(2)} hrs
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-gray-400">Worked Hours</p>
+                  <p className="mt-0.5 text-sm font-medium text-primary-800">
+                    {shift.total_worked_hours != null
+                      ? `${(Number(shift.total_worked_hours) - Number(shift.total_break_hours ?? 0)).toFixed(2)} hrs`
+                      : '—'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-gray-400">
+                    Total Active Hours
+                  </p>
+                  <p className="mt-0.5 text-sm font-medium text-gray-800">
+                    {shift.total_worked_hours != null
+                      ? `${Number(shift.total_worked_hours).toFixed(2)} hrs`
+                      : '—'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-gray-400">
+                    Total Break Hours
+                  </p>
+                  <p className="mt-0.5 text-sm font-medium text-gray-800">
+                    {`${Number(shift.total_break_hours ?? 0).toFixed(2)} hrs`}
+                  </p>
+                </div>
+                {shift.check_in_status && (
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400">Attendance</p>
+                    <p className="mt-0.5 text-sm font-medium">
+                      {shift.check_in_status === 'checked_in' ? (
+                        <span className="inline-flex items-center gap-1 text-green-700">
+                          <span className="h-2 w-2 rounded-full bg-green-500" /> Checked In
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-gray-500">
+                          <span className="h-2 w-2 rounded-full bg-gray-400" /> Checked Out
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                )}
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-gray-400">
+                    Pending Approvals
+                  </p>
+                  <p className="mt-0.5 text-sm font-medium text-gray-800">
+                    {shift.pending_approvals > 0 ? (
+                      <span className="inline-flex items-center gap-1 text-amber-700">
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        {shift.pending_approvals}
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 text-gray-500">
-                        <span className="h-2 w-2 rounded-full bg-gray-400" /> Checked Out
-                      </span>
+                      <span className="text-gray-400">None</span>
                     )}
                   </p>
                 </div>
-              )}
-              <div>
-                <p className="text-[11px] uppercase tracking-wide text-gray-400">Pending Approvals</p>
-                <p className="mt-0.5 text-sm font-medium text-gray-800">
-                  {shift.pending_approvals > 0 ? (
-                    <span className="inline-flex items-center gap-1 text-amber-700">
-                      <AlertTriangle className="h-3.5 w-3.5" />
-                      {shift.pending_approvals}
-                    </span>
-                  ) : (
-                    <span className="text-gray-400">None</span>
-                  )}
-                </p>
               </div>
-            </div>
-          </div>
 
-          {/* Authorizations section */}
-          {authorizations.length > 0 && (
-            <div className="overflow-hidden rounded-lg border border-gray-200">
-              <div className="border-b border-gray-200 bg-gray-50 px-4 py-2.5">
-                <span className="text-xs font-semibold uppercase tracking-widest text-gray-400">Authorizations</span>
-              </div>
-              <div className="divide-y divide-gray-100 px-4 py-3 space-y-0">
-                {authorizations.map((auth: any) => (
-                  <div key={auth.id} className="py-2 first:pt-0 last:pb-0">
-                    <AuthorizationCard
-                      auth={auth}
-                      currentUserId={currentUserId}
-                      canApprove={canApprove}
-                      canSubmitPublicAuthRequest={canSubmitPublicAuthRequest}
-                      onReasonSubmit={handleReasonSubmit}
-                      onApprove={handleApprove}
-                      onReject={handleReject}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Activity Log section */}
-          <div className="overflow-hidden rounded-lg border border-gray-200">
-            <div className="border-b border-gray-200 bg-gray-50 px-4 py-2.5">
-              <span className="text-xs font-semibold uppercase tracking-widest text-gray-400">Activity Log</span>
-            </div>
-            <div className="px-4 py-3">
-              {logs.length === 0 ? (
-                <p className="text-sm text-gray-400">No activity recorded yet.</p>
-              ) : (
-                <div>
-                  {logs.map((log: any, idx: number) => (
-                    <LogEntry
-                      key={log.id}
-                      log={log}
-                      isLast={idx === logs.length - 1}
-                      currentUserId={currentUserId}
-                      shiftOwnerUserId={shift.user_id ?? null}
-                      onOpenPeerEvaluation={onOpenPeerEvaluation}
-                    />
-                  ))}
+              {shift.status === 'active' && canEndShift && (
+                <div className="border-t border-gray-100 bg-gray-50/50 px-4 py-3 space-y-2">
+                  <Button
+                    className="w-full"
+                    variant="danger"
+                    size="sm"
+                    onClick={() => {
+                      onEndShift?.(shift.id);
+                    }}
+                  >
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Check Out
+                  </Button>
                 </div>
               )}
+            </div>
+
+            {/* Authorizations section */}
+            {authorizations.length > 0 && (
+              <div className="overflow-hidden rounded-lg border border-gray-200">
+                <div className="border-b border-gray-200 bg-gray-50 px-4 py-2.5">
+                  <span className="text-xs font-semibold uppercase tracking-widest text-gray-400">
+                    Authorizations
+                  </span>
+                </div>
+                <div className="divide-y divide-gray-100 px-4 py-3 space-y-0">
+                  {authorizations.map((auth: any) => (
+                    <div key={auth.id} className="py-2 first:pt-0 last:pb-0">
+                      <AuthorizationCard
+                        auth={auth}
+                        currentUserId={currentUserId}
+                        canApprove={canApprove}
+                        canSubmitPublicAuthRequest={canSubmitPublicAuthRequest}
+                        onReasonSubmit={handleReasonSubmit}
+                        onApprove={handleApprove}
+                        onReject={handleReject}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Activity Log section */}
+            <div className="overflow-hidden rounded-lg border border-gray-200">
+              <div className="border-b border-gray-200 bg-gray-50 px-4 py-2.5">
+                <span className="text-xs font-semibold uppercase tracking-widest text-gray-400">
+                  Activity Log
+                </span>
+              </div>
+              <div className="px-4 py-3">
+                {logs.length === 0 ? (
+                  <p className="text-sm text-gray-400">No activity recorded yet.</p>
+                ) : (
+                  <div>
+                    {logs.map((log: any, idx: number) => (
+                      <LogEntry
+                        key={log.id}
+                        log={log}
+                        isLast={idx === logs.length - 1}
+                        highlight={idx === highlightIdx}
+                        currentUserId={currentUserId}
+                        shiftOwnerUserId={shift.user_id ?? null}
+                        onOpenPeerEvaluation={onOpenPeerEvaluation}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Footer actions */}
-        {shift.status === 'active' && canEndShift && (
-          <div className="border-t border-gray-100 bg-gray-50/50 px-6 py-4 shrink-0">
-            <Button
-              className="w-full"
-              variant="primary"
-              onClick={() => {
-                onClose();
-                onEndShift?.(shift.id);
-              }}
+        <AnimatePresence>
+          {showActivityModal && (
+            <AnimatedModal
+              maxWidth="max-w-sm"
+              onBackdropClick={() => !activityLoading && onCloseActivityModal()}
             >
-              End Shift
-            </Button>
-          </div>
-        )}
+              <div className="border-b border-gray-200 px-5 py-4">
+                <p className="font-semibold text-gray-900">
+                  {showActivityModal.isEnd ? 'End' : 'Start'}{' '}
+                  {showActivityModal.type === 'break' ? 'Break' : 'Field Task'}?
+                </p>
+              </div>
+              <div className="px-5 py-4">
+                <div className="space-y-4">
+                  <p className="text-sm text-gray-700">
+                    Are you sure you want to {showActivityModal.isEnd ? 'end' : 'start'} this{' '}
+                    {showActivityModal.type === 'break' ? 'break' : 'field task'}?
+                  </p>
+
+                  {!showActivityModal.isEnd && showActivityModal.type === 'field_task' && (
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+                        Reason
+                      </label>
+                      <textarea
+                        rows={3}
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                        placeholder="Enter reason for field task..."
+                        value={activityReason}
+                        onChange={(e) => onSetActivityReason(e.target.value)}
+                      />
+                    </div>
+                  )}
+
+                  {showActivityModal.isEnd && (
+                    <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                      <p className="text-sm text-amber-800">
+                        This action will be recorded in the shift log.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="flex gap-3 border-t border-gray-200 px-5 py-4">
+                <Button
+                  className="flex-1"
+                  variant="secondary"
+                  disabled={activityLoading}
+                  onClick={() => onCloseActivityModal()}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="flex-1"
+                  variant={
+                    showActivityModal.isEnd
+                      ? 'danger'
+                      : showActivityModal.type === 'break'
+                        ? 'primary'
+                        : 'success'
+                  }
+                  disabled={
+                    activityLoading ||
+                    (!showActivityModal.isEnd &&
+                      showActivityModal.type === 'field_task' &&
+                      !activityReason.trim())
+                  }
+                  onClick={() =>
+                    showActivityModal.isEnd
+                      ? onActivityEnd()
+                      : onActivityStart(showActivityModal.type)
+                  }
+                >
+                  {activityLoading ? 'Processing...' : 'Confirm'}
+                </Button>
+              </div>
+            </AnimatedModal>
+          )}
+        </AnimatePresence>
       </div>
-    </div>
-  );
-});
+    );
+  },
+);
 
 // --- Page ---
 
@@ -1209,9 +1623,7 @@ export function EmployeeShiftsPage() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [isMobile, setIsMobile] = useState(() =>
-    typeof window !== 'undefined'
-      ? window.matchMedia('(max-width: 639px)').matches
-      : false,
+    typeof window !== 'undefined' ? window.matchMedia('(max-width: 639px)').matches : false,
   );
 
   const selectedBranchIds = useBranchStore((s) => s.selectedBranchIds);
@@ -1284,7 +1696,7 @@ export function EmployeeShiftsPage() {
       const res = await api.get(`/employee-shifts/${shiftId}`);
       setSelectedShift(res.data.data);
     } catch (err: unknown) {
-      const message = getApiErrorMessage(err, "Failed to load shift detail");
+      const message = getApiErrorMessage(err, 'Failed to load shift detail');
       showErrorToast(message);
     } finally {
       setDetailLoading(false);
@@ -1295,14 +1707,14 @@ export function EmployeeShiftsPage() {
     try {
       const res = await api.post(`/employee-shifts/${shiftId}/end`);
       setShifts((prev) =>
-        prev.map((s) => (s.id === shiftId ? { ...s, ...res.data.data } : s)).filter(
-          (s) => activeTab === 'all' || s.status === activeTab,
-        ),
+        prev
+          .map((s) => (s.id === shiftId ? { ...s, ...res.data.data } : s))
+          .filter((s) => activeTab === 'all' || s.status === activeTab),
       );
       showSuccessToast('Shift ended successfully.');
       return true;
     } catch (err: unknown) {
-      const message = getApiErrorMessage(err, "Failed to end shift");
+      const message = getApiErrorMessage(err, 'Failed to end shift');
       showErrorToast(message);
       return false;
     }
@@ -1330,6 +1742,73 @@ export function EmployeeShiftsPage() {
     } finally {
       setEndShiftLoading(false);
     }
+  };
+
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityReason, setActivityReason] = useState('');
+  const [showActivityModal, setShowActivityModal] = useState<{
+    id: string;
+    type: 'break' | 'field_task';
+    isEnd: boolean;
+  } | null>(null);
+
+  const onOpenActivityModal = (id: string, type: 'break' | 'field_task', isEnd: boolean) => {
+    setShowActivityModal({ id, type, isEnd });
+  };
+
+  const handleActivityStart = async (type: 'break' | 'field_task') => {
+    if (!showActivityModal) return;
+    setActivityLoading(true);
+    try {
+      const { id } = showActivityModal;
+      const res = await api.post(`/employee-shifts/${id}/activities/start`, {
+        activityType: type,
+        details: type === 'field_task' ? { reason: activityReason } : undefined,
+      });
+      setShifts((prev) =>
+        prev.map((s) => (s.id === id ? { ...s, active_activity: res.data.data } : s)),
+      );
+      setSelectedShift((prev: any) =>
+        prev?.id === id ? { ...prev, active_activity: res.data.data } : prev,
+      );
+      showSuccessToast(`Activity started: ${type === 'break' ? 'Break' : 'Field Task'}`);
+      setShowActivityModal(null);
+      setActivityReason('');
+    } catch (err: unknown) {
+      showErrorToast(getApiErrorMessage(err, 'Failed to start activity'));
+    } finally {
+      setActivityLoading(false);
+    }
+  };
+
+  const handleActivityEnd = async () => {
+    if (!showActivityModal) return;
+    setActivityLoading(true);
+    try {
+      const { id, type } = showActivityModal;
+      const shift = shifts.find((s) => s.id === id);
+      if (!shift?.active_activity) return;
+
+      await api.post(`/employee-shifts/${id}/activities/end`, {
+        activityId: shift.active_activity.id,
+      });
+      setShifts((prev) => prev.map((s) => (s.id === id ? { ...s, active_activity: null } : s)));
+      setSelectedShift((prev: any) =>
+        prev?.id === id ? { ...prev, active_activity: null } : prev,
+      );
+      showSuccessToast(`Activity ended: ${type === 'break' ? 'Break' : 'Field Task'}`);
+      setShowActivityModal(null);
+    } catch (err: unknown) {
+      showErrorToast(getApiErrorMessage(err, 'Failed to end activity'));
+    } finally {
+      setActivityLoading(false);
+    }
+  };
+
+  const onCloseActivityModal = () => {
+    if (activityLoading) return;
+    setShowActivityModal(null);
+    setActivityReason('');
   };
 
   useEffect(() => {
@@ -1368,17 +1847,18 @@ export function EmployeeShiftsPage() {
           .filter((s) => activeTab === 'all' || s.status === activeTab),
       );
       setSelectedShift((prev: any) =>
-        prev?.id === data.id ? { ...prev, ...data, logs: prev.logs, authorizations: prev.authorizations } : prev,
+        prev?.id === data.id
+          ? { ...prev, ...data, logs: prev.logs, authorizations: prev.authorizations }
+          : prev,
       );
     });
 
     socket.on('shift:log-new', (data: any) => {
-      if (data.log_type === 'check_out' && data.shift_id && data.total_worked_hours != null) {
+      const isEndingLog = data.log_type === 'check_out' || data.log_type === 'shift_ended';
+      if (isEndingLog && data.shift_id && data.total_worked_hours != null) {
         setShifts((prev) =>
           prev.map((s) =>
-            s.id === data.shift_id
-              ? { ...s, total_worked_hours: data.total_worked_hours }
-              : s,
+            s.id === data.shift_id ? { ...s, total_worked_hours: data.total_worked_hours } : s,
           ),
         );
         setSelectedShift((prev: any) =>
@@ -1390,6 +1870,16 @@ export function EmployeeShiftsPage() {
       setSelectedShift((prev: any) => {
         if (!prev || prev.id !== data.shift_id) return prev;
         return { ...prev, logs: [...(prev.logs || []), data] };
+      });
+    });
+
+    socket.on('shift:log-deleted', (data: { shift_id: string; log_type: string }) => {
+      setSelectedShift((prev: any) => {
+        if (!prev || prev.id !== data.shift_id) return prev;
+        return {
+          ...prev,
+          logs: (prev.logs || []).filter((l: any) => l.log_type !== data.log_type),
+        };
       });
     });
 
@@ -1409,6 +1899,11 @@ export function EmployeeShiftsPage() {
       }
     });
 
+    socket.on('shift:deleted', (data: { id: string }) => {
+      setShifts((prev) => prev.filter((s) => s.id !== data.id));
+      setSelectedShift((prev: any) => (prev?.id === data.id ? null : prev));
+    });
+
     socket.on('shift:authorization-updated', (data: any) => {
       setSelectedShift((prev: any) => {
         if (!prev || prev.id !== data.shift_id) return prev;
@@ -1421,10 +1916,32 @@ export function EmployeeShiftsPage() {
       });
     });
 
+    socket.on('shift:activity-started', (data: { shiftId: string; activity: any }) => {
+      setSelectedShift((prev: any) => {
+        if (!prev || prev.id !== data.shiftId) return prev;
+        return { ...prev, active_activity: data.activity };
+      });
+      setShifts((prev) =>
+        prev.map((s) => (s.id === data.shiftId ? { ...s, active_activity: data.activity } : s)),
+      );
+    });
+
+    socket.on('shift:activity-ended', (data: { shiftId: string; activity: any }) => {
+      setSelectedShift((prev: any) => {
+        if (!prev || prev.id !== data.shiftId) return prev;
+        return { ...prev, active_activity: null };
+      });
+      setShifts((prev) =>
+        prev.map((s) => (s.id === data.shiftId ? { ...s, active_activity: null } : s)),
+      );
+    });
+
     return () => {
       socket.off('shift:new');
       socket.off('shift:updated');
+      socket.off('shift:deleted');
       socket.off('shift:log-new');
+      socket.off('shift:log-deleted');
       socket.off('shift:authorization-new');
       socket.off('shift:authorization-updated');
     };
@@ -1552,14 +2069,16 @@ export function EmployeeShiftsPage() {
               )}
             </div>
             <span className="ml-auto">
-              {filtersOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+              {filtersOpen ? (
+                <ChevronUp className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronDown className="h-3.5 w-3.5" />
+              )}
             </span>
           </button>
         </div>
 
-        {hasActiveFilters && (
-          <p className="text-xs text-gray-500">Filters applied</p>
-        )}
+        {hasActiveFilters && <p className="text-xs text-gray-500">Filters applied</p>}
 
         {/* Filter panel — animated */}
         <AnimatePresence initial={false}>
@@ -1580,7 +2099,9 @@ export function EmployeeShiftsPage() {
                       type="text"
                       placeholder="Search employee..."
                       value={draftFilters.employeeName}
-                      onChange={(e) => setDraftFilters((f) => ({ ...f, employeeName: e.target.value }))}
+                      onChange={(e) =>
+                        setDraftFilters((f) => ({ ...f, employeeName: e.target.value }))
+                      }
                       className="w-full rounded border border-gray-300 px-3 py-1.5 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
                     />
                   </div>
@@ -1591,7 +2112,9 @@ export function EmployeeShiftsPage() {
                     <DateRangePicker
                       dateFrom={draftFilters.dateFrom}
                       dateTo={draftFilters.dateTo}
-                      onChange={(from, to) => setDraftFilters((f) => ({ ...f, dateFrom: from, dateTo: to }))}
+                      onChange={(from, to) =>
+                        setDraftFilters((f) => ({ ...f, dateFrom: from, dateTo: to }))
+                      }
                     />
                   </div>
 
@@ -1605,7 +2128,9 @@ export function EmployeeShiftsPage() {
                     >
                       <option value="">All duty types</option>
                       {dutyTypeOptions.map((dt) => (
-                        <option key={dt} value={dt}>{dt}</option>
+                        <option key={dt} value={dt}>
+                          {dt}
+                        </option>
                       ))}
                     </select>
                   </div>
@@ -1656,7 +2181,12 @@ export function EmployeeShiftsPage() {
                       <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-gray-700">
                         <button
                           type="button"
-                          onClick={() => setDraftFilters((f) => ({ ...f, hasPendingApprovals: !f.hasPendingApprovals }))}
+                          onClick={() =>
+                            setDraftFilters((f) => ({
+                              ...f,
+                              hasPendingApprovals: !f.hasPendingApprovals,
+                            }))
+                          }
                           className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                             draftFilters.hasPendingApprovals ? 'bg-primary-600' : 'bg-gray-300'
                           }`}
@@ -1677,13 +2207,23 @@ export function EmployeeShiftsPage() {
                 </div>
 
                 <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                  <Button type="button" variant="secondary" className="w-full sm:w-auto" onClick={clearFilters}>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="w-full sm:w-auto"
+                    onClick={clearFilters}
+                  >
                     Clear
                   </Button>
                   <Button type="button" className="w-full sm:w-auto" onClick={applyFilters}>
                     Apply
                   </Button>
-                  <Button type="button" variant="ghost" className="w-full sm:w-auto" onClick={cancelFilters}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="w-full sm:w-auto"
+                    onClick={cancelFilters}
+                  >
                     Cancel
                   </Button>
                 </div>
@@ -1728,13 +2268,14 @@ export function EmployeeShiftsPage() {
                   branchName={branchMap[shift.branch_id]}
                   canEndShift={canEndShift}
                   canExchangeShift={
-                    !isSuspendedSelf
-                    && shift.status === 'open'
-                    && shift.user_id
-                    && shift.user_id === currentUser?.id
+                    !isSuspendedSelf &&
+                    shift.status === 'open' &&
+                    shift.user_id &&
+                    shift.user_id === currentUser?.id
                   }
                   onClick={() => openDetail(shift.id)}
                   onEndShift={requestEndShift}
+                  onOpenActivityModal={onOpenActivityModal}
                   onExchangeShift={setExchangeShiftSource}
                 />
               ))}
@@ -1742,7 +2283,9 @@ export function EmployeeShiftsPage() {
 
             {totalPages > 1 && (
               <div className="flex items-center justify-between text-sm text-gray-600">
-                <span>Page {page} of {totalPages}</span>
+                <span>
+                  Page {page} of {totalPages}
+                </span>
                 <div className="flex gap-2">
                   <button
                     onClick={() => setPage((prev) => Math.max(1, prev - 1))}
@@ -1801,19 +2344,33 @@ export function EmployeeShiftsPage() {
                     canSubmitPublicAuthRequest={canSubmitPublicAuthRequest}
                     onClose={closeDetailPanel}
                     onEndShift={requestEndShift}
+                    onOpenActivityModal={onOpenActivityModal}
+                    showActivityModal={showActivityModal}
+                    activityLoading={activityLoading}
+                    activityReason={activityReason}
+                    onSetActivityReason={setActivityReason}
+                    onActivityStart={handleActivityStart}
+                    onActivityEnd={handleActivityEnd}
+                    onCloseActivityModal={onCloseActivityModal}
                     onAuthorizationUpdate={(updatedAuth) => {
                       setSelectedShift((prev: any) => {
                         if (!prev) return prev;
                         const updatedAuths = (prev.authorizations || []).map((a: any) =>
                           a.id === updatedAuth.id ? updatedAuth : a,
                         );
-                        const newPending = updatedAuths.filter((a: any) => a.status === 'pending').length;
+                        const newPending = updatedAuths.filter(
+                          (a: any) => a.status === 'pending',
+                        ).length;
                         setShifts((prevShifts) =>
                           prevShifts.map((s) =>
                             s.id === prev.id ? { ...s, pending_approvals: newPending } : s,
                           ),
                         );
-                        return { ...prev, authorizations: updatedAuths, pending_approvals: newPending };
+                        return {
+                          ...prev,
+                          authorizations: updatedAuths,
+                          pending_approvals: newPending,
+                        };
                       });
                     }}
                     onOpenPeerEvaluation={(evaluationId) => setPeerEvaluationModalId(evaluationId)}
@@ -1836,7 +2393,7 @@ export function EmployeeShiftsPage() {
           >
             <div className="border-b border-gray-200 px-5 py-4">
               <p className="font-semibold text-gray-900">
-                {endShiftConfirm.step === 1 ? "End this shift?" : "Final confirmation"}
+                {endShiftConfirm.step === 1 ? 'End this shift?' : 'Final confirmation'}
               </p>
             </div>
             <div className="px-5 py-4">
@@ -1846,14 +2403,10 @@ export function EmployeeShiftsPage() {
                 </p>
               ) : (
                 <div className="space-y-2">
-                  <p className="text-sm text-gray-700">
-                    You are about to end this shift.
-                  </p>
+                  <p className="text-sm text-gray-700">You are about to end this shift.</p>
                   <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
                     <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-                    <p className="text-sm text-amber-800">
-                      This action can’t be undone.
-                    </p>
+                    <p className="text-sm text-amber-800">This action can’t be undone.</p>
                   </div>
                 </div>
               )}
@@ -1870,11 +2423,11 @@ export function EmployeeShiftsPage() {
               {endShiftConfirm.step === 1 ? (
                 <Button
                   className="flex-1"
-                  variant="primary"
+                  variant="danger"
                   disabled={endShiftLoading}
                   onClick={continueEndShiftConfirm}
                 >
-                  Continue
+                  Confirm
                 </Button>
               ) : (
                 <Button
@@ -1883,7 +2436,7 @@ export function EmployeeShiftsPage() {
                   disabled={endShiftLoading}
                   onClick={confirmEndShift}
                 >
-                  {endShiftLoading ? "Ending..." : "End Shift"}
+                  {endShiftLoading ? 'Confirming...' : 'Confirm'}
                 </Button>
               )}
             </div>
@@ -1891,18 +2444,28 @@ export function EmployeeShiftsPage() {
         )}
       </AnimatePresence>
 
-      <ShiftExchangeFlowModal
-        isOpen={Boolean(exchangeShiftSource)}
-        fromShift={exchangeShiftSource ? {
-          id: exchangeShiftSource.id,
-          shift_start: exchangeShiftSource.shift_start,
-          shift_end: exchangeShiftSource.shift_end,
-          duty_type: exchangeShiftSource.duty_type,
-          branch_name: branchMap[exchangeShiftSource.branch_id] ?? null,
-        } : null}
-        onClose={() => setExchangeShiftSource(null)}
-        onCreated={() => { fetchShifts(); }}
-      />
+      <AnimatePresence>
+        {Boolean(exchangeShiftSource) && (
+          <ShiftExchangeFlowModal
+            isOpen={true}
+            fromShift={
+              exchangeShiftSource
+                ? {
+                    id: exchangeShiftSource.id,
+                    shift_start: exchangeShiftSource.shift_start,
+                    shift_end: exchangeShiftSource.shift_end,
+                    duty_type: exchangeShiftSource.duty_type,
+                    branch_name: branchMap[exchangeShiftSource.branch_id] ?? null,
+                  }
+                : null
+            }
+            onClose={() => setExchangeShiftSource(null)}
+            onCreated={() => {
+              fetchShifts();
+            }}
+          />
+        )}
+      </AnimatePresence>
 
       <PeerEvaluationModal
         isOpen={Boolean(peerEvaluationModalId)}
@@ -1914,19 +2477,19 @@ export function EmployeeShiftsPage() {
 }
 
 function getApiErrorMessage(err: unknown, fallback: string): string {
-  if (!err || typeof err !== "object") return fallback;
+  if (!err || typeof err !== 'object') return fallback;
 
-  const maybeResponse = "response" in err ? err.response : undefined;
-  if (!maybeResponse || typeof maybeResponse !== "object") return fallback;
+  const maybeResponse = 'response' in err ? err.response : undefined;
+  if (!maybeResponse || typeof maybeResponse !== 'object') return fallback;
 
-  const maybeData = "data" in maybeResponse ? maybeResponse.data : undefined;
-  if (!maybeData || typeof maybeData !== "object") return fallback;
+  const maybeData = 'data' in maybeResponse ? maybeResponse.data : undefined;
+  if (!maybeData || typeof maybeData !== 'object') return fallback;
 
-  const maybeError = "error" in maybeData ? maybeData.error : undefined;
-  if (typeof maybeError === "string" && maybeError.trim() !== "") return maybeError;
+  const maybeError = 'error' in maybeData ? maybeData.error : undefined;
+  if (typeof maybeError === 'string' && maybeError.trim() !== '') return maybeError;
 
-  const maybeMessage = "message" in maybeData ? maybeData.message : undefined;
-  if (typeof maybeMessage === "string" && maybeMessage.trim() !== "") return maybeMessage;
+  const maybeMessage = 'message' in maybeData ? maybeData.message : undefined;
+  if (typeof maybeMessage === 'string' && maybeMessage.trim() !== '') return maybeMessage;
 
   return fallback;
 }

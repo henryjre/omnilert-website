@@ -22,4 +22,18 @@ router.post(
   employeeShiftController.endShift,
 );
 
+router.get('/:id/activities/active', employeeShiftController.getActiveActivity);
+
+router.post(
+  '/:id/activities/start',
+  requirePermission(PERMISSIONS.ACCOUNT_MANAGE_SCHEDULE),
+  employeeShiftController.startActivity,
+);
+
+router.post(
+  '/:id/activities/end',
+  requirePermission(PERMISSIONS.ACCOUNT_MANAGE_SCHEDULE),
+  employeeShiftController.endActivity,
+);
+
 export default router;

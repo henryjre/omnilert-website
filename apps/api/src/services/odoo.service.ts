@@ -1,7 +1,7 @@
-import { db } from "../config/database.js";
-import { env } from "../config/env.js";
-import { logger } from "../utils/logger.js";
-import { PayslipListItem } from "@omnilert/shared";
+import { db } from '../config/database.js';
+import { env } from '../config/env.js';
+import { logger } from '../utils/logger.js';
+import { PayslipListItem } from '@omnilert/shared';
 
 /**
  * Gets the current semi-month range (for Philippines timezone)
@@ -9,7 +9,10 @@ import { PayslipListItem } from "@omnilert/shared";
  * @param cutoff - Optional: 1 for 1st cutoff (1st-15th), 2 for 2nd cutoff (16th-last day). If not provided, uses current date to determine.
  * @returns date_from and date_to in YYYY-MM-DD format
  */
-export function getCurrentSemiMonthRange(cutoff?: number, baseDate: Date = new Date()): { date_from: string; date_to: string } {
+export function getCurrentSemiMonthRange(
+  cutoff?: number,
+  baseDate: Date = new Date(),
+): { date_from: string; date_to: string } {
   const year = baseDate.getFullYear();
   const month = baseDate.getMonth() + 1;
   const day = baseDate.getDate();
@@ -28,14 +31,14 @@ export function getCurrentSemiMonthRange(cutoff?: number, baseDate: Date = new D
 
   if (cutoffValue === 1) {
     // First half of the month (1st-15th)
-    dateFrom = `${year}-${String(month).padStart(2, "0")}-01`;
-    dateTo = `${year}-${String(month).padStart(2, "0")}-15`;
+    dateFrom = `${year}-${String(month).padStart(2, '0')}-01`;
+    dateTo = `${year}-${String(month).padStart(2, '0')}-15`;
   } else {
     // Second half of the month (16th-last day)
-    dateFrom = `${year}-${String(month).padStart(2, "0")}-16`;
+    dateFrom = `${year}-${String(month).padStart(2, '0')}-16`;
     // Last day of the month
     const lastDay = new Date(year, month, 0).getDate();
-    dateTo = `${year}-${String(month).padStart(2, "0")}-${lastDay}`;
+    dateTo = `${year}-${String(month).padStart(2, '0')}-${lastDay}`;
   }
 
   return { date_from: dateFrom, date_to: dateTo };
@@ -98,34 +101,30 @@ async function resolveCanonicalPartnerByIdentity(input: {
   email?: string | null;
 }): Promise<OdooPartnerRow | null> {
   if (input.websiteUserKey) {
-    const byKey = (await callOdooKw(
-      "res.partner",
-      "search_read",
-      [],
-      {
-        domain: [["x_website_key", "=", input.websiteUserKey], ["active", "=", true]],
-        fields: ["id"],
-        order: "id asc",
-        limit: 1,
-      }
-    )) as OdooPartnerRow[];
+    const byKey = (await callOdooKw('res.partner', 'search_read', [], {
+      domain: [
+        ['x_website_key', '=', input.websiteUserKey],
+        ['active', '=', true],
+      ],
+      fields: ['id'],
+      order: 'id asc',
+      limit: 1,
+    })) as OdooPartnerRow[];
     if (byKey.length > 0) {
       return byKey[0];
     }
   }
 
   if (input.email) {
-    const byEmail = (await callOdooKw(
-      "res.partner",
-      "search_read",
-      [],
-      {
-        domain: [["email", "=", input.email], ["active", "=", true]],
-        fields: ["id"],
-        order: "id asc",
-        limit: 1,
-      }
-    )) as OdooPartnerRow[];
+    const byEmail = (await callOdooKw('res.partner', 'search_read', [], {
+      domain: [
+        ['email', '=', input.email],
+        ['active', '=', true],
+      ],
+      fields: ['id'],
+      order: 'id asc',
+      limit: 1,
+    })) as OdooPartnerRow[];
     if (byEmail.length > 0) {
       return byEmail[0];
     }
@@ -138,44 +137,50 @@ async function listEmployeesLinkedToPartner(
   partnerId: number,
   companyId?: number,
 ): Promise<OdooEmployeeIdentityRow[]> {
-  const domain: unknown[] = [["work_contact_id", "=", partnerId]];
+  const domain: unknown[] = [['work_contact_id', '=', partnerId]];
   if (Number.isInteger(companyId)) {
-    domain.push(["company_id", "=", companyId]);
+    domain.push(['company_id', '=', companyId]);
   }
 
-  return (await callOdooKw(
-    "hr.employee",
-    "search_read",
-    [],
-    {
-      domain,
-      fields: ["id", "name", "pin", "company_id", "bank_account_ids", "work_contact_id", "x_website_key"],
-      order: "id asc",
-      limit: 1000,
-    },
-  )) as OdooEmployeeIdentityRow[];
+  return (await callOdooKw('hr.employee', 'search_read', [], {
+    domain,
+    fields: [
+      'id',
+      'name',
+      'pin',
+      'company_id',
+      'bank_account_ids',
+      'work_contact_id',
+      'x_website_key',
+    ],
+    order: 'id asc',
+    limit: 1000,
+  })) as OdooEmployeeIdentityRow[];
 }
 
 async function listLegacyEmployeesByWebsiteKey(
   websiteUserKey: string,
   companyId?: number,
 ): Promise<OdooEmployeeIdentityRow[]> {
-  const domain: unknown[] = [["x_website_key", "=", websiteUserKey]];
+  const domain: unknown[] = [['x_website_key', '=', websiteUserKey]];
   if (Number.isInteger(companyId)) {
-    domain.push(["company_id", "=", companyId]);
+    domain.push(['company_id', '=', companyId]);
   }
 
-  return (await callOdooKw(
-    "hr.employee",
-    "search_read",
-    [],
-    {
-      domain,
-      fields: ["id", "name", "pin", "company_id", "bank_account_ids", "work_contact_id", "x_website_key"],
-      order: "id asc",
-      limit: 1000,
-    },
-  )) as OdooEmployeeIdentityRow[];
+  return (await callOdooKw('hr.employee', 'search_read', [], {
+    domain,
+    fields: [
+      'id',
+      'name',
+      'pin',
+      'company_id',
+      'bank_account_ids',
+      'work_contact_id',
+      'x_website_key',
+    ],
+    order: 'id asc',
+    limit: 1000,
+  })) as OdooEmployeeIdentityRow[];
 }
 
 function dedupeEmployeeRows(rows: OdooEmployeeIdentityRow[]): OdooEmployeeIdentityRow[] {
@@ -202,7 +207,10 @@ async function listEmployeesForIdentity(input: {
   const partnerEmployees = partner
     ? await listEmployeesLinkedToPartner(partner.id, input.companyId)
     : [];
-  const legacyEmployees = await listLegacyEmployeesByWebsiteKey(input.websiteUserKey, input.companyId);
+  const legacyEmployees = await listLegacyEmployeesByWebsiteKey(
+    input.websiteUserKey,
+    input.companyId,
+  );
 
   return {
     partnerId: partner?.id ?? null,
@@ -219,9 +227,10 @@ export async function getEmployeeIdentitySnapshot(input: {
     email: input.email ?? null,
   });
 
-  const existingPin = employees
-    .map((employee) => String(employee.pin ?? "").trim())
-    .find((pin) => /^\d{4}$/.test(pin)) ?? null;
+  const existingPin =
+    employees
+      .map((employee) => String(employee.pin ?? '').trim())
+      .find((pin) => /^\d{4}$/.test(pin)) ?? null;
 
   return {
     employeeCount: employees.length,
@@ -233,23 +242,18 @@ export async function archiveEmployeesByWebsiteUserKey(
   input: { websiteUserKey: string },
   deps?: { callOdooKwFn?: OdooKwCallFn },
 ): Promise<{ matchedCount: number; archivedCount: number }> {
-  const websiteUserKey = String(input.websiteUserKey ?? "").trim();
+  const websiteUserKey = String(input.websiteUserKey ?? '').trim();
   if (!websiteUserKey) {
     return { matchedCount: 0, archivedCount: 0 };
   }
 
   const callFn = deps?.callOdooKwFn ?? callOdooKw;
-  const rows = (await callFn(
-    "hr.employee",
-    "search_read",
-    [],
-    {
-      domain: [["x_website_key", "=", websiteUserKey]],
-      fields: ["id", "active"],
-      limit: 10000,
-      context: { active_test: false },
-    },
-  )) as Array<{ id?: number; active?: boolean | null }>;
+  const rows = (await callFn('hr.employee', 'search_read', [], {
+    domain: [['x_website_key', '=', websiteUserKey]],
+    fields: ['id', 'active'],
+    limit: 10000,
+    context: { active_test: false },
+  })) as Array<{ id?: number; active?: boolean | null }>;
 
   const activeById = new Map<number, boolean>();
   for (const row of rows) {
@@ -265,7 +269,7 @@ export async function archiveEmployeesByWebsiteUserKey(
     .map(([id]) => id);
 
   if (employeeIdsToArchive.length > 0) {
-    await callFn("hr.employee", "write", [employeeIdsToArchive, { active: false }]);
+    await callFn('hr.employee', 'write', [employeeIdsToArchive, { active: false }]);
   }
 
   return {
@@ -278,23 +282,18 @@ export async function unarchiveEmployeesByWebsiteUserKey(
   input: { websiteUserKey: string },
   deps?: { callOdooKwFn?: OdooKwCallFn },
 ): Promise<{ matchedCount: number; unarchivedCount: number }> {
-  const websiteUserKey = String(input.websiteUserKey ?? "").trim();
+  const websiteUserKey = String(input.websiteUserKey ?? '').trim();
   if (!websiteUserKey) {
     return { matchedCount: 0, unarchivedCount: 0 };
   }
 
   const callFn = deps?.callOdooKwFn ?? callOdooKw;
-  const rows = (await callFn(
-    "hr.employee",
-    "search_read",
-    [],
-    {
-      domain: [["x_website_key", "=", websiteUserKey]],
-      fields: ["id", "active"],
-      limit: 10000,
-      context: { active_test: false },
-    },
-  )) as Array<{ id?: number; active?: boolean | null }>;
+  const rows = (await callFn('hr.employee', 'search_read', [], {
+    domain: [['x_website_key', '=', websiteUserKey]],
+    fields: ['id', 'active'],
+    limit: 10000,
+    context: { active_test: false },
+  })) as Array<{ id?: number; active?: boolean | null }>;
 
   const activeById = new Map<number, boolean>();
   for (const row of rows) {
@@ -310,7 +309,7 @@ export async function unarchiveEmployeesByWebsiteUserKey(
     .map(([id]) => id);
 
   if (employeeIdsToUnarchive.length > 0) {
-    await callFn("hr.employee", "write", [employeeIdsToUnarchive, { active: true }]);
+    await callFn('hr.employee', 'write', [employeeIdsToUnarchive, { active: true }]);
   }
 
   return {
@@ -321,7 +320,7 @@ export async function unarchiveEmployeesByWebsiteUserKey(
 
 export async function getEmployeeByWebsiteUserKey(
   websiteUserKey: string,
-  companyId: number
+  companyId: number,
 ): Promise<{ id: number; name: string } | null> {
   try {
     const { employees } = await listEmployeesForIdentity({
@@ -331,11 +330,13 @@ export async function getEmployeeByWebsiteUserKey(
     const result = employees.slice(0, 1);
 
     if (!result || result.length === 0) {
-      logger.warn(`No employee found for website user ID: ${websiteUserKey}, company: ${companyId}`);
+      logger.warn(
+        `No employee found for website user ID: ${websiteUserKey}, company: ${companyId}`,
+      );
       return null;
     }
 
-    return { id: result[0].id, name: result[0].name ?? "" };
+    return { id: result[0].id, name: result[0].name ?? '' };
   } catch (err) {
     logger.error(`Failed to get employee by website user ID ${websiteUserKey}: ${err}`);
     throw err;
@@ -375,35 +376,33 @@ export async function getEmployeePayslipData(
   dateFrom?: string,
 ): Promise<any> {
   try {
-    const { date_from, date_to } = getCurrentSemiMonthRange(cutoff, dateFrom ? new Date(dateFrom) : new Date());
+    const { date_from, date_to } = getCurrentSemiMonthRange(
+      cutoff,
+      dateFrom ? new Date(dateFrom) : new Date(),
+    );
 
     // Search for existing payslip
-    const slips = (await callOdooKw(
-      "hr.payslip",
-      "search_read",
-      [],
-      {
-        domain: [
-          ["x_view_only", "=", true],
-          ["date_from", "=", date_from],
-          ["date_to", "=", date_to],
-          ["employee_id", "=", employeeId],
-          ["company_id", "=", companyId],
-        ],
-        fields: [
-          "id",
-          "name",
-          "state",
-          "employee_id",
-          "date_from",
-          "date_to",
-          "x_view_only",
-          "line_ids",
-          "worked_days_line_ids",
-        ],
-        limit: 1,
-      }
-    )) as Array<{
+    const slips = (await callOdooKw('hr.payslip', 'search_read', [], {
+      domain: [
+        ['x_view_only', '=', true],
+        ['date_from', '=', date_from],
+        ['date_to', '=', date_to],
+        ['employee_id', '=', employeeId],
+        ['company_id', '=', companyId],
+      ],
+      fields: [
+        'id',
+        'name',
+        'state',
+        'employee_id',
+        'date_from',
+        'date_to',
+        'x_view_only',
+        'line_ids',
+        'worked_days_line_ids',
+      ],
+      limit: 1,
+    })) as Array<{
       id: number;
       name: string;
       state: string;
@@ -421,33 +420,28 @@ export async function getEmployeePayslipData(
     const slipId = slip.id;
 
     // Refresh from work entries
-    await callOdooKw("hr.payslip", "action_refresh_from_work_entries", [[slipId]]);
+    await callOdooKw('hr.payslip', 'action_refresh_from_work_entries', [[slipId]]);
 
     // Compute the salary rule lines
-    await callOdooKw("hr.payslip", "compute_sheet", [[slipId]]);
+    await callOdooKw('hr.payslip', 'compute_sheet', [[slipId]]);
 
     // Get payslip lines
-    const lines = (await callOdooKw(
-      "hr.payslip.line",
-      "search_read",
-      [],
-      {
-        domain: [["slip_id", "=", slipId]],
-        fields: [
-          "id",
-          "name",
-          "code",
-          "category_id",
-          "total",
-          "amount",
-          "quantity",
-          "rate",
-          "sequence",
-        ],
-        order: "sequence asc, id asc",
-        limit: 1000,
-      }
-    )) as Array<{
+    const lines = (await callOdooKw('hr.payslip.line', 'search_read', [], {
+      domain: [['slip_id', '=', slipId]],
+      fields: [
+        'id',
+        'name',
+        'code',
+        'category_id',
+        'total',
+        'amount',
+        'quantity',
+        'rate',
+        'sequence',
+      ],
+      order: 'sequence asc, id asc',
+      limit: 1000,
+    })) as Array<{
       id: number;
       name: string;
       code: string;
@@ -460,17 +454,12 @@ export async function getEmployeePayslipData(
     }>;
 
     // Get worked days
-    const workedDays = (await callOdooKw(
-      "hr.payslip.worked_days",
-      "search_read",
-      [],
-      {
-        domain: [["payslip_id", "=", slipId]],
-        fields: ["id", "name", "code", "number_of_days", "number_of_hours", "amount"],
-        order: "id asc",
-        limit: 1000,
-      }
-    )) as Array<{
+    const workedDays = (await callOdooKw('hr.payslip.worked_days', 'search_read', [], {
+      domain: [['payslip_id', '=', slipId]],
+      fields: ['id', 'name', 'code', 'number_of_days', 'number_of_hours', 'amount'],
+      order: 'id asc',
+      limit: 1000,
+    })) as Array<{
       id: number;
       name: string;
       code: string;
@@ -506,10 +495,13 @@ export async function createViewOnlyPayslip(
   dateFrom?: string,
 ): Promise<any> {
   try {
-    const { date_from, date_to } = getCurrentSemiMonthRange(cutoff, dateFrom ? new Date(dateFrom) : new Date());
+    const { date_from, date_to } = getCurrentSemiMonthRange(
+      cutoff,
+      dateFrom ? new Date(dateFrom) : new Date(),
+    );
 
     // Create the payslip as off-cycle (no payslip_run_id)
-    const slipId = (await callOdooKw("hr.payslip", "create", [
+    const slipId = (await callOdooKw('hr.payslip', 'create', [
       {
         employee_id: employeeId,
         date_from,
@@ -522,24 +514,19 @@ export async function createViewOnlyPayslip(
     ])) as number;
 
     // Read the created slip
-    const [slip] = (await callOdooKw(
-      "hr.payslip",
-      "read",
-      [[slipId]],
-      {
-        fields: [
-          "id",
-          "name",
-          "state",
-          "employee_id",
-          "date_from",
-          "date_to",
-          "x_view_only",
-          "line_ids",
-          "worked_days_line_ids",
-        ],
-      }
-    )) as Array<{
+    const [slip] = (await callOdooKw('hr.payslip', 'read', [[slipId]], {
+      fields: [
+        'id',
+        'name',
+        'state',
+        'employee_id',
+        'date_from',
+        'date_to',
+        'x_view_only',
+        'line_ids',
+        'worked_days_line_ids',
+      ],
+    })) as Array<{
       id: number;
       name: string;
       state: string;
@@ -549,30 +536,25 @@ export async function createViewOnlyPayslip(
     }>;
 
     // Compute the sheet
-    await callOdooKw("hr.payslip", "compute_sheet", [[slipId]]);
+    await callOdooKw('hr.payslip', 'compute_sheet', [[slipId]]);
 
     // Get payslip lines
-    const lines = (await callOdooKw(
-      "hr.payslip.line",
-      "search_read",
-      [],
-      {
-        domain: [["slip_id", "=", slipId]],
-        fields: [
-          "id",
-          "name",
-          "code",
-          "category_id",
-          "total",
-          "amount",
-          "quantity",
-          "rate",
-          "sequence",
-        ],
-        order: "sequence asc, id asc",
-        limit: 1000,
-      }
-    )) as Array<{
+    const lines = (await callOdooKw('hr.payslip.line', 'search_read', [], {
+      domain: [['slip_id', '=', slipId]],
+      fields: [
+        'id',
+        'name',
+        'code',
+        'category_id',
+        'total',
+        'amount',
+        'quantity',
+        'rate',
+        'sequence',
+      ],
+      order: 'sequence asc, id asc',
+      limit: 1000,
+    })) as Array<{
       id: number;
       name: string;
       code: string;
@@ -585,17 +567,12 @@ export async function createViewOnlyPayslip(
     }>;
 
     // Get worked days
-    const workedDays = (await callOdooKw(
-      "hr.payslip.worked_days",
-      "search_read",
-      [],
-      {
-        domain: [["payslip_id", "=", slipId]],
-        fields: ["id", "name", "code", "number_of_days", "number_of_hours", "amount"],
-        order: "id asc",
-        limit: 1000,
-      }
-    )) as Array<{
+    const workedDays = (await callOdooKw('hr.payslip.worked_days', 'search_read', [], {
+      domain: [['payslip_id', '=', slipId]],
+      fields: ['id', 'name', 'code', 'number_of_days', 'number_of_hours', 'amount'],
+      order: 'id asc',
+      limit: 1000,
+    })) as Array<{
       id: number;
       name: string;
       code: string;
@@ -620,9 +597,7 @@ export async function createViewOnlyPayslip(
  * @param websiteUserKey - The website user ID (x_website_key)
  * @returns Employee EPI data or null if not found
  */
-export async function getEmployeeEPIData(
-  websiteUserKey: string
-): Promise<{
+export async function getEmployeeEPIData(websiteUserKey: string): Promise<{
   id: number;
   employee_id: [number, string];
   x_epi: number;
@@ -631,26 +606,14 @@ export async function getEmployeeEPIData(
   x_audit_ratings: Array<{ id: number; rating: number }>;
 } | null> {
   try {
-    const result = (await callOdooKw(
-      "hr.employee",
-      "search_read",
-      [],
-      {
-        domain: [
-          ["x_website_key", "=", websiteUserKey],
-          ["company_id", "=", 1], // Famous Belgian Waffle
-        ],
-        fields: [
-          "id",
-          "employee_id",
-          "x_epi",
-          "x_average_scsa",
-          "x_average_sqaa",
-          "x_audit_ratings",
-        ],
-        limit: 1,
-      }
-    )) as Array<{
+    const result = (await callOdooKw('hr.employee', 'search_read', [], {
+      domain: [
+        ['x_website_key', '=', websiteUserKey],
+        ['company_id', '=', 1], // Famous Belgian Waffle
+      ],
+      fields: ['id', 'employee_id', 'x_epi', 'x_average_scsa', 'x_average_sqaa', 'x_audit_ratings'],
+      limit: 1,
+    })) as Array<{
       id: number;
       employee_id: [number, string];
       x_epi: number;
@@ -676,36 +639,25 @@ export async function getEmployeeEPIData(
  * @param companyId - The Odoo company ID (default 1 for Famous Belgian Waffle)
  * @returns Array of employees with their EPI data, sorted by x_epi descending
  */
-export async function getAllEmployeesWithEPI(
-  companyId: number = 1
-): Promise<Array<{
-  id: number;
-  employee_id: [number, string];
-  x_epi: number;
-  x_average_scsa: number;
-  x_average_sqaa: number;
-}>> {
+export async function getAllEmployeesWithEPI(companyId: number = 1): Promise<
+  Array<{
+    id: number;
+    employee_id: [number, string];
+    x_epi: number;
+    x_average_scsa: number;
+    x_average_sqaa: number;
+  }>
+> {
   try {
-    const result = (await callOdooKw(
-      "hr.employee",
-      "search_read",
-      [],
-      {
-        domain: [
-          ["company_id", "=", companyId],
-          ["x_epi", "!=", 0],
-        ],
-        fields: [
-          "id",
-          "employee_id",
-          "x_epi",
-          "x_average_scsa",
-          "x_average_sqaa",
-        ],
-        order: "x_epi desc",
-        limit: 5,
-      }
-    )) as Array<{
+    const result = (await callOdooKw('hr.employee', 'search_read', [], {
+      domain: [
+        ['company_id', '=', companyId],
+        ['x_epi', '!=', 0],
+      ],
+      fields: ['id', 'employee_id', 'x_epi', 'x_average_scsa', 'x_average_sqaa'],
+      order: 'x_epi desc',
+      limit: 5,
+    })) as Array<{
       id: number;
       employee_id: [number, string];
       x_epi: number;
@@ -730,7 +682,7 @@ export async function getAllEmployeesWithEPI(
 export async function getEmployeeAuditRatings(
   websiteUserKey: string,
   page: number = 1,
-  limit: number = 5
+  limit: number = 5,
 ): Promise<{
   items: Array<{
     id: number;
@@ -751,18 +703,13 @@ export async function getEmployeeAuditRatings(
     const offset = (page - 1) * limit;
 
     // Search for audit ratings by x_website_key
-    const result = (await callOdooKw(
-      "x_audit_ratings",
-      "search_read",
-      [],
-      {
-        domain: [["x_website_key", "=", websiteUserKey]],
-        fields: ["id", "x_audit_date", "x_audit_code", "x_name", "x_rating", "x_employee_id"],
-        order: "x_audit_date desc",
-        offset,
-        limit,
-      }
-    )) as Array<{
+    const result = (await callOdooKw('x_audit_ratings', 'search_read', [], {
+      domain: [['x_website_key', '=', websiteUserKey]],
+      fields: ['id', 'x_audit_date', 'x_audit_code', 'x_name', 'x_rating', 'x_employee_id'],
+      order: 'x_audit_date desc',
+      offset,
+      limit,
+    })) as Array<{
       id: number;
       x_audit_date: string;
       x_audit_code: string;
@@ -772,12 +719,9 @@ export async function getEmployeeAuditRatings(
     }>;
 
     // Get total count
-    const countResult = (await callOdooKw(
-      "x_audit_ratings",
-      "search_count",
-      [],
-      { domain: [["x_website_key", "=", websiteUserKey]] }
-    )) as number;
+    const countResult = (await callOdooKw('x_audit_ratings', 'search_count', [], {
+      domain: [['x_website_key', '=', websiteUserKey]],
+    })) as number;
 
     const total = countResult;
     const totalPages = Math.ceil(total / limit);
@@ -799,25 +743,25 @@ export async function getEmployeeAuditRatings(
  */
 export function toOdooDatetime(date: Date): string {
   // Use UTC timezone as Odoo uses UTC
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "UTC",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'UTC',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
     hour12: false,
   });
 
   // Format: 2026-02-17 11:00:00
   const parts = formatter.formatToParts(date);
-  const year = parts.find((p) => p.type === "year")?.value;
-  const month = parts.find((p) => p.type === "month")?.value;
-  const day = parts.find((p) => p.type === "day")?.value;
-  const hour = parts.find((p) => p.type === "hour")?.value;
-  const minute = parts.find((p) => p.type === "minute")?.value;
-  const second = parts.find((p) => p.type === "second")?.value;
+  const year = parts.find((p) => p.type === 'year')?.value;
+  const month = parts.find((p) => p.type === 'month')?.value;
+  const day = parts.find((p) => p.type === 'day')?.value;
+  const hour = parts.find((p) => p.type === 'hour')?.value;
+  const minute = parts.find((p) => p.type === 'minute')?.value;
+  const second = parts.find((p) => p.type === 'second')?.value;
 
   return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
 }
@@ -835,7 +779,7 @@ export function parseUtcTimestamp(timestamp: string | Date): Date {
   // This ensures it's parsed as UTC
   const trimmed = timestamp.trim();
   if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(trimmed)) {
-    return new Date(trimmed + "Z");
+    return new Date(trimmed + 'Z');
   }
   return new Date(timestamp);
 }
@@ -854,11 +798,14 @@ type OdooFetchResponse = {
   };
   json(): Promise<JsonRpcSuccess>;
 };
-type OdooFetch = (input: string, init: {
-  method: string;
-  headers: Record<string, string>;
-  body: string;
-}) => Promise<OdooFetchResponse>;
+type OdooFetch = (
+  input: string,
+  init: {
+    method: string;
+    headers: Record<string, string>;
+    body: string;
+  },
+) => Promise<OdooFetchResponse>;
 type OdooRpcLogger = Pick<typeof logger, 'warn' | 'error'>;
 type OdooRpcClientOptions = {
   fetchImpl?: OdooFetch;
@@ -889,7 +836,7 @@ class OdooHttpError extends Error {
 }
 
 function normalizeOdooUrl(odooUrl: string): string {
-  if (odooUrl.startsWith("http://") || odooUrl.startsWith("https://")) {
+  if (odooUrl.startsWith('http://') || odooUrl.startsWith('https://')) {
     return odooUrl;
   }
 
@@ -921,7 +868,7 @@ function compute429RetryDelayMs(
     return error.retryAfterMs;
   }
 
-  return baseRetryDelayMs * (2 ** attemptIndex);
+  return baseRetryDelayMs * 2 ** attemptIndex;
 }
 
 function isRateLimitError(error: unknown): error is OdooHttpError {
@@ -979,12 +926,12 @@ export function createOdooRpcClient(options: OdooRpcClientOptions = {}) {
 
     try {
       const response = await fetchImpl(url, {
-        method: "POST",
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          jsonrpc: "2.0",
+          jsonrpc: '2.0',
           method,
           params: payload,
           id: Math.floor(Math.random() * 1000000),
@@ -1025,38 +972,30 @@ export function createOdooRpcClient(options: OdooRpcClientOptions = {}) {
       model: string,
       method: string,
       args: unknown[] = [],
-      kwargs: Record<string, unknown> = {}
+      kwargs: Record<string, unknown> = {},
     ): Promise<unknown> {
       const payload = {
-        service: "object",
-        method: "execute_kw",
-        args: [
-          env.ODOO_DB,
-          2,
-          env.ODOO_PASSWORD,
-          model,
-          method,
-          args,
-          kwargs,
-        ],
+        service: 'object',
+        method: 'execute_kw',
+        args: [env.ODOO_DB, 2, env.ODOO_PASSWORD, model, method, args, kwargs],
       };
 
       for (let attempt = 0; attempt <= max429Retries; attempt += 1) {
         try {
-          const response = await jsonRpc("call", payload);
+          const response = await jsonRpc('call', payload);
           return (response as { result?: unknown }).result ?? null;
         } catch (err) {
           if (isRateLimitError(err) && attempt < max429Retries) {
             const delayMs = compute429RetryDelayMs(attempt, err, baseRetryDelayMs);
             rpcLogger.warn(
-              `Retrying Odoo execute_kw for model "${model}", method "${method}" after 429 in ${delayMs}ms`
+              `Retrying Odoo execute_kw for model "${model}", method "${method}" after 429 in ${delayMs}ms`,
             );
             await sleep(delayMs);
             continue;
           }
 
           rpcLogger.error(
-            `Error calling Odoo execute_kw for model "${model}", method "${method}": ${err}`
+            `Error calling Odoo execute_kw for model "${model}", method "${method}": ${err}`,
           );
           throw err;
         }
@@ -1091,7 +1030,7 @@ export async function callOdooKw(
   model: string,
   method: string,
   args: unknown[] = [],
-  kwargs: Record<string, unknown> = {}
+  kwargs: Record<string, unknown> = {},
 ): Promise<unknown> {
   return defaultOdooRpcClient.callOdooKw(model, method, args, kwargs);
 }
@@ -1104,7 +1043,7 @@ export async function callOdooKw(
  */
 export async function updateAttendanceCheckIn(
   attendanceId: number,
-  checkInTime: string | Date
+  checkInTime: string | Date,
 ): Promise<boolean> {
   try {
     const parsedDate = parseUtcTimestamp(checkInTime);
@@ -1112,9 +1051,9 @@ export async function updateAttendanceCheckIn(
 
     // Odoo 18 expects vals as part of args, not kwargs
     const result = await callOdooKw(
-      "hr.attendance",
-      "write",
-      [[attendanceId], { check_in: odooDatetime }]  // Pass vals in args
+      'hr.attendance',
+      'write',
+      [[attendanceId], { check_in: odooDatetime }], // Pass vals in args
     );
     logger.info(`Updated Odoo attendance ${attendanceId} check_in to ${odooDatetime}`);
     return result === true;
@@ -1132,7 +1071,7 @@ export async function updateAttendanceCheckIn(
  */
 export async function updateAttendanceCheckOut(
   attendanceId: number,
-  checkOutTime: string | Date
+  checkOutTime: string | Date,
 ): Promise<boolean> {
   try {
     const parsedDate = parseUtcTimestamp(checkOutTime);
@@ -1140,9 +1079,9 @@ export async function updateAttendanceCheckOut(
 
     // Odoo 18 expects vals as part of args, not kwargs
     const result = await callOdooKw(
-      "hr.attendance",
-      "write",
-      [[attendanceId], { check_out: odooDatetime }]  // Pass vals in args
+      'hr.attendance',
+      'write',
+      [[attendanceId], { check_out: odooDatetime }], // Pass vals in args
     );
     logger.info(`Updated Odoo attendance ${attendanceId} check_out to ${odooDatetime}`);
     return result === true;
@@ -1157,15 +1096,9 @@ export async function updateAttendanceCheckOut(
  * @param attendanceId - The Odoo attendance ID
  * @returns True if successful
  */
-export async function deleteAttendanceById(
-  attendanceId: number,
-): Promise<boolean> {
+export async function deleteAttendanceById(attendanceId: number): Promise<boolean> {
   try {
-    const result = await callOdooKw(
-      "hr.attendance",
-      "unlink",
-      [[attendanceId]],
-    );
+    const result = await callOdooKw('hr.attendance', 'unlink', [[attendanceId]]);
     logger.info(`Deleted Odoo attendance ${attendanceId}`);
     return result === true;
   } catch (err) {
@@ -1179,15 +1112,9 @@ export async function deleteAttendanceById(
  * @param planningSlotId - The Odoo planning.slot ID
  * @returns True if successful
  */
-export async function deletePlanningSlotById(
-  planningSlotId: number,
-): Promise<boolean> {
+export async function deletePlanningSlotById(planningSlotId: number): Promise<boolean> {
   try {
-    const result = await callOdooKw(
-      "planning.slot",
-      "unlink",
-      [[planningSlotId]],
-    );
+    const result = await callOdooKw('planning.slot', 'unlink', [[planningSlotId]]);
     logger.info(`Deleted Odoo planning.slot ${planningSlotId}`);
     return result === true;
   } catch (err) {
@@ -1204,20 +1131,15 @@ export async function deletePlanningSlotById(
  */
 export async function updatePosSessionOpeningPcf(
   posSessionName: string,
-  openingPcf: number
+  openingPcf: number,
 ): Promise<boolean> {
   try {
     // First, search for the POS session by x_pos_name
-    const searchResult = (await callOdooKw(
-      "pos.session",
-      "search_read",
-      [],
-      {
-        domain: [["x_pos_name", "=", posSessionName]],
-        fields: ["id", "x_pos_name", "x_opening_pcf"],
-        limit: 1,
-      }
-    )) as Array<{ id: number; x_pos_name: string; x_opening_pcf: number }>;
+    const searchResult = (await callOdooKw('pos.session', 'search_read', [], {
+      domain: [['x_pos_name', '=', posSessionName]],
+      fields: ['id', 'x_pos_name', 'x_opening_pcf'],
+      limit: 1,
+    })) as Array<{ id: number; x_pos_name: string; x_opening_pcf: number }>;
 
     if (!searchResult || searchResult.length === 0) {
       logger.warn(`POS session not found: ${posSessionName}`);
@@ -1227,11 +1149,10 @@ export async function updatePosSessionOpeningPcf(
     const sessionId = searchResult[0].id;
 
     // Update the opening_pcf field
-    const result = await callOdooKw(
-      "pos.session",
-      "write",
-      [[sessionId], { x_opening_pcf: openingPcf }]
-    );
+    const result = await callOdooKw('pos.session', 'write', [
+      [sessionId],
+      { x_opening_pcf: openingPcf },
+    ]);
 
     logger.info(`Updated POS session ${posSessionName} opening_pcf to ${openingPcf}`);
     return result === true;
@@ -1249,23 +1170,24 @@ export async function updatePosSessionOpeningPcf(
  */
 export async function updatePosSessionClosingPcf(
   companyId: number,
-  closingPcf: number
+  closingPcf: number,
 ): Promise<boolean> {
   try {
     // Search for the POS session with state='opening_control' and company_id
-    const searchResult = (await callOdooKw(
-      "pos.session",
-      "search_read",
-      [],
-      {
-        domain: [
-          ["state", "=", "opening_control"],
-          ["company_id", "=", companyId],
-        ],
-        fields: ["id", "name", "state", "company_id", "x_closing_pcf"],
-        limit: 1,
-      }
-    )) as Array<{ id: number; name: string; state: string; company_id: number; x_closing_pcf: number }>;
+    const searchResult = (await callOdooKw('pos.session', 'search_read', [], {
+      domain: [
+        ['state', '=', 'opening_control'],
+        ['company_id', '=', companyId],
+      ],
+      fields: ['id', 'name', 'state', 'company_id', 'x_closing_pcf'],
+      limit: 1,
+    })) as Array<{
+      id: number;
+      name: string;
+      state: string;
+      company_id: number;
+      x_closing_pcf: number;
+    }>;
 
     if (!searchResult || searchResult.length === 0) {
       logger.warn(`POS session not found for company ${companyId} with state opening_control`);
@@ -1276,13 +1198,14 @@ export async function updatePosSessionClosingPcf(
     const sessionName = searchResult[0].name;
 
     // Update the closing_pcf field
-    const result = await callOdooKw(
-      "pos.session",
-      "write",
-      [[sessionId], { x_closing_pcf: closingPcf }]
-    );
+    const result = await callOdooKw('pos.session', 'write', [
+      [sessionId],
+      { x_closing_pcf: closingPcf },
+    ]);
 
-    logger.info(`Updated POS session ${sessionName} (ID: ${sessionId}) closing_pcf to ${closingPcf}`);
+    logger.info(
+      `Updated POS session ${sessionName} (ID: ${sessionId}) closing_pcf to ${closingPcf}`,
+    );
     return result === true;
   } catch (err) {
     logger.error(`Failed to update closing_pcf for company ${companyId}: ${err}`);
@@ -1298,21 +1221,16 @@ export async function findWorkEntryByEmployeeAndDate(
   date: string,
   workEntryTypeId: number,
 ): Promise<{ id: number; duration: number } | null> {
-  const results = (await callOdooKw(
-    'hr.work.entry',
-    'search_read',
-    [],
-    {
-      domain: [
-        ['employee_id', '=', employeeId],
-        ['date', '=', date],
-        ['work_entry_type_id', '=', workEntryTypeId],
-      ],
-      fields: ['id', 'duration'],
-      order: 'id asc',
-      limit: 1,
-    },
-  )) as Array<{ id: number; duration: number }>;
+  const results = (await callOdooKw('hr.work.entry', 'search_read', [], {
+    domain: [
+      ['employee_id', '=', employeeId],
+      ['date', '=', date],
+      ['work_entry_type_id', '=', workEntryTypeId],
+    ],
+    fields: ['id', 'duration'],
+    order: 'id asc',
+    limit: 1,
+  })) as Array<{ id: number; duration: number }>;
 
   return results.length > 0 ? results[0] : null;
 }
@@ -1329,12 +1247,13 @@ export async function deductWorkEntryDuration(
   const deductHours = deductMinutes / 60;
   const newDuration = Math.max(0, currentDurationHours - deductHours);
 
-  const result = await callOdooKw(
-    'hr.work.entry',
-    'write',
-    [[workEntryId], { duration: newDuration }],
+  const result = await callOdooKw('hr.work.entry', 'write', [
+    [workEntryId],
+    { duration: newDuration },
+  ]);
+  logger.info(
+    `Deducted ${deductMinutes}min (${deductHours}h) from work entry ${workEntryId}. New duration: ${newDuration}h`,
   );
-  logger.info(`Deducted ${deductMinutes}min (${deductHours}h) from work entry ${workEntryId}. New duration: ${newDuration}h`);
   return result === true;
 }
 
@@ -1350,43 +1269,37 @@ export async function createOvertimeWorkEntry(params: {
 }): Promise<number> {
   const durationHours = params.durationMinutes / 60;
 
-  const newId = (await callOdooKw(
-    'hr.work.entry',
-    'create',
-    [{
+  const newId = (await callOdooKw('hr.work.entry', 'create', [
+    {
       employee_id: params.employeeId,
       date: params.date,
       work_entry_type_id: params.workEntryTypeId,
       duration: durationHours,
       name: params.description,
-    }],
-  )) as number;
+    },
+  ])) as number;
 
-  logger.info(`Created overtime work entry ${newId} for employee ${params.employeeId} on ${params.date}. Type: ${params.workEntryTypeId}, Duration: ${durationHours}h`);
+  logger.info(
+    `Created overtime work entry ${newId} for employee ${params.employeeId} on ${params.date}. Type: ${params.workEntryTypeId}, Duration: ${durationHours}h`,
+  );
   return newId;
 }
 
 export async function searchWorkEntriesByEmployeeAndDate(
   employeeId: number,
-  date: string
+  date: string,
 ): Promise<unknown> {
-  return await callOdooKw(
-    "hr.work.entry",
-    "search_read",
-    [],
-    {
-      domain: [
-        ["employee_id", "=", employeeId],
-        ["date_start", ">=", `${date} 00:00:00`],
-        ["date_start", "<=", `${date} 23:59:59`],
-      ],
-      fields: ["id", "employee_id", "date_start", "date_stop", "state"],
-      order: "date_start desc",
-      limit: 5,
-    }
-  );
+  return await callOdooKw('hr.work.entry', 'search_read', [], {
+    domain: [
+      ['employee_id', '=', employeeId],
+      ['date_start', '>=', `${date} 00:00:00`],
+      ['date_start', '<=', `${date} 23:59:59`],
+    ],
+    fields: ['id', 'employee_id', 'date_start', 'date_stop', 'state'],
+    order: 'date_start desc',
+    limit: 5,
+  });
 }
-
 
 async function withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
   let lastError: unknown;
@@ -1404,7 +1317,7 @@ async function withRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
 }
 
 export function formatBranchEmployeeCode(odooBranchId: number, employeeNumber: number): string {
-  const segment = String(employeeNumber).padStart(3, "0");
+  const segment = String(employeeNumber).padStart(3, '0');
   return `${odooBranchId - 1}${segment}`;
 }
 
@@ -1412,7 +1325,7 @@ export function formatEmployeeDisplayName(
   odooBranchId: number,
   employeeNumber: number,
   firstName: string,
-  lastName: string
+  lastName: string,
 ): string {
   const fullName = `${firstName} ${lastName}`.trim();
   return `${formatBranchEmployeeCode(odooBranchId, employeeNumber)} - ${fullName}`;
@@ -1421,9 +1334,11 @@ export function formatEmployeeDisplayName(
 function isResPartnerReadAccessError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error ?? '');
   const normalized = message.toLowerCase();
-  return normalized.includes('res.partner')
-    && normalized.includes('read')
-    && normalized.includes('access');
+  return (
+    normalized.includes('res.partner') &&
+    normalized.includes('read') &&
+    normalized.includes('access')
+  );
 }
 
 export async function createOrUpdateEmployeeForRegistration(input: {
@@ -1451,9 +1366,7 @@ export async function createOrUpdateEmployeeForRegistration(input: {
     email: input.workEmail,
   });
 
-  let existing = partner
-    ? await listEmployeesLinkedToPartner(partner.id, input.companyId)
-    : [];
+  let existing = partner ? await listEmployeesLinkedToPartner(partner.id, input.companyId) : [];
   if (existing.length === 0) {
     existing = await listLegacyEmployeesByWebsiteKey(input.websiteKey, input.companyId);
   }
@@ -1483,7 +1396,9 @@ export async function createOrUpdateEmployeeForRegistration(input: {
       'Updating existing Odoo employee',
     );
     try {
-      await withRetry(() => callOdooKw('hr.employee', 'write', [[existing[0].id], payload]).then(() => undefined));
+      await withRetry(() =>
+        callOdooKw('hr.employee', 'write', [[existing[0].id], payload]).then(() => undefined),
+      );
     } catch (error) {
       if (!partner || !isResPartnerReadAccessError(error)) {
         throw error;
@@ -1503,7 +1418,11 @@ export async function createOrUpdateEmployeeForRegistration(input: {
         },
         'Retrying employee update without work_contact_id due res.partner access restriction',
       );
-      await withRetry(() => callOdooKw('hr.employee', 'write', [[existing[0].id], fallbackPayload]).then(() => undefined));
+      await withRetry(() =>
+        callOdooKw('hr.employee', 'write', [[existing[0].id], fallbackPayload]).then(
+          () => undefined,
+        ),
+      );
     }
     return existing[0].id;
   }
@@ -1519,8 +1438,8 @@ export async function createOrUpdateEmployeeForRegistration(input: {
   );
   let employeeId: number;
   try {
-    employeeId = (await withRetry(() =>
-      callOdooKw('hr.employee', 'create', [payload]) as Promise<number>,
+    employeeId = (await withRetry(
+      () => callOdooKw('hr.employee', 'create', [payload]) as Promise<number>,
     )) as number;
   } catch (error) {
     if (!partner || !isResPartnerReadAccessError(error)) {
@@ -1540,8 +1459,8 @@ export async function createOrUpdateEmployeeForRegistration(input: {
       },
       'Retrying employee create without work_contact_id due res.partner access restriction',
     );
-    employeeId = (await withRetry(() =>
-      callOdooKw('hr.employee', 'create', [fallbackPayload]) as Promise<number>,
+    employeeId = (await withRetry(
+      () => callOdooKw('hr.employee', 'create', [fallbackPayload]) as Promise<number>,
     )) as number;
   }
   return employeeId;
@@ -1549,10 +1468,12 @@ export async function createOrUpdateEmployeeForRegistration(input: {
 
 async function mergePartnerChunk(chunkIds: number[], destinationPartnerId: number): Promise<void> {
   try {
-    const wizardId = (await callOdooKw('base.partner.merge.automatic.wizard', 'create', [{
-      partner_ids: [[6, 0, chunkIds]],
-      dst_partner_id: destinationPartnerId,
-    }])) as number;
+    const wizardId = (await callOdooKw('base.partner.merge.automatic.wizard', 'create', [
+      {
+        partner_ids: [[6, 0, chunkIds]],
+        dst_partner_id: destinationPartnerId,
+      },
+    ])) as number;
     await callOdooKw('base.partner.merge.automatic.wizard', 'action_merge', [[wizardId]]);
   } catch (error) {
     logger.error(`Failed to merge partner chunk (${chunkIds.join(',')}): ${error}`);
@@ -1568,69 +1489,67 @@ export async function unifyPartnerContactsByEmail(input: {
   firstName: string;
   lastName: string;
 }): Promise<number | null> {
-  const contacts = (await callOdooKw(
-    'res.partner',
-    'search_read',
-    [],
-    {
-      domain: [['email', '=', input.email], ['active', '=', true]],
-      fields: ['id', 'company_id', 'active'],
-      order: 'id asc',
-      limit: 200,
-    },
-  )) as Array<{ id: number; company_id?: [number, string] | false; active?: boolean }>;
+  const contacts = (await callOdooKw('res.partner', 'search_read', [], {
+    domain: [
+      ['email', '=', input.email],
+      ['active', '=', true],
+    ],
+    fields: ['id', 'company_id', 'active'],
+    order: 'id asc',
+    limit: 200,
+  })) as Array<{ id: number; company_id?: [number, string] | false; active?: boolean }>;
 
   if (!contacts.length) {
     return null;
   }
 
-  const mainCompanyContact = contacts.find((contact) => Array.isArray(contact.company_id) && contact.company_id[0] === input.mainCompanyId);
+  const mainCompanyContact = contacts.find(
+    (contact) => Array.isArray(contact.company_id) && contact.company_id[0] === input.mainCompanyId,
+  );
   let canonicalId = mainCompanyContact?.id ?? contacts[0].id;
-  const otherIds = contacts.filter((contact) => contact.id !== canonicalId).map((contact) => contact.id);
+  const otherIds = contacts
+    .filter((contact) => contact.id !== canonicalId)
+    .map((contact) => contact.id);
 
   while (otherIds.length > 0) {
     const chunk = otherIds.splice(0, 2);
     await withRetry(() => mergePartnerChunk([canonicalId, ...chunk], canonicalId));
   }
 
-  const canonicalLookup = (await callOdooKw(
-    'res.partner',
-    'search_read',
-    [],
-    {
-      domain: [['id', '=', canonicalId]],
-      fields: ['id'],
-      limit: 1,
-    },
-  )) as Array<{ id: number }>;
+  const canonicalLookup = (await callOdooKw('res.partner', 'search_read', [], {
+    domain: [['id', '=', canonicalId]],
+    fields: ['id'],
+    limit: 1,
+  })) as Array<{ id: number }>;
   if (canonicalLookup.length === 0) {
-    const refreshed = (await callOdooKw(
-      'res.partner',
-      'search_read',
-      [],
-      {
-        domain: [['email', '=', input.email], ['active', '=', true]],
-        fields: ['id', 'company_id'],
-        order: 'id asc',
-        limit: 1,
-      },
-    )) as Array<{ id: number }>;
+    const refreshed = (await callOdooKw('res.partner', 'search_read', [], {
+      domain: [
+        ['email', '=', input.email],
+        ['active', '=', true],
+      ],
+      fields: ['id', 'company_id'],
+      order: 'id asc',
+      limit: 1,
+    })) as Array<{ id: number }>;
     if (refreshed.length > 0) {
       canonicalId = refreshed[0].id;
     }
   }
 
-  await callOdooKw('res.partner', 'write', [[canonicalId], {
-    company_id: false,
-    x_website_key: input.websiteKey,
-    name: formatEmployeeDisplayName(
-      input.mainCompanyId,
-      input.employeeNumber,
-      input.firstName,
-      input.lastName,
-    ),
-    category_id: [[4, 3]],
-  }]);
+  await callOdooKw('res.partner', 'write', [
+    [canonicalId],
+    {
+      company_id: false,
+      x_website_key: input.websiteKey,
+      name: formatEmployeeDisplayName(
+        input.mainCompanyId,
+        input.employeeNumber,
+        input.firstName,
+        input.lastName,
+      ),
+      category_id: [[4, 3]],
+    },
+  ]);
   return canonicalId;
 }
 
@@ -1657,14 +1576,9 @@ export async function getPartnerAvatarBase64ByIdentity(input: {
       return null;
     }
 
-    const rows = (await callOdooKw(
-      'res.partner',
-      'read',
-      [[partner.id]],
-      {
-        fields: ['id', 'image_1920'],
-      },
-    )) as Array<{ id: number; image_1920?: string | false | null }>;
+    const rows = (await callOdooKw('res.partner', 'read', [[partner.id]], {
+      fields: ['id', 'image_1920'],
+    })) as Array<{ id: number; image_1920?: string | false | null }>;
 
     if (!rows || rows.length === 0) {
       return null;
@@ -1696,56 +1610,42 @@ export async function syncAvatarToOdoo(input: {
     let partnerSearchResult: Array<{ id: number }> = [];
 
     if (input.websiteUserKey) {
-      partnerSearchResult = (await callOdooKw(
-        'res.partner',
-        'search_read',
-        [],
-        {
-          domain: [['x_website_key', '=', input.websiteUserKey]],
-          fields: ['id'],
-          limit: 1,
-        },
-      )) as Array<{ id: number }>;
+      partnerSearchResult = (await callOdooKw('res.partner', 'search_read', [], {
+        domain: [['x_website_key', '=', input.websiteUserKey]],
+        fields: ['id'],
+        limit: 1,
+      })) as Array<{ id: number }>;
     }
 
     if (partnerSearchResult.length === 0 && input.email) {
-      partnerSearchResult = (await callOdooKw(
-        'res.partner',
-        'search_read',
-        [],
-        {
-          domain: [['email', '=', input.email]],
-          fields: ['id'],
-          limit: 1,
-        },
-      )) as Array<{ id: number }>;
+      partnerSearchResult = (await callOdooKw('res.partner', 'search_read', [], {
+        domain: [['email', '=', input.email]],
+        fields: ['id'],
+        limit: 1,
+      })) as Array<{ id: number }>;
     }
 
     if (partnerSearchResult.length === 0) {
-      logger.warn(`No res.partner found for avatar sync (key=${input.websiteUserKey}, email=${input.email})`);
+      logger.warn(
+        `No res.partner found for avatar sync (key=${input.websiteUserKey}, email=${input.email})`,
+      );
       return false;
     }
 
     const partnerId = partnerSearchResult[0].id;
     await callOdooKw('res.partner', 'write', [[partnerId], { image_1920: avatarBase64 }]);
 
-    const employeeRows = (await callOdooKw(
-      'hr.employee',
-      'search_read',
-      [],
-      {
-        domain: [['work_contact_id', '=', partnerId]],
-        fields: ['id'],
-        limit: 1000,
-      },
-    )) as Array<{ id: number }>;
+    const employeeRows = (await callOdooKw('hr.employee', 'search_read', [], {
+      domain: [['work_contact_id', '=', partnerId]],
+      fields: ['id'],
+      limit: 1000,
+    })) as Array<{ id: number }>;
 
     if (employeeRows.length > 0) {
-      await callOdooKw(
-        'hr.employee',
-        'write',
-        [employeeRows.map((row) => row.id), { image_1920: avatarBase64 }],
-      );
+      await callOdooKw('hr.employee', 'write', [
+        employeeRows.map((row) => row.id),
+        { image_1920: avatarBase64 },
+      ]);
     }
 
     return true;
@@ -1780,35 +1680,32 @@ export async function syncUserProfileToOdoo(
     lastName?: string;
     employeeNumber?: number | null;
     mainCompanyId?: number | null;
-  }
+  },
 ): Promise<boolean> {
   try {
-    let partnerSearchResult:
-      | Array<{ id: number; x_website_key?: string; email?: string }>
-      | null = null;
+    let partnerSearchResult: Array<{ id: number; x_website_key?: string; email?: string }> | null =
+      null;
 
     // 1. Search for res.partner by x_website_key or by email
     if (websiteUserKey) {
-      partnerSearchResult = (await callOdooKw(
-        "res.partner",
-        "search_read",
-        [],
-        { domain: [["x_website_key", "=", websiteUserKey]], fields: ["id", "x_website_key", "email"] }
-      )) as Array<{ id: number; x_website_key?: string; email?: string }>;
+      partnerSearchResult = (await callOdooKw('res.partner', 'search_read', [], {
+        domain: [['x_website_key', '=', websiteUserKey]],
+        fields: ['id', 'x_website_key', 'email'],
+      })) as Array<{ id: number; x_website_key?: string; email?: string }>;
     }
 
     // Fallback: search by email if x_website_key not found
     if (!partnerSearchResult || partnerSearchResult.length === 0) {
-      partnerSearchResult = (await callOdooKw(
-        "res.partner",
-        "search_read",
-        [],
-        { domain: [["email", "=", profileData.email]], fields: ["id", "x_website_key", "email"] }
-      )) as Array<{ id: number; x_website_key?: string; email?: string }>;
+      partnerSearchResult = (await callOdooKw('res.partner', 'search_read', [], {
+        domain: [['email', '=', profileData.email]],
+        fields: ['id', 'x_website_key', 'email'],
+      })) as Array<{ id: number; x_website_key?: string; email?: string }>;
     }
 
     if (!partnerSearchResult || partnerSearchResult.length === 0) {
-      logger.warn(`No res.partner found for x_website_key: ${websiteUserKey} or email: ${profileData.email}`);
+      logger.warn(
+        `No res.partner found for x_website_key: ${websiteUserKey} or email: ${profileData.email}`,
+      );
       return false;
     }
 
@@ -1816,17 +1713,17 @@ export async function syncUserProfileToOdoo(
 
     // 2. Update partner data
     const partnerUpdateData: Record<string, unknown> = { email: profileData.email };
-    const shouldSyncName = typeof profileData.firstName === "string"
-      || typeof profileData.lastName === "string";
-    const canFormatPrefixedName = Number.isInteger(profileData.employeeNumber)
-      && Number.isInteger(profileData.mainCompanyId);
+    const shouldSyncName =
+      typeof profileData.firstName === 'string' || typeof profileData.lastName === 'string';
+    const canFormatPrefixedName =
+      Number.isInteger(profileData.employeeNumber) && Number.isInteger(profileData.mainCompanyId);
 
     if (shouldSyncName && canFormatPrefixedName) {
       partnerUpdateData.name = formatEmployeeDisplayName(
         Number(profileData.mainCompanyId),
         Number(profileData.employeeNumber),
-        profileData.firstName || "",
-        profileData.lastName || "",
+        profileData.firstName || '',
+        profileData.lastName || '',
       );
     } else if (shouldSyncName) {
       logger.warn(
@@ -1836,24 +1733,18 @@ export async function syncUserProfileToOdoo(
           employeeNumber: profileData.employeeNumber,
           mainCompanyId: profileData.mainCompanyId,
         },
-        "Skipping partner name update because prefixed-name context is missing",
+        'Skipping partner name update because prefixed-name context is missing',
       );
     }
-    await callOdooKw(
-      "res.partner",
-      "write",
-      [[partnerId], partnerUpdateData]
-    );
+    await callOdooKw('res.partner', 'write', [[partnerId], partnerUpdateData]);
 
     logger.info(`Updated res.partner ${partnerId} for profile sync`);
 
     // 3. Search for all hr.employee records linked to this partner
-    const employeeSearchResult = (await callOdooKw(
-      "hr.employee",
-      "search_read",
-      [],
-      { domain: [["work_contact_id", "=", partnerId]], fields: ["id", "name", "company_id"] }
-    )) as Array<{ id: number; name: string; company_id?: [number, string] | false }>;
+    const employeeSearchResult = (await callOdooKw('hr.employee', 'search_read', [], {
+      domain: [['work_contact_id', '=', partnerId]],
+      fields: ['id', 'name', 'company_id'],
+    })) as Array<{ id: number; name: string; company_id?: [number, string] | false }>;
 
     if (!employeeSearchResult || employeeSearchResult.length === 0) {
       logger.warn(`No hr.employee found for work_contact_id: ${partnerId}`);
@@ -1868,7 +1759,7 @@ export async function syncUserProfileToOdoo(
 
     // Mobile number - remove +63 prefix if present
     if (profileData.mobileNumber) {
-      employeeUpdateData.private_phone = profileData.mobileNumber.replace(/^\+?63/, "");
+      employeeUpdateData.private_phone = profileData.mobileNumber.replace(/^\+?63/, '');
     }
 
     // Legal name
@@ -1887,11 +1778,12 @@ export async function syncUserProfileToOdoo(
     }
     if (profileData.maritalStatus) {
       const normalizedMaritalStatus = profileData.maritalStatus.trim().toLowerCase();
-      const odooMaritalStatus = normalizedMaritalStatus === 'legal cohabitant'
-        ? 'cohabitant'
-        : normalizedMaritalStatus === 'widowed'
-          ? 'widower'
-          : normalizedMaritalStatus;
+      const odooMaritalStatus =
+        normalizedMaritalStatus === 'legal cohabitant'
+          ? 'cohabitant'
+          : normalizedMaritalStatus === 'widowed'
+            ? 'widower'
+            : normalizedMaritalStatus;
       employeeUpdateData.marital = odooMaritalStatus;
     }
     if (profileData.address !== undefined) {
@@ -1907,7 +1799,7 @@ export async function syncUserProfileToOdoo(
 
     // 5. Update all employees linked to this partner
     const employeeIds = employeeSearchResult.map((emp: { id: number }) => emp.id);
-    await callOdooKw("hr.employee", "write", [employeeIds, employeeUpdateData]);
+    await callOdooKw('hr.employee', 'write', [employeeIds, employeeUpdateData]);
 
     if (shouldSyncName) {
       if (!canFormatPrefixedName) {
@@ -1918,12 +1810,12 @@ export async function syncUserProfileToOdoo(
             employeeNumber: profileData.employeeNumber,
             mainCompanyId: profileData.mainCompanyId,
           },
-          "Skipping employee name update because prefixed-name context is missing",
+          'Skipping employee name update because prefixed-name context is missing',
         );
       } else {
         const employeeNumber = Number(profileData.employeeNumber);
-        const firstName = profileData.firstName || "";
-        const lastName = profileData.lastName || "";
+        const firstName = profileData.firstName || '';
+        const lastName = profileData.lastName || '';
 
         for (const employee of employeeSearchResult) {
           const branchCompanyId = Array.isArray(employee.company_id)
@@ -1932,18 +1824,17 @@ export async function syncUserProfileToOdoo(
           if (!Number.isInteger(branchCompanyId)) {
             logger.warn(
               { employeeId: employee.id, companyId: employee.company_id },
-              "Skipping employee name update due to missing company_id",
+              'Skipping employee name update due to missing company_id',
             );
             continue;
           }
 
-          await callOdooKw(
-            "hr.employee",
-            "write",
-            [[employee.id], {
+          await callOdooKw('hr.employee', 'write', [
+            [employee.id],
+            {
               name: formatEmployeeDisplayName(branchCompanyId, employeeNumber, firstName, lastName),
-            }]
-          );
+            },
+          ]);
         }
       }
     }
@@ -1974,19 +1865,14 @@ export async function createPartnerBankAndAssignEmployees(input: {
   const accNumber = String(input.accountNumber).trim();
 
   /** Odoo enforces unique (partner, account number); reuse and update when already present. */
-  const existingPartnerBanks = (await callOdooKw(
-    'res.partner.bank',
-    'search_read',
-    [],
-    {
-      domain: [
-        ['partner_id', '=', partnerId],
-        ['acc_number', '=', accNumber],
-      ],
-      fields: ['id'],
-      limit: 1,
-    },
-  )) as Array<{ id: number }>;
+  const existingPartnerBanks = (await callOdooKw('res.partner.bank', 'search_read', [], {
+    domain: [
+      ['partner_id', '=', partnerId],
+      ['acc_number', '=', accNumber],
+    ],
+    fields: ['id'],
+    limit: 1,
+  })) as Array<{ id: number }>;
 
   let partnerBankId: number;
   if (existingPartnerBanks.length > 0 && Number.isFinite(Number(existingPartnerBanks[0].id))) {
@@ -2003,12 +1889,14 @@ export async function createPartnerBankAndAssignEmployees(input: {
       'Updated existing res.partner.bank for same partner and account number',
     );
   } else {
-    partnerBankId = (await callOdooKw('res.partner.bank', 'create', [{
-      bank_id: input.bankId,
-      acc_number: accNumber,
-      partner_id: partnerId,
-      allow_out_payment: true,
-    }])) as number;
+    partnerBankId = (await callOdooKw('res.partner.bank', 'create', [
+      {
+        bank_id: input.bankId,
+        acc_number: accNumber,
+        partner_id: partnerId,
+        allow_out_payment: true,
+      },
+    ])) as number;
   }
 
   const partnerEmployees = await listEmployeesLinkedToPartner(partnerId);
@@ -2019,11 +1907,10 @@ export async function createPartnerBankAndAssignEmployees(input: {
 
   const employeeIds = employeeRows.map((row) => row.id);
   if (employeeIds.length > 0) {
-    await callOdooKw(
-      'hr.employee',
-      'write',
-      [employeeIds, hrEmployeeBankAccountIdsWritePayload(partnerBankId)],
-    );
+    await callOdooKw('hr.employee', 'write', [
+      employeeIds,
+      hrEmployeeBankAccountIdsWritePayload(partnerBankId),
+    ]);
   }
 
   return { partnerId, partnerBankId, employeeIds };
@@ -2034,14 +1921,9 @@ async function readPartnerBankRecord(partnerBankId: number): Promise<{
   bankId: number;
   accountNumber: string;
 } | null> {
-  const partnerBankRows = (await callOdooKw(
-    'res.partner.bank',
-    'read',
-    [[partnerBankId]],
-    {
-      fields: ['id', 'bank_id', 'acc_number'],
-    },
-  )) as Array<{ id: number; bank_id?: [number, string] | false; acc_number?: string | null }>;
+  const partnerBankRows = (await callOdooKw('res.partner.bank', 'read', [[partnerBankId]], {
+    fields: ['id', 'bank_id', 'acc_number'],
+  })) as Array<{ id: number; bank_id?: [number, string] | false; acc_number?: string | null }>;
 
   if (!partnerBankRows || partnerBankRows.length === 0) {
     return null;
@@ -2084,17 +1966,12 @@ export async function getEmployeeLinkedBankInfoByWebsiteUserKey(
   }
 
   if (!selectedBank && partnerId) {
-    const partnerBanks = (await callOdooKw(
-      'res.partner.bank',
-      'search_read',
-      [],
-      {
-        domain: [['partner_id', '=', partnerId]],
-        fields: ['id', 'bank_id', 'acc_number', 'write_date'],
-        order: 'write_date desc, id desc',
-        limit: 1,
-      },
-    )) as Array<{ id: number; bank_id?: [number, string] | false; acc_number?: string | null }>;
+    const partnerBanks = (await callOdooKw('res.partner.bank', 'search_read', [], {
+      domain: [['partner_id', '=', partnerId]],
+      fields: ['id', 'bank_id', 'acc_number', 'write_date'],
+      order: 'write_date desc, id desc',
+      limit: 1,
+    })) as Array<{ id: number; bank_id?: [number, string] | false; acc_number?: string | null }>;
 
     if (partnerBanks.length > 0) {
       const candidate = partnerBanks[0];
@@ -2124,11 +2001,10 @@ export async function getEmployeeLinkedBankInfoByWebsiteUserKey(
 
   if (employeesMissingBank.length > 0) {
     try {
-      await callOdooKw(
-        'hr.employee',
-        'write',
-        [employeesMissingBank, hrEmployeeBankAccountIdsWritePayload(selectedBank.id)],
-      );
+      await callOdooKw('hr.employee', 'write', [
+        employeesMissingBank,
+        hrEmployeeBankAccountIdsWritePayload(selectedBank.id),
+      ]);
     } catch (error) {
       logger.warn(
         {
@@ -2207,20 +2083,15 @@ function normalizeActiveAttendanceRows(
 }
 
 export async function getActiveAttendances(): Promise<ActiveAttendanceRecord[]> {
-  const rows = (await callOdooKw(
-    'hr.attendance',
-    'search_read',
-    [],
-    {
-      domain: [
-        ['check_out', '=', false],
-        ['x_company_id', '!=', 1],
-      ],
-      fields: ['id', 'employee_id', 'x_company_id', 'check_in'],
-      order: 'check_in desc',
-      limit: 5000,
-    },
-  )) as Array<{
+  const rows = (await callOdooKw('hr.attendance', 'search_read', [], {
+    domain: [
+      ['check_out', '=', false],
+      ['x_company_id', '!=', 1],
+    ],
+    fields: ['id', 'employee_id', 'x_company_id', 'check_in'],
+    order: 'check_in desc',
+    limit: 5000,
+  })) as Array<{
     id: number;
     employee_id?: [number, string] | false;
     x_company_id?: [number, string] | false;
@@ -2255,20 +2126,15 @@ export async function getActiveAttendancesForWebsiteUserKey(
     return [];
   }
 
-  const rows = (await callOdooKw(
-    'hr.attendance',
-    'search_read',
-    [],
-    {
-      domain: [
-        ['employee_id', 'in', employeeIds],
-        ['check_out', '=', false],
-      ],
-      fields: ['id', 'employee_id', 'x_company_id', 'check_in'],
-      order: 'check_in desc',
-      limit: 5000,
-    },
-  )) as OdooActiveAttendanceSearchRow[];
+  const rows = (await callOdooKw('hr.attendance', 'search_read', [], {
+    domain: [
+      ['employee_id', 'in', employeeIds],
+      ['check_out', '=', false],
+    ],
+    fields: ['id', 'employee_id', 'x_company_id', 'check_in'],
+    order: 'check_in desc',
+    limit: 5000,
+  })) as OdooActiveAttendanceSearchRow[];
 
   return normalizeActiveAttendanceRows(rows);
 }
@@ -2299,11 +2165,7 @@ export async function batchCheckOutAttendances(
   const parsedDate = parseUtcTimestamp(checkOutTime);
   const odooDatetime = toOdooDatetime(parsedDate);
 
-  await callOdooKw(
-    'hr.attendance',
-    'write',
-    [uniqueAttendanceIds, { check_out: odooDatetime }],
-  );
+  await callOdooKw('hr.attendance', 'write', [uniqueAttendanceIds, { check_out: odooDatetime }]);
 
   logger.info(
     { attendanceIds: uniqueAttendanceIds, checkOut: odooDatetime },
@@ -2313,17 +2175,63 @@ export async function batchCheckOutAttendances(
   return uniqueAttendanceIds.length;
 }
 
-export async function getEmployeeWebsiteKeyByEmployeeId(employeeId: number): Promise<string | null> {
-  const rows = (await callOdooKw(
-    'hr.employee',
-    'search_read',
-    [],
+/**
+ * Deducts break hours from the "Attendance" work entry for a specific employee and date.
+ * Assumes work_entry_type_id = 1 is the Attendance type.
+ */
+export async function deductBreakFromWorkEntry(
+  websiteUserKey: string,
+  odooBranchId: number,
+  date: string,
+  breakHours: number,
+): Promise<void> {
+  // Find the Attendance work entry (type_id = 1) for that date using websiteUserKey and company_id
+  const entries = (await callOdooKw('hr.work.entry', 'search_read', [], {
+    domain: [
+      ['x_website_key', '=', websiteUserKey],
+      ['date', '=', date],
+      ['work_entry_type_id', '=', 1],
+      ['company_id', '=', odooBranchId],
+    ],
+    fields: ['id', 'duration'],
+    limit: 1,
+  })) as Array<{ id: number; duration: number }>;
+
+  if (entries.length === 0) {
+    logger.warn(
+      { websiteUserKey, odooBranchId, date },
+      'No Attendance work entry found in Odoo for specifically matched websiteUserKey and company_id',
+    );
+    return;
+  }
+
+  const entry = entries[0];
+  const newDuration = Math.max(0, entry.duration - breakHours);
+
+  // Update the duration
+  await callOdooKw('hr.work.entry', 'write', [[entry.id], { duration: newDuration }]);
+
+  logger.info(
     {
-      domain: [['id', '=', employeeId]],
-      fields: ['id', 'x_website_key'],
-      limit: 1,
+      entryId: entry.id,
+      oldDuration: entry.duration,
+      newDuration,
+      breakHours,
+      date,
+      websiteUserKey,
     },
-  )) as Array<{ id: number; x_website_key?: string | null }>;
+    'Successfully deducted break hours from direct-matched Odoo work entry',
+  );
+}
+
+export async function getEmployeeWebsiteKeyByEmployeeId(
+  employeeId: number,
+): Promise<string | null> {
+  const rows = (await callOdooKw('hr.employee', 'search_read', [], {
+    domain: [['id', '=', employeeId]],
+    fields: ['id', 'x_website_key'],
+    limit: 1,
+  })) as Array<{ id: number; x_website_key?: string | null }>;
 
   if (!rows.length) return null;
   const key = String(rows[0].x_website_key ?? '').trim();
@@ -2335,16 +2243,11 @@ export async function getAttendanceIdentityByAttendanceId(attendanceId: number):
   employeeName: string;
   websiteUserKey: string | null;
 } | null> {
-  const rows = (await callOdooKw(
-    'hr.attendance',
-    'search_read',
-    [],
-    {
-      domain: [['id', '=', attendanceId]],
-      fields: ['id', 'employee_id'],
-      limit: 1,
-    },
-  )) as Array<{ id: number; employee_id?: [number, string] | false }>;
+  const rows = (await callOdooKw('hr.attendance', 'search_read', [], {
+    domain: [['id', '=', attendanceId]],
+    fields: ['id', 'employee_id'],
+    limit: 1,
+  })) as Array<{ id: number; employee_id?: [number, string] | false }>;
 
   if (!rows.length || !Array.isArray(rows[0].employee_id)) {
     return null;
@@ -2368,7 +2271,10 @@ export async function getAttendanceIdentityByAttendanceId(attendanceId: number):
  * @param companyId - The Odoo company ID (branch ID)
  * @returns The PIN code string or null
  */
-export async function getCompanyPin(websiteUserKey: string, companyId: number): Promise<string | null> {
+export async function getCompanyPin(
+  websiteUserKey: string,
+  companyId: number,
+): Promise<string | null> {
   try {
     const { employees } = await listEmployeesForIdentity({
       websiteUserKey,
@@ -2415,7 +2321,10 @@ export async function setPinForEmployeeIdentity(input: {
 
     return { employeeCount: employeeIds.length };
   } catch (err) {
-    logger.error({ err, websiteUserKey: input.websiteUserKey }, 'Failed to reset employee PIN in Odoo');
+    logger.error(
+      { err, websiteUserKey: input.websiteUserKey },
+      'Failed to reset employee PIN in Odoo',
+    );
     throw err;
   }
 }
@@ -2428,11 +2337,7 @@ export async function updatePlanningSlotState(
   state: 'draft' | 'published',
 ): Promise<boolean> {
   try {
-    const result = await callOdooKw(
-      'planning.slot',
-      'write',
-      [[planningSlotId], { state }],
-    );
+    const result = await callOdooKw('planning.slot', 'write', [[planningSlotId], { state }]);
     logger.info(`Updated planning.slot ${planningSlotId} state to ${state}`);
     return result === true;
   } catch (err) {
@@ -2449,11 +2354,10 @@ export async function updatePlanningSlotResource(
   resourceId: number,
 ): Promise<boolean> {
   try {
-    const result = await callOdooKw(
-      'planning.slot',
-      'write',
-      [[planningSlotId], { resource_id: resourceId }],
-    );
+    const result = await callOdooKw('planning.slot', 'write', [
+      [planningSlotId],
+      { resource_id: resourceId },
+    ]);
     logger.info(`Updated planning.slot ${planningSlotId} resource_id to ${resourceId}`);
     return result === true;
   } catch (err) {
@@ -2470,40 +2374,39 @@ export async function getResourceIdByWebsiteUserKeyAndCompanyId(
   companyId: number,
 ): Promise<number | null> {
   try {
-    const identityEmployees = (await listEmployeesForIdentity({
-      websiteUserKey,
-      companyId,
-    })).employees;
+    const identityEmployees = (
+      await listEmployeesForIdentity({
+        websiteUserKey,
+        companyId,
+      })
+    ).employees;
     if (identityEmployees.length === 0) {
       logger.warn(`No hr.employee found for website key ${websiteUserKey} in company ${companyId}`);
       return null;
     }
 
-    const employees = (await callOdooKw(
-      'hr.employee',
-      'search_read',
-      [],
-      {
-        domain: [
-          ['id', 'in', identityEmployees.map((employee) => employee.id)],
-        ],
-        fields: ['id', 'resource_id'],
-        order: 'id asc',
-        limit: 1,
-      },
-    )) as Array<{ id: number; resource_id?: [number, string] | false }>;
+    const employees = (await callOdooKw('hr.employee', 'search_read', [], {
+      domain: [['id', 'in', identityEmployees.map((employee) => employee.id)]],
+      fields: ['id', 'resource_id'],
+      order: 'id asc',
+      limit: 1,
+    })) as Array<{ id: number; resource_id?: [number, string] | false }>;
 
     if (!employees || employees.length === 0) return null;
 
     const resourceField = employees[0].resource_id;
     if (!Array.isArray(resourceField) || !resourceField[0]) {
-      logger.warn(`No resource_id on hr.employee ${employees[0].id} for website key ${websiteUserKey}`);
+      logger.warn(
+        `No resource_id on hr.employee ${employees[0].id} for website key ${websiteUserKey}`,
+      );
       return null;
     }
 
     return Number(resourceField[0]);
   } catch (err) {
-    logger.error(`Failed to resolve resource by website key ${websiteUserKey} and company ${companyId}: ${err}`);
+    logger.error(
+      `Failed to resolve resource by website key ${websiteUserKey} and company ${companyId}: ${err}`,
+    );
     throw err;
   }
 }
@@ -2512,17 +2415,17 @@ export async function getResourceIdByWebsiteUserKeyAndCompanyId(
  * Finds the hr.employee ID on Odoo company_id = 1 for a given x_website_key.
  * Returns null if not found.
  */
-export async function getCompany1EmployeeIdByWebsiteKey(websiteUserKey: string): Promise<number | null> {
-  const rows = (await callOdooKw(
-    'hr.employee',
-    'search_read',
-    [],
-    {
-      domain: [['x_website_key', '=', websiteUserKey], ['company_id', '=', 1]],
-      fields: ['id'],
-      limit: 1,
-    },
-  )) as Array<{ id: number }>;
+export async function getCompany1EmployeeIdByWebsiteKey(
+  websiteUserKey: string,
+): Promise<number | null> {
+  const rows = (await callOdooKw('hr.employee', 'search_read', [], {
+    domain: [
+      ['x_website_key', '=', websiteUserKey],
+      ['company_id', '=', 1],
+    ],
+    fields: ['id'],
+    limit: 1,
+  })) as Array<{ id: number }>;
   return rows.length > 0 ? rows[0].id : null;
 }
 
@@ -2538,12 +2441,20 @@ export async function createAuditSalaryAttachment(input: {
   try {
     const employeeId = await getCompany1EmployeeIdByWebsiteKey(input.websiteUserKey);
     if (!employeeId) {
-      logger.warn({ websiteUserKey: input.websiteUserKey }, 'createAuditSalaryAttachment: no company_id=1 employee found, skipping');
+      logger.warn(
+        { websiteUserKey: input.websiteUserKey },
+        'createAuditSalaryAttachment: no company_id=1 employee found, skipping',
+      );
       return false;
     }
 
-    const dateStart = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-    const [year, month, dayStr] = dateStart.split("-");
+    const dateStart = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Manila',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+    const [year, month, dayStr] = dateStart.split('-');
     const day = parseInt(dayStr, 10);
 
     let dateEstimatedEnd: string;
@@ -2551,24 +2462,32 @@ export async function createAuditSalaryAttachment(input: {
       dateEstimatedEnd = `${year}-${month}-15`;
     } else {
       const lastDay = new Date(Number(year), Number(month), 0).getDate();
-      dateEstimatedEnd = `${year}-${month}-${String(lastDay).padStart(2, "0")}`;
+      dateEstimatedEnd = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
     }
 
-    await callOdooKw('hr.salary.attachment', 'create', [{
-      employee_ids: [[4, employeeId]],
-      description: input.description,
-      other_input_type_id: 22,
-      total_amount: input.totalAmount,
-      monthly_amount: input.totalAmount,
-      date_start: dateStart,
-      date_end: dateEstimatedEnd,
-      duration_type: "one",
-    }]);
+    await callOdooKw('hr.salary.attachment', 'create', [
+      {
+        employee_ids: [[4, employeeId]],
+        description: input.description,
+        other_input_type_id: 22,
+        total_amount: input.totalAmount,
+        monthly_amount: input.totalAmount,
+        date_start: dateStart,
+        date_end: dateEstimatedEnd,
+        duration_type: 'one',
+      },
+    ]);
 
-    logger.info({ employeeId, description: input.description }, 'createAuditSalaryAttachment: created');
+    logger.info(
+      { employeeId, description: input.description },
+      'createAuditSalaryAttachment: created',
+    );
     return true;
   } catch (err) {
-    logger.error({ err, websiteUserKey: input.websiteUserKey }, 'createAuditSalaryAttachment: failed, skipping');
+    logger.error(
+      { err, websiteUserKey: input.websiteUserKey },
+      'createAuditSalaryAttachment: failed, skipping',
+    );
     return false;
   }
 }
@@ -2585,11 +2504,12 @@ export async function createAuditSalaryAttachment(input: {
  * Only branches that have a non-null `odoo_branch_id` are included.
  */
 async function loadUserAllowedOdooBranchMap(userId: string): Promise<Map<number, string>> {
-  const rows = (await db.getDb()("user_company_branches as ucb")
-    .join("branches as b", "ucb.branch_id", "b.id")
-    .where("ucb.user_id", userId)
-    .whereNotNull("b.odoo_branch_id")
-    .select("b.odoo_branch_id", "b.name")) as Array<{
+  const rows = (await db
+    .getDb()('user_company_branches as ucb')
+    .join('branches as b', 'ucb.branch_id', 'b.id')
+    .where('ucb.user_id', userId)
+    .whereNotNull('b.odoo_branch_id')
+    .select('b.odoo_branch_id', 'b.name')) as Array<{
     odoo_branch_id: string;
     name: string;
   }>;
@@ -2652,16 +2572,16 @@ interface OdooPayslipRow {
  * 1st cutoff starts on the 1st, 2nd cutoff starts on the 16th.
  */
 function resolveCutoffFromDateFrom(dateFrom: string): 1 | 2 {
-  const day = Number(dateFrom.split("-")[2]);
+  const day = Number(dateFrom.split('-')[2]);
   return day <= 15 ? 1 : 2;
 }
 
 /**
  * Derives a PayslipStatus from a raw Odoo state string.
  */
-function derivePayslipStatus(state: string): "draft" | "completed" {
-  if (state === "draft") return "draft";
-  return "completed";
+function derivePayslipStatus(state: string): 'draft' | 'completed' {
+  if (state === 'draft') return 'draft';
+  return 'completed';
 }
 
 /**
@@ -2677,22 +2597,24 @@ function derivePayslipStatus(state: string): "draft" | "completed" {
 export async function getAllPayslipsForUser(
   websiteUserKey: string,
   userId: string,
-): Promise<Array<{
-  id: string;
-  name: string;
-  date_from: string;
-  date_to: string;
-  odoo_state: string;
-  status: "draft" | "completed";
-  company_id: number;
-  company_name: string;
-  employee_id: number;
-  employee_name: string;
-  cutoff: 1 | 2;
-  is_pending: false;
-  /** Odoo computed net pay; 0 means the payslip has no salary data yet. */
-  net_pay: number;
-}>> {
+): Promise<
+  Array<{
+    id: string;
+    name: string;
+    date_from: string;
+    date_to: string;
+    odoo_state: string;
+    status: 'draft' | 'completed';
+    company_id: number;
+    company_name: string;
+    employee_id: number;
+    employee_name: string;
+    cutoff: 1 | 2;
+    is_pending: false;
+    /** Odoo computed net pay; 0 means the payslip has no salary data yet. */
+    net_pay: number;
+  }>
+> {
   try {
     const [{ employees }, allowedBranchMap] = await Promise.all([
       listEmployeesForIdentity({ websiteUserKey }),
@@ -2714,21 +2636,25 @@ export async function getAllPayslipsForUser(
     // Query payslips for each employee in parallel
     await Promise.all(
       allowedEmployees.map(async (employee) => {
-        const rows = (await callOdooKw(
-          "hr.payslip",
-          "search_read",
-          [],
-          {
-            domain: [
-              ["employee_id", "=", employee.id],
-              ["state", "!=", "cancel"],
-              ["x_view_only", "!=", true],
-            ],
-            fields: ["id", "name", "state", "employee_id", "date_from", "date_to", "company_id", "net_wage"],
-            order: "date_to desc, id desc",
-            limit: 1000,
-          },
-        )) as OdooPayslipRow[];
+        const rows = (await callOdooKw('hr.payslip', 'search_read', [], {
+          domain: [
+            ['employee_id', '=', employee.id],
+            ['state', '!=', 'cancel'],
+            ['x_view_only', '!=', true],
+          ],
+          fields: [
+            'id',
+            'name',
+            'state',
+            'employee_id',
+            'date_from',
+            'date_to',
+            'company_id',
+            'net_wage',
+          ],
+          order: 'date_to desc, id desc',
+          limit: 1000,
+        })) as OdooPayslipRow[];
 
         allRows.push(...rows);
       }),
@@ -2756,7 +2682,8 @@ export async function getAllPayslipsForUser(
       // Prefer the website branch name; fall back to the Odoo company name if
       // (for any reason) the branch is no longer in the allowed map.
       const websiteBranchName = allowedBranchMap.get(odooCompanyId);
-      const companyName = websiteBranchName ?? (Array.isArray(row.company_id) ? row.company_id[1] : "");
+      const companyName =
+        websiteBranchName ?? (Array.isArray(row.company_id) ? row.company_id[1] : '');
 
       return {
         id: String(row.id),
@@ -2767,8 +2694,10 @@ export async function getAllPayslipsForUser(
         status: derivePayslipStatus(row.state),
         company_id: odooCompanyId,
         company_name: companyName,
-        employee_id: Array.isArray(row.employee_id) ? row.employee_id[0] : (row.employee_id as unknown as number),
-        employee_name: Array.isArray(row.employee_id) ? row.employee_id[1] : "",
+        employee_id: Array.isArray(row.employee_id)
+          ? row.employee_id[0]
+          : (row.employee_id as unknown as number),
+        employee_name: Array.isArray(row.employee_id) ? row.employee_id[1] : '',
         cutoff: resolveCutoffFromDateFrom(row.date_from),
         is_pending: false as const,
         net_pay: row.net_wage ?? 0,
@@ -2792,32 +2721,41 @@ export async function getAllPayslipsForUser(
  */
 export async function calculatePendingPayslipStubs(
   employees: Array<{ id: number; name?: string | null; company_id?: [number, string] | false }>,
-  existingPayslips: Array<{ employee_id: number; company_id: number; date_from: string; date_to: string; status: "draft" | "completed" }>,
+  existingPayslips: Array<{
+    employee_id: number;
+    company_id: number;
+    date_from: string;
+    date_to: string;
+    status: 'draft' | 'completed';
+  }>,
 ): Promise<PayslipListItem[]> {
   const now = new Date();
-  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
   // Helper: semi-monthly range for a given cutoff and month base (0-indexed month)
-  const getSemiMonthRangeForBase = (cutoff: 1 | 2, dateBase: Date): { date_from: string; date_to: string } => {
+  const getSemiMonthRangeForBase = (
+    cutoff: 1 | 2,
+    dateBase: Date,
+  ): { date_from: string; date_to: string } => {
     const year = dateBase.getFullYear();
     const month = dateBase.getMonth(); // 0-indexed
     if (cutoff === 1) {
       return {
-        date_from: `${year}-${String(month + 1).padStart(2, "0")}-01`,
-        date_to: `${year}-${String(month + 1).padStart(2, "0")}-15`,
+        date_from: `${year}-${String(month + 1).padStart(2, '0')}-01`,
+        date_to: `${year}-${String(month + 1).padStart(2, '0')}-15`,
       };
     } else {
       const lastDay = new Date(year, month + 1, 0).getDate();
       return {
-        date_from: `${year}-${String(month + 1).padStart(2, "0")}-16`,
-        date_to: `${year}-${String(month + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`,
+        date_from: `${year}-${String(month + 1).padStart(2, '0')}-16`,
+        date_to: `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`,
       };
     }
   };
 
   // Helper: given the date_to of a completed payslip, return the start of the next period
   const getNextPeriodStart = (date_to: string): { year: number; month: number; cutoff: 1 | 2 } => {
-    const parts = date_to.split("-");
+    const parts = date_to.split('-');
     const year = parseInt(parts[0], 10);
     const month = parseInt(parts[1], 10) - 1; // 0-indexed
     const day = parseInt(parts[2], 10);
@@ -2842,13 +2780,19 @@ export async function calculatePendingPayslipStubs(
     const companyId = companyField[0];
 
     const lastCompleted = existingPayslips
-      .filter((p) => p.employee_id === employee.id && p.company_id === companyId && p.status === "completed")
+      .filter(
+        (p) =>
+          p.employee_id === employee.id && p.company_id === companyId && p.status === 'completed',
+      )
       .sort((a, b) => b.date_to.localeCompare(a.date_to))[0];
 
     let startDate: string;
     if (lastCompleted) {
       const next = getNextPeriodStart(lastCompleted.date_to);
-      startDate = getSemiMonthRangeForBase(next.cutoff, new Date(next.year, next.month, 1)).date_from;
+      startDate = getSemiMonthRangeForBase(
+        next.cutoff,
+        new Date(next.year, next.month, 1),
+      ).date_from;
     } else {
       const prevMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
       startDate = getSemiMonthRangeForBase(1, prevMonth).date_from;
@@ -2859,12 +2803,12 @@ export async function calculatePendingPayslipStubs(
 
   // limit: 0 fetches all records — Odoo's default limit of 80 would silently
   // drop entries for later periods, causing stubs to be skipped incorrectly.
-  const workEntries = (await callOdooKw("hr.work.entry", "search_read", [], {
+  const workEntries = (await callOdooKw('hr.work.entry', 'search_read', [], {
     domain: [
-      ["employee_id", "in", employeeIds],
-      ["date", ">=", searchStart],
+      ['employee_id', 'in', employeeIds],
+      ['date', '>=', searchStart],
     ],
-    fields: ["employee_id", "company_id", "date"],
+    fields: ['employee_id', 'company_id', 'date'],
     limit: 0,
   })) as Array<{
     employee_id: [number, string];
@@ -2880,11 +2824,14 @@ export async function calculatePendingPayslipStubs(
 
     const companyId = companyField[0];
     const companyName = companyField[1];
-    const employeeName = employee.name ?? "";
+    const employeeName = employee.name ?? '';
 
     // Find the most recent completed payslip for this employee+company
     const lastCompleted = existingPayslips
-      .filter((p) => p.employee_id === employee.id && p.company_id === companyId && p.status === "completed")
+      .filter(
+        (p) =>
+          p.employee_id === employee.id && p.company_id === companyId && p.status === 'completed',
+      )
       .sort((a, b) => b.date_to.localeCompare(a.date_to))[0];
 
     let year: number;
@@ -2922,26 +2869,28 @@ export async function calculatePendingPayslipStubs(
         // stub — today's work entries may not exist in Odoo yet. For past periods,
         // require at least one work entry as a proxy for non-zero net pay.
         const isCurrentPeriod = todayStr >= range.date_from && todayStr <= range.date_to;
-        const hasAttendance = isCurrentPeriod || workEntries.some((we) => {
-          const weEmployeeId = Array.isArray(we.employee_id) ? we.employee_id[0] : we.employee_id;
-          const weCompanyId = Array.isArray(we.company_id) ? we.company_id[0] : we.company_id;
-          const weDate = we.date.slice(0, 10); // truncate to YYYY-MM-DD if datetime
-          return (
-            weEmployeeId === employee.id &&
-            weCompanyId === companyId &&
-            weDate >= range.date_from &&
-            weDate <= range.date_to
-          );
-        });
+        const hasAttendance =
+          isCurrentPeriod ||
+          workEntries.some((we) => {
+            const weEmployeeId = Array.isArray(we.employee_id) ? we.employee_id[0] : we.employee_id;
+            const weCompanyId = Array.isArray(we.company_id) ? we.company_id[0] : we.company_id;
+            const weDate = we.date.slice(0, 10); // truncate to YYYY-MM-DD if datetime
+            return (
+              weEmployeeId === employee.id &&
+              weCompanyId === companyId &&
+              weDate >= range.date_from &&
+              weDate <= range.date_to
+            );
+          });
 
         if (hasAttendance) {
           stubs.push({
             id: `pending-${companyId}:${range.date_from}:${cutoff}`,
-            name: `${employeeName} | ${cutoff === 1 ? "1st" : "2nd"} Cutoff Payslip`,
+            name: `${employeeName} | ${cutoff === 1 ? '1st' : '2nd'} Cutoff Payslip`,
             date_from: range.date_from,
             date_to: range.date_to,
-            odoo_state: "",
-            status: "pending",
+            odoo_state: '',
+            status: 'pending',
             company_id: companyId,
             company_name: companyName,
             employee_id: employee.id,
@@ -3004,14 +2953,9 @@ export async function getPayslipDetailById(payslipId: number): Promise<{
   try {
     // Read the payslip header first so we know its current state before
     // attempting any mutation.
-    const slips = (await callOdooKw(
-      "hr.payslip",
-      "read",
-      [[payslipId]],
-      {
-        fields: ["id", "name", "state", "employee_id", "date_from", "date_to"],
-      },
-    )) as Array<{
+    const slips = (await callOdooKw('hr.payslip', 'read', [[payslipId]], {
+      fields: ['id', 'name', 'state', 'employee_id', 'date_from', 'date_to'],
+    })) as Array<{
       id: number;
       name: string;
       state: string;
@@ -3029,22 +2973,27 @@ export async function getPayslipDetailById(payslipId: number): Promise<{
     // Odoo only allows refresh + recompute on Draft ("draft") or Waiting
     // ("verify") payslips. Calling these methods on a Done/Paid ("done")
     // payslip throws "The payslips should be in Draft or Waiting state."
-    if (slip.state === "draft" || slip.state === "verify") {
-      await callOdooKw("hr.payslip", "action_refresh_from_work_entries", [[payslipId]]);
-      await callOdooKw("hr.payslip", "compute_sheet", [[payslipId]]);
+    if (slip.state === 'draft' || slip.state === 'verify') {
+      await callOdooKw('hr.payslip', 'action_refresh_from_work_entries', [[payslipId]]);
+      await callOdooKw('hr.payslip', 'compute_sheet', [[payslipId]]);
     }
 
-    const lines = (await callOdooKw(
-      "hr.payslip.line",
-      "search_read",
-      [],
-      {
-        domain: [["slip_id", "=", payslipId]],
-        fields: ["id", "name", "code", "category_id", "total", "amount", "quantity", "rate", "sequence"],
-        order: "sequence asc, id asc",
-        limit: 1000,
-      },
-    )) as Array<{
+    const lines = (await callOdooKw('hr.payslip.line', 'search_read', [], {
+      domain: [['slip_id', '=', payslipId]],
+      fields: [
+        'id',
+        'name',
+        'code',
+        'category_id',
+        'total',
+        'amount',
+        'quantity',
+        'rate',
+        'sequence',
+      ],
+      order: 'sequence asc, id asc',
+      limit: 1000,
+    })) as Array<{
       id: number;
       name: string;
       code: string;
@@ -3056,17 +3005,12 @@ export async function getPayslipDetailById(payslipId: number): Promise<{
       sequence: number;
     }>;
 
-    const workedDays = (await callOdooKw(
-      "hr.payslip.worked_days",
-      "search_read",
-      [],
-      {
-        domain: [["payslip_id", "=", payslipId]],
-        fields: ["id", "name", "code", "number_of_days", "number_of_hours", "amount"],
-        order: "id asc",
-        limit: 1000,
-      },
-    )) as Array<{
+    const workedDays = (await callOdooKw('hr.payslip.worked_days', 'search_read', [], {
+      domain: [['payslip_id', '=', payslipId]],
+      fields: ['id', 'name', 'code', 'number_of_days', 'number_of_hours', 'amount'],
+      order: 'id asc',
+      limit: 1000,
+    })) as Array<{
       id: number;
       name: string;
       code: string;

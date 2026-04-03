@@ -5,6 +5,8 @@ import { getIO } from '../config/socket.js';
 import { db } from '../config/database.js';
 import { enqueuePeerEvaluationJob } from '../services/peerEvaluationQueue.service.js';
 import { logger } from '../utils/logger.js';
+import * as shiftActivityService from '../services/shiftActivity.service.js';
+import { batchCheckOutAttendances } from '../services/odoo.service.js';
 
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
@@ -68,7 +70,20 @@ export async function list(req: Request, res: Response, next: NextFunction) {
     query = query.orderBy(`employee_shifts.${sortBy}`, sortOrder);
 
     const shifts = await query;
-    res.json({ success: true, data: shifts });
+    const shiftIds = shifts.map((s: any) => s.id);
+    const activeActivities = shiftIds.length > 0
+      ? await tenantDb('shift_activities')
+          .whereIn('shift_id', shiftIds)
+          .whereNull('end_time')
+      : [];
+    
+    const activityMap = Object.fromEntries(activeActivities.map((a: any) => [a.shift_id, a]));
+    const data = shifts.map((s: any) => ({
+      ...s,
+      active_activity: activityMap[s.id] || null,
+    }));
+
+    res.json({ success: true, data });
   } catch (err) {
     next(err);
   }
@@ -112,7 +127,25 @@ export async function get(req: Request, res: Response, next: NextFunction) {
       resolved_by_name: a.resolved_by ? (resolvers[a.resolved_by as string] ?? null) : null,
     }));
 
-    res.json({ success: true, data: { ...shift, logs, authorizations: authorizationsWithResolver } });
+    const activeActivity = await shiftActivityService.getActiveActivity(id, shift.user_id);
+
+    const completedBreaks = await tenantDb('shift_activities')
+      .where({ shift_id: id, activity_type: 'break' })
+      .whereNotNull('end_time')
+      .select('duration_minutes');
+    const totalBreakMinutes = completedBreaks.reduce((sum: number, a: any) => sum + (Number(a.duration_minutes) || 0), 0);
+    const totalBreakHours = totalBreakMinutes / 60;
+
+    res.json({
+      success: true,
+      data: {
+        ...shift,
+        total_break_hours: totalBreakHours,
+        logs,
+        authorizations: authorizationsWithResolver,
+        active_activity: activeActivity || null,
+      },
+    });
   } catch (err) {
     console.error('employeeShift.get() error:', err);
     next(err);
@@ -140,85 +173,97 @@ export async function endShift(req: Request, res: Response, next: NextFunction) 
       throw new AppError(403, 'You can only end your own shift');
     }
 
-    // Update shift status to ended
-    const [updated] = await tenantDb('employee_shifts')
-      .where({ id })
-      .update({ status: 'ended', updated_at: new Date() })
-      .returning('*');
+    // 1. Find the latest attendance ID to check out
+    const lastCheckIn = await tenantDb('shift_logs')
+      .where({ shift_id: id, log_type: 'check_in' })
+      .whereNotNull('odoo_attendance_id')
+      .orderBy('event_time', 'desc')
+      .first();
 
-    // Insert shift_ended log
+    if (!lastCheckIn?.odoo_attendance_id) {
+      throw new AppError(400, 'No active Odoo attendance found for this shift. Check out failed.');
+    }
+
+    // 2. Identify the user for "Ended by" attribution
+    const managerUser = await tenantDb('users').where({ id: managerId }).first('first_name', 'last_name');
+    const managerName = managerUser 
+      ? `${managerUser.first_name} ${managerUser.last_name}`.trim() 
+      : 'User';
+
+    // 3. Create the shift_ended log immediately. 
+    // The Odoo webhook that follows will see this existing log and update it with Odoo metadata.
     const resolvedCompanyId = (shift.company_id as string | null | undefined) ?? companyId;
     if (!resolvedCompanyId) throw new AppError(400, 'Company context is required');
-    const [endLog] = await tenantDb('shift_logs')
+    await tenantDb('shift_logs')
       .insert({
         company_id: resolvedCompanyId,
         shift_id: id,
         branch_id: shift.branch_id,
         log_type: 'shift_ended',
-        changes: JSON.stringify({ ended_by: managerId }),
+        changes: JSON.stringify({ ended_by: managerName }),
         event_time: new Date(),
         odoo_payload: JSON.stringify({}),
-      })
-      .returning('*');
+      });
 
-    // Enqueue peer evaluation check (fire-and-forget)
-    const shiftBranch = await tenantDb('branches').where({ id: shift.branch_id }).first('odoo_branch_id');
-    if (shiftBranch?.odoo_branch_id && shift.user_id) {
-      enqueuePeerEvaluationJob({
-        companyId,
-        shiftId: id,
-        branchId: shift.branch_id,
-        shiftUserId: shift.user_id,
-        shiftStart: new Date(shift.shift_start as string | Date).toISOString(),
-        shiftEnd: new Date(shift.shift_end as string | Date).toISOString(),
-        branchOdooId: String(shiftBranch.odoo_branch_id),
-      }).catch((err) => logger.error({ err }, 'Failed to enqueue peer evaluation job'));
+    // 4. Trigger Odoo checkout
+    // This will trigger the Omnilert checkout webhook which calculates and deducts breaks from the work entry.
+    await batchCheckOutAttendances([Number(lastCheckIn.odoo_attendance_id)], new Date());
+
+    res.json({ success: true, message: 'Check out triggered in Odoo.' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function startActivity(req: Request, res: Response, next: NextFunction) {
+  try {
+    const shiftId = req.params.id as string;
+    const userId = req.user!.sub;
+    const { activityType, details } = req.body;
+
+    if (!activityType || !['break', 'field_task'].includes(activityType)) {
+      throw new AppError(400, 'Invalid activity type');
     }
 
-    // Check for overtime: total_worked_hours > allocated_hours
-    const totalWorked = Number(shift.total_worked_hours ?? 0);
-    const allocated = Number(shift.allocated_hours);
+    const result = await shiftActivityService.startActivity({
+      userId,
+      shiftId,
+      activityType,
+      details,
+    });
 
-    if (totalWorked > allocated) {
-      const overtimeMinutes = Math.round((totalWorked - allocated) * 60);
+    res.json({ success: true, data: result.activity });
+  } catch (err) {
+    next(err);
+  }
+}
 
-      const [auth] = await tenantDb('shift_authorizations')
-        .insert({
-          company_id: resolvedCompanyId,
-          shift_id: id,
-          shift_log_id: endLog.id,
-          branch_id: shift.branch_id,
-          user_id: shift.user_id ?? null,
-          auth_type: 'overtime',
-          diff_minutes: overtimeMinutes,
-          needs_employee_reason: false,
-          status: 'pending',
-        })
-        .returning('*');
+export async function endActivity(req: Request, res: Response, next: NextFunction) {
+  try {
+    const shiftId = req.params.id as string;
+    const userId = req.user!.sub;
+    const { activityId } = req.body;
 
-      await tenantDb('employee_shifts')
-        .where({ id })
-        .increment('pending_approvals', 1);
+    const result = await shiftActivityService.endActivity({
+      userId,
+      shiftId,
+      activityId,
+    });
 
-      const refreshed = await tenantDb('employee_shifts').where({ id }).first();
+    res.json({ success: true, data: result.activity });
+  } catch (err) {
+    next(err);
+  }
+}
 
-      try {
-        const io = getIO();
-        io.of('/employee-shifts').to(`branch:${shift.branch_id}`).emit('shift:updated', refreshed);
-        io.of('/employee-shifts').to(`branch:${shift.branch_id}`).emit('shift:log-new', endLog);
-        io.of('/employee-shifts').to(`branch:${shift.branch_id}`).emit('shift:authorization-new', auth);
-      } catch { /* socket unavailable */ }
+export async function getActiveActivity(req: Request, res: Response, next: NextFunction) {
+  try {
+    const shiftId = req.params.id as string;
+    const userId = req.user!.sub;
 
-      res.json({ success: true, data: refreshed });
-    } else {
-      try {
-        const io = getIO();
-        io.of('/employee-shifts').to(`branch:${shift.branch_id}`).emit('shift:updated', updated);
-        io.of('/employee-shifts').to(`branch:${shift.branch_id}`).emit('shift:log-new', endLog);
-      } catch { /* socket unavailable */ }
+    const activity = await shiftActivityService.getActiveActivity(shiftId, userId);
 
-      res.json({ success: true, data: updated });
-    }
+    res.json({ success: true, data: activity || null });
   } catch (err) {
     next(err);
   }

@@ -21,6 +21,9 @@ export interface ServerToClientEvents {
   'shift:log-new': (data: Record<string, unknown>) => void;
   'shift:authorization-new': (data: Record<string, unknown>) => void;
   'shift:authorization-updated': (data: Record<string, unknown>) => void;
+  'shift:authorization-voided': (data: { shift_id: string | null; branch_id: string }) => void;
+  'shift:activity-started': (data: { shiftId: string; activity: Record<string, unknown> }) => void;
+  'shift:activity-ended': (data: { shiftId: string; activity: Record<string, unknown> }) => void;
 
   'notification:new': (data: {
     id: string;

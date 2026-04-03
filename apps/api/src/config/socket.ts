@@ -250,6 +250,10 @@ export function initializeSocket(
   });
 
   employeeShiftsNs.on('connection', (socket) => {
+    const userId = socket.data.user?.sub;
+    if (userId) {
+      socket.join(`user:${userId}`);
+    }
     logger.debug(`Employee Shifts: ${socket.data.user?.sub} connected`);
 
     socket.on('join-branch', (branchId: string) => {
