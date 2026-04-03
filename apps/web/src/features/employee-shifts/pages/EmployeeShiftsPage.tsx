@@ -16,6 +16,7 @@ import { OvertimeTypePicker } from '@/shared/components/OvertimeTypePicker';
 import { ShiftExchangeFlowModal } from '@/features/shift-exchange/components/ShiftExchangeFlowModal';
 import { PeerEvaluationModal } from '@/features/peer-evaluations/components/PeerEvaluationModal';
 import { PERMISSIONS } from '@omnilert/shared';
+import { formatDuration } from '@/shared/utils/duration';
 import {
   AlertTriangle,
   ArrowDown,
@@ -41,7 +42,7 @@ import {
   X,
   XCircle,
   Coffee,
-  Play,
+  ClipboardList,
   ClipboardCheck,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -614,14 +615,14 @@ const ShiftCard = memo(
 
     return (
       <div
-        className={`flex flex-col rounded-xl border bg-white transition hover:shadow-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${'border-gray-200 hover:border-gray-300'}`}
+        className={`flex flex-col rounded-xl border bg-white overflow-hidden transition hover:shadow-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${'border-gray-200 hover:border-gray-300'}`}
         onClick={onClick}
         role="button"
         tabIndex={0}
         onKeyDown={(e) => e.key === 'Enter' && onClick()}
       >
         {/* Colored duty type bar at top */}
-        <div className="h-1 w-full rounded-t-xl" style={{ backgroundColor: dutyColor }} />
+        <div className="h-1 w-full" style={{ backgroundColor: dutyColor }} />
 
         <div className="flex flex-col flex-1 p-4 gap-3">
           {/* Identity row */}
@@ -705,17 +706,23 @@ const ShiftCard = memo(
                   <Clock className="h-3.5 w-3.5 shrink-0 text-gray-400" />
                 </span>
                 <span className="text-xs text-gray-700">
-                  {Number(shift.allocated_hours).toFixed(2)} hrs allocated
+                  {formatDuration(shift.allocated_hours)} allocated
                 </span>
               </div>
             </div>
             {shift.total_worked_hours != null && (
               <div className="flex items-center gap-2">
-                <span title="Worked Hours">
-                  <BadgeCheck className="h-3.5 w-3.5 shrink-0 text-green-500" />
+                <span title="Net Worked Hours">
+                  <BadgeCheck className="h-3.5 w-3.5 shrink-0 text-blue-500" />
                 </span>
                 <span className="text-xs text-gray-700">
-                  {Number(shift.total_worked_hours).toFixed(2)} hrs worked
+                  {formatDuration(
+                    Math.max(
+                      0,
+                      Number(shift.total_worked_hours || 0) - Number(shift.total_break_hours || 0),
+                    ),
+                  )}{' '}
+                  worked
                 </span>
               </div>
             )}
@@ -820,13 +827,11 @@ const LogEntry = memo(
           <div className="pb-4">
             <p className="font-medium text-gray-900">Check Out</p>
             <p className="text-xs text-gray-500">{fmtTime(log.event_time)}</p>
-            {log.worked_hours != null && (() => {
-              const totalMins = Math.round(Number(log.worked_hours) * 60);
-              const h = Math.floor(totalMins / 60);
-              const m = totalMins % 60;
-              const label = h > 0 ? `${h} hrs ${m} mins` : `${totalMins} mins`;
-              return <p className="mt-1 text-xs text-gray-600">Duration: {label}</p>;
-            })()}
+            {log.worked_hours != null && (
+              <p className="mt-1 text-xs text-gray-600">
+                Duration: {formatDuration(log.worked_hours)}
+              </p>
+            )}
           </div>
         </div>
       );
@@ -946,7 +951,11 @@ const LogEntry = memo(
               className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
                 changes?.auth_type === 'shift_exchange'
                   ? 'bg-orange-100'
-                  : isApproved ? 'bg-green-100' : isRejected ? 'bg-red-100' : 'bg-yellow-100'
+                  : isApproved
+                    ? 'bg-green-100'
+                    : isRejected
+                      ? 'bg-red-100'
+                      : 'bg-yellow-100'
               }`}
             >
               {changes?.auth_type === 'shift_exchange' ? (
@@ -1031,8 +1040,11 @@ const LogEntry = memo(
           <div className="pb-4">
             <p className="font-medium text-gray-900">Shift Ended</p>
             <p className="text-xs text-gray-500">{fmtTime(log.event_time)}</p>
-            {changes?.ended_by && (
-              <p className="text-xs text-gray-500">By {String(changes.ended_by)}</p>
+            {Boolean(changes?.ended_by) && (
+              <p className="text-xs text-gray-600 mt-1">
+                Ended by:{' '}
+                <span className="font-medium">{String(changes?.ended_by ?? 'Unknown')}</span>
+              </p>
             )}
           </div>
         </div>
@@ -1126,9 +1138,7 @@ const LogEntry = memo(
       return (
         <div className="flex gap-3">
           <div className="flex flex-col items-center">
-            <div
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100"
-            >
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100">
               <Coffee className="h-4 w-4 text-amber-600" />
             </div>
             {!isLast && <div className="w-px flex-1 bg-gray-200" />}
@@ -1136,13 +1146,15 @@ const LogEntry = memo(
           <div className="pb-4">
             <p className="font-medium text-gray-900">{isStart ? 'Started Break' : 'Ended Break'}</p>
             <p className="text-xs text-gray-500">{fmtTime(log.event_time)}</p>
-            {!isStart && changes?.duration_minutes != null && (() => {
-              const totalMins = Number(changes.duration_minutes);
-              const h = Math.floor(totalMins / 60);
-              const m = totalMins % 60;
-              const label = h > 0 ? `${h} hrs ${m} mins` : `${totalMins} mins`;
-              return <p className="mt-1 text-xs text-gray-600">Duration: {label}</p>;
-            })()}
+            {!isStart &&
+              changes?.duration_minutes != null &&
+              (() => {
+                const totalMins = Number(changes.duration_minutes);
+                const h = Math.floor(totalMins / 60);
+                const m = totalMins % 60;
+                const label = h > 0 ? `${h} hrs ${m} mins` : `${totalMins} mins`;
+                return <p className="mt-1 text-xs text-gray-600">Duration: {label}</p>;
+              })()}
           </div>
         </div>
       );
@@ -1154,10 +1166,8 @@ const LogEntry = memo(
       return (
         <div className="flex gap-3">
           <div className="flex flex-col items-center">
-            <div
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-100"
-            >
-              <Play className="h-4 w-4 text-purple-600" />
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-100">
+              <ClipboardList className="h-4 w-4 text-purple-600" />
             </div>
             {!isLast && <div className="w-px flex-1 bg-gray-200" />}
           </div>
@@ -1169,13 +1179,11 @@ const LogEntry = memo(
             {isStart && changes?.details?.reason && (
               <p className="mt-1 text-xs text-gray-600">Reason: {changes.details.reason}</p>
             )}
-            {!isStart && changes?.duration_minutes != null && (() => {
-              const totalMins = Number(changes.duration_minutes);
-              const h = Math.floor(totalMins / 60);
-              const m = totalMins % 60;
-              const label = h > 0 ? `${h} hrs ${m} mins` : `${totalMins} mins`;
-              return <p className="mt-1 text-xs text-gray-600">Duration: {label}</p>;
-            })()}
+            {!isStart && changes?.duration_minutes != null && (
+              <p className="mt-1 text-xs text-gray-600">
+                Duration: {formatDuration(Number(changes.duration_minutes) / 60)}
+              </p>
+            )}
           </div>
         </div>
       );
@@ -1233,6 +1241,18 @@ const ShiftDetailPanel = memo(
     const logs: any[] = shift.logs ?? [];
     const authorizations: any[] = shift.authorizations ?? [];
     const activeActivity = shift.active_activity;
+
+    const totalBreakMinutes = useMemo(
+      () =>
+        logs
+          .filter((l) => l.log_type === 'break_end')
+          .reduce((sum, l) => sum + (Number((l.changes as any)?.duration_minutes) || 0), 0),
+      [logs],
+    );
+
+    const totalBreakHours = totalBreakMinutes / 60;
+    const totalWorkedHours = Number(shift.total_worked_hours || 0);
+    const netWorkedHours = Math.max(0, totalWorkedHours - totalBreakHours);
 
     const highlightIdx = useMemo(() => {
       if (!highlightLog) return -1;
@@ -1364,15 +1384,15 @@ const ShiftDetailPanel = memo(
                     Allocated Hours
                   </p>
                   <p className="mt-0.5 text-sm font-medium text-gray-800">
-                    {Number(shift.allocated_hours).toFixed(2)} hrs
+                    {formatDuration(shift.allocated_hours)}
                   </p>
                 </div>
                 <div>
-                  <p className="text-[11px] uppercase tracking-wide text-gray-400">Worked Hours</p>
-                  <p className="mt-0.5 text-sm font-medium text-primary-800">
-                    {shift.total_worked_hours != null
-                      ? `${(Number(shift.total_worked_hours) - Number(shift.total_break_hours ?? 0)).toFixed(2)} hrs`
-                      : '—'}
+                  <p className="text-[11px] uppercase tracking-wide text-gray-400 text-blue-600">
+                    Net Worked Hours
+                  </p>
+                  <p className="mt-0.5 text-sm font-bold text-blue-700">
+                    {formatDuration(netWorkedHours)}
                   </p>
                 </div>
                 <div>
@@ -1380,9 +1400,7 @@ const ShiftDetailPanel = memo(
                     Total Active Hours
                   </p>
                   <p className="mt-0.5 text-sm font-medium text-gray-800">
-                    {shift.total_worked_hours != null
-                      ? `${Number(shift.total_worked_hours).toFixed(2)} hrs`
-                      : '—'}
+                    {formatDuration(totalWorkedHours)}
                   </p>
                 </div>
                 <div>
@@ -1390,7 +1408,7 @@ const ShiftDetailPanel = memo(
                     Total Break Hours
                   </p>
                   <p className="mt-0.5 text-sm font-medium text-gray-800">
-                    {`${Number(shift.total_break_hours ?? 0).toFixed(2)} hrs`}
+                    {formatDuration(totalBreakHours)}
                   </p>
                 </div>
                 {shift.check_in_status && (
@@ -1409,36 +1427,36 @@ const ShiftDetailPanel = memo(
                     </p>
                   </div>
                 )}
-                <div>
-                  <p className="text-[11px] uppercase tracking-wide text-gray-400">
-                    Pending Approvals
-                  </p>
-                  <p className="mt-0.5 text-sm font-medium text-gray-800">
-                    {shift.pending_approvals > 0 ? (
-                      <span className="inline-flex items-center gap-1 text-amber-700">
-                        <AlertTriangle className="h-3.5 w-3.5" />
-                        {shift.pending_approvals}
-                      </span>
-                    ) : (
-                      <span className="text-gray-400">None</span>
-                    )}
-                  </p>
-                </div>
+                {shift.pending_approvals > 0 && (
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400">
+                      Pending Approvals
+                    </p>
+                    <p className="mt-0.5 text-sm font-medium text-amber-700 font-bold flex items-center gap-1">
+                      <AlertTriangle className="h-3.5 w-3.5" />
+                      {shift.pending_approvals}
+                    </p>
+                  </div>
+                )}
               </div>
 
-              {shift.status === 'active' && canEndShift && (
-                <div className="border-t border-gray-100 bg-gray-50/50 px-4 py-3 space-y-2">
-                  <Button
-                    className="w-full"
-                    variant="danger"
-                    size="sm"
-                    onClick={() => {
-                      onEndShift?.(shift.id);
-                    }}
-                  >
-                    <LogOut className="mr-2 h-4 w-4" />
-                    Check Out
-                  </Button>
+              {shift.status === 'active' && (
+                <div className="border-t border-gray-100 bg-gray-50/50 px-4 py-3 space-y-3">
+                  {/* Removed Break and Field Task buttons for managers per user request */}
+
+                  {/* Checkout Button */}
+                  {canEndShift && (
+                    <Button
+                      className="w-full"
+                      variant="danger"
+                      size="sm"
+                      disabled={activityLoading}
+                      onClick={() => onEndShift?.(shift.id)}
+                    >
+                      <LogOut className="mr-2 h-4 w-4" />
+                      Check Out
+                    </Button>
+                  )}
                 </div>
               )}
             </div>

@@ -78,9 +78,23 @@ export async function list(req: Request, res: Response, next: NextFunction) {
       : [];
     
     const activityMap = Object.fromEntries(activeActivities.map((a: any) => [a.shift_id, a]));
+    
+    const breakDurations = shiftIds.length > 0
+      ? await tenantDb('shift_activities')
+          .whereIn('shift_id', shiftIds)
+          .where({ activity_type: 'break' })
+          .whereNotNull('end_time')
+          .select('shift_id')
+          .sum('duration_minutes as break_minutes')
+          .groupBy('shift_id')
+      : [];
+    
+    const breakMap = Object.fromEntries(breakDurations.map((b: any) => [b.shift_id, Number(b.break_minutes) || 0]));
+
     const data = shifts.map((s: any) => ({
       ...s,
       active_activity: activityMap[s.id] || null,
+      total_break_hours: (breakMap[s.id] || 0) / 60,
     }));
 
     res.json({ success: true, data });

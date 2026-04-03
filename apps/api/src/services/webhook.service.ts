@@ -1297,12 +1297,12 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
         });
       }
 
-      // 2. Calculate UNCALCULATED break duration and deduct from Odoo work entry
-      const uncalculatedBreaks = await tenantDb('shift_activities')
-        .where({ shift_id: activeShift.id, activity_type: 'break', is_calculated: false })
+      // 2. Calculate ALL break duration for this shift and deduct from Odoo work entry
+      const allBreaks = await tenantDb('shift_activities')
+        .where({ shift_id: activeShift.id, activity_type: 'break' })
         .whereNotNull('end_time');
       
-      const totalBreakMinutes = uncalculatedBreaks.reduce((sum, b) => sum + Number(b.duration_minutes || 0), 0);
+      const totalBreakMinutes = allBreaks.reduce((sum, b) => sum + Number(b.duration_minutes || 0), 0);
       
       if (totalBreakMinutes > 0 && activeShift.user_id) {
         try {
@@ -1316,11 +1316,6 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
               const regularEntry = await import('./odoo.service.js').then(m => m.findWorkEntryByEmployeeAndDate(odooEmployee.id, shiftDate, 1));
               if (regularEntry) {
                 await deps.deductBreakFromWorkEntry(userKey, Number(branch.odoo_branch_id), shiftDate, totalBreakMinutes / 60);
-                
-                // Mark these breaks as calculated to avoid double-deduction on next checkout
-                await tenantDb('shift_activities')
-                  .whereIn('id', uncalculatedBreaks.map(b => b.id))
-                  .update({ is_calculated: true });
               }
             }
           }
@@ -1587,17 +1582,40 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
     }
 
     if (isCheckOut && activeShift?.id && activeShift.user_id && branch.odoo_branch_id) {
-      enqueuePeerEvaluationJob({
-        companyId: String(branch.company_id),
-        shiftId: activeShift.id,
-        branchId: branch.id,
-        shiftUserId: activeShift.user_id as string,
-        shiftStart: new Date(activeShift.shift_start as string | Date).toISOString(),
-        shiftEnd: new Date(activeShift.shift_end as string | Date).toISOString(),
-        branchOdooId: String(branch.odoo_branch_id),
-      }).catch((err) =>
-        logger.error({ err, shiftId: activeShift.id }, 'Failed to enqueue peer evaluation job from webhook'),
-      );
+      // Only trigger peer evaluation if the shift is substantially complete (net hours >= allocated - 1)
+      const allBreaks = await tenantDb('shift_activities')
+        .where({ shift_id: activeShift.id, activity_type: 'break' })
+        .whereNotNull('end_time')
+        .select('duration_minutes');
+      
+      const totalBreakHours = allBreaks.reduce((sum, b) => sum + (Number(b.duration_minutes) || 0), 0) / 60;
+      const grossWorkedHours = updatedTotalWorkedHours ?? Number(activeShift.total_worked_hours || 0);
+      const netWorkedHours = grossWorkedHours - totalBreakHours;
+      const allocatedHours = Number(activeShift.allocated_hours || 0);
+
+      if (netWorkedHours >= (allocatedHours - 1)) {
+        enqueuePeerEvaluationJob({
+          companyId: String(branch.company_id),
+          shiftId: activeShift.id,
+          branchId: branch.id,
+          shiftUserId: activeShift.user_id as string,
+          shiftStart: new Date(activeShift.shift_start as string | Date).toISOString(),
+          shiftEnd: new Date(activeShift.shift_end as string | Date).toISOString(),
+          branchOdooId: String(branch.odoo_branch_id),
+        }).catch((err) =>
+          logger.error({ err, shiftId: activeShift.id }, 'Failed to enqueue peer evaluation job from webhook'),
+        );
+      } else {
+        logger.info(
+          { 
+            shiftId: activeShift.id, 
+            netWorkedHours, 
+            allocatedHours, 
+            threshold: allocatedHours - 1 
+          },
+          'Skipping peer evaluation: shift not yet substantially complete'
+        );
+      }
     }
 
     return log;

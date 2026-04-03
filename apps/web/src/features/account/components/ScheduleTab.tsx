@@ -20,6 +20,7 @@ import { ShiftExchangeFlowModal } from '@/features/shift-exchange/components/Shi
 import { ShiftExchangeDetailModal } from '@/features/shift-exchange/components/ShiftExchangeDetailModal';
 import { PeerEvaluationModal } from '@/features/peer-evaluations/components/PeerEvaluationModal';
 import { PERMISSIONS } from '@omnilert/shared';
+import { formatDuration } from '@/shared/utils/duration';
 import { type ComponentType } from 'react';
 import {
   AlertTriangle,
@@ -32,6 +33,7 @@ import {
   ChevronDown,
   ChevronUp,
   ArrowLeftRight,
+  ClipboardList,
   Clock,
   Coffee,
   Filter,
@@ -39,7 +41,6 @@ import {
   LogIn,
   LogOut,
   MapPin,
-  Play,
   RefreshCw,
   Square,
   X,
@@ -557,13 +558,11 @@ const LogEntry = memo(
           <div className="pb-4">
             <p className="font-medium text-gray-900">Check Out</p>
             <p className="text-xs text-gray-500">{fmtTime(log.event_time)}</p>
-            {log.worked_hours != null && (() => {
-              const totalMins = Math.round(Number(log.worked_hours) * 60);
-              const h = Math.floor(totalMins / 60);
-              const m = totalMins % 60;
-              const label = h > 0 ? `${h} hrs ${m} mins` : `${totalMins} mins`;
-              return <p className="mt-1 text-xs text-gray-600">Duration: {label}</p>;
-            })()}
+            {log.worked_hours != null && (
+              <p className="mt-1 text-xs text-gray-600">
+                Duration: {formatDuration(Number(log.worked_hours))}
+              </p>
+            )}
           </div>
         </div>
       );
@@ -691,7 +690,11 @@ const LogEntry = memo(
               className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
                 changes?.auth_type === 'shift_exchange'
                   ? 'bg-orange-100'
-                  : isApproved ? 'bg-green-100' : isRejected ? 'bg-red-100' : 'bg-yellow-100'
+                  : isApproved
+                    ? 'bg-green-100'
+                    : isRejected
+                      ? 'bg-red-100'
+                      : 'bg-yellow-100'
               }`}
             >
               {changes?.auth_type === 'shift_exchange' ? (
@@ -786,8 +789,11 @@ const LogEntry = memo(
           <div className="pb-4">
             <p className="font-medium text-gray-900">Shift Ended</p>
             <p className="text-xs text-gray-500">{fmtTime(log.event_time)}</p>
-            {changes?.ended_by && (
-              <p className="text-xs text-gray-500">By {String(changes.ended_by)}</p>
+            {Boolean(changes?.ended_by) && (
+              <p className="text-xs text-gray-600 mt-1">
+                Ended by:{' '}
+                <span className="font-medium">{String(changes?.ended_by ?? 'Unknown')}</span>
+              </p>
             )}
           </div>
         </div>
@@ -885,9 +891,7 @@ const LogEntry = memo(
       return (
         <div className="flex gap-3">
           <div className="flex flex-col items-center">
-            <div
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100"
-            >
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100">
               <Coffee className="h-4 w-4 text-amber-600" />
             </div>
             {!isLast && <div className="w-px flex-1 bg-gray-200" />}
@@ -895,13 +899,11 @@ const LogEntry = memo(
           <div className="pb-4">
             <p className="font-medium text-gray-900">{isStart ? 'Started Break' : 'Ended Break'}</p>
             <p className="text-xs text-gray-500">{fmtTime(log.event_time)}</p>
-            {!isStart && changes?.duration_minutes != null && (() => {
-              const totalMins = Number(changes.duration_minutes);
-              const h = Math.floor(totalMins / 60);
-              const m = totalMins % 60;
-              const label = h > 0 ? `${h} hrs ${m} mins` : `${totalMins} mins`;
-              return <p className="mt-1 text-xs text-gray-600">Duration: {label}</p>;
-            })()}
+            {!isStart && changes?.duration_minutes != null && (
+              <p className="mt-1 text-xs text-gray-600">
+                Duration: {formatDuration(Number(changes.duration_minutes) / 60)}
+              </p>
+            )}
           </div>
         </div>
       );
@@ -913,10 +915,8 @@ const LogEntry = memo(
       return (
         <div className="flex gap-3">
           <div className="flex flex-col items-center">
-            <div
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-100"
-            >
-              <Play className="h-4 w-4 text-purple-600" />
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-100">
+              <ClipboardList className="h-4 w-4 text-purple-600" />
             </div>
             {!isLast && <div className="w-px flex-1 bg-gray-200" />}
           </div>
@@ -928,13 +928,11 @@ const LogEntry = memo(
             {isStart && changes?.details?.reason && (
               <p className="mt-1 text-xs text-gray-600">Reason: {changes.details.reason}</p>
             )}
-            {!isStart && changes?.duration_minutes != null && (() => {
-              const totalMins = Number(changes.duration_minutes);
-              const h = Math.floor(totalMins / 60);
-              const m = totalMins % 60;
-              const label = h > 0 ? `${h} hrs ${m} mins` : `${totalMins} mins`;
-              return <p className="mt-1 text-xs text-gray-600">Duration: {label}</p>;
-            })()}
+            {!isStart && changes?.duration_minutes != null && (
+              <p className="mt-1 text-xs text-gray-600">
+                Duration: {formatDuration(Number(changes.duration_minutes) / 60)}
+              </p>
+            )}
           </div>
         </div>
       );
@@ -958,21 +956,37 @@ const ShiftDetailPanel = memo(
     onAuthorizationUpdate,
     onOpenShiftExchangeRequest,
     onOpenPeerEvaluation,
+    onEndShift,
+    canEndShift,
+    onOpenActivityModal,
+    showActivityModal,
+    activityLoading,
+    activityReason,
+    onSetActivityReason,
+    onActivityStart,
+    onActivityEnd,
+    onCloseActivityModal,
   }: {
     shift: any;
     branchName?: string;
     currentUserId: string;
     canApprove: boolean;
     canSubmitPublicAuthRequest: boolean;
-    /**
-     * When set to a log_type string (e.g. "shift_updated"), the most recent
-     * log entry of that type will pulse to draw the user's attention.
-     */
     highlightLog?: string | null;
     onClose: () => void;
     onAuthorizationUpdate: (updatedAuth: any) => void;
     onOpenShiftExchangeRequest: (requestId: string) => void;
     onOpenPeerEvaluation: (evaluationId: string) => void;
+    onEndShift: (shiftId: string) => void;
+    canEndShift: boolean;
+    onOpenActivityModal: (id: string, type: 'break' | 'field_task', isEnd: boolean) => void;
+    showActivityModal: { id: string; type: 'break' | 'field_task'; isEnd: boolean } | null;
+    activityLoading: boolean;
+    activityReason: string;
+    onSetActivityReason: (val: string) => void;
+    onActivityStart: (type: 'break' | 'field_task') => void;
+    onActivityEnd: () => void;
+    onCloseActivityModal: () => void;
   }) => {
     const { prefix, name } = parseEmployeeName(shift.employee_name);
     const avatarUrl = resolveShiftAvatarUrl(shift);
@@ -982,20 +996,18 @@ const ShiftDetailPanel = memo(
     const authorizations: any[] = shift.authorizations ?? [];
     const activeActivity = shift.active_activity;
 
-    const totalBreakMinutes = useMemo(() => 
-      logs.filter(l => l.log_type === 'break_end')
-          .reduce((sum, l) => sum + (Number((l.changes as any)?.duration_minutes) || 0), 0)
-    , [logs]);
+    const totalBreakMinutes = useMemo(
+      () =>
+        logs
+          .filter((l) => l.log_type === 'break_end')
+          .reduce((sum, l) => sum + (Number((l.changes as any)?.duration_minutes) || 0), 0),
+      [logs],
+    );
 
     const totalBreakHours = totalBreakMinutes / 60;
     const totalWorkedHours = Number(shift.total_worked_hours || 0);
     const netWorkedHours = Math.max(0, totalWorkedHours - totalBreakHours);
 
-    /**
-     * Index of the most recent log entry matching `highlightLog`, or -1 if none.
-     * We scan from the end so that the latest occurrence is highlighted when there
-     * are multiple entries of the same type.
-     */
     const highlightIdx = useMemo(() => {
       if (!highlightLog) return -1;
       for (let i = logs.length - 1; i >= 0; i--) {
@@ -1032,7 +1044,6 @@ const ShiftDetailPanel = memo(
 
     return (
       <div className="flex h-full flex-col">
-        {/* Sticky top bar */}
         <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3.5 shrink-0">
           <p className="text-sm font-semibold text-gray-700">Shift Details</p>
           <button
@@ -1043,9 +1054,7 @@ const ShiftDetailPanel = memo(
           </button>
         </div>
 
-        {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto">
-          {/* Dossier header block */}
           <div className="flex items-start gap-4 border-b border-gray-200 bg-white px-6 py-5">
             <div className="shrink-0">
               {avatarUrl && !avatarError ? (
@@ -1072,6 +1081,16 @@ const ShiftDetailPanel = memo(
                 <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${statusCfg.cls}`}>
                   {statusCfg.label}
                 </span>
+                {activeActivity?.activity_type === 'break' && (
+                  <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">
+                    On Break
+                  </span>
+                )}
+                {activeActivity?.activity_type === 'field_task' && (
+                  <span className="rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-medium text-purple-700">
+                    Field Task
+                  </span>
+                )}
                 {shift.duty_type && (
                   <span
                     className="rounded-full px-2.5 py-0.5 text-xs font-medium text-gray-800"
@@ -1091,7 +1110,6 @@ const ShiftDetailPanel = memo(
           </div>
 
           <div className="space-y-3 px-5 py-4">
-            {/* Shift Summary section */}
             <div className="overflow-hidden rounded-lg border border-gray-200">
               <div className="border-b border-gray-200 bg-gray-50 px-4 py-2.5">
                 <span className="text-xs font-semibold uppercase tracking-widest text-gray-400">
@@ -1116,17 +1134,23 @@ const ShiftDetailPanel = memo(
                     Allocated Hours
                   </p>
                   <p className="mt-0.5 text-sm font-medium text-gray-800">
-                    {Number(shift.allocated_hours).toFixed(2)} hrs
+                    {formatDuration(shift.allocated_hours)}
                   </p>
                 </div>
                 <div>
-                  <p className="text-[11px] uppercase tracking-wide text-gray-400 font-bold text-blue-600">Net Worked Hours</p>
-                  <p className="mt-0.5 text-sm font-bold text-blue-700">{netWorkedHours.toFixed(2)} hrs</p>
+                  <p className="text-[11px] uppercase tracking-wide text-gray-400 text-blue-600">
+                    Net Worked Hours
+                  </p>
+                  <p className="mt-0.5 text-sm font-bold text-blue-700">
+                    {formatDuration(netWorkedHours)}
+                  </p>
                 </div>
                 <div>
-                  <p className="text-[11px] uppercase tracking-wide text-gray-400">Total Worked Hours</p>
+                  <p className="text-[11px] uppercase tracking-wide text-gray-400">
+                    Total Active Hours
+                  </p>
                   <p className="mt-0.5 text-sm font-medium text-gray-800">
-                    {totalWorkedHours.toFixed(2)} hrs
+                    {formatDuration(totalWorkedHours)}
                   </p>
                 </div>
                 <div>
@@ -1134,28 +1158,91 @@ const ShiftDetailPanel = memo(
                     Total Break Hours
                   </p>
                   <p className="mt-0.5 text-sm font-medium text-gray-800">
-                    {totalBreakHours.toFixed(2)} hrs
+                    {formatDuration(totalBreakHours)}
                   </p>
                 </div>
-                <div>
-                  <p className="text-[11px] uppercase tracking-wide text-gray-400">
-                    Pending Approvals
-                  </p>
-                  <p className="mt-0.5 text-sm font-medium text-gray-800">
-                    {shift.pending_approvals > 0 ? (
-                      <span className="inline-flex items-center gap-1 text-amber-700 font-semibold">
-                        <AlertTriangle className="h-3.5 w-3.5" />
-                        {shift.pending_approvals}
-                      </span>
-                    ) : (
-                      <span className="text-gray-400">None</span>
-                    )}
-                  </p>
-                </div>
+                {shift.pending_approvals > 0 && (
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400">
+                      Pending Approvals
+                    </p>
+                    <p className="mt-0.5 text-sm font-medium text-amber-700 font-bold flex items-center gap-1">
+                      <AlertTriangle className="h-3.5 w-3.5" />
+                      {shift.pending_approvals}
+                    </p>
+                  </div>
+                )}
               </div>
+              {shift.status === 'active' && (
+                <div className="border-t border-gray-100 bg-gray-50/50 px-4 py-3 space-y-3">
+                  <div className="flex gap-2">
+                    {(!activeActivity || activeActivity?.activity_type === 'break') &&
+                      (activeActivity?.activity_type === 'break' ? (
+                        <Button
+                          className="flex-1"
+                          variant="outline-danger"
+                          size="sm"
+                          disabled={activityLoading}
+                          onClick={() => onOpenActivityModal(shift.id, 'break', true)}
+                        >
+                          <Coffee className="mr-2 h-4 w-4" />
+                          End Break
+                        </Button>
+                      ) : (
+                        <Button
+                          className="flex-1"
+                          variant="primary"
+                          size="sm"
+                          disabled={activityLoading || !!activeActivity}
+                          onClick={() => onOpenActivityModal(shift.id, 'break', false)}
+                        >
+                          <Coffee className="mr-2 h-4 w-4" />
+                          Break
+                        </Button>
+                      ))}
+
+                    {(!activeActivity || activeActivity?.activity_type === 'field_task') &&
+                      (activeActivity?.activity_type === 'field_task' ? (
+                        <Button
+                          className="flex-1"
+                          variant="outline-danger"
+                          size="sm"
+                          disabled={activityLoading}
+                          onClick={() => onOpenActivityModal(shift.id, 'field_task', true)}
+                        >
+                          <ClipboardList className="mr-2 h-4 w-4" />
+                          End Task
+                        </Button>
+                      ) : (
+                        <Button
+                          className="flex-1"
+                          variant="success"
+                          size="sm"
+                          disabled={activityLoading || !!activeActivity}
+                          onClick={() => onOpenActivityModal(shift.id, 'field_task', false)}
+                        >
+                          <ClipboardList className="mr-2 h-4 w-4" />
+                          Field Task
+                        </Button>
+                      ))}
+                  </div>
+
+                  {canEndShift && (
+                    <Button
+                      className="w-full"
+                      variant="danger"
+                      size="sm"
+                      disabled={activityLoading}
+                      onClick={() => onEndShift(shift.id)}
+                    >
+                      <LogOut className="mr-2 h-4 w-4" />
+                      Check Out
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
 
-            {/* Authorizations section */}
             {authorizations.length > 0 && (
               <div className="overflow-hidden rounded-lg border border-gray-200">
                 <div className="border-b border-gray-200 bg-gray-50 px-4 py-2.5">
@@ -1181,7 +1268,6 @@ const ShiftDetailPanel = memo(
               </div>
             )}
 
-            {/* Activity Log section */}
             <div className="overflow-hidden rounded-lg border border-gray-200">
               <div className="border-b border-gray-200 bg-gray-50 px-4 py-2.5">
                 <span className="text-xs font-semibold uppercase tracking-widest text-gray-400">
@@ -1227,6 +1313,8 @@ const MyShiftCard = memo(
     onClick,
     onEndShift,
     onExchangeShift,
+    onOpenActivityModal,
+    activityLoading,
   }: {
     shift: any;
     branchName?: string;
@@ -1235,11 +1323,14 @@ const MyShiftCard = memo(
     onClick: () => void;
     onEndShift: (id: string) => void;
     onExchangeShift: (shift: any) => void;
+    onOpenActivityModal: (id: string, type: 'break' | 'field_task', isEnd: boolean) => void;
+    activityLoading: boolean;
   }) => {
     const { prefix, name } = parseEmployeeName(shift.employee_name);
     const avatarUrl = resolveShiftAvatarUrl(shift);
     const dutyColor = DUTY_COLORS[shift.duty_color] ?? '#e5e7eb';
     const [avatarError, setAvatarError] = useState(false);
+    const activeActivity = shift.active_activity;
     const statusCfg = ACCOUNT_SHIFT_STATUS_CONFIG[shift.status] ?? {
       label: String(shift.status),
       cls: 'bg-gray-100 text-gray-700',
@@ -1247,17 +1338,15 @@ const MyShiftCard = memo(
 
     return (
       <div
-        className="flex flex-col rounded-xl border bg-white transition hover:shadow-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 border-gray-200 hover:border-gray-300"
+        className="flex flex-col rounded-xl border bg-white overflow-hidden transition hover:shadow-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 border-gray-200 hover:border-gray-300"
         onClick={onClick}
         role="button"
         tabIndex={0}
         onKeyDown={(e) => e.key === 'Enter' && onClick()}
       >
-        {/* Colored duty type bar at top */}
-        <div className="h-1 w-full rounded-t-xl" style={{ backgroundColor: dutyColor }} />
+        <div className="h-1 w-full" style={{ backgroundColor: dutyColor }} />
 
         <div className="flex flex-col flex-1 p-4 gap-3">
-          {/* Identity row */}
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-start gap-2.5 min-w-0">
               {avatarUrl && !avatarError ? (
@@ -1275,14 +1364,23 @@ const MyShiftCard = memo(
                 {prefix && <p className="text-[11px] text-gray-400">ID: {prefix}</p>}
               </div>
             </div>
-            <span
-              className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${statusCfg.cls}`}
-            >
-              {statusCfg.label}
-            </span>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${statusCfg.cls}`}>
+                {statusCfg.label}
+              </span>
+              {activeActivity?.activity_type === 'break' && (
+                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-700">
+                  On Break
+                </span>
+              )}
+              {activeActivity?.activity_type === 'field_task' && (
+                <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[11px] font-medium text-purple-700">
+                  Field Task
+                </span>
+              )}
+            </div>
           </div>
 
-          {/* Metadata rows */}
           <div className="space-y-1.5 border-t border-gray-100 pt-2.5">
             {shift.duty_type && (
               <div className="flex items-center gap-2">
@@ -1322,16 +1420,22 @@ const MyShiftCard = memo(
                 <Clock className="h-3.5 w-3.5 shrink-0 text-gray-400" />
               </span>
               <span className="text-xs text-gray-700">
-                {Number(shift.allocated_hours).toFixed(2)} hrs allocated
+                {formatDuration(shift.allocated_hours)} allocated
               </span>
             </div>
             {shift.total_worked_hours != null && (
               <div className="flex items-center gap-2">
-                <span title="Worked Hours">
-                  <BadgeCheck className="h-3.5 w-3.5 shrink-0 text-green-500" />
+                <span title="Net Worked Hours">
+                  <BadgeCheck className="h-3.5 w-3.5 shrink-0 text-blue-500" />
                 </span>
                 <span className="text-xs text-gray-700">
-                  {Number(shift.total_worked_hours).toFixed(2)} hrs worked
+                  {formatDuration(
+                    Math.max(
+                      0,
+                      Number(shift.total_worked_hours || 0) - Number(shift.total_break_hours || 0),
+                    ),
+                  )}{' '}
+                  worked
                 </span>
               </div>
             )}
@@ -1345,33 +1449,89 @@ const MyShiftCard = memo(
             )}
           </div>
 
-          {/* Action buttons */}
           {(canExchangeShift || (shift.status === 'active' && canEndShift)) && (
-            <div className="mt-auto flex gap-2 border-t border-gray-100 pt-3">
+            <div className="mt-auto flex flex-col gap-2 border-t border-gray-100 pt-3">
+              {shift.status === 'active' && (
+                <>
+                  <div className="flex gap-2">
+                    {(!activeActivity || activeActivity?.activity_type === 'break') &&
+                      (activeActivity?.activity_type === 'break' ? (
+                        <Button
+                          className="flex-1 px-1"
+                          variant="outline-danger"
+                          size="sm"
+                          disabled={activityLoading}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenActivityModal(shift.id, 'break', true);
+                          }}
+                        >
+                          <Coffee className="mr-1.5 h-3.5 w-3.5" />
+                          End Break
+                        </Button>
+                      ) : (
+                        <Button
+                          className="flex-1 px-1"
+                          variant="primary"
+                          size="sm"
+                          disabled={activityLoading || !!activeActivity}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenActivityModal(shift.id, 'break', false);
+                          }}
+                        >
+                          <Coffee className="mr-1.5 h-3.5 w-3.5" />
+                          Break
+                        </Button>
+                      ))}
+
+                    {(!activeActivity || activeActivity?.activity_type === 'field_task') &&
+                      (activeActivity?.activity_type === 'field_task' ? (
+                        <Button
+                          className="flex-1 px-1"
+                          variant="outline-danger"
+                          size="sm"
+                          disabled={activityLoading}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenActivityModal(shift.id, 'field_task', true);
+                          }}
+                        >
+                          <ClipboardList className="mr-1.5 h-3.5 w-3.5" />
+                          End Task
+                        </Button>
+                      ) : (
+                        <Button
+                          className="flex-1 px-1"
+                          variant="success"
+                          size="sm"
+                          disabled={activityLoading || !!activeActivity}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenActivityModal(shift.id, 'field_task', false);
+                          }}
+                        >
+                          <ClipboardList className="mr-1.5 h-3.5 w-3.5" />
+                          Field Task
+                        </Button>
+                      ))}
+                  </div>
+
+                  {/* Removed Check Out button from card per user request */}
+                </>
+              )}
+
               {canExchangeShift && (
                 <Button
                   variant="secondary"
                   size="sm"
-                  className="flex-1"
+                  className="w-full"
                   onClick={(e) => {
                     e.stopPropagation();
                     onExchangeShift(shift);
                   }}
                 >
                   Exchange Shift
-                </Button>
-              )}
-              {shift.status === 'active' && canEndShift && (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  className="flex-1"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onEndShift(shift.id);
-                  }}
-                >
-                  End Shift
                 </Button>
               )}
             </div>
@@ -1384,10 +1544,6 @@ const MyShiftCard = memo(
 
 // ─── Shift Card Skeleton ──────────────────────────────────────────────────────
 
-/**
- * Animated placeholder that mirrors the MyShiftCard layout.
- * Shown while the schedule is loading.
- */
 function MyShiftCardSkeleton() {
   return (
     <div className="animate-pulse rounded-xl border border-gray-200 bg-white overflow-hidden">
@@ -1477,6 +1633,93 @@ export function ScheduleTab() {
   const [endShiftConfirm, setEndShiftConfirm] = useState<EndShiftConfirmState | null>(null);
   const [endShiftLoading, setEndShiftLoading] = useState(false);
 
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityReason, setActivityReason] = useState('');
+  const [showActivityModal, setShowActivityModal] = useState<{
+    id: string;
+    type: 'break' | 'field_task';
+    isEnd: boolean;
+  } | null>(null);
+
+  const onOpenActivityModal = (id: string, type: 'break' | 'field_task', isEnd: boolean) => {
+    setShowActivityModal({ id, type, isEnd });
+  };
+
+  const handleActivityStart = async (type: 'break' | 'field_task') => {
+    if (!showActivityModal) return;
+    setActivityLoading(true);
+    try {
+      const { id } = showActivityModal;
+      const res = await api.post(`/employee-shifts/${id}/activities/start`, {
+        activityType: type,
+        details: type === 'field_task' ? { reason: activityReason } : undefined,
+      });
+      setShifts((prev) =>
+        prev.map((s) => (s.id === id ? { ...s, active_activity: res.data.data } : s)),
+      );
+      setSelectedShift((prev: any) =>
+        prev?.id === id ? { ...prev, active_activity: res.data.data } : prev,
+      );
+      showSuccessToast(`Activity started: ${type === 'break' ? 'Break' : 'Field Task'}`);
+      setShowActivityModal(null);
+      setActivityReason('');
+    } catch (err: unknown) {
+      showErrorToast(getApiErrorMessage(err, 'Failed to start activity'));
+    } finally {
+      setActivityLoading(false);
+    }
+  };
+
+  const handleActivityEnd = async () => {
+    if (!showActivityModal) return;
+    setActivityLoading(true);
+    try {
+      const { id, type } = showActivityModal;
+      const shift = shifts.find((s) => s.id === id);
+      if (!shift?.active_activity) return;
+
+      await api.post(`/employee-shifts/${id}/activities/end`, {
+        activityId: shift.active_activity.id,
+      });
+      setShifts((prev) => prev.map((s) => (s.id === id ? { ...s, active_activity: null } : s)));
+      setSelectedShift((prev: any) =>
+        prev?.id === id ? { ...prev, active_activity: null } : prev,
+      );
+      showSuccessToast(`Activity ended: ${type === 'break' ? 'Break' : 'Field Task'}`);
+      setShowActivityModal(null);
+    } catch (err: unknown) {
+      showErrorToast(getApiErrorMessage(err, 'Failed to end activity'));
+    } finally {
+      setActivityLoading(false);
+    }
+  };
+
+  const onCloseActivityModal = () => {
+    if (activityLoading) return;
+    setShowActivityModal(null);
+    setActivityReason('');
+  };
+
+  const closeEndShiftConfirm = () => {
+    if (endShiftLoading) return;
+    setEndShiftConfirm(null);
+  };
+
+  const continueEndShiftConfirm = () => {
+    setEndShiftConfirm((prev) => (prev ? { ...prev, step: 2 } : prev));
+  };
+
+  const confirmEndShift = async () => {
+    if (!endShiftConfirm) return;
+    setEndShiftLoading(true);
+    try {
+      const ok = await handleEndShift(endShiftConfirm.shiftId);
+      if (ok) setEndShiftConfirm(null);
+    } finally {
+      setEndShiftLoading(false);
+    }
+  };
+
   useEffect(() => {
     api
       .get('/account/profile')
@@ -1509,18 +1752,12 @@ export function ScheduleTab() {
       .finally(() => setLoading(false));
   }, [showErrorToast]);
 
-  // Deep-link: open the shift detail panel when ?shiftId= is present in the URL
-  // (e.g. navigated from a "New Shift Assigned" / "Shift Updated" notification).
-  // Depends on searchParams so it also fires when the user is already on this
-  // page and the URL is updated by the notification bell (no remount occurs).
   useEffect(() => {
     const shiftId = searchParams.get('shiftId');
     if (!shiftId) return;
 
-    // Optional highlight param (e.g. "shift_updated") that pulses a log entry.
     const highlight = searchParams.get('highlight') ?? undefined;
 
-    // Remove both params immediately so back-navigation doesn't re-open the panel.
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
@@ -1532,10 +1769,6 @@ export function ScheduleTab() {
     );
 
     void openDetail(shiftId, highlight);
-    // openDetail is intentionally omitted — it is defined inside the component and
-    // is not memoised, but its implementation is stable (only calls the API + setters).
-    // Adding it would cause the effect to re-run on every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
   useEffect(() => {
@@ -1543,15 +1776,10 @@ export function ScheduleTab() {
 
     socket.on('shift:new', (data: any) => {
       if (data.user_id === currentUser?.id) {
-        // Re-fetch the full schedule so the new shift includes joined fields
-        // (e.g. branch_name) that the raw socket payload does not carry.
         api
           .get('/account/schedule')
           .then((res) => setShifts(res.data.data || []))
           .catch(() => {
-            // If the fetch fails, fall back to inserting the raw payload so the
-            // shift at least appears in the list (branch_name will be missing
-            // until the next full reload).
             setShifts((prev) =>
               [...prev, data].sort(
                 (a, b) => new Date(a.shift_start).getTime() - new Date(b.shift_start).getTime(),
@@ -1623,7 +1851,6 @@ export function ScheduleTab() {
     };
   }, [socket]);
 
-  // Join branch rooms so we receive branch-scoped socket events
   useEffect(() => {
     if (!socket) return;
     const branchIds = currentUser?.branchIds ?? [];
@@ -1633,13 +1860,8 @@ export function ScheduleTab() {
     };
   }, [socket, currentUser?.branchIds]);
 
-  /** Log type that should pulse when the detail panel opens (e.g. "shift_updated"). */
   const [highlightLog, setHighlightLog] = useState<string | null>(null);
 
-  /**
-   * Fetch a shift's full details and open the slide-in panel.
-   * Pass `highlight` to make the most recent log entry of that type pulse.
-   */
   const openDetail = async (shiftId: string, highlight?: string) => {
     setHighlightLog(highlight ?? null);
     setDetailLoading(true);
@@ -1674,26 +1896,6 @@ export function ScheduleTab() {
     setEndShiftConfirm({ shiftId, step: 1 });
   };
 
-  const closeEndShiftConfirm = () => {
-    if (endShiftLoading) return;
-    setEndShiftConfirm(null);
-  };
-
-  const continueEndShiftConfirm = () => {
-    setEndShiftConfirm((prev) => (prev ? { ...prev, step: 2 } : prev));
-  };
-
-  const confirmEndShift = async () => {
-    if (!endShiftConfirm) return;
-    setEndShiftLoading(true);
-    try {
-      const ok = await handleEndShift(endShiftConfirm.shiftId);
-      if (ok) setEndShiftConfirm(null);
-    } finally {
-      setEndShiftLoading(false);
-    }
-  };
-
   const TABS: ViewOption<TabType>[] = [
     { id: 'all', label: 'All', icon: LayoutGrid },
     { id: 'active', label: 'Active', icon: CheckCircle },
@@ -1708,7 +1910,6 @@ export function ScheduleTab() {
     filters.sortBy !== 'shift_start' ||
     filters.sortOrder !== 'desc';
 
-  /** Open the filter panel, syncing the draft to the committed state. */
   const toggleFilters = () => {
     if (filtersOpen) {
       setFiltersOpen(false);
@@ -1718,20 +1919,17 @@ export function ScheduleTab() {
     setFiltersOpen(true);
   };
 
-  /** Commit the draft to committed state and close the panel. */
   const applyFilters = () => {
     setFilters(draftFilters);
     setFiltersOpen(false);
   };
 
-  /** Reset both draft and committed state to defaults and close the panel. */
   const clearFilters = () => {
     setDraftFilters(DEFAULT_FILTERS);
     setFilters(DEFAULT_FILTERS);
     setFiltersOpen(false);
   };
 
-  /** Discard draft changes back to the committed state and close the panel. */
   const cancelFilters = () => {
     setDraftFilters(filters);
     setFiltersOpen(false);
@@ -1803,7 +2001,6 @@ export function ScheduleTab() {
     grouped[k].push(s);
   }
 
-  // Build month calendar grid (6 weeks, Sunday start)
   const monthStart = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
   const startOfGrid = new Date(monthStart);
   startOfGrid.setDate(monthStart.getDate() - monthStart.getDay());
@@ -1835,18 +2032,15 @@ export function ScheduleTab() {
 
   return (
     <div className="space-y-5">
-      {/* Header: title on the left, view toggle on the right */}
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-3">
             <Calendar className="h-6 w-6 text-primary-600" />
             <h1 className="text-2xl font-bold text-gray-900">My Schedule</h1>
           </div>
-          {/* Mobile: active tab name as a compact subtitle */}
           <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
             {TABS.find((t) => t.id === activeTab)?.label}
           </p>
-          {/* Desktop: full description */}
           <p className="mt-1 hidden text-sm text-gray-500 sm:block">
             View your upcoming and past shifts. Click a card to see full details.
           </p>
@@ -1880,10 +2074,6 @@ export function ScheduleTab() {
       </div>
 
       <div className="space-y-5">
-        {/* Status tabs (left on desktop, full-width on mobile) + filter button */}
-        {/* The tabs div is flex-1 on desktop so its border-b extends from the left edge all
-            the way to just before the filter button. sm:items-end keeps the filter button's
-            bottom aligned with the border line. */}
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
           <ViewToggle
             options={TABS}
@@ -1924,7 +2114,6 @@ export function ScheduleTab() {
           </button>
         </div>
 
-        {/* Filter panel */}
         <AnimatePresence initial={false}>
           {filtersOpen && (
             <motion.div
@@ -2073,6 +2262,8 @@ export function ScheduleTab() {
                   onClick={() => openDetail(s.id)}
                   onEndShift={requestEndShift}
                   onExchangeShift={setExchangeShiftSource}
+                  onOpenActivityModal={onOpenActivityModal}
+                  activityLoading={activityLoading}
                 />
               ))}
             </div>
@@ -2243,6 +2434,16 @@ export function ScheduleTab() {
                     onOpenPeerEvaluation={(evaluationId) => {
                       setPeerEvaluationModalId(evaluationId);
                     }}
+                    onEndShift={requestEndShift}
+                    canEndShift={canEndOwnShift}
+                    onOpenActivityModal={onOpenActivityModal}
+                    showActivityModal={showActivityModal}
+                    activityLoading={activityLoading}
+                    activityReason={activityReason}
+                    onSetActivityReason={setActivityReason}
+                    onActivityStart={handleActivityStart}
+                    onActivityEnd={handleActivityEnd}
+                    onCloseActivityModal={onCloseActivityModal}
                   />
                 )}
               </motion.div>
@@ -2290,6 +2491,81 @@ export function ScheduleTab() {
         }}
       />
 
+      {/* Activity Start/End confirmation */}
+      <AnimatePresence>
+        {showActivityModal && (
+          <AnimatedModal
+            maxWidth="max-w-sm"
+            zIndexClass="z-[60]"
+            onBackdropClick={activityLoading ? undefined : onCloseActivityModal}
+          >
+            <div className="border-b border-gray-200 px-5 py-4">
+              <p className="font-semibold text-gray-900">
+                {showActivityModal.isEnd ? 'End' : 'Start'}{' '}
+                {showActivityModal.type === 'break' ? 'Break' : 'Field Task'}?
+              </p>
+            </div>
+            <div className="px-5 py-4 space-y-4">
+              <p className="text-sm text-gray-700">
+                {showActivityModal.isEnd
+                  ? `Are you sure you want to end your ${
+                      showActivityModal.type === 'break' ? 'break' : 'field task'
+                    }?`
+                  : `This will record the start time of your ${
+                      showActivityModal.type === 'break' ? 'break' : 'field task'
+                    }.`}
+              </p>
+
+              {!showActivityModal.isEnd && showActivityModal.type === 'field_task' && (
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-gray-500">Reason / Task Details</label>
+                  <textarea
+                    value={activityReason}
+                    onChange={(e) => setActivityReason(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    placeholder="e.g. Market, Deposit, Stock Delivery..."
+                    rows={3}
+                  />
+                </div>
+              )}
+            </div>
+            <div className="flex gap-3 border-t border-gray-200 px-5 py-4">
+              <Button
+                className="flex-1"
+                variant={
+                  showActivityModal.type === 'field_task'
+                    ? 'success'
+                    : showActivityModal.isEnd
+                      ? 'outline-danger'
+                      : 'primary'
+                }
+                disabled={
+                  activityLoading ||
+                  (!showActivityModal.isEnd &&
+                    showActivityModal.type === 'field_task' &&
+                    !activityReason.trim())
+                }
+                onClick={() =>
+                  showActivityModal.isEnd
+                    ? handleActivityEnd()
+                    : handleActivityStart(showActivityModal.type)
+                }
+              >
+                {activityLoading ? 'Processing...' : 'Confirm'}
+              </Button>
+              <Button
+                className="flex-1"
+                variant="secondary"
+                disabled={activityLoading}
+                onClick={onCloseActivityModal}
+              >
+                Cancel
+              </Button>
+            </div>
+          </AnimatedModal>
+        )}
+      </AnimatePresence>
+
       <PeerEvaluationModal
         isOpen={Boolean(peerEvaluationModalId)}
         initialEvaluationId={peerEvaluationModalId}
@@ -2325,18 +2601,10 @@ export function ScheduleTab() {
               )}
             </div>
             <div className="flex gap-3 border-t border-gray-200 px-5 py-4">
-              <Button
-                className="flex-1"
-                variant="secondary"
-                disabled={endShiftLoading}
-                onClick={closeEndShiftConfirm}
-              >
-                Cancel
-              </Button>
               {endShiftConfirm.step === 1 ? (
                 <Button
                   className="flex-1"
-                  variant="primary"
+                  variant="danger"
                   disabled={endShiftLoading}
                   onClick={continueEndShiftConfirm}
                 >
@@ -2352,6 +2620,14 @@ export function ScheduleTab() {
                   {endShiftLoading ? 'Ending...' : 'End Shift'}
                 </Button>
               )}
+              <Button
+                className="flex-1"
+                variant="secondary"
+                disabled={endShiftLoading}
+                onClick={closeEndShiftConfirm}
+              >
+                Cancel
+              </Button>
             </div>
           </AnimatedModal>
         )}
