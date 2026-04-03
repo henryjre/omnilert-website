@@ -350,6 +350,7 @@ export function DashboardPage() {
                 ) : null}
                 selectedMonthKey={selectedMonthKey}
                 onSelectMonth={setSelectedMonthKey}
+                onRefreshStatus={() => void checkInStatusQuery.refetch()}
               />
             </>
           )}

@@ -23,6 +23,7 @@ interface EpiDashboardProps {
   headerAction?: ReactNode;
   selectedMonthKey: string;
   onSelectMonth: (monthKey: string) => void;
+  onRefreshStatus?: () => void;
 }
 
 export function EpiDashboard({
@@ -36,6 +37,7 @@ export function EpiDashboard({
   headerAction,
   selectedMonthKey,
   onSelectMonth,
+  onRefreshStatus,
 }: EpiDashboardProps) {
   const selectedEntry = useMemo(() => {
     return data.history.find((entry) => entry.monthKey === selectedMonthKey) ?? data.history[data.history.length - 1];
@@ -63,6 +65,7 @@ export function EpiDashboard({
           <CheckInStatusCard
             status={checkInStatus}
             loading={checkInStatusLoading}
+            onRefresh={onRefreshStatus}
           />
         </div>
       </motion.div>

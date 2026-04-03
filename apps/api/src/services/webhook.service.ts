@@ -1119,9 +1119,9 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
       const allowsInterimDuty = payload.x_company_id !== 1;
 
       let interimReason: 'no_planning_schedule' | 'scheduled_other_branch' | null = null;
-      if (allowsInterimDuty && (!shift || !linkedShiftHasOverlap)) {
+      if (allowsInterimDuty && !shift) {
         interimReason = await resolveInterimReason(deps, {
-          userId: (shift?.user_id as string | null | undefined) ?? resolvedIdentity.userId,
+          userId: resolvedIdentity.userId,
           branchId: branch.id,
           attendanceStart,
           attendanceEnd,
@@ -1326,18 +1326,17 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
 
       // 3. Threshold check for Overtime Authorization and Peer Evaluation
       const checkInTime = parseOdooUtcDateTime(payload.check_in);
-      const totalWorkedMs = (eventTime.getTime() - checkInTime.getTime()) - (totalBreakMinutes * 60000);
-      const actualWorkedHours = totalWorkedMs / 3600000;
+      const totalShiftWorkedHours = Number(activeShift.total_worked_hours || 0);
       const allocatedHours = Number(activeShift.allocated_hours || 0);
 
-      if (actualWorkedHours >= (allocatedHours - 1)) {
+      if (totalShiftWorkedHours >= (allocatedHours - 1)) {
         // Generate Overtime Authorization if not already exists for this check-out
         const existingOT = await tenantDb('shift_authorizations')
           .where({ shift_id: activeShift.id, auth_type: 'overtime', shift_log_id: log.id })
           .first();
         
-        if (!existingOT && actualWorkedHours > allocatedHours) {
-          const overtimeMinutes = Math.round((actualWorkedHours - allocatedHours) * 60);
+        if (!existingOT && totalShiftWorkedHours > allocatedHours) {
+          const overtimeMinutes = Math.round((totalShiftWorkedHours - allocatedHours) * 60);
           const [auth] = await tenantDb('shift_authorizations')
             .insert({
               company_id: branch.company_id,

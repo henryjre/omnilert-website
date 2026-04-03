@@ -173,6 +173,7 @@ For Compliance: body `{ non_idle: boolean, cellphone: boolean, uniform: boolean,
 ### Route: `POST /webhooks/odoo/pos-order`
 
 Add to `apps/api/src/routes/webhook.routes.ts`:
+
 ```ts
 router.post('/odoo/pos-order', validateBody(odooPosOrderPayloadSchema), webhookController.posOrder);
 ```
@@ -193,26 +194,33 @@ export async function posOrder(req, res, next) {
     if (Math.random() > 0.1) return res.status(200).json({ success: true });
     await webhookService.createCssAudit(payload);
     res.status(201).json({ success: true });
-  } catch (err) { next(err); }
+  } catch (err) {
+    next(err);
+  }
 }
 ```
 
 ### Service (`webhook.service.ts`)
 
 `createCssAudit(payload)`:
+
 1. Resolve company from `payload.company_id` via existing `resolveCompanyByOdooBranchId`.
 2. Compute `monetary_reward` from `amount_total` using range table.
 3. Insert into tenant `store_audits`.
 4. Emit `store-audit:new` to company room.
 
 **Reward calculation:**
+
 ```ts
 function computeCssReward(amountTotal: number): number {
   const [min, max] =
-    amountTotal < 150   ? [7,  10] :
-    amountTotal < 400   ? [10, 15] :
-    amountTotal < 800   ? [15, 25] :
-                          [25, 30];
+    amountTotal < 150
+      ? [7, 10]
+      : amountTotal < 400
+        ? [10, 15]
+        : amountTotal < 800
+          ? [15, 25]
+          : [25, 30];
   return Math.round((Math.random() * (max - min) + min) * 100) / 100;
 }
 ```
@@ -310,7 +318,9 @@ storeAuditsNs.use((socket, next) => {
     }
     socket.data.user = payload;
     next();
-  } catch { next(new Error('Invalid token')); }
+  } catch {
+    next(new Error('Invalid token'));
+  }
 });
 
 storeAuditsNs.on('connection', (socket) => {
@@ -321,6 +331,7 @@ storeAuditsNs.on('connection', (socket) => {
 ```
 
 Events emitted to `company:{companyId}`:
+
 - `store-audit:new` — new audit created (pending)
 - `store-audit:claimed` — audit moved to processing `{ id, auditor_user_id, auditor_name }`
 - `store-audit:completed` — audit completed `{ id }`
@@ -336,7 +347,11 @@ Events emitted to `company:{companyId}`:
 3. Add `useEffect` to auto-expand on navigation (follow existing HR/Finance pattern)
 4. Add `<SubCategory label="Internal Audit" ...>` with `store_audit.view` permission check:
    ```tsx
-   <SubCategory label="Internal Audit" expanded={auditExpanded} onToggle={() => setAuditExpanded(v => !v)}>
+   <SubCategory
+     label="Internal Audit"
+     expanded={auditExpanded}
+     onToggle={() => setAuditExpanded((v) => !v)}
+   >
      {hasPermission(PERMISSIONS.STORE_AUDIT_VIEW) && (
        <NavLink to="/store-audits" className={linkClass}>
          <ClipboardList className="h-5 w-5" />
@@ -349,6 +364,7 @@ Events emitted to `company:{companyId}`:
 ### Router (`apps/web/src/app/router.tsx`)
 
 Add route:
+
 ```tsx
 {
   path: 'store-audits',
@@ -395,28 +411,34 @@ Two pill buttons side-by-side: `Yes` (green when selected) and `No` (red when se
 ### Detail Panel Behavior
 
 **CSS — Pending:**
+
 - Show all order fields (session name, reference, branch, order date in Asia/Manila, cashier, order lines table, totals, reward)
 - "Process" button if: user has `store_audit.process` permission AND `processingAuditId === null`
 
 **CSS — Processing (bound auditor only):**
+
 - Same fields + auditor name
 - Star rating input (required) + audit log textarea (required)
 - "Audit Complete" button → POST `/store-audits/:id/complete`
 - Show panel error if AI call fails (retry prompt)
 
 **CSS — Completed:**
+
 - All fields + auditor + star rating + audit log + AI report
 - "Request VN" placeholder button (disabled, `// TODO`)
 
 **Compliance — Pending:**
+
 - Employee avatar, name, branch, check-in time (Asia/Manila), reward
 - "Process" button (same guard)
 
 **Compliance — Processing (bound auditor only):**
+
 - Same + auditor + five `YesNoPill` toggles (all required)
 - "Audit Complete" button
 
 **Compliance — Completed:**
+
 - All fields + auditor + all five answers displayed as colored pills
 - "Request VN" placeholder button
 
@@ -440,12 +462,14 @@ export interface StoreAudit {
 ```
 
 Add to `packages/shared/src/constants/permissions.ts`:
+
 ```ts
 STORE_AUDIT_VIEW: 'store_audit.view',
 STORE_AUDIT_PROCESS: 'store_audit.process',
 ```
 
 Add to `PERMISSION_CATEGORIES`:
+
 ```ts
 store_audit: { label: 'Store Audits', permissions: ['store_audit.view', 'store_audit.process'] }
 ```
@@ -455,6 +479,7 @@ store_audit: { label: 'Store Audits', permissions: ['store_audit.view', 'store_a
 ## Files to Create or Modify
 
 ### Backend — Create
+
 - `apps/api/src/migrations/tenant/017_store_audits.ts`
 - `apps/api/src/migrations/master/010_add_audit_result_columns.ts`
 - `apps/api/src/controllers/storeAudit.controller.ts`
@@ -463,7 +488,8 @@ store_audit: { label: 'Store Audits', permissions: ['store_audit.view', 'store_a
 - `apps/api/src/routes/storeAudit.routes.ts`
 
 ### Backend — Modify
-- `apps/api/src/config/env.ts` — add OPENAI_* vars
+
+- `apps/api/src/config/env.ts` — add OPENAI\_\* vars
 - `apps/api/src/config/socket.ts` — add `/store-audits` namespace
 - `apps/api/src/routes/webhook.routes.ts` — add `pos-order` route
 - `apps/api/src/routes/index.ts` — register `/store-audits`
@@ -473,11 +499,13 @@ store_audit: { label: 'Store Audits', permissions: ['store_audit.view', 'store_a
 - `apps/api/src/services/databaseProvisioner.ts` — seed new permissions
 
 ### Shared — Modify
+
 - `packages/shared/src/constants/permissions.ts` — add `STORE_AUDIT_VIEW`, `STORE_AUDIT_PROCESS`
 - `packages/shared/src/types/` — add `StoreAudit` types
 - `packages/shared/src/schemas/odoo.ts` (or equivalent) — add `odooPosOrderPayloadSchema`
 
 ### Frontend — Create
+
 - `apps/web/src/features/store-audits/pages/StoreAuditsPage.tsx`
 - `apps/web/src/features/store-audits/components/CssAuditCard.tsx`
 - `apps/web/src/features/store-audits/components/ComplianceAuditCard.tsx`
@@ -487,6 +515,7 @@ store_audit: { label: 'Store Audits', permissions: ['store_audit.view', 'store_a
 - `apps/web/src/features/store-audits/components/YesNoPill.tsx`
 
 ### Frontend — Modify
+
 - `apps/web/src/app/router.tsx` — add `/store-audits` route
 - `apps/web/src/features/dashboard/components/Sidebar.tsx` — add Internal Audit group
 

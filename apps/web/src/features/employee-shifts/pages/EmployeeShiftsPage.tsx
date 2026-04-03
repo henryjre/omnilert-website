@@ -42,7 +42,6 @@ import {
   X,
   XCircle,
   Coffee,
-  ClipboardList,
   ClipboardCheck,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -1167,7 +1166,7 @@ const LogEntry = memo(
         <div className="flex gap-3">
           <div className="flex flex-col items-center">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-100">
-              <ClipboardList className="h-4 w-4 text-purple-600" />
+              <MapPin className="h-4 w-4 text-purple-600" />
             </div>
             {!isLast && <div className="w-px flex-1 bg-gray-200" />}
           </div>

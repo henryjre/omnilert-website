@@ -530,6 +530,18 @@ export async function getCheckInStatus(req: Request, res: Response, next: NextFu
       }
     }
 
+    const activeShift = await db.getDb()('employee_shifts')
+      .where({ user_id: userId, status: 'active' })
+      .orderBy('shift_start', 'desc')
+      .first('id');
+
+    let activeActivity = null;
+    if (activeShift) {
+      activeActivity = await db.getDb()('shift_activities')
+        .where({ shift_id: activeShift.id, end_time: null })
+        .first();
+    }
+
     res.json({
       success: true,
       data: {
@@ -542,6 +554,14 @@ export async function getCheckInStatus(req: Request, res: Response, next: NextFu
         companyName: latestAttendanceEvent.companyName ?? null,
         branchName: latestAttendanceEvent.branchName ?? null,
         checkInTimeUtc: latestAttendanceEvent.checkInTimeUtc,
+        shiftId: activeShift?.id ?? null,
+        activeActivity: activeActivity
+          ? {
+            id: activeActivity.id,
+            activity_type: activeActivity.activity_type,
+            startTimeUtc: activeActivity.start_time,
+          }
+          : null,
       },
     });
   } catch (err) {

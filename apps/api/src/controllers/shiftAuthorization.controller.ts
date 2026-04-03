@@ -393,7 +393,23 @@ async function syncOdooAttendance(
         await updateAttendanceCheckIn(odooAttendanceId, shift.shift_start);
       }
       if (auth.auth_type === 'late_check_out') {
-        await updateAttendanceCheckOut(odooAttendanceId, shift.shift_end);
+        // Safety: Ensure new checkout isn't earlier than actual check-in to avoid Odoo validation errors.
+        // We find the 'check_in' log for this same Odoo attendance record.
+        const checkInLog = await tenantDb('shift_logs')
+          .where({ odoo_attendance_id: odooAttendanceId, log_type: 'check_in' })
+          .first();
+        
+        const checkInTime = checkInLog ? new Date(checkInLog.event_time) : null;
+        const shiftEndTime = new Date(shift.shift_end);
+        
+        if (checkInTime && checkInTime >= shiftEndTime) {
+          // If the entire session was after shift end, just delete the attendance record.
+          await deleteAttendanceById(odooAttendanceId);
+          logger.info(`Deleted Odoo attendance ${odooAttendanceId} due to late check-out rejection (arrival after shift end).`);
+        } else {
+          // Otherwise, pull the checkout back to the official end.
+          await updateAttendanceCheckOut(odooAttendanceId, shiftEndTime);
+        }
       }
     }
   } catch (err) {

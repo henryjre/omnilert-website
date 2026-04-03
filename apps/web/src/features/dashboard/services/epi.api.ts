@@ -82,6 +82,13 @@ export interface DashboardCheckInStatus {
   companyName: string | null;
   branchName: string | null;
   checkInTimeUtc: string | null;
+  shiftId?: string | null;
+  activeActivity?: {
+    id: string;
+    activity_type: 'break' | 'field_task';
+    startTimeUtc: string | null;
+    details?: string;
+  } | null;
 }
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

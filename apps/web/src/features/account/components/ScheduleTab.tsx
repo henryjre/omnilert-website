@@ -33,7 +33,6 @@ import {
   ChevronDown,
   ChevronUp,
   ArrowLeftRight,
-  ClipboardList,
   Clock,
   Coffee,
   Filter,
@@ -916,7 +915,7 @@ const LogEntry = memo(
         <div className="flex gap-3">
           <div className="flex flex-col items-center">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-purple-100">
-              <ClipboardList className="h-4 w-4 text-purple-600" />
+              <MapPin className="h-4 w-4 text-purple-600" />
             </div>
             {!isLast && <div className="w-px flex-1 bg-gray-200" />}
           </div>
@@ -1210,7 +1209,7 @@ const ShiftDetailPanel = memo(
                           disabled={activityLoading}
                           onClick={() => onOpenActivityModal(shift.id, 'field_task', true)}
                         >
-                          <ClipboardList className="mr-2 h-4 w-4" />
+                          <MapPin className="mr-2 h-4 w-4" />
                           End Task
                         </Button>
                       ) : (
@@ -1221,7 +1220,7 @@ const ShiftDetailPanel = memo(
                           disabled={activityLoading || !!activeActivity}
                           onClick={() => onOpenActivityModal(shift.id, 'field_task', false)}
                         >
-                          <ClipboardList className="mr-2 h-4 w-4" />
+                          <MapPin className="mr-2 h-4 w-4" />
                           Field Task
                         </Button>
                       ))}
@@ -1497,7 +1496,7 @@ const MyShiftCard = memo(
                             onOpenActivityModal(shift.id, 'field_task', true);
                           }}
                         >
-                          <ClipboardList className="mr-1.5 h-3.5 w-3.5" />
+                          <MapPin className="mr-1.5 h-3.5 w-3.5" />
                           End Task
                         </Button>
                       ) : (
@@ -1511,7 +1510,7 @@ const MyShiftCard = memo(
                             onOpenActivityModal(shift.id, 'field_task', false);
                           }}
                         >
-                          <ClipboardList className="mr-1.5 h-3.5 w-3.5" />
+                          <MapPin className="mr-1.5 h-3.5 w-3.5" />
                           Field Task
                         </Button>
                       ))}
