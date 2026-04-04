@@ -559,12 +559,18 @@ export function CashRequestsTab() {
   const [selectedRequest, setSelectedRequest] = useState<CashRequest | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  const selectedBranchIds = useBranchStore((s) => s.selectedBranchIds);
-  const branches = useBranchStore((s) => s.branches);
-  const branchesLoading = useBranchStore((s) => s.loading);
   const { hasPermission } = usePermission();
   const { error: showErrorToast } = useAppToast();
   const canSubmitCashRequest = hasPermission(PERMISSIONS.ACCOUNT_MANAGE_CASH_REQUEST);
+  const { selectedBranchIds, branches, loading: branchesLoading } = useBranchStore();
+
+  const branchLabel = useMemo(() => {
+    if (branches.length === 0) return '';
+    const selectedBranches = branches.filter((b) => selectedBranchIds.includes(b.id));
+    if (selectedBranches.length === 0 || selectedBranches.length === branches.length) return 'All Branches';
+    if (selectedBranches.length === 1) return selectedBranches[0].name;
+    return `${selectedBranches[0].name} +${selectedBranches.length - 1} more`;
+  }, [branches, selectedBranchIds]);
 
   useEffect(() => {
     /**
@@ -707,10 +713,17 @@ export function CashRequestsTab() {
         <div className="flex items-center gap-3">
           <DollarSign className="h-6 w-6 text-primary-600" />
           <h1 className="text-2xl font-bold text-gray-900">My Cash Requests</h1>
+          {branchLabel && (
+            <span className="mt-1 hidden text-sm font-medium text-primary-600 sm:inline">
+              {branchLabel}
+            </span>
+          )}
         </div>
-        <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
-          {STATUS_TABS.find((t) => t.id === statusFilter)?.label}
-        </p>
+        {branchLabel && (
+          <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
+            {branchLabel}
+          </p>
+        )}
         <p className="mt-1 hidden text-sm text-gray-500 sm:block">
           Submit and track your salary, cash advance, and reimbursement requests.
         </p>
@@ -727,6 +740,7 @@ export function CashRequestsTab() {
           }}
           layoutId="cash-status-tabs"
           className="sm:flex-1"
+          labelAboveOnMobile
         />
 
         {canSubmitCashRequest && (

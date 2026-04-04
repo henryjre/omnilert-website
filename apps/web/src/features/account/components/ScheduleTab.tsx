@@ -1613,7 +1613,7 @@ export function ScheduleTab() {
   const [searchParams, setSearchParams] = useSearchParams();
   const socket = useSocket('/employee-shifts');
   const currentUser = useAuthStore((s) => s.user);
-  const { selectedBranchIds } = useBranchStore();
+  const { branches, selectedBranchIds } = useBranchStore();
   const { hasPermission } = usePermission();
   const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const canApprove = hasPermission(PERMISSIONS.AUTH_REQUEST_MANAGE_PUBLIC);
@@ -1631,6 +1631,21 @@ export function ScheduleTab() {
 
   const [endShiftConfirm, setEndShiftConfirm] = useState<EndShiftConfirmState | null>(null);
   const [endShiftLoading, setEndShiftLoading] = useState(false);
+
+  const branchLabel = useMemo(() => {
+    if (branches.length === 0) return '';
+    const selectedBranches = branches.filter((b) => selectedBranchIds.includes(b.id));
+
+    if (selectedBranches.length === 0 || selectedBranches.length === branches.length) {
+      return 'All Branches';
+    }
+
+    if (selectedBranches.length === 1) {
+      return selectedBranches[0].name;
+    }
+
+    return `${selectedBranches[0].name} +${selectedBranches.length - 1} more`;
+  }, [branches, selectedBranchIds]);
 
   const [activityLoading, setActivityLoading] = useState(false);
   const [activityReason, setActivityReason] = useState('');
@@ -2036,39 +2051,49 @@ export function ScheduleTab() {
           <div className="flex items-center gap-3">
             <Calendar className="h-6 w-6 text-primary-600" />
             <h1 className="text-2xl font-bold text-gray-900">My Schedule</h1>
+            {branchLabel && (
+              <span className="mt-1 hidden text-sm font-medium text-primary-600 sm:inline">
+                {branchLabel}
+              </span>
+            )}
           </div>
-          <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
-            {TABS.find((t) => t.id === activeTab)?.label}
-          </p>
+          {branchLabel && (
+            <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
+              {branchLabel}
+            </p>
+          )}
           <p className="mt-1 hidden text-sm text-gray-500 sm:block">
             View your upcoming and past shifts. Click a card to see full details.
           </p>
         </div>
         <div className="flex items-center gap-1 rounded-lg bg-gray-100 p-1">
-          <button
-            type="button"
-            onClick={() => setView('list')}
-            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-              view === 'list'
-                ? 'bg-white text-gray-900 shadow-sm'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <LayoutGrid className="h-4 w-4" />
-            Card
-          </button>
-          <button
-            type="button"
-            onClick={() => setView('calendar')}
-            className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-              view === 'calendar'
-                ? 'bg-white text-gray-900 shadow-sm'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            <Calendar className="h-4 w-4" />
-            Calendar
-          </button>
+          {(['list', 'calendar'] as const).map((v) => {
+            const isActive = view === v;
+            const Icon = v === 'list' ? LayoutGrid : Calendar;
+            const label = v === 'list' ? 'Card' : 'Calendar';
+            return (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setView(v)}
+                className={`relative flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  isActive ? 'text-white' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {isActive && (
+                  <motion.div
+                    layoutId="toggle-indicator"
+                    className="absolute inset-0 rounded-md bg-primary-600"
+                    transition={{ type: 'spring', bounce: 0.2, duration: 0.5 }}
+                  />
+                )}
+                <span className="relative z-10 flex items-center gap-1.5">
+                  <Icon className="h-4 w-4" />
+                  <span className="hidden sm:inline whitespace-nowrap">{label}</span>
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -2083,6 +2108,7 @@ export function ScheduleTab() {
             }}
             layoutId="schedule-status-tabs"
             className="sm:flex-1"
+            labelAboveOnMobile
           />
 
           <button

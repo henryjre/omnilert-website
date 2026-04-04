@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -1098,8 +1098,16 @@ export function AuthorizationRequestsPage() {
   const [mgmtTab, setMgmtTab] = useState<StatusTab>('pending');
   const [crewTab, setCrewTab] = useState<StatusTab>('pending');
 
-  const selectedBranchIds = useBranchStore((s) => s.selectedBranchIds);
+  const { selectedBranchIds, branches } = useBranchStore();
   const { hasPermission, hasAnyPermission } = usePermission();
+
+  const branchLabel = useMemo(() => {
+    if (branches.length === 0) return '';
+    const selectedBranches = branches.filter((b) => selectedBranchIds.includes(b.id));
+    if (selectedBranches.length === 0 || selectedBranches.length === branches.length) return 'All Branches';
+    if (selectedBranches.length === 1) return selectedBranches[0].name;
+    return `${selectedBranches[0].name} +${selectedBranches.length - 1} more`;
+  }, [branches, selectedBranchIds]);
 
   const canViewAuthorizationRequestsPage = hasPermission(PERMISSIONS.AUTH_REQUEST_VIEW_PAGE);
   const canViewManagementData = hasAnyPermission(
@@ -1223,7 +1231,17 @@ export function AuthorizationRequestsPage() {
             <div className="flex items-center gap-3">
               <FileText className="h-6 w-6 text-primary-600" />
               <h1 className="text-2xl font-bold text-gray-900">Authorization Requests</h1>
+              {branchLabel && (
+                <span className="mt-1 hidden text-sm font-medium text-primary-600 sm:inline">
+                  {branchLabel}
+                </span>
+              )}
             </div>
+            {branchLabel && (
+              <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
+                {branchLabel}
+              </p>
+            )}
             <p className="mt-1 hidden text-sm text-gray-500 sm:block">
               Review and act on management payment requests and service crew attendance authorizations.
             </p>
@@ -1247,12 +1265,8 @@ export function AuthorizationRequestsPage() {
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
                   Management Requests
                 </h2>
-                {mgmtPendingCount > 0 && (
-                  <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-primary-600 px-1.5 text-[10px] font-bold text-white">
-                    {mgmtPendingCount}
-                  </span>
-                )}
               </div>
+
 
               <ViewToggle
                 options={STATUS_TABS}
@@ -1262,6 +1276,7 @@ export function AuthorizationRequestsPage() {
                   setMgmtPage(1);
                 }}
                 layoutId="mgmt-request-tabs"
+                labelAboveOnMobile
               />
 
               {/* Empty state or card grid */}
@@ -1341,6 +1356,7 @@ export function AuthorizationRequestsPage() {
                   setCrewPage(1);
                 }}
                 layoutId="crew-request-tabs"
+                labelAboveOnMobile
               />
 
               {/* Empty state or card grid */}

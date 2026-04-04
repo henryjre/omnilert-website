@@ -1,5 +1,5 @@
 import React from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { LucideIcon } from 'lucide-react';
 
 export interface ViewOption<T extends string = string> {
@@ -9,6 +9,8 @@ export interface ViewOption<T extends string = string> {
   activeClassName?: string;
   activeIndicatorClassName?: string;
   inactiveClassName?: string;
+  disabled?: boolean;
+  badge?: React.ReactNode;
 }
 
 interface ViewToggleProps<T extends string = string> {
@@ -17,6 +19,7 @@ interface ViewToggleProps<T extends string = string> {
   onChange: (id: T) => void;
   layoutId?: string;
   className?: string;
+  labelAboveOnMobile?: boolean;
 }
 
 export function ViewToggle<T extends string = string>({ 
@@ -24,7 +27,8 @@ export function ViewToggle<T extends string = string>({
   activeId, 
   onChange, 
   layoutId = 'active-view-underline',
-  className = ''
+  className = '',
+  labelAboveOnMobile = false
 }: ViewToggleProps<T>) {
   return (
     <div className={`flex w-full gap-1 border-b border-gray-100 ${className}`}>
@@ -34,17 +38,42 @@ export function ViewToggle<T extends string = string>({
         const activeClassName = option.activeClassName ?? 'text-primary-600';
         const activeIndicatorClassName = option.activeIndicatorClassName ?? 'bg-primary-600';
         const inactiveClassName = option.inactiveClassName ?? 'text-gray-500 hover:text-gray-700';
+        const isDisabled = option.disabled;
         return (
           <button
             key={option.id}
             type="button"
+            disabled={isDisabled}
             onClick={() => onChange(option.id)}
-            className={`relative flex flex-1 items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors sm:flex-none ${
+            className={`relative flex flex-1 items-center justify-center transition-colors sm:flex-none ${
+              labelAboveOnMobile ? 'flex-col gap-1.5 sm:flex-row sm:gap-2' : 'gap-2'
+            } px-4 py-2 sm:py-2.5 text-sm font-medium ${
               isActive ? activeClassName : inactiveClassName
-            }`}
+            } ${isDisabled ? 'cursor-not-allowed opacity-50' : ''}`}
           >
-            <Icon className="h-4 w-4" />
-            <span className="hidden sm:inline whitespace-nowrap">{option.label}</span>
+            {labelAboveOnMobile && (
+              <div className="relative h-[11px] w-full sm:hidden">
+                <AnimatePresence initial={false}>
+                  {isActive && (
+                    <motion.span
+                      key={String(option.id)}
+                      initial={{ y: 8, opacity: 0, scale: 0.8 }}
+                      animate={{ y: 0, opacity: 1, scale: 1 }}
+                      exit={{ y: 8, opacity: 0, scale: 0.8 }}
+                      transition={{ type: 'spring', bounce: 0.4, duration: 0.4 }}
+                      className="absolute inset-x-0 top-0 flex justify-center text-[11px] leading-none whitespace-nowrap"
+                    >
+                      {option.label}
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+            <div className="flex items-center gap-1.5">
+              <Icon className="h-4 w-4" />
+              <span className="hidden sm:inline whitespace-nowrap">{option.label}</span>
+              {option.badge}
+            </div>
             {isActive && (
               <motion.div
                 layoutId={layoutId}

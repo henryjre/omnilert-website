@@ -27,3 +27,16 @@ test('grants account.view_audit_results to Service Crew by default only', () => 
     ),
   );
 });
+
+test('does not grant account.manage_employee_requirements to Administrator by default', () => {
+  assert.ok(
+    DEFAULT_ROLE_PERMISSIONS[SYSTEM_ROLES.SERVICE_CREW].includes(
+      PERMISSIONS.ACCOUNT_MANAGE_EMPLOYEE_REQUIREMENTS,
+    ),
+  );
+  assert.ok(
+    !DEFAULT_ROLE_PERMISSIONS[SYSTEM_ROLES.ADMINISTRATOR].includes(
+      PERMISSIONS.ACCOUNT_MANAGE_EMPLOYEE_REQUIREMENTS,
+    ),
+  );
+});

@@ -68,7 +68,14 @@ export function PeerEvaluationsPage() {
   const socket = useSocket('/peer-evaluations');
   const { hasPermission } = usePermission();
   const { error: showErrorToast } = useAppToast();
-  const selectedBranchIds = useBranchStore((s) => s.selectedBranchIds);
+  const { selectedBranchIds, branches } = useBranchStore();
+  const branchLabel = useMemo(() => {
+    if (branches.length === 0) return '';
+    const selectedBranches = branches.filter((b) => selectedBranchIds.includes(b.id));
+    if (selectedBranches.length === 0 || selectedBranches.length === branches.length) return 'All Branches';
+    if (selectedBranches.length === 1) return selectedBranches[0].name;
+    return `${selectedBranches[0].name} +${selectedBranches.length - 1} more`;
+  }, [branches, selectedBranchIds]);
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [evaluations, setEvaluations] = useState<PeerEvaluation[]>([]);
@@ -224,31 +231,33 @@ export function PeerEvaluationsPage() {
         <div className="flex items-center gap-3">
           <Users className="h-6 w-6 text-primary-600" />
           <h1 className="text-2xl font-bold text-gray-900">Workplace Relations</h1>
+          {branchLabel && (
+            <span className="mt-1 hidden text-sm font-medium text-primary-600 sm:inline">
+              {branchLabel}
+            </span>
+          )}
         </div>
-        <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">Employee Peer Evaluations</p>
+        {branchLabel && (
+          <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
+            {branchLabel}
+          </p>
+        )}
+
         <p className="mt-1 hidden text-sm text-gray-500 sm:block">
           Review employee peer evaluation submissions.
         </p>
       </div>
 
-      {/* Category tabs */}
-      <div className="flex justify-center gap-1 border-b border-gray-200 sm:justify-start">
-        <button
-          type="button"
-          className="flex items-center gap-2 border-b-2 border-primary-600 px-4 py-2 text-sm font-medium text-primary-600"
-        >
-          <BarChart2 className="h-4 w-4" />
-          <span className="hidden sm:inline">Employee Peer Evaluations</span>
-        </button>
-        <button
-          type="button"
-          disabled
-          className="flex cursor-not-allowed items-center gap-2 border-b-2 border-transparent px-4 py-2 text-sm font-medium text-gray-300"
-        >
-          <BriefcaseBusiness className="h-4 w-4" />
-          <span className="hidden sm:inline">Management Evaluation</span>
-        </button>
-      </div>
+      <ViewToggle
+        options={[
+          { id: 'peer', label: 'Employee Peer Evaluations', icon: BarChart2 },
+          { id: 'management', label: 'Management Evaluation', icon: BriefcaseBusiness, disabled: true },
+        ]}
+        activeId="peer"
+        onChange={() => {}}
+        layoutId="peer-evaluation-category-tabs"
+        labelAboveOnMobile
+      />
 
       {/* Status tabs + filter toggle */}
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -258,6 +267,7 @@ export function PeerEvaluationsPage() {
           onChange={(id) => setActiveStatus(id)}
           layoutId="peer-evaluation-tabs"
           className="sm:flex-1"
+          labelAboveOnMobile
         />
 
         <button

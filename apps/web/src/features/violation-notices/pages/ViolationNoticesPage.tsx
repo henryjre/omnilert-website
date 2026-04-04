@@ -90,7 +90,7 @@ export function ViolationNoticesPage() {
   const { hasPermission } = usePermission();
   const { error: showErrorToast } = useAppToast();
   const { user } = useAuth();
-  const selectedBranchIds = useBranchStore((s) => s.selectedBranchIds);
+  const { selectedBranchIds, branches } = useBranchStore();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [loading, setLoading] = useState(true);
@@ -105,6 +105,14 @@ export function ViolationNoticesPage() {
     setSelectedVnId((prev) => (prev !== vnId ? vnId : prev));
     if (messageId) setInitialFlashMessageId(messageId);
   }, [searchParams]);
+
+  const branchLabel = useMemo(() => {
+    if (branches.length === 0) return '';
+    const selectedBranches = branches.filter((b) => selectedBranchIds.includes(b.id));
+    if (selectedBranches.length === 0 || selectedBranches.length === branches.length) return 'All Branches';
+    if (selectedBranches.length === 1) return selectedBranches[0].name;
+    return `${selectedBranches[0].name} +${selectedBranches.length - 1} more`;
+  }, [branches, selectedBranchIds]);
 
   const [selectedVn, setSelectedVn] = useState<ViolationNoticeDetail | null>(null);
   const [messages, setMessages] = useState<OptimisticMessage[]>([]);
@@ -417,10 +425,18 @@ export function ViolationNoticesPage() {
                 {activeCount} active
               </span>
             )}
+            {branchLabel && (
+              <span className="mt-1 hidden text-sm font-medium text-primary-600 sm:inline">
+                {branchLabel}
+              </span>
+            )}
           </div>
+          {branchLabel && (
             <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
-              {STATUS_TABS.find((t) => t.id === statusTab)?.label}
+              {branchLabel}
             </p>
+          )}
+
             <p className="mt-1 hidden text-sm text-gray-500 sm:block">
               Manage employee violation notices through the issuance workflow.
             </p>
@@ -434,6 +450,7 @@ export function ViolationNoticesPage() {
             onChange={(id) => setStatusTab(id)}
             layoutId="violation-notice-tabs"
             className="sm:flex-1"
+            labelAboveOnMobile
           />
 
           {/* Controls */}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useBranchStore } from '@/shared/store/branchStore';
 import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import { useSearchParams } from 'react-router-dom';
 import type { ElementType } from 'react';
@@ -26,7 +27,6 @@ import { DateRangePicker } from '@/shared/components/ui/DateRangePicker';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useSocket } from '@/shared/hooks/useSocket';
 import { useAppToast } from '@/shared/hooks/useAppToast';
-import { useBranchStore } from '@/shared/store/branchStore';
 import {
   closeCase,
   createCaseReport,
@@ -100,6 +100,15 @@ export function CaseReportsPage() {
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(() =>
     searchParams.get('caseId'),
   );
+  const { selectedBranchIds, branches } = useBranchStore();
+  const branchLabel = useMemo(() => {
+    if (branches.length === 0) return '';
+    const selectedBranches = branches.filter((b) => selectedBranchIds.includes(b.id));
+    if (selectedBranches.length === 0 || selectedBranches.length === branches.length) return 'All Branches';
+    if (selectedBranches.length === 1) return selectedBranches[0].name;
+    return `${selectedBranches[0].name} +${selectedBranches.length - 1} more`;
+  }, [branches, selectedBranchIds]);
+
   const [initialFlashMessageId, setInitialFlashMessageId] = useState<string | null>(() =>
     searchParams.get('messageId'),
   );
@@ -127,7 +136,6 @@ export function CaseReportsPage() {
   const groupedUsersReqIdRef = useRef(0);
 
   // Branch filtering
-  const { selectedBranchIds } = useBranchStore();
   const selectedBranchIdSet = useMemo(() => new Set(selectedBranchIds), [selectedBranchIds]);
 
   const canCreate = hasPermission(PERMISSIONS.CASE_REPORT_MANAGE);
@@ -320,10 +328,18 @@ export function CaseReportsPage() {
                 {openCount} open
               </span>
             )}
+            {branchLabel && (
+              <span className="mt-1 hidden text-sm font-medium text-primary-600 sm:inline">
+                {branchLabel}
+              </span>
+            )}
           </div>
-          <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
-            {STATUS_TABS.find((t) => t.id === statusTab)?.label}
-          </p>
+          {branchLabel && (
+            <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
+              {branchLabel}
+            </p>
+          )}
+
           <p className="mt-1 hidden text-sm text-gray-500 sm:block">
             Document, track, and resolve workplace incidents and operational issues.
           </p>
@@ -337,6 +353,7 @@ export function CaseReportsPage() {
             onChange={(id) => setStatusTab(id)}
             layoutId="case-report-tabs"
             className="sm:flex-1"
+            labelAboveOnMobile
           />
 
           {/* Controls */}

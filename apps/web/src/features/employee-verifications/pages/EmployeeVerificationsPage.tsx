@@ -942,9 +942,7 @@ export function EmployeeVerificationsPage() {
             <Users className="h-6 w-6 text-primary-600" />
             <h1 className="text-2xl font-bold text-gray-900">Employee Verifications</h1>
           </div>
-          <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
-            {showNoDataPermissionState ? 'No Accessible Verification Data' : activeTypeLabel}
-          </p>
+
           <p className="mt-1 hidden text-sm text-gray-500 sm:block">
             Review and act on employee verification submissions.
           </p>
@@ -962,15 +960,11 @@ export function EmployeeVerificationsPage() {
           <ViewToggle
             options={visibleCategoryTabs.map((tab) => ({
               ...tab,
-              label: (
-                <div className="flex items-center gap-2">
-                  <span>{tab.label}</span>
-                  {pendingByType[tab.id] > 0 && (
-                    <span className="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary-600 px-1 text-[9px] font-bold text-white">
-                      {pendingByType[tab.id]}
-                    </span>
-                  )}
-                </div>
+              label: tab.label,
+              badge: pendingByType[tab.id] > 0 && (
+                <span className="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary-600 px-1 text-[9px] font-bold text-white">
+                  {pendingByType[tab.id]}
+                </span>
               ),
             }))}
             activeId={activeType}
@@ -979,6 +973,7 @@ export function EmployeeVerificationsPage() {
               setStatusFilter('pending');
             }}
             layoutId="verification-category-tabs"
+            labelAboveOnMobile
           />
           );
         })()}
@@ -1001,6 +996,7 @@ export function EmployeeVerificationsPage() {
                 setPage(1);
               }}
               layoutId="verification-status-tabs"
+              labelAboveOnMobile
             />
 
             <div className="space-y-4">

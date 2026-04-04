@@ -533,6 +533,7 @@ export function UserManagementPage() {
           activeId={statusFilter}
           onChange={(id) => setStatusFilter(id)}
           layoutId="user-management-tabs"
+          labelAboveOnMobile
         />
 
         {loading ? (

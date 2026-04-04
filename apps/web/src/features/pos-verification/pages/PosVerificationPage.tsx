@@ -26,6 +26,14 @@ export function PosVerificationPage() {
     [branches],
   );
 
+  const branchLabel = useMemo(() => {
+    if (branches.length === 0) return '';
+    const selectedBranches = branches.filter((b) => selectedBranchIds.includes(b.id));
+    if (selectedBranches.length === 0 || selectedBranches.length === branches.length) return 'All Branches';
+    if (selectedBranches.length === 1) return selectedBranches[0].name;
+    return `${selectedBranches[0].name} +${selectedBranches.length - 1} more`;
+  }, [branches, selectedBranchIds]);
+
   const selectedBranchIdSet = useMemo(
     () => new Set(selectedBranchIds),
     [selectedBranchIds],
@@ -130,7 +138,17 @@ export function PosVerificationPage() {
               {filteredVerifications.length} pending
             </span>
           )}
+          {branchLabel && (
+            <span className="mt-1 hidden text-sm font-medium text-primary-600 sm:inline">
+              {branchLabel}
+            </span>
+          )}
         </div>
+        {branchLabel && (
+          <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
+            {branchLabel}
+          </p>
+        )}
         <p className="mt-1 hidden text-sm text-gray-500 sm:block">
           Review and confirm pending point-of-sale verifications in real-time.
         </p>

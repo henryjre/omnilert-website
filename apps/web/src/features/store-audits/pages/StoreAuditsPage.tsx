@@ -124,7 +124,7 @@ export function StoreAuditsPage() {
   const { hasAnyPermission, hasPermission } = usePermission();
   const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const currentUserId = useAuthStore((state) => state.user?.id ?? null);
-  const selectedBranchIds = useBranchStore((s) => s.selectedBranchIds);
+  const { branches, selectedBranchIds } = useBranchStore();
   const canProcessAudit = hasPermission(PERMISSIONS.STORE_AUDIT_MANAGE);
   const canRequestVN = hasAnyPermission(PERMISSIONS.STORE_AUDIT_MANAGE, PERMISSIONS.VIOLATION_NOTICE_MANAGE);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -137,6 +137,14 @@ export function StoreAuditsPage() {
   const [status, setStatus] = useState<StoreAuditStatus>(
     () => (searchParams.get('auditId') ? 'completed' : 'pending'),
   );
+  const branchLabel = useMemo(() => {
+    if (branches.length === 0) return '';
+    const selectedBranches = branches.filter((b) => selectedBranchIds.includes(b.id));
+    if (selectedBranches.length === 0 || selectedBranches.length === branches.length) return 'All Branches';
+    if (selectedBranches.length === 1) return selectedBranches[0].name;
+    return `${selectedBranches[0].name} +${selectedBranches.length - 1} more`;
+  }, [branches, selectedBranchIds]);
+
   const [audits, setAudits] = useState<StoreAudit[]>([]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
@@ -529,7 +537,12 @@ export function StoreAuditsPage() {
               <ClipboardList className="h-6 w-6 text-primary-600" />
               <h1 className="text-2xl font-bold text-gray-900">Store Audits</h1>
             </div>
-            <p className="mt-0.5 text-sm font-medium text-primary-600">{activeCategoryLabel}</p>
+            {branchLabel && (
+              <p className="mt-0.5 text-sm font-medium text-primary-600">
+                {branchLabel}
+              </p>
+            )}
+
           </div>
           <AuditorRewardCard
             totalEarnings={auditorStats?.current.totalEarnings ?? 0}
@@ -548,7 +561,17 @@ export function StoreAuditsPage() {
               <div className="flex items-center gap-2">
                 <ClipboardList className="h-6 w-6 text-primary-600" />
                 <h1 className="text-2xl font-bold text-gray-900">Store Audits</h1>
+                {branchLabel && (
+                  <span className="mt-1 hidden text-sm font-medium text-primary-600 sm:inline">
+                    {branchLabel}
+                  </span>
+                )}
               </div>
+              {branchLabel && (
+                <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
+                  {branchLabel}
+                </p>
+              )}
             </div>
 
             <ViewToggle
@@ -558,15 +581,11 @@ export function StoreAuditsPage() {
                 { id: 'service_crew_cctv', label: 'Service Crew CCTV', icon: ShieldCheck },
               ] as const).map((tab) => ({
                 ...tab,
-                label: (
-                  <div className="flex items-center gap-2">
-                    <span>{tab.label}</span>
-                    {pendingCounts[tab.id] > 0 && (
-                      <span className="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary-600 px-1 text-[9px] font-bold text-white">
-                        {pendingCounts[tab.id]}
-                      </span>
-                    )}
-                  </div>
+                label: tab.label,
+                badge: pendingCounts[tab.id] > 0 && (
+                  <span className="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary-600 px-1 text-[9px] font-bold text-white">
+                    {pendingCounts[tab.id]}
+                  </span>
                 ),
               }))}
               activeId={category}
@@ -576,6 +595,7 @@ export function StoreAuditsPage() {
                 setSelectedAuditId(null);
               }}
               layoutId="store-audit-category-tabs"
+              labelAboveOnMobile
             />
 
             <ViewToggle
@@ -587,6 +607,7 @@ export function StoreAuditsPage() {
                 setSelectedAuditId(null);
               }}
               layoutId="store-audit-status-tabs"
+              labelAboveOnMobile
             />
           </div>
 
@@ -611,15 +632,11 @@ export function StoreAuditsPage() {
               { id: 'service_crew_cctv', label: 'Service Crew CCTV', icon: ShieldCheck },
             ] as const).map((tab) => ({
               ...tab,
-              label: (
-                <div className="flex items-center gap-2">
-                  <span>{tab.label}</span>
-                  {pendingCounts[tab.id] > 0 && (
-                    <span className="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary-600 px-1 text-[9px] font-bold text-white">
-                      {pendingCounts[tab.id]}
-                    </span>
-                  )}
-                </div>
+              label: tab.label,
+              badge: pendingCounts[tab.id] > 0 && (
+                <span className="flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-primary-600 px-1 text-[9px] font-bold text-white">
+                  {pendingCounts[tab.id]}
+                </span>
               ),
             }))}
             activeId={category}
@@ -629,6 +646,7 @@ export function StoreAuditsPage() {
               setSelectedAuditId(null);
             }}
             layoutId="store-audit-category-tabs-mobile"
+            labelAboveOnMobile
           />
 
           <ViewToggle
@@ -640,6 +658,7 @@ export function StoreAuditsPage() {
               setSelectedAuditId(null);
             }}
             layoutId="store-audit-status-tabs-mobile"
+            labelAboveOnMobile
           />
         </div>
 

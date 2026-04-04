@@ -59,6 +59,8 @@ interface PayslipListContentProps {
   statusFilter: StatusFilter;
   /** The currently selected payslip id */
   selectedPayslipId: string | null;
+  /** Label for selected branches */
+  branchLabel?: string;
   /** Current page number (1-indexed) */
   currentPage: number;
   /** Total number of pages */
@@ -81,6 +83,7 @@ export function PayslipListContent({
   total,
   statusFilter,
   selectedPayslipId,
+  branchLabel,
   currentPage,
   totalPages,
   onStatusFilterChange,
@@ -94,11 +97,18 @@ export function PayslipListContent({
         <div className="flex items-center gap-2">
           <FileText className="h-6 w-6 text-primary-600" />
           <h1 className="text-2xl font-bold text-gray-900">My Payslip</h1>
+          {branchLabel && (
+            <span className="mt-1 hidden text-sm font-medium text-primary-600 sm:inline">
+              {branchLabel}
+            </span>
+          )}
         </div>
+        {branchLabel && (
+          <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
+            {branchLabel}
+          </p>
+        )}
         {/* Mobile: active tab name as a compact subtitle */}
-        <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
-          {STATUS_TABS.find((t) => t.id === statusFilter)?.label}
-        </p>
         {/* Desktop: full description */}
         <p className="mt-1 hidden text-sm text-gray-500 sm:block">
           View your payslip history. Click a card to see the full breakdown.
@@ -110,6 +120,7 @@ export function PayslipListContent({
         activeId={statusFilter}
         onChange={onStatusFilterChange}
         layoutId="payslip-status-tabs"
+        labelAboveOnMobile
       />
 
       {/* Content area */}

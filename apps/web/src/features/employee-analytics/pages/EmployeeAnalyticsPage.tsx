@@ -5699,6 +5699,7 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
         activeId={activeView}
         onChange={setActiveView}
         layoutId="analytics-view-tabs"
+        labelAboveOnMobile
       />
 
       <AnimatePresence mode="wait">

@@ -630,7 +630,17 @@ export function EmployeeProfilesPage() {
   };
   const { hasPermission } = usePermission();
   const authUser = useAuthStore((s) => s.user);
-  const selectedBranchIds = useBranchStore((s) => s.selectedBranchIds);
+  const { selectedBranchIds, branches } = useBranchStore();
+
+  const branchLabel = useMemo(() => {
+    if (branches.length === 0) return '';
+    const selectedBranches = branches.filter((b) => selectedBranchIds.includes(b.id));
+    if (selectedBranches.length === 0 || selectedBranches.length === branches.length) return 'All Branches';
+    if (selectedBranches.length === 1) return selectedBranches[0].name;
+    return `${selectedBranches[0].name} +${selectedBranches.length - 1} more`;
+  }, [branches, selectedBranchIds]);
+
+  const selectedBranchIdSet = useMemo(() => new Set(selectedBranchIds), [selectedBranchIds]);
   const canApproveRequirements = hasPermission(PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_REQUIREMENTS);
   const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const canEditWorkProfile = hasPermission(PERMISSIONS.EMPLOYEE_PROFILES_MANAGE_WORK);
@@ -978,10 +988,7 @@ export function EmployeeProfilesPage() {
     [appliedFilters.departmentId, appliedFilters.roleIds.length, appliedFilters.sortBy, search],
   );
 
-  const selectedBranchIdSet = useMemo(
-    () => new Set(selectedBranchIds),
-    [selectedBranchIds],
-  );
+
 
   const filteredItems = useMemo(
     () => selectedBranchIdSet.size === 0
@@ -1342,10 +1349,18 @@ export function EmployeeProfilesPage() {
             <div className="flex items-center gap-3">
               <Users className="h-6 w-6 text-primary-600" />
               <h1 className="text-2xl font-bold text-gray-900">Employee Profiles</h1>
+              {branchLabel && (
+                <span className="mt-1 hidden text-sm font-medium text-primary-600 sm:inline">
+                  {branchLabel}
+                </span>
+              )}
             </div>
-            <p className="mt-0.5 text-sm font-medium text-primary-600 capitalize sm:hidden">
-              {STATUS_TABS.find((t) => t.id === status)?.label}
-            </p>
+            {branchLabel && (
+              <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
+                {branchLabel}
+              </p>
+            )}
+
             <p className="mt-1 hidden text-sm text-gray-500 sm:block">
               Manage employee profiles, work information, and requirements.
             </p>
@@ -1359,6 +1374,7 @@ export function EmployeeProfilesPage() {
             onChange={(id) => setStatus(id)}
             layoutId="employee-profile-tabs"
             className="sm:flex-1"
+            labelAboveOnMobile
           />
           <button
             type="button"

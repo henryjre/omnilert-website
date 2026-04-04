@@ -108,6 +108,14 @@ export function PayslipPage() {
   }, [statusFilter, selectedBranchIds]);
 
   // ----- Derive the set of selected Odoo company IDs from selected branch IDs -----
+  const branchLabel = useMemo(() => {
+    if (branches.length === 0) return "";
+    const selectedBranches = branches.filter((b) => selectedBranchIds.includes(b.id));
+    if (selectedBranches.length === 0 || selectedBranches.length === branches.length) return "All Branches";
+    if (selectedBranches.length === 1) return selectedBranches[0].name;
+    return `${selectedBranches[0].name} +${selectedBranches.length - 1} more`;
+  }, [branches, selectedBranchIds]);
+
   const selectedOdooCompanyIds = useMemo<Set<number>>(() => {
     const selectedSet = new Set(selectedBranchIds);
     const ids = branches
@@ -169,6 +177,7 @@ export function PayslipPage() {
         selectedPayslipId={selectedPayslipId}
         currentPage={clampedPage}
         totalPages={totalPages}
+        branchLabel={branchLabel}
         onStatusFilterChange={(filter) => {
           setStatusFilter(filter);
           setSelectedPayslipId(null);

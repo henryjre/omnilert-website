@@ -1643,8 +1643,7 @@ export function EmployeeShiftsPage() {
     typeof window !== 'undefined' ? window.matchMedia('(max-width: 639px)').matches : false,
   );
 
-  const selectedBranchIds = useBranchStore((s) => s.selectedBranchIds);
-  const branchList = useBranchStore((s) => s.branches);
+  const { selectedBranchIds, branches: branchList } = useBranchStore();
   const socket = useSocket('/employee-shifts');
   const currentUser = useAuthStore((s) => s.user);
   const { hasAnyPermission, hasPermission } = usePermission();
@@ -1670,6 +1669,14 @@ export function EmployeeShiftsPage() {
 
   const [endShiftConfirm, setEndShiftConfirm] = useState<EndShiftConfirmState | null>(null);
   const [endShiftLoading, setEndShiftLoading] = useState(false);
+
+  const branchLabel = useMemo(() => {
+    if (branchList.length === 0) return '';
+    const selectedBranches = branchList.filter((b) => selectedBranchIds.includes(b.id));
+    if (selectedBranches.length === 0 || selectedBranches.length === branchList.length) return 'All Branches';
+    if (selectedBranches.length === 1) return selectedBranches[0].name;
+    return `${selectedBranches[0].name} +${selectedBranches.length - 1} more`;
+  }, [branchList, selectedBranchIds]);
 
   useEffect(() => {
     api
@@ -2045,10 +2052,18 @@ export function EmployeeShiftsPage() {
           <div className="flex items-center gap-3">
             <CalendarDays className="h-6 w-6 text-primary-600" />
             <h1 className="text-2xl font-bold text-gray-900">Employee Schedule</h1>
+            {branchLabel && (
+              <span className="mt-1 hidden text-sm font-medium text-primary-600 sm:inline">
+                {branchLabel}
+              </span>
+            )}
           </div>
-          <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
-            {TABS.find((t) => t.id === activeTab)?.label}
-          </p>
+          {branchLabel && (
+            <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
+              {branchLabel}
+            </p>
+          )}
+
           <p className="mt-1 hidden text-sm text-gray-500 sm:block">
             Monitor and manage employee shifts across branches.
           </p>
@@ -2065,6 +2080,7 @@ export function EmployeeShiftsPage() {
             }}
             layoutId="employee-shift-tabs"
             className="sm:flex-1"
+            labelAboveOnMobile
           />
 
           <button

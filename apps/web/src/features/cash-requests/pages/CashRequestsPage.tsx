@@ -497,9 +497,17 @@ export function CashRequestsPage() {
   const [previewItems, setPreviewItems] = useState<{ url: string; fileName: string }[] | null>(null);
   const [previewIndex, setPreviewIndex] = useState(0);
 
-  const selectedBranchIds = useBranchStore((s) => s.selectedBranchIds);
+  const { branches, selectedBranchIds } = useBranchStore();
   const { hasPermission } = usePermission();
   const canApprove = hasPermission(PERMISSIONS.CASH_REQUESTS_MANAGE);
+
+  const branchLabel = useMemo(() => {
+    if (branches.length === 0) return '';
+    const selectedBranches = branches.filter((b) => selectedBranchIds.includes(b.id));
+    if (selectedBranches.length === 0 || selectedBranches.length === branches.length) return 'All Branches';
+    if (selectedBranches.length === 1) return selectedBranches[0].name;
+    return `${selectedBranches[0].name} +${selectedBranches.length - 1} more`;
+  }, [branches, selectedBranchIds]);
 
   const fetchRequests = useCallback(async () => {
     setLoading(true);
@@ -561,10 +569,18 @@ export function CashRequestsPage() {
                 {pendingCount}
               </span>
             )}
+            {branchLabel && (
+              <span className="mt-1 hidden text-sm font-medium text-primary-600 sm:inline">
+                {branchLabel}
+              </span>
+            )}
           </div>
-          <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
-            {STATUS_TABS.find((t) => t.id === statusTab)?.label}
-          </p>
+          {branchLabel && (
+            <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
+              {branchLabel}
+            </p>
+          )}
+
           <p className="mt-1 hidden text-sm text-gray-500 sm:block">
             Review and act on employee cash request submissions.
           </p>
@@ -578,6 +594,7 @@ export function CashRequestsPage() {
             onChange={(id) => { setStatusTab(id); setPage(1); }}
             layoutId="cash-request-tabs"
             className="sm:flex-1"
+            labelAboveOnMobile
           />
         </div>
 
