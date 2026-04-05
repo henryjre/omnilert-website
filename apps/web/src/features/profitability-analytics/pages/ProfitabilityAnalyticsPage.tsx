@@ -941,7 +941,15 @@ export function ProfitabilityAnalyticsPage() {
     createDefaultRangeForGranularity('day'),
   );
   const [activeView, setActiveView] = useState<ProfitView>('chart');
-  const selectedBranchIds = useBranchStore((state) => state.selectedBranchIds);
+  const { selectedBranchIds, branches } = useBranchStore();
+
+  const branchLabel = useMemo(() => {
+    if (branches.length === 0) return '';
+    const selectedBranches = branches.filter((b) => selectedBranchIds.includes(b.id));
+    if (selectedBranches.length === 0 || selectedBranches.length === branches.length) return 'All Branches';
+    if (selectedBranches.length === 1) return selectedBranches[0].name;
+    return `${selectedBranches[0].name} +${selectedBranches.length - 1} more`;
+  }, [branches, selectedBranchIds]);
 
   const granularity = analyticsRange.granularity;
   const periodLabel = useMemo(() => getSummaryForSelection(analyticsRange), [analyticsRange]);
@@ -1072,10 +1080,38 @@ export function ProfitabilityAnalyticsPage() {
       )}
 
       {hasSelectedBranches && isInitialLoading && (
-        <div className="rounded-xl border border-gray-100 bg-white px-5 py-10 text-center shadow-sm">
-          <p className="text-sm font-semibold text-gray-700">Loading profitability data...</p>
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+          className="rounded-xl border border-gray-100 bg-white px-5 py-12 text-center shadow-sm"
+        >
+          {/* Animated bars */}
+          <div className="flex items-end justify-center gap-1 h-8 mb-4">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <motion.div
+                key={i}
+                className="w-1.5 rounded-full bg-primary-400"
+                animate={{ scaleY: [0.3, 1, 0.3] }}
+                transition={{
+                  duration: 1,
+                  repeat: Infinity,
+                  delay: i * 0.12,
+                  ease: 'easeInOut',
+                }}
+                style={{ originY: 1, height: '100%' }}
+              />
+            ))}
+          </div>
+          <motion.p
+            className="text-sm font-semibold text-gray-700"
+            animate={{ opacity: [0.5, 1, 0.5] }}
+            transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+          >
+            Loading profitability data...
+          </motion.p>
           <p className="mt-1 text-xs text-gray-400">{periodLabel}</p>
-        </div>
+        </motion.div>
       )}
 
       {hasSelectedBranches && profitabilityQuery.isError && !profitabilityQuery.data && (
@@ -1117,6 +1153,7 @@ export function ProfitabilityAnalyticsPage() {
             activeId={activeView}
             onChange={setActiveView}
             layoutId="profitability-view-tabs"
+            labelAboveOnMobile
           />
 
           {/* View Content */}
