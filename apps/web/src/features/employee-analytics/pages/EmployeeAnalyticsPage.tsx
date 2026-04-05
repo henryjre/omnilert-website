@@ -33,7 +33,7 @@ import {
   getHeroZoneLabel,
   resolveHeroEpiComparison,
   type HeroEpiZone,
-} from "../../dashboard/components/epi/heroEpiComparison";
+} from '../../dashboard/components/epi/heroEpiComparison';
 import { SingleUserSelect, type UserEntry } from '../components/SingleUserSelect';
 import { AnalyticsRangePicker, getSummaryForSelection } from '../components/AnalyticsRangePicker';
 import {
@@ -105,15 +105,21 @@ import {
 // ─── Skeleton Primitives ─────────────────────────────────────────────────────
 
 function Bone({ className = '', style }: { className?: string; style?: React.CSSProperties }) {
-  return (
-    <div className={`animate-pulse rounded-md bg-gray-100 ${className}`} style={style} />
-  );
+  return <div className={`animate-pulse rounded-md bg-gray-100 ${className}`} style={style} />;
 }
 
 /** Reusable skeleton shell that matches AnalyticsCard's header */
-function SkeletonCard({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+function SkeletonCard({
+  children,
+  className = '',
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
-    <div className={`flex flex-col overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm h-full ${className}`}>
+    <div
+      className={`flex flex-col overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm h-full ${className}`}
+    >
       {/* Header skeleton */}
       <div className="flex items-center gap-3 border-b border-gray-100 bg-gray-50/40 px-5 py-4 flex-shrink-0">
         <Bone className="h-4 w-4 rounded-full" />
@@ -144,7 +150,7 @@ function SkeletonAwardsCard() {
   return (
     <SkeletonCard>
       <div className="flex flex-col gap-3 p-4 flex-1">
-        {[0, 1].map(i => (
+        {[0, 1].map((i) => (
           <div key={i} className="rounded-lg border border-gray-100 p-4 flex flex-col gap-2">
             <Bone className="h-2.5 w-20" />
             <Bone className="h-8 w-12" />
@@ -159,8 +165,11 @@ function SkeletonLeaderboardCard() {
   return (
     <SkeletonCard>
       <div className="grid grid-cols-1 sm:grid-cols-2 divide-y divide-gray-100 sm:divide-y-0 sm:divide-x p-4 sm:p-5 gap-0 flex-1">
-        {[0, 1].map(col => (
-          <div key={col} className={`flex flex-col ${col === 0 ? 'pb-4 sm:pb-0 sm:pr-6' : 'pt-4 sm:pt-0 sm:pl-6'}`}>
+        {[0, 1].map((col) => (
+          <div
+            key={col}
+            className={`flex flex-col ${col === 0 ? 'pb-4 sm:pb-0 sm:pr-6' : 'pt-4 sm:pt-0 sm:pl-6'}`}
+          >
             <Bone className="h-2.5 w-24 mb-3" />
             <div className="space-y-1">
               {Array.from({ length: 5 }).map((_, i) => (
@@ -382,13 +391,21 @@ const FALLBACK_PRIORITY_REVIEW = [
 ];
 
 const FALLBACK_ANALYTICS_USERS = [
-  ...FALLBACK_TOP_PERFORMERS.map(p => p.name),
-  ...FALLBACK_PRIORITY_REVIEW.map(p => p.name),
+  ...FALLBACK_TOP_PERFORMERS.map((p) => p.name),
+  ...FALLBACK_PRIORITY_REVIEW.map((p) => p.name),
 ];
 
 const FALLBACK_ANALYTICS_USER_ENTRIES: UserEntry[] = [
-  ...FALLBACK_TOP_PERFORMERS.map(p => ({ id: p.name.toLowerCase().replace(' ', '-'), name: p.name, role: 'Senior Service Crew' })),
-  ...FALLBACK_PRIORITY_REVIEW.map(p => ({ id: p.name.toLowerCase().replace(' ', '-'), name: p.name, role: 'Service Crew' })),
+  ...FALLBACK_TOP_PERFORMERS.map((p) => ({
+    id: p.name.toLowerCase().replace(' ', '-'),
+    name: p.name,
+    role: 'Senior Service Crew',
+  })),
+  ...FALLBACK_PRIORITY_REVIEW.map((p) => ({
+    id: p.name.toLowerCase().replace(' ', '-'),
+    name: p.name,
+    role: 'Service Crew',
+  })),
 ];
 
 let TOP_PERFORMERS = [...FALLBACK_TOP_PERFORMERS];
@@ -406,12 +423,12 @@ const BRANCH_AVERAGES = {
   'attendance-rate': 98.4,
   'punctuality-rate': 96.8,
   'productivity-rate': 82.5,
-  'average-order-value': 385.20,
+  'average-order-value': 385.2,
   'uniform-compliance': 98.8,
   'hygiene-compliance': 96.5,
   'sop-compliance': 95.2,
   'customer-interaction': 4.2,
-  'cashiering': 4.3,
+  cashiering: 4.3,
   'suggestive-selling-and-upselling': 4.1,
   'service-efficiency': 4.2,
 };
@@ -423,7 +440,9 @@ const METRIC_BENCHMARKS: Record<string, number> = {
 let ACTIVE_LIVE_DATASET: LiveAnalyticsDataset | null = null;
 
 function firstAndLastFinite(values: Array<number | null>): { first: number; last: number } {
-  const finite = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  const finite = values.filter(
+    (value): value is number => typeof value === 'number' && Number.isFinite(value),
+  );
   if (finite.length === 0) {
     return { first: 0, last: 0 };
   }
@@ -439,8 +458,8 @@ function setActiveLiveDataset(dataset: LiveAnalyticsDataset | null): void {
     ANALYTICS_USERS = [...FALLBACK_ANALYTICS_USERS];
     ANALYTICS_USER_ENTRIES = [...FALLBACK_ANALYTICS_USER_ENTRIES];
     INDIVIDUAL_METRICS_ROSTER = [
-      ...FALLBACK_TOP_PERFORMERS.map((p) => ({ name: p.name, role: "Senior Service Crew" })),
-      ...FALLBACK_PRIORITY_REVIEW.map((p) => ({ name: p.name, role: "Service Crew" })),
+      ...FALLBACK_TOP_PERFORMERS.map((p) => ({ name: p.name, role: 'Senior Service Crew' })),
+      ...FALLBACK_PRIORITY_REVIEW.map((p) => ({ name: p.name, role: 'Service Crew' })),
     ];
     return;
   }
@@ -479,8 +498,12 @@ const getPersonalizedStats = (userName: string) => {
   if (dataset) {
     const userId = dataset.userIdByName.get(userName);
     if (userId) {
-      const readLatest = (metricId: Exclude<EmployeeAnalyticsMetricId, 'professional-conduct'>): number => {
-        const { last } = firstAndLastFinite(getSeriesForUser(dataset, userId, metricId).map((row) => row.value));
+      const readLatest = (
+        metricId: Exclude<EmployeeAnalyticsMetricId, 'professional-conduct'>,
+      ): number => {
+        const { last } = firstAndLastFinite(
+          getSeriesForUser(dataset, userId, metricId).map((row) => row.value),
+        );
         return last;
       };
       const epiSeries = getSeriesForUser(dataset, userId, 'epi-score').map((row) => row.value);
@@ -502,39 +525,39 @@ const getPersonalizedStats = (userName: string) => {
           'hygiene-compliance': readLatest('hygiene-compliance'),
           'sop-compliance': readLatest('sop-compliance'),
           'customer-interaction': readLatest('customer-interaction'),
-          'cashiering': readLatest('cashiering'),
+          cashiering: readLatest('cashiering'),
           'suggestive-selling-and-upselling': readLatest('suggestive-selling-and-upselling'),
           'service-efficiency': readLatest('service-efficiency'),
         },
       };
     }
-      return {
-        epi: 0,
-        epiTrend: 0,
-        awards: 0,
-        violations: 0,
-        metrics: {
-          'workplace-relations': 0,
-          'professional-conduct': 0,
-          'attendance-rate': 0,
-          'punctuality-rate': 0,
-          'productivity-rate': 0,
-          'average-order-value': 0,
-          'uniform-compliance': 0,
-          'hygiene-compliance': 0,
-          'sop-compliance': 0,
-          'customer-interaction': 0,
-          'cashiering': 0,
-          'suggestive-selling-and-upselling': 0,
-          'service-efficiency': 0,
-        },
+    return {
+      epi: 0,
+      epiTrend: 0,
+      awards: 0,
+      violations: 0,
+      metrics: {
+        'workplace-relations': 0,
+        'professional-conduct': 0,
+        'attendance-rate': 0,
+        'punctuality-rate': 0,
+        'productivity-rate': 0,
+        'average-order-value': 0,
+        'uniform-compliance': 0,
+        'hygiene-compliance': 0,
+        'sop-compliance': 0,
+        'customer-interaction': 0,
+        cashiering: 0,
+        'suggestive-selling-and-upselling': 0,
+        'service-efficiency': 0,
+      },
     };
   }
 
   const seed = userName.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  
+
   const getVal = (base: number, range: number) => {
-    return parseFloat((base + (seed % range) - (range / 2)).toFixed(1));
+    return parseFloat((base + (seed % range) - range / 2).toFixed(1));
   };
 
   const getLikert = (base: number) => {
@@ -558,23 +581,25 @@ const getPersonalizedStats = (userName: string) => {
       'hygiene-compliance': Math.min(100, getVal(BRANCH_AVERAGES['hygiene-compliance'], 10)),
       'sop-compliance': Math.min(100, getVal(BRANCH_AVERAGES['sop-compliance'], 15)),
       'customer-interaction': getLikert(BRANCH_AVERAGES['customer-interaction']),
-      'cashiering': getLikert(BRANCH_AVERAGES['cashiering']),
-      'suggestive-selling-and-upselling': getLikert(BRANCH_AVERAGES['suggestive-selling-and-upselling']),
+      cashiering: getLikert(BRANCH_AVERAGES['cashiering']),
+      'suggestive-selling-and-upselling': getLikert(
+        BRANCH_AVERAGES['suggestive-selling-and-upselling'],
+      ),
       'service-efficiency': getLikert(BRANCH_AVERAGES['service-efficiency']),
-    }
+    },
   };
 };
 
 /** Roster for Individual Metrics mock cards (same people as leaderboards). */
 let INDIVIDUAL_METRICS_ROSTER: IndividualMetricsRosterEntry[] = [
-  ...FALLBACK_TOP_PERFORMERS.map((p) => ({ name: p.name, role: "Senior Service Crew" })),
-  ...FALLBACK_PRIORITY_REVIEW.map((p) => ({ name: p.name, role: "Service Crew" })),
+  ...FALLBACK_TOP_PERFORMERS.map((p) => ({ name: p.name, role: 'Senior Service Crew' })),
+  ...FALLBACK_PRIORITY_REVIEW.map((p) => ({ name: p.name, role: 'Service Crew' })),
 ];
 
 function getBaseMetricValueForEmployee(employeeName: string, metricId: string): number {
   const stats = getPersonalizedStats(employeeName);
   const v = stats.metrics[metricId as keyof typeof stats.metrics];
-  return typeof v === "number" ? v : 0;
+  return typeof v === 'number' ? v : 0;
 }
 
 const METRICS: Array<{ id: EmployeeAnalyticsMetricId; label: string; supported: boolean }> = [
@@ -589,12 +614,20 @@ const METRICS: Array<{ id: EmployeeAnalyticsMetricId; label: string; supported: 
   { id: 'sop-compliance', label: 'SOP Compliance', supported: true },
   { id: 'customer-interaction', label: 'Customer Interaction', supported: true },
   { id: 'cashiering', label: 'Cashiering', supported: true },
-  { id: 'suggestive-selling-and-upselling', label: 'Suggestive Selling & Upselling', supported: true },
+  {
+    id: 'suggestive-selling-and-upselling',
+    label: 'Suggestive Selling & Upselling',
+    supported: true,
+  },
   { id: 'service-efficiency', label: 'Service Efficiency', supported: true },
 ];
 
-function coerceLegacyMetricSelection<T extends string | null>(metricId: T): T | 'workplace-relations' {
-  return (metricId === 'customer-service' ? 'workplace-relations' : metricId) as T | 'workplace-relations';
+function coerceLegacyMetricSelection<T extends string | null>(
+  metricId: T,
+): T | 'workplace-relations' {
+  return (metricId === 'customer-service' ? 'workplace-relations' : metricId) as
+    | T
+    | 'workplace-relations';
 }
 
 function hashRangeSeed(selection: AnalyticsRangeSelection): number {
@@ -685,7 +718,10 @@ function getDistributionStep(metricId: string | null): number {
   return metricId && getMetricKind(metricId) === 'likert' ? 0.01 : 0.1;
 }
 
-function getDistributionThresholds(globalAverage: number, metricId: string | null): {
+function getDistributionThresholds(
+  globalAverage: number,
+  metricId: string | null,
+): {
   baseline: number;
   redUpper: number;
   blueLower: number;
@@ -694,10 +730,8 @@ function getDistributionThresholds(globalAverage: number, metricId: string | nul
   const cap = getDistributionCap(metricId);
   const rawBaseline = Number.isFinite(globalAverage) && globalAverage > 0 ? globalAverage : 0;
   const baseline = cap === null ? rawBaseline : Math.min(Math.max(rawBaseline, 0), cap);
-  const redUpper = baseline - (baseline * 0.25);
-  const blueLower = cap === null
-    ? baseline + (baseline * 0.5)
-    : baseline + ((cap - baseline) * 0.5);
+  const redUpper = baseline - baseline * 0.25;
+  const blueLower = cap === null ? baseline + baseline * 0.5 : baseline + (cap - baseline) * 0.5;
 
   return { baseline, redUpper, blueLower, cap };
 }
@@ -731,7 +765,11 @@ function formatClosedBand(metricId: string | null, start: number, end: number): 
   return `${formatBandValue(metricId, startRounded)}–${formatBandValue(metricId, endRounded)}`;
 }
 
-function resolveDistributionZone(value: number, globalAverage: number, metricId: string | null): HeroEpiZone {
+function resolveDistributionZone(
+  value: number,
+  globalAverage: number,
+  metricId: string | null,
+): HeroEpiZone {
   const { baseline, redUpper, blueLower, cap } = getDistributionThresholds(globalAverage, metricId);
   const step = getDistributionStep(metricId);
 
@@ -740,7 +778,7 @@ function resolveDistributionZone(value: number, globalAverage: number, metricId:
   if (cap === null) {
     return value <= blueLower ? 'green' : 'blue';
   }
-  if (blueLower >= cap - (step / 2)) {
+  if (blueLower >= cap - step / 2) {
     return 'green';
   }
   return value < blueLower ? 'green' : 'blue';
@@ -811,7 +849,10 @@ function buildFixedMetricScoreDistributionFromValues(
     fill: HERO_ZONE_DISTRIBUTION_STYLE[zone].fill,
   }));
   const totalEmployees = bins.reduce((sum, bin) => sum + bin.count, 0);
-  const dominant = bins.reduce((best, current) => (current.count > best.count ? current : best), bins[0]);
+  const dominant = bins.reduce(
+    (best, current) => (current.count > best.count ? current : best),
+    bins[0],
+  );
 
   return {
     distribution: bins.map((bin) => ({ range: bin.range, count: bin.count, fill: bin.fill })),
@@ -823,7 +864,10 @@ function buildFixedMetricScoreDistributionFromValues(
   };
 }
 
-function getValueEquivalentBandLabels(globalAverage: number, metricId: string | null): Record<HeroEpiZone, string> {
+function getValueEquivalentBandLabels(
+  globalAverage: number,
+  metricId: string | null,
+): Record<HeroEpiZone, string> {
   const { baseline, redUpper, blueLower, cap } = getDistributionThresholds(globalAverage, metricId);
   const step = getDistributionStep(metricId);
   const amberLower = redUpper + step;
@@ -839,7 +883,7 @@ function getValueEquivalentBandLabels(globalAverage: number, metricId: string | 
     };
   }
 
-  if (blueLower >= cap - (step / 2)) {
+  if (blueLower >= cap - step / 2) {
     return {
       red: formatClosedBand(metricId, 0, redUpper),
       amber: formatClosedBand(metricId, amberLower, amberUpper),
@@ -889,7 +933,10 @@ function buildHeroDistributionFromValues(
     fill: HERO_ZONE_DISTRIBUTION_STYLE[zone].fill,
   }));
   const totalEmployees = bins.reduce((sum, bin) => sum + bin.count, 0);
-  const dominant = bins.reduce((best, current) => (current.count > best.count ? current : best), bins[0]);
+  const dominant = bins.reduce(
+    (best, current) => (current.count > best.count ? current : best),
+    bins[0],
+  );
 
   return {
     distribution: bins.map((bin) => ({ range: bin.range, count: bin.count, fill: bin.fill })),
@@ -905,9 +952,9 @@ function subtractDaysFromYmd(ymd: string, days: number): string {
   const normalized = /^\d{4}-\d{2}-\d{2}$/.test(ymd)
     ? ymd
     : (() => {
-      const parsed = new Date(ymd);
-      return Number.isNaN(parsed.getTime()) ? '1970-01-01' : toLocalYmd(parsed);
-    })();
+        const parsed = new Date(ymd);
+        return Number.isNaN(parsed.getTime()) ? '1970-01-01' : toLocalYmd(parsed);
+      })();
   const date = fromLocalYmd(normalized);
   date.setDate(date.getDate() - days);
   return toLocalYmd(date);
@@ -1042,10 +1089,18 @@ function buildRadarDataset(userName: string, selection: AnalyticsRangeSelection)
   const latestBranchAov = getLatestUserBranchAov(dataset, userId);
   const latestGlobalAov = getLatestGlobalMetricAverage(dataset, 'average-order-value');
   const aovBenchmark = (() => {
-    if (typeof latestBranchAov === 'number' && Number.isFinite(latestBranchAov) && latestBranchAov > 0) {
+    if (
+      typeof latestBranchAov === 'number' &&
+      Number.isFinite(latestBranchAov) &&
+      latestBranchAov > 0
+    ) {
       return latestBranchAov;
     }
-    if (typeof latestGlobalAov === 'number' && Number.isFinite(latestGlobalAov) && latestGlobalAov > 0) {
+    if (
+      typeof latestGlobalAov === 'number' &&
+      Number.isFinite(latestGlobalAov) &&
+      latestGlobalAov > 0
+    ) {
       return latestGlobalAov;
     }
     const fallback = BRANCH_AVERAGES['average-order-value'];
@@ -1065,7 +1120,9 @@ function buildRadarDataset(userName: string, selection: AnalyticsRangeSelection)
     if (!metric.supported || metric.id === 'professional-conduct') {
       return { subject: label, A: 0, fullMark: 100 };
     }
-    const { last } = firstAndLastFinite(getSeriesForUser(dataset, userId, metric.id).map((point) => point.value));
+    const { last } = firstAndLastFinite(
+      getSeriesForUser(dataset, userId, metric.id).map((point) => point.value),
+    );
     const denominator = metric.id === 'average-order-value' ? aovBenchmark : 100;
     return {
       subject: label,
@@ -1121,13 +1178,17 @@ function getMetricTrendForRange(
   if (metricId === 'professional-conduct') {
     return dataset.bucketWindows.map((bucket) => ({ week: bucket.label, value: 0, target: 0 }));
   }
-  const series = getGlobalSeries(dataset, metricId as Exclude<EmployeeAnalyticsMetricId, 'professional-conduct'>);
+  const series = getGlobalSeries(
+    dataset,
+    metricId as Exclude<EmployeeAnalyticsMetricId, 'professional-conduct'>,
+  );
   const finiteValues = series
     .map((point) => point.value)
     .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
-  const target = finiteValues.length > 0
-    ? finiteValues.reduce((sum, value) => sum + value, 0) / finiteValues.length
-    : baseline;
+  const target =
+    finiteValues.length > 0
+      ? finiteValues.reduce((sum, value) => sum + value, 0) / finiteValues.length
+      : baseline;
 
   return series.map((point) => ({
     week: point.label,
@@ -1145,10 +1206,18 @@ function getMetricHeroVsGlobalDistribution(
 ) {
   const dataset = ACTIVE_LIVE_DATASET;
   if (!dataset || metricId === 'professional-conduct') {
-    return getMetricHeroVsGlobalDistributionMock(metricId, selection, roster, getBaseMetricValue, globalTarget);
+    return getMetricHeroVsGlobalDistributionMock(
+      metricId,
+      selection,
+      roster,
+      getBaseMetricValue,
+      globalTarget,
+    );
   }
 
-  const employees = getMetricEmployeeRows(dataset, metricId as EmployeeAnalyticsMetricId).filter(e => e.hasData);
+  const employees = getMetricEmployeeRows(dataset, metricId as EmployeeAnalyticsMetricId).filter(
+    (e) => e.hasData,
+  );
   const fixedMaxScore = getFixedDistributionMaxScore(metricId);
   if (fixedMaxScore !== null) {
     const distribution = buildFixedMetricScoreDistributionFromValues(
@@ -1168,8 +1237,10 @@ function getMetricHeroVsGlobalDistribution(
   }
 
   const latestGlobalAvg =
-    getLatestGlobalMetricAverage(dataset, metricId as Exclude<EmployeeAnalyticsMetricId, 'professional-conduct'>)
-    ?? globalTarget;
+    getLatestGlobalMetricAverage(
+      dataset,
+      metricId as Exclude<EmployeeAnalyticsMetricId, 'professional-conduct'>,
+    ) ?? globalTarget;
   const distribution = buildHeroDistributionFromValues(
     employees.map((row) => (row.hasData ? row.value : null)).filter((v): v is number => v !== null),
     latestGlobalAvg,
@@ -1199,7 +1270,9 @@ function getMetricInsights(
   }
 
   // Extract data for logic (Filtering out those without records)
-  const employees = getMetricEmployeeRows(dataset, metricId as EmployeeAnalyticsMetricId).filter((e) => e.hasData);
+  const employees = getMetricEmployeeRows(dataset, metricId as EmployeeAnalyticsMetricId).filter(
+    (e) => e.hasData,
+  );
 
   const raw = buildMetricInsights({
     metricId,
@@ -1248,8 +1321,8 @@ function useStickyHeaderState(refreshKey?: unknown, enabled = true) {
 
     const runWithStickyEl = (stickyEl: HTMLDivElement) => {
       const scrollContainer =
-        stickyEl.closest<HTMLElement>('[data-dashboard-scroll-container="true"]')
-        ?? (() => {
+        stickyEl.closest<HTMLElement>('[data-dashboard-scroll-container="true"]') ??
+        (() => {
           let parent = stickyEl.parentElement;
           while (parent) {
             const styles = window.getComputedStyle(parent);
@@ -1263,7 +1336,7 @@ function useStickyHeaderState(refreshKey?: unknown, enabled = true) {
         })();
 
       const updateIsStuck = () => {
-        const computedTop = Number.parseFloat(window.getComputedStyle(stickyEl).top || "0");
+        const computedTop = Number.parseFloat(window.getComputedStyle(stickyEl).top || '0');
         const stickyTop = Number.isNaN(computedTop) ? 0 : computedTop;
         const containerTop = scrollContainer?.getBoundingClientRect().top ?? 0;
         const elementTop = stickyEl.getBoundingClientRect().top;
@@ -1272,7 +1345,7 @@ function useStickyHeaderState(refreshKey?: unknown, enabled = true) {
           elementTop,
           stickyTop,
         });
-        setIsStuck(prev => (prev === nextIsStuck ? prev : nextIsStuck));
+        setIsStuck((prev) => (prev === nextIsStuck ? prev : nextIsStuck));
       };
 
       const handleViewportChange = () => {
@@ -1298,14 +1371,16 @@ function useStickyHeaderState(refreshKey?: unknown, enabled = true) {
       updateIsStuck();
       runSettleChecks();
       const scrollTarget = scrollContainer ?? window;
-      scrollTarget.addEventListener("scroll", handleViewportChange as EventListener, { passive: true });
-      window.addEventListener("resize", handleViewportChange);
+      scrollTarget.addEventListener('scroll', handleViewportChange as EventListener, {
+        passive: true,
+      });
+      window.addEventListener('resize', handleViewportChange);
 
       return () => {
         cancelAnimationFrame(scrollFrameId);
         cancelAnimationFrame(settleFrameId);
-        scrollTarget.removeEventListener("scroll", handleViewportChange as EventListener);
-        window.removeEventListener("resize", handleViewportChange);
+        scrollTarget.removeEventListener('scroll', handleViewportChange as EventListener);
+        window.removeEventListener('resize', handleViewportChange);
       };
     };
 
@@ -1346,9 +1421,18 @@ interface AnalyticsCardProps {
   headerRight?: React.ReactNode;
 }
 
-function AnalyticsCard({ icon, title, subtitle, children, className = '', headerRight }: AnalyticsCardProps) {
+function AnalyticsCard({
+  icon,
+  title,
+  subtitle,
+  children,
+  className = '',
+  headerRight,
+}: AnalyticsCardProps) {
   return (
-    <div className={`flex flex-col overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm h-full ${className}`}>
+    <div
+      className={`flex flex-col overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm h-full ${className}`}
+    >
       {/* Unified card header */}
       <div className="flex items-center justify-between gap-3 border-b border-gray-100 bg-gray-50/40 px-5 py-4 flex-shrink-0">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -1357,9 +1441,7 @@ function AnalyticsCard({ icon, title, subtitle, children, className = '', header
             <h3 className="text-[11px] font-bold uppercase tracking-widest text-gray-500 leading-none">
               {title}
             </h3>
-            {subtitle && (
-              <p className="mt-0.5 text-xs text-gray-400 truncate">{subtitle}</p>
-            )}
+            {subtitle && <p className="mt-0.5 text-xs text-gray-400 truncate">{subtitle}</p>}
           </div>
         </div>
         {headerRight && <div className="flex-shrink-0">{headerRight}</div>}
@@ -1478,7 +1560,13 @@ function GlobalEpiCard({
   const deltaNegative = globalEpiDelta < 0;
 
   return (
-    <motion.div custom={0} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
+    <motion.div
+      custom={0}
+      variants={cardVariants}
+      initial="hidden"
+      animate="visible"
+      className="h-full"
+    >
       <div
         className="relative flex flex-col overflow-hidden rounded-xl shadow-sm h-full min-h-[160px]"
         style={{
@@ -1530,7 +1618,6 @@ function GlobalEpiCard({
               </span>
             </div>
           </div>
-
         </div>
 
         {/* Sparkline — fills remaining space */}
@@ -1552,7 +1639,12 @@ function GlobalEpiCard({
                   padding: '6px 10px',
                   boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
                 }}
-                labelStyle={{ color: 'rgba(255,255,255,0.5)', fontSize: '10px', fontWeight: 700, marginBottom: '2px' }}
+                labelStyle={{
+                  color: 'rgba(255,255,255,0.5)',
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  marginBottom: '2px',
+                }}
                 itemStyle={{ color: '#fff', fontSize: '13px', fontWeight: 700 }}
                 formatter={(v) => [v, 'EPI']}
                 labelFormatter={(_, items) => {
@@ -1595,7 +1687,13 @@ function AwardsViolationsCard({
   violations: number;
 }) {
   return (
-    <motion.div custom={1} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
+    <motion.div
+      custom={1}
+      variants={cardVariants}
+      initial="hidden"
+      animate="visible"
+      className="h-full"
+    >
       <AnalyticsCard
         icon={<Trophy className="h-4 w-4" />}
         title="Recognition"
@@ -1607,9 +1705,13 @@ function AwardsViolationsCard({
             <div>
               <div className="flex items-center gap-1.5 mb-1">
                 <Trophy className="h-3.5 w-3.5 text-emerald-600" />
-                <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600/70">Total Awards</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600/70">
+                  Total Awards
+                </span>
               </div>
-              <span className="text-3xl font-bold leading-none text-emerald-900 tabular-nums">{awards}</span>
+              <span className="text-3xl font-bold leading-none text-emerald-900 tabular-nums">
+                {awards}
+              </span>
             </div>
             <ChevronRight className="h-4 w-4 text-emerald-300 opacity-0 -translate-x-1 transition-all duration-200 group-hover:opacity-100 group-hover:translate-x-0" />
           </div>
@@ -1619,9 +1721,13 @@ function AwardsViolationsCard({
             <div>
               <div className="flex items-center gap-1.5 mb-1">
                 <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
-                <span className="text-[10px] font-bold uppercase tracking-widest text-red-600/70">Total Violations</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-red-600/70">
+                  Total Violations
+                </span>
               </div>
-              <span className="text-3xl font-bold leading-none text-red-900 tabular-nums">{violations}</span>
+              <span className="text-3xl font-bold leading-none text-red-900 tabular-nums">
+                {violations}
+              </span>
             </div>
             <ChevronRight className="h-4 w-4 text-red-300 opacity-0 -translate-x-1 transition-all duration-200 group-hover:opacity-100 group-hover:translate-x-0" />
           </div>
@@ -1644,14 +1750,26 @@ function LeaderboardCard({
   // const navigate = useNavigate();
 
   return (
-    <motion.div custom={2} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
-      <AnalyticsCard icon={<Users className="h-4 w-4" />} title="Leaderboard" subtitle="EPI Score Rankings">
+    <motion.div
+      custom={2}
+      variants={cardVariants}
+      initial="hidden"
+      animate="visible"
+      className="h-full"
+    >
+      <AnalyticsCard
+        icon={<Users className="h-4 w-4" />}
+        title="Leaderboard"
+        subtitle="EPI Score Rankings"
+      >
         <div className="grid grid-cols-1 sm:grid-cols-2 divide-y divide-gray-100 sm:divide-y-0 sm:divide-x p-4 sm:p-5 gap-0 flex-1">
           {/* Top Performers */}
           <div className="pb-4 sm:pb-0 sm:pr-6">
             <div className="flex items-center gap-1.5 mb-2.5">
               <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
-              <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600">Top Performers</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600">
+                Top Performers
+              </span>
             </div>
             <div className="space-y-0.5">
               {topPerformers.map((employee, idx) => (
@@ -1659,7 +1777,11 @@ function LeaderboardCard({
                   key={employee.name}
                   variants={{
                     hidden: { opacity: 0, x: -8 },
-                    visible: { opacity: 1, x: 0, transition: { delay: 0.1 + idx * 0.05, ease: 'easeOut', duration: 0.3 } },
+                    visible: {
+                      opacity: 1,
+                      x: 0,
+                      transition: { delay: 0.1 + idx * 0.05, ease: 'easeOut', duration: 0.3 },
+                    },
                     hover: { x: 3, transition: { type: 'tween', duration: 0.12, ease: 'easeOut' } },
                     rest: { x: 0, transition: { type: 'tween', duration: 0.12, ease: 'easeOut' } },
                   }}
@@ -1689,7 +1811,9 @@ function LeaderboardCard({
           <div className="pt-4 sm:pt-0 sm:pl-6">
             <div className="flex items-center gap-1.5 mb-2.5">
               <TrendingDown className="h-3.5 w-3.5 text-red-500" />
-              <span className="text-[10px] font-bold uppercase tracking-widest text-red-600">Priority Review</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-red-600">
+                Priority Review
+              </span>
             </div>
             <div className="space-y-0.5">
               {priorityReview.map((employee, idx) => (
@@ -1697,7 +1821,11 @@ function LeaderboardCard({
                   key={employee.name}
                   variants={{
                     hidden: { opacity: 0, x: -8 },
-                    visible: { opacity: 1, x: 0, transition: { delay: 0.1 + idx * 0.05, ease: 'easeOut', duration: 0.3 } },
+                    visible: {
+                      opacity: 1,
+                      x: 0,
+                      transition: { delay: 0.1 + idx * 0.05, ease: 'easeOut', duration: 0.3 },
+                    },
                     hover: { x: 3, transition: { type: 'tween', duration: 0.12, ease: 'easeOut' } },
                     rest: { x: 0, transition: { type: 'tween', duration: 0.12, ease: 'easeOut' } },
                   }}
@@ -1754,7 +1882,13 @@ function PersonalEpiCard({
   const deltaNegative = epiDelta < 0;
 
   return (
-    <motion.div custom={0} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
+    <motion.div
+      custom={0}
+      variants={cardVariants}
+      initial="hidden"
+      animate="visible"
+      className="h-full"
+    >
       <div
         className="relative flex flex-col overflow-hidden rounded-xl shadow-sm h-full min-h-[160px]"
         style={{
@@ -1827,7 +1961,12 @@ function PersonalEpiCard({
                   padding: '6px 10px',
                   boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
                 }}
-                labelStyle={{ color: 'rgba(255,255,255,0.5)', fontSize: '10px', fontWeight: 700, marginBottom: '2px' }}
+                labelStyle={{
+                  color: 'rgba(255,255,255,0.5)',
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  marginBottom: '2px',
+                }}
                 itemStyle={{ color: '#fff', fontSize: '13px', fontWeight: 700 }}
                 formatter={(v, name) => [v, name === 'epi' ? 'You' : 'Global']}
                 labelFormatter={(_, items) => {
@@ -1884,7 +2023,13 @@ function PersonalRecognitionCard({
   violations: number;
 }) {
   return (
-    <motion.div custom={1} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
+    <motion.div
+      custom={1}
+      variants={cardVariants}
+      initial="hidden"
+      animate="visible"
+      className="h-full"
+    >
       <AnalyticsCard
         icon={<Trophy className="h-4 w-4" />}
         title="Recognition"
@@ -1896,9 +2041,13 @@ function PersonalRecognitionCard({
             <div>
               <div className="flex items-center gap-1.5 mb-1">
                 <Trophy className="h-3.5 w-3.5 text-emerald-600" />
-                <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600/70">Total Awards</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600/70">
+                  Total Awards
+                </span>
               </div>
-              <span className="text-3xl font-bold leading-none text-emerald-900 tabular-nums">{awards}</span>
+              <span className="text-3xl font-bold leading-none text-emerald-900 tabular-nums">
+                {awards}
+              </span>
             </div>
             <ChevronRight className="h-4 w-4 text-emerald-300 opacity-0 -translate-x-1 transition-all duration-200 group-hover:opacity-100 group-hover:translate-x-0" />
           </div>
@@ -1908,9 +2057,13 @@ function PersonalRecognitionCard({
             <div>
               <div className="flex items-center gap-1.5 mb-1">
                 <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
-                <span className="text-[10px] font-bold uppercase tracking-widest text-red-600/70">Violations</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-red-600/70">
+                  Violations
+                </span>
               </div>
-              <span className="text-3xl font-bold leading-none text-red-900 tabular-nums">{violations}</span>
+              <span className="text-3xl font-bold leading-none text-red-900 tabular-nums">
+                {violations}
+              </span>
             </div>
             <ChevronRight className="h-4 w-4 text-red-300 opacity-0 -translate-x-1 transition-all duration-200 group-hover:opacity-100 group-hover:translate-x-0" />
           </div>
@@ -1921,18 +2074,18 @@ function PersonalRecognitionCard({
 }
 
 const HERO_ZONE_TEXT: Record<HeroEpiZone, string> = {
-  red: "text-red-500",
-  amber: "text-amber-600",
-  green: "text-emerald-600",
-  blue: "text-blue-500",
+  red: 'text-red-500',
+  amber: 'text-amber-600',
+  green: 'text-emerald-600',
+  blue: 'text-blue-500',
 };
 
 /** Subtle border + background for EPI distribution summary (tracks dominant hero zone). */
 const HERO_ZONE_DISTRIBUTION_PANEL: Record<HeroEpiZone, string> = {
-  red: "border-red-200 bg-red-50/80",
-  amber: "border-amber-200 bg-amber-50/80",
-  green: "border-emerald-200 bg-emerald-50/80",
-  blue: "border-blue-200 bg-blue-50/80",
+  red: 'border-red-200 bg-red-50/80',
+  amber: 'border-amber-200 bg-amber-50/80',
+  green: 'border-emerald-200 bg-emerald-50/80',
+  blue: 'border-blue-200 bg-blue-50/80',
 };
 
 /** Shared summary strip under hero-zone distribution charts (EPI or metric vs global). */
@@ -1984,12 +2137,18 @@ function PersonalRankingCard({
   const safeRank = Math.max(1, Math.min(rank, safeTotalPeers));
   const percentMain =
     hero.percentChange !== null && Number.isFinite(hero.percentChange)
-      ? `${hero.percentChange > 0 ? "+" : ""}${smartRound(hero.percentChange, 2)}%`
-      : "—";
+      ? `${hero.percentChange > 0 ? '+' : ''}${smartRound(hero.percentChange, 2)}%`
+      : '—';
   const zoneClass = HERO_ZONE_TEXT[hero.zone];
 
   return (
-    <motion.div custom={2} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
+    <motion.div
+      custom={2}
+      variants={cardVariants}
+      initial="hidden"
+      animate="visible"
+      className="h-full"
+    >
       <AnalyticsCard
         icon={<Users className="h-4 w-4" />}
         title="Global Ranking"
@@ -2000,17 +2159,23 @@ function PersonalRankingCard({
           <div className="pb-4 sm:pb-0 sm:pr-6 flex flex-col justify-center">
             <div className="flex items-center gap-1.5 mb-2.5">
               <Target className="h-3.5 w-3.5 text-primary-500" />
-              <span className="text-[10px] font-bold uppercase tracking-widest text-primary-600">Current Position</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-primary-600">
+                Current Position
+              </span>
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="text-5xl font-bold text-gray-900 tabular-nums leading-none">#{rank}</span>
+              <span className="text-5xl font-bold text-gray-900 tabular-nums leading-none">
+                #{rank}
+              </span>
               <span className="text-sm text-gray-400 font-medium">of {totalPeers}</span>
             </div>
             <div className="mt-3 flex items-center gap-2">
               <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-100">
                 <motion.div
                   initial={{ width: 0 }}
-                  animate={{ width: `${((safeTotalPeers - safeRank + 1) / safeTotalPeers) * 100}%` }}
+                  animate={{
+                    width: `${((safeTotalPeers - safeRank + 1) / safeTotalPeers) * 100}%`,
+                  }}
                   transition={{ duration: 1, ease: 'easeOut' }}
                   className="h-full rounded-full bg-primary-500"
                 />
@@ -2025,7 +2190,9 @@ function PersonalRankingCard({
           <div className="pt-4 sm:pt-0 sm:pl-6 flex flex-col justify-center">
             <div className="flex items-center gap-1.5 mb-2.5">
               <BarChart2 className="h-3.5 w-3.5 text-gray-400" />
-              <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">vs Global</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
+                vs Global
+              </span>
             </div>
             <div>
               <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
@@ -2052,7 +2219,9 @@ function PersonalTrendCard({
   userName: string;
   analyticsRange: AnalyticsRangeSelection;
 }) {
-  const [selectedMetric, setSelectedMetric] = useState<string>(coerceLegacyMetricSelection(METRICS[0].id));
+  const [selectedMetric, setSelectedMetric] = useState<string>(
+    coerceLegacyMetricSelection(METRICS[0].id),
+  );
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
 
   useEffect(() => {
@@ -2069,8 +2238,11 @@ function PersonalTrendCard({
 
   const subtitle = useMemo(() => buildPersonalTrendSubtitle(analyticsRange), [analyticsRange]);
   const selectedMetricKind = getMetricKind(selectedMetric);
-  const trendYPadding = selectedMetricKind === 'likert' ? 0.25 : selectedMetricKind === 'monetary' ? 30 : 5;
-  const yAxisDomain = useMemo<[number | ((v: number) => number), number | ((v: number) => number)]>(() => {
+  const trendYPadding =
+    selectedMetricKind === 'likert' ? 0.25 : selectedMetricKind === 'monetary' ? 30 : 5;
+  const yAxisDomain = useMemo<
+    [number | ((v: number) => number), number | ((v: number) => number)]
+  >(() => {
     if (selectedMetricKind === 'likert') {
       return [1, 5];
     }
@@ -2080,10 +2252,17 @@ function PersonalTrendCard({
     ];
   }, [selectedMetricKind, trendYPadding]);
 
-  const controlLabel = "text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1.5 flex items-center gap-1.5";
+  const controlLabel =
+    'text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1.5 flex items-center gap-1.5';
 
   return (
-    <motion.div custom={3} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
+    <motion.div
+      custom={3}
+      variants={cardVariants}
+      initial="hidden"
+      animate="visible"
+      className="h-full"
+    >
       <AnalyticsCard
         icon={<Activity className="h-4 w-4" />}
         title="Performance Trends"
@@ -2096,10 +2275,7 @@ function PersonalTrendCard({
               <Activity className="h-3 w-3" />
               Metric
             </p>
-            <CompactMetricSelect
-              selectedMetricId={selectedMetric}
-              onSelect={setSelectedMetric}
-            />
+            <CompactMetricSelect selectedMetricId={selectedMetric} onSelect={setSelectedMetric} />
           </div>
 
           {/* Legend pills */}
@@ -2129,52 +2305,53 @@ function PersonalTrendCard({
             <div className="h-[240px] sm:h-[300px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={chartData} margin={{ top: 8, right: 4, left: -24, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="grad-personal" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#2563eb" stopOpacity={0.18} />
-                    <stop offset="100%" stopColor="#2563eb" stopOpacity={0.01} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
-                <XAxis
-                  dataKey="date"
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fill: '#9ca3af', fontSize: 10, fontWeight: 600 }}
-                  dy={8}
-                  interval="preserveStartEnd"
-                  tickFormatter={isMobile ? toShortDate : undefined}
-                />
-                <YAxis
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fill: '#9ca3af', fontSize: 11, fontWeight: 600 }}
-                  domain={yAxisDomain}
-                  tickCount={6}
-                />
-                <Tooltip
-                  contentStyle={{
-                    borderRadius: '10px',
-                    border: '1px solid #f0f0f0',
-                    boxShadow: '0 8px 24px -4px rgba(0,0,0,0.10)',
-                    padding: '10px 14px',
-                  }}
-                  itemStyle={{ fontWeight: 700, fontSize: '12px' }}
-                  labelStyle={{ fontWeight: 600, color: '#6b7280', marginBottom: '6px', fontSize: '11px' }}
-                  formatter={(v, name) => {
-                    const num =
-                      typeof v === "number"
-                        ? v
-                        : typeof v === "string"
-                          ? Number(v)
-                          : NaN;
-                    const label = typeof name === "string" ? name : "Score";
-                    if (!Number.isFinite(num)) {
-                      return ["—", label];
-                    }
-                    return [formatMetricDisplay(selectedMetric, num), label];
-                  }}
-                />
+                  <defs>
+                    <linearGradient id="grad-personal" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#2563eb" stopOpacity={0.18} />
+                      <stop offset="100%" stopColor="#2563eb" stopOpacity={0.01} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                  <XAxis
+                    dataKey="date"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: '#9ca3af', fontSize: 10, fontWeight: 600 }}
+                    dy={8}
+                    interval="preserveStartEnd"
+                    tickFormatter={isMobile ? toShortDate : undefined}
+                  />
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: '#9ca3af', fontSize: 11, fontWeight: 600 }}
+                    domain={yAxisDomain}
+                    tickCount={6}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      borderRadius: '10px',
+                      border: '1px solid #f0f0f0',
+                      boxShadow: '0 8px 24px -4px rgba(0,0,0,0.10)',
+                      padding: '10px 14px',
+                    }}
+                    itemStyle={{ fontWeight: 700, fontSize: '12px' }}
+                    labelStyle={{
+                      fontWeight: 600,
+                      color: '#6b7280',
+                      marginBottom: '6px',
+                      fontSize: '11px',
+                    }}
+                    formatter={(v, name) => {
+                      const num =
+                        typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN;
+                      const label = typeof name === 'string' ? name : 'Score';
+                      if (!Number.isFinite(num)) {
+                        return ['—', label];
+                      }
+                      return [formatMetricDisplay(selectedMetric, num), label];
+                    }}
+                  />
                   <Area
                     type="monotone"
                     dataKey={userName}
@@ -2261,7 +2438,13 @@ function PersonalInsightsCard({
   }, [analyticsRange, userName]);
 
   return (
-    <motion.div custom={4} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
+    <motion.div
+      custom={4}
+      variants={cardVariants}
+      initial="hidden"
+      animate="visible"
+      className="h-full"
+    >
       <AnalyticsCard
         icon={<AlertTriangle className="h-4 w-4" />}
         title="Key Insights"
@@ -2307,10 +2490,20 @@ function PersonalInsightsCard({
                         <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400 mb-0.5">
                           {insight.metric}
                         </p>
-                        <p className={`text-sm font-semibold leading-none mb-1 ${
-                          insight.type === 'attention' ? 'text-amber-700' : insight.type === 'improving' ? 'text-blue-700' : 'text-emerald-700'
-                        }`}>
-                          {insight.type === 'strength' ? 'Strength' : insight.type === 'improving' ? 'Improving' : 'Needs Attention'}
+                        <p
+                          className={`text-sm font-semibold leading-none mb-1 ${
+                            insight.type === 'attention'
+                              ? 'text-amber-700'
+                              : insight.type === 'improving'
+                                ? 'text-blue-700'
+                                : 'text-emerald-700'
+                          }`}
+                        >
+                          {insight.type === 'strength'
+                            ? 'Strength'
+                            : insight.type === 'improving'
+                              ? 'Improving'
+                              : 'Needs Attention'}
                         </p>
                         <p className="text-xs text-gray-500 leading-relaxed">{insight.message}</p>
                       </div>
@@ -2326,11 +2519,11 @@ function PersonalInsightsCard({
               totalPages={totalPages}
               onPrevious={() => {
                 setPageDirection(-1);
-                setCurrentPage(p => Math.max(0, p - 1));
+                setCurrentPage((p) => Math.max(0, p - 1));
               }}
               onNext={() => {
                 setPageDirection(1);
-                setCurrentPage(p => Math.min(totalPages - 1, p + 1));
+                setCurrentPage((p) => Math.min(totalPages - 1, p + 1));
               }}
             />
           </div>
@@ -2353,7 +2546,13 @@ function PersonalRadarCard({
   );
 
   return (
-    <motion.div custom={5} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
+    <motion.div
+      custom={5}
+      variants={cardVariants}
+      initial="hidden"
+      animate="visible"
+      className="h-full"
+    >
       <AnalyticsCard
         icon={<Target className="h-4 w-4" />}
         title="Performance Radar"
@@ -2367,12 +2566,7 @@ function PersonalRadarCard({
                 dataKey="subject"
                 tick={{ fill: '#6b7280', fontSize: 9, fontWeight: 600 }}
               />
-              <PolarRadiusAxis
-                angle={30}
-                domain={[0, 100]}
-                tick={false}
-                axisLine={false}
-              />
+              <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
               <Radar
                 name={userName}
                 dataKey="A"
@@ -2396,16 +2590,16 @@ function PersonalRadarCard({
 const GLOBAL_AVERAGES: Record<string, number> = {
   'Workplace Relations': 3.9,
   'Professional Conduct': 0,
-  'Attendance': 96.1,
-  'Punctuality': 94.5,
-  'Productivity': 81.0,
-  'Uniform': 97.3,
-  'Hygiene': 95.0,
-  'SOP': 93.8,
+  Attendance: 96.1,
+  Punctuality: 94.5,
+  Productivity: 81.0,
+  Uniform: 97.3,
+  Hygiene: 95.0,
+  SOP: 93.8,
   'Customer Interaction': 4.2,
-  'Cashiering': 4.3,
+  Cashiering: 4.3,
   'Suggestive Selling': 4.1,
-  'Efficiency': 4.2,
+  Efficiency: 4.2,
 };
 
 const TOTAL_EMPLOYEES = 85;
@@ -2505,7 +2699,7 @@ const METRIC_DETAIL_CONFIGS: Record<EmployeeAnalyticsMetricId, MetricDetailConfi
     ],
     formula: 'Average of Customer Interaction audit scores',
   },
-  'cashiering': {
+  cashiering: {
     columns: [
       { key: 'completedAt', label: 'Date' },
       { key: 'branchName', label: 'Branch' },
@@ -2546,7 +2740,20 @@ function formatEventDateTime(value: unknown, isMobile: boolean): string {
   }
 
   const pad2 = (n: number) => String(n).padStart(2, '0');
-  const monthShort = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monthShort = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
   const month = pad2(date.getMonth() + 1);
   const day = pad2(date.getDate());
   const year4 = date.getFullYear();
@@ -2583,12 +2790,18 @@ function formatEventTimeOnly(value: unknown, isMobile: boolean): string {
 }
 
 function isSameLocalDate(a: Date, b: Date): boolean {
-  return a.getFullYear() === b.getFullYear()
-    && a.getMonth() === b.getMonth()
-    && a.getDate() === b.getDate();
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
 }
 
-function formatEventCell(metricId: EmployeeAnalyticsMetricId, row: Record<string, unknown>, key: string): string {
+function formatEventCell(
+  metricId: EmployeeAnalyticsMetricId,
+  row: Record<string, unknown>,
+  key: string,
+): string {
   const value = row[key];
   if (value === null || value === undefined || value === '') {
     return '—';
@@ -2596,9 +2809,7 @@ function formatEventCell(metricId: EmployeeAnalyticsMetricId, row: Record<string
 
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
   const isDateTimeKey =
-    key === 'checkIn'
-    || key.endsWith('At')
-    || key.toLowerCase().includes('date');
+    key === 'checkIn' || key.endsWith('At') || key.toLowerCase().includes('date');
 
   if (key === 'scheduledStart') {
     return formatEventTimeOnly(value, isMobile);
@@ -2611,14 +2822,24 @@ function formatEventCell(metricId: EmployeeAnalyticsMetricId, row: Record<string
     if (isMobile) {
       return `${pad2(d.getMonth() + 1)}/${pad2(d.getDate())}/${String(d.getFullYear()).slice(-2)}`;
     }
-    const monthFull = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const monthFull = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
     return `${monthFull[d.getMonth()] ?? pad2(d.getMonth() + 1)} ${pad2(d.getDate())}, ${d.getFullYear()}`;
   }
 
-  if (
-    key === 'checkIn'
-    && (metricId === 'attendance-rate' || metricId === 'punctuality-rate')
-  ) {
+  if (key === 'checkIn' && (metricId === 'attendance-rate' || metricId === 'punctuality-rate')) {
     const checkInDate = parseEventDate(value);
     const scheduledStartDate = parseEventDate(row.scheduledStart);
     if (checkInDate && scheduledStartDate && isSameLocalDate(checkInDate, scheduledStartDate)) {
@@ -2667,56 +2888,65 @@ function PersonalMetricsBreakdownCard({
   const [currentPage, setCurrentPage] = useState(0);
 
   const metricGroups = useMemo(() => {
-    const mk = (label: string, metricKey: keyof typeof stats.metrics & EmployeeAnalyticsMetricId) => {
+    const mk = (
+      label: string,
+      metricKey: keyof typeof stats.metrics & EmployeeAnalyticsMetricId,
+    ) => {
       const fallbackGlobalBase =
         GLOBAL_AVERAGES[label as keyof typeof GLOBAL_AVERAGES] ??
         BRANCH_AVERAGES[metricKey as keyof typeof BRANCH_AVERAGES] ??
         85;
-      const liveGlobalAverage = metricKey === 'professional-conduct'
-        ? null
-        : getLatestGlobalMetricAverage(liveDataset, metricKey as RollingMetricId);
+      const liveGlobalAverage =
+        metricKey === 'professional-conduct'
+          ? null
+          : getLatestGlobalMetricAverage(liveDataset, metricKey as RollingMetricId);
       return {
         label,
         metricId: metricKey,
-        val: perturbPersonalMetricValue(stats.metrics[metricKey], metricKey, userName, analyticsRange),
+        val: perturbPersonalMetricValue(
+          stats.metrics[metricKey],
+          metricKey,
+          userName,
+          analyticsRange,
+        ),
         avg: liveGlobalAverage ?? perturbGlobalMetricAverage(fallbackGlobalBase, analyticsRange),
       };
     };
     return [
       {
-        title: "Core Performance",
+        title: 'Core Performance',
         icon: <BarChart2 className="h-3.5 w-3.5 text-blue-500" />,
         items: [
-          mk("Workplace Relations", "workplace-relations"),
-          mk("Professional Conduct", "professional-conduct"),
+          mk('Workplace Relations', 'workplace-relations'),
+          mk('Professional Conduct', 'professional-conduct'),
         ],
       },
       {
-        title: "Operational",
+        title: 'Operational',
         icon: <Activity className="h-3.5 w-3.5 text-violet-500" />,
         items: [
-          mk("Attendance", "attendance-rate"),
-          mk("Punctuality", "punctuality-rate"),
-          mk("Productivity", "productivity-rate"),
+          mk('Attendance', 'attendance-rate'),
+          mk('Punctuality', 'punctuality-rate'),
+          mk('Productivity', 'productivity-rate'),
         ],
       },
       {
-        title: "SOP & Compliance",
+        title: 'SOP & Compliance',
         icon: <Target className="h-3.5 w-3.5 text-emerald-500" />,
         items: [
-          mk("Uniform", "uniform-compliance"),
-          mk("Hygiene", "hygiene-compliance"),
-          mk("SOP", "sop-compliance"),
+          mk('Uniform', 'uniform-compliance'),
+          mk('Hygiene', 'hygiene-compliance'),
+          mk('SOP', 'sop-compliance'),
         ],
       },
       {
-        title: "Customer Service",
+        title: 'Customer Service',
         icon: <Users className="h-3.5 w-3.5 text-rose-500" />,
         items: [
-          mk("Customer Interaction", "customer-interaction"),
-          mk("Cashiering", "cashiering"),
-          mk("Suggestive Selling & Upselling", "suggestive-selling-and-upselling"),
-          mk("Service Efficiency", "service-efficiency"),
+          mk('Customer Interaction', 'customer-interaction'),
+          mk('Cashiering', 'cashiering'),
+          mk('Suggestive Selling & Upselling', 'suggestive-selling-and-upselling'),
+          mk('Service Efficiency', 'service-efficiency'),
         ],
       },
     ];
@@ -2734,9 +2964,9 @@ function PersonalMetricsBreakdownCard({
 
   const eventLogRange = useMemo(() => {
     const anchorDate =
-      getLatestSnapshotDateForUser(liveDataset, userId)
-      ?? getLatestSnapshotDate(liveDataset)
-      ?? analyticsRange.rangeEndYmd;
+      getLatestSnapshotDateForUser(liveDataset, userId) ??
+      getLatestSnapshotDate(liveDataset) ??
+      analyticsRange.rangeEndYmd;
 
     return {
       rangeStartYmd: subtractDaysFromYmd(anchorDate, 30),
@@ -2755,14 +2985,15 @@ function PersonalMetricsBreakdownCard({
       currentPage,
     ],
     enabled: Boolean(selectedMetric && selectedMetricSupported),
-    queryFn: () => fetchEmployeeMetricEvents({
-      userId,
-      metricId: selectedMetric as RollingMetricId,
-      rangeStartYmd: eventLogRange.rangeStartYmd,
-      rangeEndYmd: eventLogRange.rangeEndYmd,
-      page: currentPage + 1,
-      pageSize: ROWS_PER_PAGE,
-    }),
+    queryFn: () =>
+      fetchEmployeeMetricEvents({
+        userId,
+        metricId: selectedMetric as RollingMetricId,
+        rangeStartYmd: eventLogRange.rangeStartYmd,
+        rangeEndYmd: eventLogRange.rangeEndYmd,
+        page: currentPage + 1,
+        pageSize: ROWS_PER_PAGE,
+      }),
   });
 
   const eventRows = metricEventsQuery.data?.rows ?? [];
@@ -2776,7 +3007,10 @@ function PersonalMetricsBreakdownCard({
     if (!selectedMetric || !selectedMetricSupported) {
       return selectedItem.avg;
     }
-    return getLatestGlobalMetricAverage(liveDataset, selectedMetric as RollingMetricId) ?? selectedItem.avg;
+    return (
+      getLatestGlobalMetricAverage(liveDataset, selectedMetric as RollingMetricId) ??
+      selectedItem.avg
+    );
   }, [selectedItem, selectedMetric, selectedMetricSupported, liveDataset]);
 
   const rank = useMemo(() => {
@@ -2809,7 +3043,13 @@ function PersonalMetricsBreakdownCard({
   const isDetailView = selectedMetric !== null;
 
   return (
-    <motion.div custom={6} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
+    <motion.div
+      custom={6}
+      variants={cardVariants}
+      initial="hidden"
+      animate="visible"
+      className="h-full"
+    >
       <div className="flex flex-col overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm h-full">
         {/* ── Static Header ─────────────────────────────────────────── */}
         <div className="flex items-center justify-between gap-3 border-b border-gray-100 bg-gray-50/40 px-5 py-4 flex-shrink-0">
@@ -2822,7 +3062,9 @@ function PersonalMetricsBreakdownCard({
                 Detailed Metrics
               </h3>
               <p className="mt-0.5 text-xs text-gray-400 truncate">
-                {isDetailView ? selectedItem?.label ?? "Metric Details" : "All scores vs global average"}
+                {isDetailView
+                  ? (selectedItem?.label ?? 'Metric Details')
+                  : 'All scores vs global average'}
               </p>
             </div>
           </div>
@@ -2893,7 +3135,9 @@ function PersonalMetricsBreakdownCard({
                         <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
                           <motion.div
                             initial={{ width: 0 }}
-                            animate={{ width: `${isSupported ? metricProgressPct(item.metricId, item.val) : 0}%` }}
+                            animate={{
+                              width: `${isSupported ? metricProgressPct(item.metricId, item.val) : 0}%`,
+                            }}
                             transition={{ duration: 0.8, ease: 'easeOut' }}
                             className={`h-full rounded-full ${isSupported && isPos ? 'bg-emerald-500' : 'bg-amber-400'}`}
                           />
@@ -2916,7 +3160,11 @@ function PersonalMetricsBreakdownCard({
             <div className="rounded-lg border border-blue-100 bg-blue-50/50 px-3.5 py-2.5">
               <p className="text-xs text-gray-600 leading-relaxed">
                 <span className="font-bold text-blue-700">
-                  {allItems.filter(i => i.metricId !== 'professional-conduct' && i.val >= i.avg).length} of {allItems.filter(i => i.metricId !== 'professional-conduct').length} metrics
+                  {
+                    allItems.filter((i) => i.metricId !== 'professional-conduct' && i.val >= i.avg)
+                      .length
+                  }{' '}
+                  of {allItems.filter((i) => i.metricId !== 'professional-conduct').length} metrics
                 </span>{' '}
                 are at or above global average.
               </p>
@@ -2936,30 +3184,47 @@ function PersonalMetricsBreakdownCard({
               >
                 {/* Summary Strip */}
                 <div className="grid grid-cols-3 gap-3 px-4 sm:px-5 py-4 border-b border-gray-50">
-                  <div className={`rounded-lg p-3 text-center ${
-                    selectedMetricSupported && selectedItem.val >= globalAvg
-                      ? 'bg-emerald-50 ring-1 ring-inset ring-emerald-100'
-                      : 'bg-amber-50 ring-1 ring-inset ring-amber-100'
-                  }`}>
-                    <p className="text-[9px] font-bold uppercase tracking-widest text-gray-400 mb-1">Your Score</p>
-                    <p className={`text-2xl font-bold tabular-nums ${
-                      selectedMetricSupported && selectedItem.val >= globalAvg ? 'text-emerald-700' : 'text-amber-700'
-                    }`}>
-                      {selectedMetricSupported ? formatMetricDisplay(selectedItem.metricId, selectedItem.val) : 'N/A'}
+                  <div
+                    className={`rounded-lg p-3 text-center ${
+                      selectedMetricSupported && selectedItem.val >= globalAvg
+                        ? 'bg-emerald-50 ring-1 ring-inset ring-emerald-100'
+                        : 'bg-amber-50 ring-1 ring-inset ring-amber-100'
+                    }`}
+                  >
+                    <p className="text-[9px] font-bold uppercase tracking-widest text-gray-400 mb-1">
+                      Your Score
+                    </p>
+                    <p
+                      className={`text-2xl font-bold tabular-nums ${
+                        selectedMetricSupported && selectedItem.val >= globalAvg
+                          ? 'text-emerald-700'
+                          : 'text-amber-700'
+                      }`}
+                    >
+                      {selectedMetricSupported
+                        ? formatMetricDisplay(selectedItem.metricId, selectedItem.val)
+                        : 'N/A'}
                     </p>
                   </div>
                   <div className="rounded-lg bg-gray-50 p-3 text-center ring-1 ring-inset ring-gray-100">
-                    <p className="text-[9px] font-bold uppercase tracking-widest text-gray-400 mb-1">Global Avg</p>
+                    <p className="text-[9px] font-bold uppercase tracking-widest text-gray-400 mb-1">
+                      Global Avg
+                    </p>
                     <p className="text-2xl font-bold text-gray-600 tabular-nums">
-                      {selectedMetricSupported ? formatMetricDisplay(selectedItem.metricId, globalAvg) : 'N/A'}
+                      {selectedMetricSupported
+                        ? formatMetricDisplay(selectedItem.metricId, globalAvg)
+                        : 'N/A'}
                     </p>
                   </div>
                   <div className="rounded-lg bg-gray-50 p-3 text-center ring-1 ring-inset ring-gray-100">
-                    <p className="text-[9px] font-bold uppercase tracking-widest text-gray-400 mb-1">Rank</p>
+                    <p className="text-[9px] font-bold uppercase tracking-widest text-gray-400 mb-1">
+                      Rank
+                    </p>
                     <p className="text-2xl font-bold text-gray-600 tabular-nums">
                       {selectedMetricSupported ? (
                         <>
-                          {rank}<span className="text-sm font-medium text-gray-400">/{rankTotal}</span>
+                          {rank}
+                          <span className="text-sm font-medium text-gray-400">/{rankTotal}</span>
                         </>
                       ) : (
                         'N/A'
@@ -2972,7 +3237,9 @@ function PersonalMetricsBreakdownCard({
                 <div className="px-4 sm:px-5 py-2.5 border-b border-gray-50">
                   <p className="text-[10px] text-gray-400">
                     <span className="font-bold uppercase tracking-widest">Formula: </span>
-                    <span className="font-mono text-gray-500">{detailConfig?.formula ?? 'N/A'}</span>
+                    <span className="font-mono text-gray-500">
+                      {detailConfig?.formula ?? 'N/A'}
+                    </span>
                   </p>
                 </div>
 
@@ -2991,13 +3258,18 @@ function PersonalMetricsBreakdownCard({
                   {!selectedMetricSupported ? (
                     <div className="flex-1 flex items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50/40 px-4 text-center">
                       <p className="text-sm text-gray-500">
-                        Professional Conduct is currently unavailable in live analytics. Event logs are not yet supported.
+                        Professional Conduct is currently unavailable in live analytics. Event logs
+                        are not yet supported.
                       </p>
                     </div>
                   ) : metricEventsQuery.isLoading ? (
-                    <div className="flex-1 flex items-center justify-center text-sm text-gray-500">Loading event logs…</div>
+                    <div className="flex-1 flex items-center justify-center text-sm text-gray-500">
+                      Loading event logs…
+                    </div>
                   ) : metricEventsQuery.isError ? (
-                    <div className="flex-1 flex items-center justify-center text-sm text-red-500">Failed to load event logs.</div>
+                    <div className="flex-1 flex items-center justify-center text-sm text-red-500">
+                      Failed to load event logs.
+                    </div>
                   ) : (
                     <>
                       <div className="flex-1 overflow-x-auto">
@@ -3018,7 +3290,7 @@ function PersonalMetricsBreakdownCard({
                             {pageRows.length === 0 ? (
                               <tr>
                                 <td
-                                  colSpan={(detailConfig?.columns.length ?? 1)}
+                                  colSpan={detailConfig?.columns.length ?? 1}
                                   className="py-6 text-center text-xs text-gray-400"
                                 >
                                   No event records for this range.
@@ -3036,19 +3308,38 @@ function PersonalMetricsBreakdownCard({
                                       rawRow as Record<string, unknown>,
                                       col.key,
                                     );
-                                    const isStatus = col.key === 'status' || col.key === 'result' || col.key === 'score';
+                                    const isStatus =
+                                      col.key === 'status' ||
+                                      col.key === 'result' ||
+                                      col.key === 'score';
                                     let statusClass = 'text-gray-700';
                                     if (isStatus) {
-                                      if (selectedMetric === 'workplace-relations' && col.key === 'score') {
+                                      if (
+                                        selectedMetric === 'workplace-relations' &&
+                                        col.key === 'score'
+                                      ) {
                                         const score = Number(rawRow[col.key]);
-                                        if (score >= 4.26) statusClass = 'text-emerald-600 font-bold';
-                                        else if (score >= 3.26) statusClass = 'text-blue-600 font-bold';
-                                        else if (score >= 2.01) statusClass = 'text-amber-500 font-bold';
-                                        else if (score >= 1.01) statusClass = 'text-orange-500 font-bold';
+                                        if (score >= 4.26)
+                                          statusClass = 'text-emerald-600 font-bold';
+                                        else if (score >= 3.26)
+                                          statusClass = 'text-blue-600 font-bold';
+                                        else if (score >= 2.01)
+                                          statusClass = 'text-amber-500 font-bold';
+                                        else if (score >= 1.01)
+                                          statusClass = 'text-orange-500 font-bold';
                                         else statusClass = 'text-red-500 font-bold';
-                                      } else if (cellValue === 'Present' || cellValue === 'On-time' || cellValue === 'Pass') {
+                                      } else if (
+                                        cellValue === 'Present' ||
+                                        cellValue === 'On-time' ||
+                                        cellValue === 'Pass'
+                                      ) {
                                         statusClass = 'text-emerald-600 font-semibold';
-                                      } else if (cellValue === 'Absent' || cellValue === 'Late' || cellValue === 'Fail' || cellValue === 'No Check-in') {
+                                      } else if (
+                                        cellValue === 'Absent' ||
+                                        cellValue === 'Late' ||
+                                        cellValue === 'Fail' ||
+                                        cellValue === 'No Check-in'
+                                      ) {
                                         statusClass = 'text-red-500 font-semibold';
                                       } else if (cellValue === 'Excused') {
                                         statusClass = 'text-amber-600 font-semibold';
@@ -3085,8 +3376,8 @@ function PersonalMetricsBreakdownCard({
                       <CardPagination
                         currentPage={safeCurrentPage}
                         totalPages={totalPages}
-                        onPrevious={() => setCurrentPage(p => Math.max(0, p - 1))}
-                        onNext={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))}
+                        onPrevious={() => setCurrentPage((p) => Math.max(0, p - 1))}
+                        onNext={() => setCurrentPage((p) => Math.min(totalPages - 1, p + 1))}
                         layout="centered"
                       />
                     </>
@@ -3106,8 +3397,18 @@ function PersonalMetricsBreakdownCard({
 // Converts "Mar 27" → "3/27" for narrow mobile labels
 const toShortDate = (label: string) => {
   const months: Record<string, string> = {
-    Jan: '1', Feb: '2', Mar: '3', Apr: '4', May: '5', Jun: '6',
-    Jul: '7', Aug: '8', Sep: '9', Oct: '10', Nov: '11', Dec: '12',
+    Jan: '1',
+    Feb: '2',
+    Mar: '3',
+    Apr: '4',
+    May: '5',
+    Jun: '6',
+    Jul: '7',
+    Aug: '8',
+    Sep: '9',
+    Oct: '10',
+    Nov: '11',
+    Dec: '12',
   };
   const [mon, day] = label.split(' ');
   return `${months[mon] ?? mon}/${day}`;
@@ -3124,7 +3425,9 @@ function TrendAnalyticsCard({
   const [selectedUsers, setSelectedUsers] = useState<string[]>(
     ANALYTICS_USERS.length > 0 ? [ANALYTICS_USERS[0]] : [],
   );
-  const [selectedMetric, setSelectedMetric] = useState<string>(coerceLegacyMetricSelection(METRICS[0].id));
+  const [selectedMetric, setSelectedMetric] = useState<string>(
+    coerceLegacyMetricSelection(METRICS[0].id),
+  );
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
 
   useEffect(() => {
@@ -3139,8 +3442,11 @@ function TrendAnalyticsCard({
   );
   const isSelectedMetricSupported = selectedMetric !== 'professional-conduct';
   const selectedMetricKind = getMetricKind(selectedMetric);
-  const trendYPadding = selectedMetricKind === 'likert' ? 0.25 : selectedMetricKind === 'monetary' ? 30 : 5;
-  const yAxisDomain = useMemo<[number | ((v: number) => number), number | ((v: number) => number)]>(() => {
+  const trendYPadding =
+    selectedMetricKind === 'likert' ? 0.25 : selectedMetricKind === 'monetary' ? 30 : 5;
+  const yAxisDomain = useMemo<
+    [number | ((v: number) => number), number | ((v: number) => number)]
+  >(() => {
     if (selectedMetricKind === 'likert') {
       return [1, 5];
     }
@@ -3153,7 +3459,7 @@ function TrendAnalyticsCard({
   const handleToggleUser = (userName: string) => {
     if (selectedUsers.includes(userName)) {
       if (selectedUsers.length > 1) {
-        setSelectedUsers(selectedUsers.filter(u => u !== userName));
+        setSelectedUsers(selectedUsers.filter((u) => u !== userName));
       }
     } else if (selectedUsers.length < 5) {
       setSelectedUsers([...selectedUsers, userName]);
@@ -3162,7 +3468,7 @@ function TrendAnalyticsCard({
 
   const handleRemoveUser = (userName: string) => {
     if (selectedUsers.length > 1) {
-      setSelectedUsers(selectedUsers.filter(u => u !== userName));
+      setSelectedUsers(selectedUsers.filter((u) => u !== userName));
     }
   };
 
@@ -3176,7 +3482,8 @@ function TrendAnalyticsCard({
     });
   }, [analyticsUsersKey]);
 
-  const controlLabel = "text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1.5 flex items-center gap-1.5";
+  const controlLabel =
+    'text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1.5 flex items-center gap-1.5';
 
   return (
     <motion.div
@@ -3212,10 +3519,7 @@ function TrendAnalyticsCard({
                 <Activity className="h-3 w-3" />
                 Metric
               </p>
-              <CompactMetricSelect
-                selectedMetricId={selectedMetric}
-                onSelect={setSelectedMetric}
-              />
+              <CompactMetricSelect selectedMetricId={selectedMetric} onSelect={setSelectedMetric} />
             </div>
           </div>
 
@@ -3257,55 +3561,71 @@ function TrendAnalyticsCard({
             <div className="h-[240px] sm:h-[300px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={chartData} margin={{ top: 8, right: 4, left: -24, bottom: 0 }}>
-                <defs>
-                  {selectedUsers.map((user, idx) => (
-                    <linearGradient key={`grad-${user}`} id={`grad-${idx}`} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={CHART_COLORS[idx % CHART_COLORS.length]} stopOpacity={0.18} />
-                      <stop offset="100%" stopColor={CHART_COLORS[idx % CHART_COLORS.length]} stopOpacity={0.01} />
-                    </linearGradient>
-                  ))}
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
-                <XAxis
-                  dataKey="date"
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fill: '#9ca3af', fontSize: 10, fontWeight: 600 }}
-                  dy={8}
-                  interval="preserveStartEnd"
-                  tickFormatter={isMobile ? toShortDate : undefined}
-                />
-                <YAxis
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fill: '#9ca3af', fontSize: 11, fontWeight: 600 }}
-                  domain={yAxisDomain}
-                  tickCount={6}
-                />
-                <Tooltip
-                  contentStyle={{
-                    borderRadius: '10px',
-                    border: '1px solid #f0f0f0',
-                    boxShadow: '0 8px 24px -4px rgba(0,0,0,0.10)',
-                    padding: '10px 14px',
-                  }}
-                  itemStyle={{ fontWeight: 700, fontSize: '12px' }}
-                  labelStyle={{ fontWeight: 600, color: '#6b7280', marginBottom: '6px', fontSize: '11px' }}
-                  labelFormatter={v => `${v}`}
-                  formatter={(v, name) => {
-                    const num =
-                      typeof v === "number"
-                        ? v
-                        : typeof v === "string"
-                          ? Number(v)
-                          : NaN;
-                    const label = typeof name === "string" ? name : "Score";
-                    if (!Number.isFinite(num)) {
-                      return ["—", label];
-                    }
-                    return [formatMetricDisplay(selectedMetric, num), label];
-                  }}
-                />
+                  <defs>
+                    {selectedUsers.map((user, idx) => (
+                      <linearGradient
+                        key={`grad-${user}`}
+                        id={`grad-${idx}`}
+                        x1="0"
+                        y1="0"
+                        x2="0"
+                        y2="1"
+                      >
+                        <stop
+                          offset="0%"
+                          stopColor={CHART_COLORS[idx % CHART_COLORS.length]}
+                          stopOpacity={0.18}
+                        />
+                        <stop
+                          offset="100%"
+                          stopColor={CHART_COLORS[idx % CHART_COLORS.length]}
+                          stopOpacity={0.01}
+                        />
+                      </linearGradient>
+                    ))}
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                  <XAxis
+                    dataKey="date"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: '#9ca3af', fontSize: 10, fontWeight: 600 }}
+                    dy={8}
+                    interval="preserveStartEnd"
+                    tickFormatter={isMobile ? toShortDate : undefined}
+                  />
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: '#9ca3af', fontSize: 11, fontWeight: 600 }}
+                    domain={yAxisDomain}
+                    tickCount={6}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      borderRadius: '10px',
+                      border: '1px solid #f0f0f0',
+                      boxShadow: '0 8px 24px -4px rgba(0,0,0,0.10)',
+                      padding: '10px 14px',
+                    }}
+                    itemStyle={{ fontWeight: 700, fontSize: '12px' }}
+                    labelStyle={{
+                      fontWeight: 600,
+                      color: '#6b7280',
+                      marginBottom: '6px',
+                      fontSize: '11px',
+                    }}
+                    labelFormatter={(v) => `${v}`}
+                    formatter={(v, name) => {
+                      const num =
+                        typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN;
+                      const label = typeof name === 'string' ? name : 'Score';
+                      if (!Number.isFinite(num)) {
+                        return ['—', label];
+                      }
+                      return [formatMetricDisplay(selectedMetric, num), label];
+                    }}
+                  />
                   {selectedUsers.map((user, idx) => (
                     <Area
                       key={user}
@@ -3391,7 +3711,13 @@ function GeneralKeyInsightsCard({
   }, [analyticsRange]);
 
   return (
-    <motion.div custom={4} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
+    <motion.div
+      custom={4}
+      variants={cardVariants}
+      initial="hidden"
+      animate="visible"
+      className="h-full"
+    >
       <AnalyticsCard
         icon={<AlertTriangle className="h-4 w-4" />}
         title="Key Insights"
@@ -3410,39 +3736,41 @@ function GeneralKeyInsightsCard({
                 exit="exit"
                 className="divide-y divide-gray-50 h-full overflow-auto"
               >
-          {pageAlerts.map((alert, idx) => (
-            <div
-              key={`${safeCurrentPage}-${idx}-${alert.id}`}
-              className="flex flex-col gap-3 p-4 transition-colors hover:bg-gray-50/60"
-            >
-              <div className="flex items-start gap-3">
-                <div
-                  className={`mt-0.5 flex-shrink-0 h-8 w-8 rounded-lg flex items-center justify-center ${
-                    alert.type === 'warning'
-                      ? 'bg-amber-50 text-amber-500'
-                      : 'bg-emerald-50 text-emerald-500'
-                  }`}
-                >
-                  {alert.type === 'warning' ? (
-                    <AlertTriangle className="h-4 w-4" />
-                  ) : (
-                    <TrendingUp className="h-4 w-4" />
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400 mb-0.5">
-                    {alert.metric}
-                  </p>
-                  <p className={`text-sm font-semibold leading-none mb-1 ${
-                    alert.type === 'warning' ? 'text-amber-700' : 'text-emerald-700'
-                  }`}>
-                    {alert.employee}
-                  </p>
-                  <p className="text-xs text-gray-500 leading-relaxed">{alert.message}</p>
-                </div>
-              </div>
-            </div>
-          ))}
+                {pageAlerts.map((alert, idx) => (
+                  <div
+                    key={`${safeCurrentPage}-${idx}-${alert.id}`}
+                    className="flex flex-col gap-3 p-4 transition-colors hover:bg-gray-50/60"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div
+                        className={`mt-0.5 flex-shrink-0 h-8 w-8 rounded-lg flex items-center justify-center ${
+                          alert.type === 'warning'
+                            ? 'bg-amber-50 text-amber-500'
+                            : 'bg-emerald-50 text-emerald-500'
+                        }`}
+                      >
+                        {alert.type === 'warning' ? (
+                          <AlertTriangle className="h-4 w-4" />
+                        ) : (
+                          <TrendingUp className="h-4 w-4" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400 mb-0.5">
+                          {alert.metric}
+                        </p>
+                        <p
+                          className={`text-sm font-semibold leading-none mb-1 ${
+                            alert.type === 'warning' ? 'text-amber-700' : 'text-emerald-700'
+                          }`}
+                        >
+                          {alert.employee}
+                        </p>
+                        <p className="text-xs text-gray-500 leading-relaxed">{alert.message}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </motion.div>
             </AnimatePresence>
           </div>
@@ -3452,11 +3780,11 @@ function GeneralKeyInsightsCard({
               totalPages={totalPages}
               onPrevious={() => {
                 setPageDirection(-1);
-                setCurrentPage(p => Math.max(0, p - 1));
+                setCurrentPage((p) => Math.max(0, p - 1));
               }}
               onNext={() => {
                 setPageDirection(1);
-                setCurrentPage(p => Math.min(totalPages - 1, p + 1));
+                setCurrentPage((p) => Math.min(totalPages - 1, p + 1));
               }}
             />
           </div>
@@ -3488,7 +3816,13 @@ function PerformanceRadarCard({ analyticsRange }: { analyticsRange: AnalyticsRan
   );
 
   return (
-    <motion.div custom={5} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
+    <motion.div
+      custom={5}
+      variants={cardVariants}
+      initial="hidden"
+      animate="visible"
+      className="h-full"
+    >
       <AnalyticsCard
         icon={<Target className="h-4 w-4" />}
         title="Performance Radar"
@@ -3510,12 +3844,7 @@ function PerformanceRadarCard({ analyticsRange }: { analyticsRange: AnalyticsRan
                   dataKey="subject"
                   tick={{ fill: '#6b7280', fontSize: 9, fontWeight: 600 }}
                 />
-                <PolarRadiusAxis
-                  angle={30}
-                  domain={[0, 100]}
-                  tick={false}
-                  axisLine={false}
-                />
+                <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
                 <Radar
                   name={selectedUser}
                   dataKey="A"
@@ -3557,7 +3886,13 @@ function MetricsDistributionCard({
   const totalEmployees = distributionData.reduce((sum, d) => sum + d.count, 0);
 
   return (
-    <motion.div custom={6} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
+    <motion.div
+      custom={6}
+      variants={cardVariants}
+      initial="hidden"
+      animate="visible"
+      className="h-full"
+    >
       <AnalyticsCard
         icon={<Users className="h-4 w-4" />}
         title="EPI score distribution"
@@ -3602,13 +3937,15 @@ function MetricsDistributionCard({
 
           {/* Legend — single row on all breakpoints */}
           <div className="grid grid-cols-4 gap-1">
-            {distributionData.map(d => {
+            {distributionData.map((d) => {
               const pct = totalEmployees > 0 ? Math.round((d.count / totalEmployees) * 100) : 0;
               return (
                 <div key={d.range} className="flex min-w-0 flex-col items-center gap-1">
                   <div className="h-1.5 w-full rounded-full" style={{ background: d.fill }} />
                   <span className="text-[10px] font-bold text-gray-500 tabular-nums">{pct}%</span>
-                  <span className="text-[8px] sm:text-[9px] text-gray-400 font-medium text-center leading-tight px-0.5 break-words">{d.range}</span>
+                  <span className="text-[8px] sm:text-[9px] text-gray-400 font-medium text-center leading-tight px-0.5 break-words">
+                    {d.range}
+                  </span>
                 </div>
               );
             })}
@@ -3630,14 +3967,22 @@ function MetricsDistributionCard({
 // ─── Compact Dropdowns (SingleUserSelect-style, for inline card controls) ───
 
 /** Hook: computes fixed position for a dropdown panel relative to a trigger ref */
-function useDropdownPosition(triggerRef: React.RefObject<HTMLElement | null>, isOpen: boolean, align: 'left' | 'right' = 'left') {
+function useDropdownPosition(
+  triggerRef: React.RefObject<HTMLElement | null>,
+  isOpen: boolean,
+  align: 'left' | 'right' = 'left',
+) {
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
 
   useEffect(() => {
     if (!isOpen || !triggerRef.current) return;
     const update = () => {
       const rect = triggerRef.current!.getBoundingClientRect();
-      setPos({ top: rect.bottom + 8, left: align === 'right' ? rect.right : rect.left, width: rect.width });
+      setPos({
+        top: rect.bottom + 8,
+        left: align === 'right' ? rect.right : rect.left,
+        width: rect.width,
+      });
     };
     update();
     window.addEventListener('scroll', update, true);
@@ -3680,9 +4025,7 @@ function EmployeePickerDropdown({
     return () => document.removeEventListener('mousedown', handleClick);
   }, [isOpen]);
 
-  const filtered = allUsers.filter(u =>
-    u.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = allUsers.filter((u) => u.toLowerCase().includes(search.toLowerCase()));
 
   const count = selectedUsers.length;
 
@@ -3698,9 +4041,15 @@ function EmployeePickerDropdown({
           <Users className="h-3 w-3" />
         </div>
         <span className="text-xs font-medium text-gray-700 flex-1 truncate">
-          {count === 0 ? <span className="text-gray-400">Select employees…</span> : `${count} selected`}
+          {count === 0 ? (
+            <span className="text-gray-400">Select employees…</span>
+          ) : (
+            `${count} selected`
+          )}
         </span>
-        <ChevronDown className={`h-3.5 w-3.5 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown
+          className={`h-3.5 w-3.5 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+        />
       </button>
 
       <AnimatePresence>
@@ -3746,8 +4095,15 @@ function EmployeePickerDropdown({
                 filtered.map((user) => {
                   const isSelected = selectedUsers.includes(user);
                   const isDisabled = !isSelected && count >= max;
-                  const initials = user.split(' ').map(w => w[0]).join('').toUpperCase();
-                  const hue = user.split('').reduce((acc, c) => (acc * 31 + c.charCodeAt(0)) & 0xffffffff, 0) % 360;
+                  const initials = user
+                    .split(' ')
+                    .map((w) => w[0])
+                    .join('')
+                    .toUpperCase();
+                  const hue =
+                    user
+                      .split('')
+                      .reduce((acc, c) => (acc * 31 + c.charCodeAt(0)) & 0xffffffff, 0) % 360;
                   return (
                     <button
                       key={user}
@@ -3763,11 +4119,11 @@ function EmployeePickerDropdown({
                       }`}
                     >
                       {/* Checkbox */}
-                      <div className={`h-4 w-4 flex flex-shrink-0 items-center justify-center rounded border transition-colors ${
-                        isSelected
-                          ? 'bg-blue-600 border-blue-600'
-                          : 'border-gray-300 bg-white'
-                      }`}>
+                      <div
+                        className={`h-4 w-4 flex flex-shrink-0 items-center justify-center rounded border transition-colors ${
+                          isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-300 bg-white'
+                        }`}
+                      >
                         {isSelected && <Check className="h-3 w-3 text-white" />}
                       </div>
                       <div className="flex-shrink-0">
@@ -3786,7 +4142,9 @@ function EmployeePickerDropdown({
                           </div>
                         )}
                       </div>
-                      <span className={`text-xs font-semibold truncate ${isSelected ? 'text-blue-700' : 'text-gray-700'}`}>
+                      <span
+                        className={`text-xs font-semibold truncate ${isSelected ? 'text-blue-700' : 'text-gray-700'}`}
+                      >
                         {user}
                       </span>
                     </button>
@@ -3815,7 +4173,7 @@ function CompactMetricSelect({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const pos = useDropdownPosition(triggerRef, isOpen);
 
-  const selectedMetric = METRICS.find(m => m.id === selectedMetricId);
+  const selectedMetric = METRICS.find((m) => m.id === selectedMetricId);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -3827,9 +4185,7 @@ function CompactMetricSelect({
     return () => document.removeEventListener('mousedown', handleClick);
   }, [isOpen]);
 
-  const filtered = METRICS.filter(m =>
-    m.label.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = METRICS.filter((m) => m.label.toLowerCase().includes(search.toLowerCase()));
 
   return (
     <div ref={containerRef} className="relative">
@@ -3845,7 +4201,9 @@ function CompactMetricSelect({
         <span className="text-xs font-semibold text-gray-700 flex-1 truncate">
           {selectedMetric?.label ?? 'Select metric…'}
         </span>
-        <ChevronDown className={`h-3.5 w-3.5 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown
+          className={`h-3.5 w-3.5 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+        />
       </button>
 
       <AnimatePresence>
@@ -3888,12 +4246,18 @@ function CompactMetricSelect({
                       selectedMetricId === metric.id ? 'bg-blue-50/80' : ''
                     } ${metric.supported ? '' : 'opacity-80'}`}
                   >
-                    <div className={`h-6 w-6 flex flex-shrink-0 items-center justify-center rounded-full shadow-sm ${
-                      selectedMetricId === metric.id ? 'bg-primary-100 text-primary-600' : 'bg-gray-50 text-gray-500'
-                    }`}>
+                    <div
+                      className={`h-6 w-6 flex flex-shrink-0 items-center justify-center rounded-full shadow-sm ${
+                        selectedMetricId === metric.id
+                          ? 'bg-primary-100 text-primary-600'
+                          : 'bg-gray-50 text-gray-500'
+                      }`}
+                    >
                       {METRIC_ICONS[metric.id] ?? <Target className="h-3 w-3" />}
                     </div>
-                    <span className={`text-xs font-semibold truncate ${selectedMetricId === metric.id ? 'text-blue-700' : 'text-gray-700'}`}>
+                    <span
+                      className={`text-xs font-semibold truncate ${selectedMetricId === metric.id ? 'text-blue-700' : 'text-gray-700'}`}
+                    >
                       {metric.label}
                     </span>
                     {!metric.supported && (
@@ -3931,9 +4295,8 @@ function CompactUserSelect({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const pos = useDropdownPosition(triggerRef, isOpen, 'right');
   const hasUsers = users.length > 0;
-  const fallbackSelectedUser = selectedUser && selectedUser.trim().length > 0
-    ? selectedUser
-    : (users[0] ?? '');
+  const fallbackSelectedUser =
+    selectedUser && selectedUser.trim().length > 0 ? selectedUser : (users[0] ?? '');
   const displayName = fallbackSelectedUser || 'No employee';
 
   useEffect(() => {
@@ -3952,20 +4315,18 @@ function CompactUserSelect({
     }
   }, [hasUsers, isOpen]);
 
-  const filtered = users.filter(u =>
-    u.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = users.filter((u) => u.toLowerCase().includes(search.toLowerCase()));
 
-  const initials = displayName
-    .split(' ')
-    .filter(Boolean)
-    .map(w => w[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2) || '--';
-  const hue = displayName
-    .split('')
-    .reduce((acc, c) => (acc * 31 + c.charCodeAt(0)) & 0xffffffff, 0) % 360;
+  const initials =
+    displayName
+      .split(' ')
+      .filter(Boolean)
+      .map((w) => w[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2) || '--';
+  const hue =
+    displayName.split('').reduce((acc, c) => (acc * 31 + c.charCodeAt(0)) & 0xffffffff, 0) % 360;
 
   return (
     <div ref={containerRef} className="relative">
@@ -3997,8 +4358,12 @@ function CompactUserSelect({
             </div>
           )}
         </div>
-        <span className="text-xs font-semibold text-gray-700 truncate max-w-[100px]">{displayName}</span>
-        <ChevronDown className={`h-3 w-3 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <span className="text-xs font-semibold text-gray-700 truncate max-w-[100px]">
+          {displayName}
+        </span>
+        <ChevronDown
+          className={`h-3 w-3 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+        />
       </button>
 
       <AnimatePresence>
@@ -4029,8 +4394,15 @@ function CompactUserSelect({
                 </div>
               ) : (
                 filtered.map((user) => {
-                  const uInitials = user.split(' ').map(w => w[0]).join('').toUpperCase();
-                  const uHue = user.split('').reduce((acc, c) => (acc * 31 + c.charCodeAt(0)) & 0xffffffff, 0) % 360;
+                  const uInitials = user
+                    .split(' ')
+                    .map((w) => w[0])
+                    .join('')
+                    .toUpperCase();
+                  const uHue =
+                    user
+                      .split('')
+                      .reduce((acc, c) => (acc * 31 + c.charCodeAt(0)) & 0xffffffff, 0) % 360;
                   const isSelected = fallbackSelectedUser === user;
                   return (
                     <button
@@ -4061,7 +4433,9 @@ function CompactUserSelect({
                           </div>
                         )}
                       </div>
-                      <span className={`text-xs font-semibold truncate ${isSelected ? 'text-blue-700' : 'text-gray-700'}`}>
+                      <span
+                        className={`text-xs font-semibold truncate ${isSelected ? 'text-blue-700' : 'text-gray-700'}`}
+                      >
                         {user}
                       </span>
                       {isSelected && (
@@ -4092,7 +4466,7 @@ const METRIC_LABELS: Record<string, string> = {
   'hygiene-compliance': 'Hygiene Compliance',
   'sop-compliance': 'SOP Compliance',
   'customer-interaction': 'Customer Interaction',
-  'cashiering': 'Cashiering',
+  cashiering: 'Cashiering',
   'suggestive-selling-and-upselling': 'Suggestive Selling & Upselling',
   'service-efficiency': 'Service Efficiency',
 };
@@ -4144,7 +4518,12 @@ function MetricSummaryCard({
 }) {
   const employees = useMemo(
     () =>
-      getMetricAllEmployeeData(metricId, analyticsRange, INDIVIDUAL_METRICS_ROSTER, getBaseMetricValueForEmployee),
+      getMetricAllEmployeeData(
+        metricId,
+        analyticsRange,
+        INDIVIDUAL_METRICS_ROSTER,
+        getBaseMetricValueForEmployee,
+      ),
     [metricId, analyticsRange],
   );
   const trendData = useMemo(
@@ -4157,7 +4536,7 @@ function MetricSummaryCard({
     [metricId, analyticsRange],
   );
   const { validEmployees, avg, avgPeriodChange } = useMemo(() => {
-    const valid = employees.filter(e => e.hasData);
+    const valid = employees.filter((e) => e.hasData);
     if (valid.length === 0) return { validEmployees: valid, avg: 0, avgPeriodChange: 0 };
     return {
       validEmployees: valid,
@@ -4165,11 +4544,20 @@ function MetricSummaryCard({
       avgPeriodChange: valid.reduce((s, e) => s + e.periodChange, 0) / valid.length,
     };
   }, [employees]);
-  const summaryTrendFooter = useMemo(() => buildMetricSummaryTrendFooter(analyticsRange), [analyticsRange]);
+  const summaryTrendFooter = useMemo(
+    () => buildMetricSummaryTrendFooter(analyticsRange),
+    [analyticsRange],
+  );
   const summaryYPadding = getMetricKind(metricId) === 'likert' ? 0.4 : 3;
 
   return (
-    <motion.div custom={0} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
+    <motion.div
+      custom={0}
+      variants={cardVariants}
+      initial="hidden"
+      animate="visible"
+      className="h-full"
+    >
       <div
         className="relative flex flex-col overflow-hidden rounded-xl shadow-sm h-full min-h-[160px]"
         style={{
@@ -4189,7 +4577,9 @@ function MetricSummaryCard({
           <div className="mt-2 flex items-end gap-3">
             {validEmployees.length === 0 ? (
               <div className="flex flex-col gap-0.5">
-                <span className="text-[32px] font-bold text-white/40 tracking-tight">No data found</span>
+                <span className="text-[32px] font-bold text-white/40 tracking-tight">
+                  No data found
+                </span>
                 <p className="text-[11px] font-bold text-white/20 uppercase tracking-widest">
                   Awaiting records
                 </p>
@@ -4210,7 +4600,11 @@ function MetricSummaryCard({
                         : 'bg-red-400/20 text-red-300 ring-red-400/20'
                     }`}
                   >
-                    {avgPeriodChange >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                    {avgPeriodChange >= 0 ? (
+                      <TrendingUp className="h-3 w-3" />
+                    ) : (
+                      <TrendingDown className="h-3 w-3" />
+                    )}
                     {formatMetricDeltaDisplay(metricId, avgPeriodChange)}
                   </span>
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-white/40">
@@ -4224,48 +4618,56 @@ function MetricSummaryCard({
 
         <div className="flex-1 min-h-[80px]">
           {validEmployees.length > 0 && (
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={trendData} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
-              <defs>
-                <linearGradient id="metric-summary-glow" x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0%" stopColor="rgba(255,255,255,0.3)" />
-                  <stop offset="100%" stopColor="rgba(255,255,255,0.9)" />
-                </linearGradient>
-              </defs>
-              <YAxis
-                domain={[
-                  (dataMin: number) => Math.max(0, dataMin - summaryYPadding),
-                  (dataMax: number) => dataMax + summaryYPadding,
-                ]}
-                hide
-              />
-              <Tooltip
-                contentStyle={{
-                  background: 'rgba(15,23,42,0.85)',
-                  border: 'none',
-                  borderRadius: '8px',
-                  padding: '6px 10px',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                }}
-                labelStyle={{ color: 'rgba(255,255,255,0.5)', fontSize: '10px', fontWeight: 700, marginBottom: '2px' }}
-                itemStyle={{ color: '#fff', fontSize: '13px', fontWeight: 700 }}
-                formatter={(v) => {
-                  const num = typeof v === 'number' ? v : Number(v);
-                  return [Number.isFinite(num) ? formatRuleMetricValue(metricId, num) : '—', 'Score'];
-                }}
-              />
-              <Line
-                type="monotone"
-                dataKey="value"
-                stroke="url(#metric-summary-glow)"
-                strokeWidth={2.5}
-                dot={false}
-                activeDot={{ r: 4, fill: '#fff', strokeWidth: 0 }}
-                animationDuration={1200}
-                animationEasing="ease-out"
-              />
-            </LineChart>
-          </ResponsiveContainer>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={trendData} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="metric-summary-glow" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stopColor="rgba(255,255,255,0.3)" />
+                    <stop offset="100%" stopColor="rgba(255,255,255,0.9)" />
+                  </linearGradient>
+                </defs>
+                <YAxis
+                  domain={[
+                    (dataMin: number) => Math.max(0, dataMin - summaryYPadding),
+                    (dataMax: number) => dataMax + summaryYPadding,
+                  ]}
+                  hide
+                />
+                <Tooltip
+                  contentStyle={{
+                    background: 'rgba(15,23,42,0.85)',
+                    border: 'none',
+                    borderRadius: '8px',
+                    padding: '6px 10px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                  }}
+                  labelStyle={{
+                    color: 'rgba(255,255,255,0.5)',
+                    fontSize: '10px',
+                    fontWeight: 700,
+                    marginBottom: '2px',
+                  }}
+                  itemStyle={{ color: '#fff', fontSize: '13px', fontWeight: 700 }}
+                  formatter={(v) => {
+                    const num = typeof v === 'number' ? v : Number(v);
+                    return [
+                      Number.isFinite(num) ? formatRuleMetricValue(metricId, num) : '—',
+                      'Score',
+                    ];
+                  }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="value"
+                  stroke="url(#metric-summary-glow)"
+                  strokeWidth={2.5}
+                  dot={false}
+                  activeDot={{ r: 4, fill: '#fff', strokeWidth: 0 }}
+                  animationDuration={1200}
+                  animationEasing="ease-out"
+                />
+              </LineChart>
+            </ResponsiveContainer>
           )}
         </div>
 
@@ -4293,7 +4695,12 @@ function MetricTopBottomCard({
 }) {
   const employees = useMemo(
     () =>
-      getMetricAllEmployeeData(metricId, analyticsRange, INDIVIDUAL_METRICS_ROSTER, getBaseMetricValueForEmployee),
+      getMetricAllEmployeeData(
+        metricId,
+        analyticsRange,
+        INDIVIDUAL_METRICS_ROSTER,
+        getBaseMetricValueForEmployee,
+      ),
     [metricId, analyticsRange],
   );
 
@@ -4302,8 +4709,18 @@ function MetricTopBottomCard({
 
   if (!hasAnyData) {
     return (
-      <motion.div custom={1} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
-        <AnalyticsCard icon={<Users className="h-4 w-4" />} title="Top & Bottom" subtitle="Performers for this metric">
+      <motion.div
+        custom={1}
+        variants={cardVariants}
+        initial="hidden"
+        animate="visible"
+        className="h-full"
+      >
+        <AnalyticsCard
+          icon={<Users className="h-4 w-4" />}
+          title="Top & Bottom"
+          subtitle="Performers for this metric"
+        >
           <div className="flex flex-col items-center justify-center p-8 text-center flex-1">
             <div className="h-12 w-12 rounded-full bg-gray-50 flex items-center justify-center mb-3">
               <Search className="h-6 w-6 text-gray-300" />
@@ -4324,13 +4741,25 @@ function MetricTopBottomCard({
   const bottom5 = bottomPlaceholder.slice(-5).reverse();
 
   return (
-    <motion.div custom={1} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
-      <AnalyticsCard icon={<Users className="h-4 w-4" />} title="Top & Bottom" subtitle="Performers for this metric">
+    <motion.div
+      custom={1}
+      variants={cardVariants}
+      initial="hidden"
+      animate="visible"
+      className="h-full"
+    >
+      <AnalyticsCard
+        icon={<Users className="h-4 w-4" />}
+        title="Top & Bottom"
+        subtitle="Performers for this metric"
+      >
         <div className="grid grid-cols-1 sm:grid-cols-2 divide-y divide-gray-100 sm:divide-y-0 sm:divide-x p-4 sm:p-5 gap-0 flex-1">
           <div className="pb-4 sm:pb-0 sm:pr-6">
             <div className="flex items-center gap-1.5 mb-2.5">
               <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
-              <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600">Top Performers</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600">
+                Top Performers
+              </span>
             </div>
             <div className="space-y-0.5">
               {top5.map((emp, idx) => (
@@ -4338,7 +4767,11 @@ function MetricTopBottomCard({
                   key={emp.name}
                   variants={{
                     hidden: { opacity: 0, x: -8 },
-                    visible: { opacity: 1, x: 0, transition: { delay: 0.1 + idx * 0.05, ease: 'easeOut', duration: 0.3 } },
+                    visible: {
+                      opacity: 1,
+                      x: 0,
+                      transition: { delay: 0.1 + idx * 0.05, ease: 'easeOut', duration: 0.3 },
+                    },
                   }}
                   initial="hidden"
                   animate="visible"
@@ -4362,34 +4795,44 @@ function MetricTopBottomCard({
           <div className="pt-4 sm:pt-0 sm:pl-6">
             <div className="flex items-center gap-1.5 mb-2.5">
               <TrendingDown className="h-3.5 w-3.5 text-red-500" />
-              <span className="text-[10px] font-bold uppercase tracking-widest text-red-600">Needs Improvement</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-red-600">
+                Needs Improvement
+              </span>
             </div>
             <div className="space-y-0.5">
-              {bottom5.length > 0 ? bottom5.map((emp, idx) => (
-                <motion.div
-                  key={emp.name}
-                  variants={{
-                    hidden: { opacity: 0, x: -8 },
-                    visible: { opacity: 1, x: 0, transition: { delay: 0.1 + idx * 0.05, ease: 'easeOut', duration: 0.3 } },
-                  }}
-                  initial="hidden"
-                  animate="visible"
-                  onClick={() => onUserSelect(emp.name)}
-                  className="flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 transition-colors hover:bg-gray-50"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="w-4 text-[10px] font-bold text-gray-300 tabular-nums flex-shrink-0">
-                      {idx + 1}
+              {bottom5.length > 0 ? (
+                bottom5.map((emp, idx) => (
+                  <motion.div
+                    key={emp.name}
+                    variants={{
+                      hidden: { opacity: 0, x: -8 },
+                      visible: {
+                        opacity: 1,
+                        x: 0,
+                        transition: { delay: 0.1 + idx * 0.05, ease: 'easeOut', duration: 0.3 },
+                      },
+                    }}
+                    initial="hidden"
+                    animate="visible"
+                    onClick={() => onUserSelect(emp.name)}
+                    className="flex cursor-pointer items-center justify-between rounded-md px-2 py-1.5 transition-colors hover:bg-gray-50"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="w-4 text-[10px] font-bold text-gray-300 tabular-nums flex-shrink-0">
+                        {idx + 1}
+                      </span>
+                      <span className="text-sm font-medium text-gray-700 truncate">{emp.name}</span>
+                    </div>
+                    <span className="ml-2 text-xs font-bold text-red-500 tabular-nums flex-shrink-0">
+                      {formatMetricDisplay(metricId, emp.value)}
                     </span>
-                    <span className="text-sm font-medium text-gray-700 truncate">{emp.name}</span>
-                  </div>
-                  <span className="ml-2 text-xs font-bold text-red-500 tabular-nums flex-shrink-0">
-                    {formatMetricDisplay(metricId, emp.value)}
-                  </span>
-                </motion.div>
-              )) : (
+                  </motion.div>
+                ))
+              ) : (
                 <div className="p-4 text-center">
-                  <span className="text-[10px] font-medium text-gray-400 uppercase tracking-widest italic">All performers in Top list</span>
+                  <span className="text-[10px] font-medium text-gray-400 uppercase tracking-widest italic">
+                    All performers in Top list
+                  </span>
                 </div>
               )}
             </div>
@@ -4409,18 +4852,31 @@ function MetricBenchmarkCard({
 }) {
   const employees = useMemo(
     () =>
-      getMetricAllEmployeeData(metricId, analyticsRange, INDIVIDUAL_METRICS_ROSTER, getBaseMetricValueForEmployee),
+      getMetricAllEmployeeData(
+        metricId,
+        analyticsRange,
+        INDIVIDUAL_METRICS_ROSTER,
+        getBaseMetricValueForEmployee,
+      ),
     [metricId, analyticsRange],
   );
   const { validEmployees, avg, median, stdDev, aboveTarget, pctAbove } = useMemo(() => {
-    const valid = employees.filter(e => e.hasData).sort((a, b) => a.value - b.value);
+    const valid = employees.filter((e) => e.hasData).sort((a, b) => a.value - b.value);
     const globalTarget = perturbMetricGlobalTarget(
       metricId,
       BRANCH_AVERAGES[metricId as keyof typeof BRANCH_AVERAGES] ?? 85,
       analyticsRange,
     );
     if (valid.length === 0) {
-      return { validEmployees: valid, avg: 0, median: 0, stdDev: 0, aboveTarget: 0, pctAbove: 0, globalTarget };
+      return {
+        validEmployees: valid,
+        avg: 0,
+        median: 0,
+        stdDev: 0,
+        aboveTarget: 0,
+        pctAbove: 0,
+        globalTarget,
+      };
     }
     const totalScore = valid.reduce((s, e) => s + e.value, 0);
     const mean = totalScore / valid.length;
@@ -4430,7 +4886,15 @@ function MetricBenchmarkCard({
     const countAbove = valid.filter((e) => e.value >= globalTarget).length;
     const pct = Math.round((countAbove / valid.length) * 100);
 
-    return { validEmployees: valid, avg: mean, median: med, stdDev: sd, aboveTarget: countAbove, pctAbove: pct, globalTarget };
+    return {
+      validEmployees: valid,
+      avg: mean,
+      median: med,
+      stdDev: sd,
+      aboveTarget: countAbove,
+      pctAbove: pct,
+      globalTarget,
+    };
   }, [employees, metricId, analyticsRange]);
 
   const globalTarget = useMemo(
@@ -4444,21 +4908,56 @@ function MetricBenchmarkCard({
   );
 
   return (
-    <motion.div custom={2} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
-      <AnalyticsCard icon={<Target className="h-4 w-4" />} title="Benchmarks" subtitle="Key statistical measures">
+    <motion.div
+      custom={2}
+      variants={cardVariants}
+      initial="hidden"
+      animate="visible"
+      className="h-full"
+    >
+      <AnalyticsCard
+        icon={<Target className="h-4 w-4" />}
+        title="Benchmarks"
+        subtitle="Key statistical measures"
+      >
         <div className="p-4 sm:p-5 flex flex-col gap-4 flex-1">
           {/* Key metrics grid */}
           <div className="grid grid-cols-2 gap-3">
             {[
-              { label: 'Target', value: formatMetricDisplay(metricId, globalTarget), icon: Target, color: 'text-primary-600' },
-              { label: 'Median', value: formatMetricDisplay(metricId, median), icon: Hash, color: 'text-violet-600' },
-              { label: 'Std Dev', value: formatMetricStdDev(metricId, stdDev), icon: Activity, color: 'text-amber-600' },
-              { label: 'Above Target', value: `${pctAbove}%`, icon: Percent, color: 'text-emerald-600' },
+              {
+                label: 'Target',
+                value: formatMetricDisplay(metricId, globalTarget),
+                icon: Target,
+                color: 'text-primary-600',
+              },
+              {
+                label: 'Median',
+                value: formatMetricDisplay(metricId, median),
+                icon: Hash,
+                color: 'text-violet-600',
+              },
+              {
+                label: 'Std Dev',
+                value: formatMetricStdDev(metricId, stdDev),
+                icon: Activity,
+                color: 'text-amber-600',
+              },
+              {
+                label: 'Above Target',
+                value: `${pctAbove}%`,
+                icon: Percent,
+                color: 'text-emerald-600',
+              },
             ].map((stat) => (
-              <div key={stat.label} className="rounded-lg bg-gray-50 p-3 ring-1 ring-inset ring-gray-100">
+              <div
+                key={stat.label}
+                className="rounded-lg bg-gray-50 p-3 ring-1 ring-inset ring-gray-100"
+              >
                 <div className="flex items-center gap-1.5 mb-1.5">
                   <stat.icon className={`h-3 w-3 ${stat.color}`} />
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-gray-400">{stat.label}</span>
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-gray-400">
+                    {stat.label}
+                  </span>
                 </div>
                 <p className={`text-lg font-bold tabular-nums ${stat.color}`}>{stat.value}</p>
               </div>
@@ -4468,8 +4967,12 @@ function MetricBenchmarkCard({
           {/* Target achievement bar */}
           <div className="rounded-lg border border-blue-100 bg-blue-50/50 px-3.5 py-2.5">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Target Achievement</span>
-              <span className="text-xs font-bold text-blue-700">{aboveTarget}/{validEmployees.length}</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
+                Target Achievement
+              </span>
+              <span className="text-xs font-bold text-blue-700">
+                {aboveTarget}/{validEmployees.length}
+              </span>
             </div>
             <div className="relative h-2 w-full overflow-hidden rounded-full bg-blue-100">
               <motion.div
@@ -4498,16 +5001,21 @@ function MetricEmployeeRankingCard({
   const [sortBy, setSortBy] = useState<'rank' | 'change'>('rank');
   const employees = useMemo(
     () =>
-      getMetricAllEmployeeData(metricId, analyticsRange, INDIVIDUAL_METRICS_ROSTER, getBaseMetricValueForEmployee),
+      getMetricAllEmployeeData(
+        metricId,
+        analyticsRange,
+        INDIVIDUAL_METRICS_ROSTER,
+        getBaseMetricValueForEmployee,
+      ),
     [metricId, analyticsRange],
   );
   const { validEmployees, avg, maxVal } = useMemo(() => {
-    const valid = employees.filter(e => e.hasData);
+    const valid = employees.filter((e) => e.hasData);
     if (valid.length === 0) return { validEmployees: valid, avg: 0, maxVal: 100 };
     return {
       validEmployees: valid,
       avg: valid.reduce((s, e) => s + e.value, 0) / valid.length,
-      maxVal: Math.max(...valid.map(e => e.value)),
+      maxVal: Math.max(...valid.map((e) => e.value)),
     };
   }, [employees]);
 
@@ -4529,7 +5037,13 @@ function MetricEmployeeRankingCard({
   }, [employees, sortBy]);
 
   return (
-    <motion.div custom={3} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
+    <motion.div
+      custom={3}
+      variants={cardVariants}
+      initial="hidden"
+      animate="visible"
+      className="h-full"
+    >
       <AnalyticsCard
         icon={<BarChart2 className="h-4 w-4" />}
         title="Employee Rankings"
@@ -4591,166 +5105,193 @@ function MetricEmployeeRankingCard({
           {/* Employee rows */}
           <div className="divide-y divide-gray-50">
             <AnimatePresence mode="popLayout">
-            {sorted.map((emp, idx) => {
-              const diff = emp.value - avg;
-              const isAboveAvg = diff >= 0;
-              const barWidth = metricProgressPct(metricId, emp.value, maxVal);
-              const avgMarker = metricProgressPct(metricId, avg, maxVal);
-              const originalRank = employees.findIndex(e => e.name === emp.name) + 1;
-              const displayRank = sortBy === 'rank' ? idx + 1 : originalRank;
+              {sorted.map((emp, idx) => {
+                const diff = emp.value - avg;
+                const isAboveAvg = diff >= 0;
+                const barWidth = metricProgressPct(metricId, emp.value, maxVal);
+                const avgMarker = metricProgressPct(metricId, avg, maxVal);
+                const originalRank = employees.findIndex((e) => e.name === emp.name) + 1;
+                const displayRank = sortBy === 'rank' ? idx + 1 : originalRank;
 
-              return (
-                <motion.div
-                  key={emp.name}
-                  layout
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.98 }}
-                  transition={{ layout: { type: 'spring', stiffness: 350, damping: 30 }, opacity: { duration: 0.2 } }}
-                  className={`px-4 sm:px-5 py-3 transition-colors hover:bg-gray-50/60 group ${
-                    !emp.hasData ? 'grayscale-[0.5] opacity-60' : ''
-                  }`}
-                >
-                  {/* ── Desktop: single-row grid ── */}
-                  <div className="hidden sm:grid grid-cols-12 gap-2 items-center">
-                    {/* Rank */}
-                    <div className="col-span-1 text-center">
-                      <span className={`text-xs font-bold tabular-nums ${
-                        emp.hasData && displayRank <= 3 ? 'text-primary-600' : 'text-gray-300'
-                      }`}>
-                        {emp.hasData ? displayRank : '-'}
-                      </span>
-                    </div>
-
-                    {/* Name */}
-                    <div className="col-span-3 min-w-0">
-                      <p
-                        onClick={() => onUserSelect(emp.name)}
-                        className={`text-sm font-semibold truncate cursor-pointer transition-colors ${
-                          emp.hasData ? 'text-gray-700 group-hover:text-primary-600' : 'text-gray-500'
-                        }`}
-                      >
-                        {emp.name}
-                      </p>
-                      <p className="text-[10px] text-gray-400 truncate">{emp.role}</p>
-                    </div>
-
-                    {/* Score bar */}
-                    <div className="col-span-5 flex items-center gap-2.5">
-                      <div className="flex-1 relative h-5 overflow-hidden rounded bg-gray-100">
-                        {emp.hasData && (
-                          <>
-                            <motion.div
-                              key={`${emp.name}-${sortBy}`}
-                              initial={{ width: 0 }}
-                              animate={{ width: `${barWidth}%` }}
-                              transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1], delay: idx * 0.015 }}
-                              className={`h-full rounded ${
-                                isAboveAvg ? 'bg-emerald-400/70' : 'bg-amber-400/70'
-                              }`}
-                            />
-                            <div
-                              className="absolute top-0 h-full w-0.5 bg-blue-600/50"
-                              style={{ left: `${avgMarker}%` }}
-                            />
-                          </>
-                        )}
-                      </div>
-                      <span className="text-xs font-bold text-gray-700 tabular-nums w-14 text-right flex-shrink-0">
-                        {emp.hasData ? formatMetricDisplay(metricId, emp.value) : 'N/A'}
-                      </span>
-                    </div>
-
-                    {/* Period change: first bucket to last bucket in selected range */}
-                    <div className="col-span-3 flex items-center justify-end">
-                      {emp.hasData && Math.abs(emp.periodChange) >= 0.05 ? (
-                        <span className={`flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ring-inset ${
-                          emp.periodChange > 0
-                            ? 'bg-emerald-50 text-emerald-600 ring-emerald-100'
-                            : 'bg-red-50 text-red-500 ring-red-100'
-                        }`}>
-                          {emp.periodChange > 0 ? (
-                            <ArrowUpRight className="h-3 w-3" />
-                          ) : (
-                            <ArrowDownRight className="h-3 w-3" />
-                          )}
-                          {formatMetricDeltaDisplay(metricId, emp.periodChange)}
+                return (
+                  <motion.div
+                    key={emp.name}
+                    layout
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.98 }}
+                    transition={{
+                      layout: { type: 'spring', stiffness: 350, damping: 30 },
+                      opacity: { duration: 0.2 },
+                    }}
+                    className={`px-4 sm:px-5 py-3 transition-colors hover:bg-gray-50/60 group ${
+                      !emp.hasData ? 'grayscale-[0.5] opacity-60' : ''
+                    }`}
+                  >
+                    {/* ── Desktop: single-row grid ── */}
+                    <div className="hidden sm:grid grid-cols-12 gap-2 items-center">
+                      {/* Rank */}
+                      <div className="col-span-1 text-center">
+                        <span
+                          className={`text-xs font-bold tabular-nums ${
+                            emp.hasData && displayRank <= 3 ? 'text-primary-600' : 'text-gray-300'
+                          }`}
+                        >
+                          {emp.hasData ? displayRank : '-'}
                         </span>
-                      ) : (
-                        <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest">No change</span>
-                      )}
-                    </div>
-                  </div>
+                      </div>
 
-                  {/* ── Mobile: stacked card layout ── */}
-                  <div className="flex flex-col gap-2.5 sm:hidden">
-                    {/* Top row: rank + name + change */}
-                    <div className="flex items-center gap-2.5">
-                      <span className={`text-sm font-bold tabular-nums w-6 text-center flex-shrink-0 ${
-                        emp.hasData && displayRank <= 3 ? 'text-primary-600' : 'text-gray-300'
-                      }`}>
-                        {emp.hasData ? displayRank : '-'}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-sm font-semibold truncate ${
-                          emp.hasData ? 'text-gray-700' : 'text-gray-500'
-                        }`}>
+                      {/* Name */}
+                      <div className="col-span-3 min-w-0">
+                        <p
+                          onClick={() => onUserSelect(emp.name)}
+                          className={`text-sm font-semibold truncate cursor-pointer transition-colors ${
+                            emp.hasData
+                              ? 'text-gray-700 group-hover:text-primary-600'
+                              : 'text-gray-500'
+                          }`}
+                        >
                           {emp.name}
                         </p>
-                        <p className="text-[10px] text-gray-400">{emp.role}</p>
+                        <p className="text-[10px] text-gray-400 truncate">{emp.role}</p>
                       </div>
-                      <span className={`flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ring-inset flex-shrink-0 ${
-                        emp.hasData && Math.abs(emp.periodChange) >= 0.05 ? (
-                          emp.periodChange > 0
-                            ? 'bg-emerald-50 text-emerald-600 ring-emerald-100'
-                            : 'bg-red-50 text-red-500 ring-red-100'
-                        ) : 'hidden'
-                      }`}>
-                        {emp.hasData && Math.abs(emp.periodChange) >= 0.05 && (
-                          <>
+
+                      {/* Score bar */}
+                      <div className="col-span-5 flex items-center gap-2.5">
+                        <div className="flex-1 relative h-5 overflow-hidden rounded bg-gray-100">
+                          {emp.hasData && (
+                            <>
+                              <motion.div
+                                key={`${emp.name}-${sortBy}`}
+                                initial={{ width: 0 }}
+                                animate={{ width: `${barWidth}%` }}
+                                transition={{
+                                  duration: 0.6,
+                                  ease: [0.22, 1, 0.36, 1],
+                                  delay: idx * 0.015,
+                                }}
+                                className={`h-full rounded ${
+                                  isAboveAvg ? 'bg-emerald-400/70' : 'bg-amber-400/70'
+                                }`}
+                              />
+                              <div
+                                className="absolute top-0 h-full w-0.5 bg-blue-600/50"
+                                style={{ left: `${avgMarker}%` }}
+                              />
+                            </>
+                          )}
+                        </div>
+                        <span className="text-xs font-bold text-gray-700 tabular-nums w-14 text-right flex-shrink-0">
+                          {emp.hasData ? formatMetricDisplay(metricId, emp.value) : 'N/A'}
+                        </span>
+                      </div>
+
+                      {/* Period change: first bucket to last bucket in selected range */}
+                      <div className="col-span-3 flex items-center justify-end">
+                        {emp.hasData && Math.abs(emp.periodChange) >= 0.05 ? (
+                          <span
+                            className={`flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ring-inset ${
+                              emp.periodChange > 0
+                                ? 'bg-emerald-50 text-emerald-600 ring-emerald-100'
+                                : 'bg-red-50 text-red-500 ring-red-100'
+                            }`}
+                          >
                             {emp.periodChange > 0 ? (
                               <ArrowUpRight className="h-3 w-3" />
                             ) : (
                               <ArrowDownRight className="h-3 w-3" />
                             )}
                             {formatMetricDeltaDisplay(metricId, emp.periodChange)}
-                          </>
-                        )}
-                      </span>
-                      {(!emp.hasData || Math.abs(emp.periodChange) < 0.05) && (
-                        <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest">No change</span>
-                      )}
-                    </div>
-
-                    {/* Bottom row: full-width score bar */}
-                    <div className="flex items-center gap-2.5 pl-8">
-                      <div className="flex-1 relative h-4 overflow-hidden rounded bg-gray-100">
-                        {emp.hasData && (
-                          <>
-                            <motion.div
-                              key={`${emp.name}-${sortBy}-m`}
-                              initial={{ width: 0 }}
-                              animate={{ width: `${barWidth}%` }}
-                              transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1], delay: idx * 0.015 }}
-                              className={`h-full rounded ${
-                                isAboveAvg ? 'bg-emerald-400/70' : 'bg-amber-400/70'
-                              }`}
-                            />
-                            <div
-                              className="absolute top-0 h-full w-px bg-blue-600/40"
-                              style={{ left: `${avgMarker}%` }}
-                            />
-                          </>
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest">
+                            No change
+                          </span>
                         )}
                       </div>
-                      <span className="text-xs font-bold text-gray-700 tabular-nums flex-shrink-0">
-                        {emp.hasData ? formatMetricDisplay(metricId, emp.value) : 'N/A'}
-                      </span>
                     </div>
-                  </div>
-                </motion.div>
-              );
-            })}
+
+                    {/* ── Mobile: stacked card layout ── */}
+                    <div className="flex flex-col gap-2.5 sm:hidden">
+                      {/* Top row: rank + name + change */}
+                      <div className="flex items-center gap-2.5">
+                        <span
+                          className={`text-sm font-bold tabular-nums w-6 text-center flex-shrink-0 ${
+                            emp.hasData && displayRank <= 3 ? 'text-primary-600' : 'text-gray-300'
+                          }`}
+                        >
+                          {emp.hasData ? displayRank : '-'}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p
+                            className={`text-sm font-semibold truncate ${
+                              emp.hasData ? 'text-gray-700' : 'text-gray-500'
+                            }`}
+                          >
+                            {emp.name}
+                          </p>
+                          <p className="text-[10px] text-gray-400">{emp.role}</p>
+                        </div>
+                        <span
+                          className={`flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ring-inset flex-shrink-0 ${
+                            emp.hasData && Math.abs(emp.periodChange) >= 0.05
+                              ? emp.periodChange > 0
+                                ? 'bg-emerald-50 text-emerald-600 ring-emerald-100'
+                                : 'bg-red-50 text-red-500 ring-red-100'
+                              : 'hidden'
+                          }`}
+                        >
+                          {emp.hasData && Math.abs(emp.periodChange) >= 0.05 && (
+                            <>
+                              {emp.periodChange > 0 ? (
+                                <ArrowUpRight className="h-3 w-3" />
+                              ) : (
+                                <ArrowDownRight className="h-3 w-3" />
+                              )}
+                              {formatMetricDeltaDisplay(metricId, emp.periodChange)}
+                            </>
+                          )}
+                        </span>
+                        {(!emp.hasData || Math.abs(emp.periodChange) < 0.05) && (
+                          <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest">
+                            No change
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Bottom row: full-width score bar */}
+                      <div className="flex items-center gap-2.5 pl-8">
+                        <div className="flex-1 relative h-4 overflow-hidden rounded bg-gray-100">
+                          {emp.hasData && (
+                            <>
+                              <motion.div
+                                key={`${emp.name}-${sortBy}-m`}
+                                initial={{ width: 0 }}
+                                animate={{ width: `${barWidth}%` }}
+                                transition={{
+                                  duration: 0.6,
+                                  ease: [0.22, 1, 0.36, 1],
+                                  delay: idx * 0.015,
+                                }}
+                                className={`h-full rounded ${
+                                  isAboveAvg ? 'bg-emerald-400/70' : 'bg-amber-400/70'
+                                }`}
+                              />
+                              <div
+                                className="absolute top-0 h-full w-px bg-blue-600/40"
+                                style={{ left: `${avgMarker}%` }}
+                              />
+                            </>
+                          )}
+                        </div>
+                        <span className="text-xs font-bold text-gray-700 tabular-nums flex-shrink-0">
+                          {emp.hasData ? formatMetricDisplay(metricId, emp.value) : 'N/A'}
+                        </span>
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })}
             </AnimatePresence>
           </div>
 
@@ -4775,7 +5316,8 @@ function MetricEmployeeRankingCard({
               </div>
             </div>
             <span className="text-[10px] font-bold text-gray-400">
-              {validEmployees.filter(e => e.value >= avg).length}/{validEmployees.length} above average
+              {validEmployees.filter((e) => e.value >= avg).length}/{validEmployees.length} above
+              average
             </span>
           </div>
         </div>
@@ -4796,11 +5338,16 @@ function MetricInsightsCard({
 
   const employees = useMemo(
     () =>
-      getMetricAllEmployeeData(metricId, analyticsRange, INDIVIDUAL_METRICS_ROSTER, getBaseMetricValueForEmployee),
+      getMetricAllEmployeeData(
+        metricId,
+        analyticsRange,
+        INDIVIDUAL_METRICS_ROSTER,
+        getBaseMetricValueForEmployee,
+      ),
     [metricId, analyticsRange],
   );
 
-  const hasAnyData = useMemo(() => employees.some(e => e.hasData), [employees]);
+  const hasAnyData = useMemo(() => employees.some((e) => e.hasData), [employees]);
 
   const insights = useMemo(
     () =>
@@ -4831,7 +5378,13 @@ function MetricInsightsCard({
   }, [metricId, analyticsRange]);
 
   return (
-    <motion.div custom={4} variants={cardVariants} initial="hidden" animate="visible" className="h-full">
+    <motion.div
+      custom={4}
+      variants={cardVariants}
+      initial="hidden"
+      animate="visible"
+      className="h-full"
+    >
       <AnalyticsCard
         icon={<Eye className="h-4 w-4" />}
         title="Key Insights"
@@ -4874,47 +5427,55 @@ function MetricInsightsCard({
                                   : 'bg-blue-50 text-blue-500'
                             }`}
                           >
-                        {insight.type === 'warning' ? (
-                          <AlertTriangle className="h-4 w-4" />
-                        ) : insight.type === 'success' ? (
-                          <TrendingUp className="h-4 w-4" />
-                        ) : (
-                          <Activity className="h-4 w-4" />
-                        )}
+                            {insight.type === 'warning' ? (
+                              <AlertTriangle className="h-4 w-4" />
+                            ) : insight.type === 'success' ? (
+                              <TrendingUp className="h-4 w-4" />
+                            ) : (
+                              <Activity className="h-4 w-4" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p
+                              className={`text-sm font-semibold leading-none mb-1 ${
+                                insight.type === 'warning'
+                                  ? 'text-amber-700'
+                                  : insight.type === 'success'
+                                    ? 'text-emerald-700'
+                                    : 'text-blue-700'
+                              }`}
+                            >
+                              {insight.title}
+                            </p>
+                            <p className="text-xs text-gray-500 leading-relaxed">
+                              {insight.message}
+                            </p>
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-sm font-semibold leading-none mb-1 ${
-                          insight.type === 'warning' ? 'text-amber-700' : insight.type === 'success' ? 'text-emerald-700' : 'text-blue-700'
-                        }`}>
-                          {insight.title}
-                        </p>
-                        <p className="text-xs text-gray-500 leading-relaxed">{insight.message}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </motion.div>
-            </AnimatePresence>
-          </div>
-          <div className="px-4 pb-3">
-            <CardPagination
-              currentPage={safeCurrentPage}
-              totalPages={totalPages}
-              onPrevious={() => {
-                setPageDirection(-1);
-                setCurrentPage(p => Math.max(0, p - 1));
-              }}
-              onNext={() => {
-                setPageDirection(1);
-                setCurrentPage(p => Math.min(totalPages - 1, p + 1));
-              }}
-            />
-          </div>
-        </>
-      )}
-    </div>
-  </AnalyticsCard>
-</motion.div>
+                    ))}
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+              <div className="px-4 pb-3">
+                <CardPagination
+                  currentPage={safeCurrentPage}
+                  totalPages={totalPages}
+                  onPrevious={() => {
+                    setPageDirection(-1);
+                    setCurrentPage((p) => Math.max(0, p - 1));
+                  }}
+                  onNext={() => {
+                    setPageDirection(1);
+                    setCurrentPage((p) => Math.min(totalPages - 1, p + 1));
+                  }}
+                />
+              </div>
+            </>
+          )}
+        </div>
+      </AnalyticsCard>
+    </motion.div>
   );
 }
 
@@ -4937,13 +5498,29 @@ function MetricDistributionCard({
       ),
     [metricId, analyticsRange],
   );
-  const { bins: distributionData, totalEmployees, dominantZone, dominantEmployeeCount, dominantSharePct, dominantBandLabel } =
-    metricDistribution;
+  const {
+    bins: distributionData,
+    totalEmployees,
+    dominantZone,
+    dominantEmployeeCount,
+    dominantSharePct,
+    dominantBandLabel,
+  } = metricDistribution;
 
   if (totalEmployees === 0) {
     return (
-      <motion.div custom={5} variants={cardVariants} initial="hidden" animate="visible" className="h-full min-w-0 w-full">
-        <AnalyticsCard icon={<Users className="h-4 w-4" />} title="Score distribution" subtitle="Performance spread">
+      <motion.div
+        custom={5}
+        variants={cardVariants}
+        initial="hidden"
+        animate="visible"
+        className="h-full min-w-0 w-full"
+      >
+        <AnalyticsCard
+          icon={<Users className="h-4 w-4" />}
+          title="Score distribution"
+          subtitle="Performance spread"
+        >
           <div className="flex flex-col items-center justify-center p-8 text-center flex-1">
             <div className="h-10 w-10 rounded-full bg-gray-50 flex items-center justify-center mb-3">
               <Search className="h-5 w-5 text-gray-300" />
@@ -4963,7 +5540,13 @@ function MetricDistributionCard({
     : `${totalEmployees} employees · vs Global Avg ${METRIC_LABELS[metricId] ?? ''}`;
 
   return (
-    <motion.div custom={5} variants={cardVariants} initial="hidden" animate="visible" className="h-full min-w-0 w-full">
+    <motion.div
+      custom={5}
+      variants={cardVariants}
+      initial="hidden"
+      animate="visible"
+      className="h-full min-w-0 w-full"
+    >
       <AnalyticsCard
         icon={<Users className="h-4 w-4" />}
         title="Score distribution"
@@ -5006,13 +5589,15 @@ function MetricDistributionCard({
           </div>
 
           <div className="grid grid-cols-4 gap-1">
-            {distributionData.map(d => {
+            {distributionData.map((d) => {
               const pct = totalEmployees > 0 ? Math.round((d.count / totalEmployees) * 100) : 0;
               return (
                 <div key={d.range} className="flex min-w-0 flex-col items-center gap-1">
                   <div className="h-1.5 w-full rounded-full" style={{ background: d.fill }} />
                   <span className="text-[10px] font-bold text-gray-500 tabular-nums">{pct}%</span>
-                  <span className="text-[8px] sm:text-[9px] text-gray-400 font-medium text-center leading-tight px-0.5 break-words">{d.range}</span>
+                  <span className="text-[8px] sm:text-[9px] text-gray-400 font-medium text-center leading-tight px-0.5 break-words">
+                    {d.range}
+                  </span>
                 </div>
               );
             })}
@@ -5055,12 +5640,18 @@ function MetricTrendCard({
     if (!dataset) return true;
     if (metricId === 'professional-conduct') return true;
     const series = getGlobalSeries(dataset, metricId as any);
-    return series.some(p => p.value !== null);
+    return series.some((p) => p.value !== null);
   }, [dataset, metricId]);
 
   if (!hasAnyTrendData) {
     return (
-      <motion.div custom={6} variants={cardVariants} initial="hidden" animate="visible" className="h-full min-w-0 w-full">
+      <motion.div
+        custom={6}
+        variants={cardVariants}
+        initial="hidden"
+        animate="visible"
+        className="h-full min-w-0 w-full"
+      >
         <AnalyticsCard
           icon={<Activity className="h-4 w-4" />}
           title={trendTitle}
@@ -5072,7 +5663,8 @@ function MetricTrendCard({
             </div>
             <p className="text-sm font-semibold text-gray-900">No data found</p>
             <p className="text-xs text-gray-500 mt-1 max-w-[220px]">
-              The trend cannot be calculated because there are no employee records for this metric in the selected period.
+              The trend cannot be calculated because there are no employee records for this metric
+              in the selected period.
             </p>
           </div>
         </AnalyticsCard>
@@ -5084,7 +5676,13 @@ function MetricTrendCard({
   const trendYPadding = getMetricKind(metricId) === 'likert' ? 0.4 : 5;
 
   return (
-    <motion.div custom={6} variants={cardVariants} initial="hidden" animate="visible" className="h-full min-w-0 w-full">
+    <motion.div
+      custom={6}
+      variants={cardVariants}
+      initial="hidden"
+      animate="visible"
+      className="h-full min-w-0 w-full"
+    >
       <AnalyticsCard
         icon={<Activity className="h-4 w-4" />}
         title={trendTitle}
@@ -5143,22 +5741,19 @@ function MetricTrendCard({
                     padding: '10px 14px',
                   }}
                   itemStyle={{ fontWeight: 700, fontSize: '12px' }}
-                  labelStyle={{ fontWeight: 600, color: '#6b7280', marginBottom: '6px', fontSize: '11px' }}
+                  labelStyle={{
+                    fontWeight: 600,
+                    color: '#6b7280',
+                    marginBottom: '6px',
+                    fontSize: '11px',
+                  }}
                   formatter={(v, name) => {
-                    const num =
-                      typeof v === "number"
-                        ? v
-                        : typeof v === "string"
-                          ? Number(v)
-                          : NaN;
-                    const displayName = name === "value" ? "Score" : "Target";
+                    const num = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN;
+                    const displayName = name === 'value' ? 'Score' : 'Target';
                     if (!Number.isFinite(num)) {
-                      return ["—", displayName];
+                      return ['—', displayName];
                     }
-                    return [
-                      formatRuleMetricValue(metricId, num),
-                      displayName,
-                    ];
+                    return [formatRuleMetricValue(metricId, num), displayName];
                   }}
                 />
                 <Area
@@ -5217,22 +5812,33 @@ const METRIC_ICONS: Record<string, React.ReactNode> = {
   'hygiene-compliance': <Check className="h-3.5 w-3.5" />,
   'sop-compliance': <Target className="h-3.5 w-3.5" />,
   'customer-interaction': <Users className="h-3.5 w-3.5" />,
-  'cashiering': <Activity className="h-3.5 w-3.5" />,
+  cashiering: <Activity className="h-3.5 w-3.5" />,
   'suggestive-selling-and-upselling': <TrendingUp className="h-3.5 w-3.5" />,
   'service-efficiency': <Activity className="h-3.5 w-3.5" />,
 };
 
 function getMetricCategory(id: string): string {
   if (['workplace-relations', 'professional-conduct'].includes(id)) return 'Core Performance';
-  if (['attendance-rate', 'punctuality-rate', 'productivity-rate', 'average-order-value'].includes(id)) return 'Operational';
-  if (['customer-interaction', 'cashiering', 'suggestive-selling-and-upselling', 'service-efficiency'].includes(id)) return 'Customer Service';
+  if (
+    ['attendance-rate', 'punctuality-rate', 'productivity-rate', 'average-order-value'].includes(id)
+  )
+    return 'Operational';
+  if (
+    [
+      'customer-interaction',
+      'cashiering',
+      'suggestive-selling-and-upselling',
+      'service-efficiency',
+    ].includes(id)
+  )
+    return 'Customer Service';
   return 'Compliance';
 }
 
 const METRIC_CATEGORY_COLORS: Record<string, string> = {
   'Core Performance': 'bg-blue-500',
-  'Operational': 'bg-violet-500',
-  'Compliance': 'bg-emerald-500',
+  Operational: 'bg-violet-500',
+  Compliance: 'bg-emerald-500',
   'Customer Service': 'bg-rose-500',
 };
 
@@ -5247,7 +5853,7 @@ function MetricSelect({
   const [search, setSearch] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const selectedMetric = METRICS.find(m => m.id === selectedMetricId);
+  const selectedMetric = METRICS.find((m) => m.id === selectedMetricId);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -5261,9 +5867,10 @@ function MetricSelect({
     return () => document.removeEventListener('mousedown', handleClick);
   }, [isOpen]);
 
-  const filtered = METRICS.filter(m =>
-    m.label.toLowerCase().includes(search.toLowerCase()) ||
-    getMetricCategory(m.id).toLowerCase().includes(search.toLowerCase())
+  const filtered = METRICS.filter(
+    (m) =>
+      m.label.toLowerCase().includes(search.toLowerCase()) ||
+      getMetricCategory(m.id).toLowerCase().includes(search.toLowerCase()),
   );
 
   // Group by category
@@ -5296,14 +5903,20 @@ function MetricSelect({
         <div className="flex-1 min-w-0">
           {selectedMetric ? (
             <>
-              <p className="text-sm font-bold text-gray-800 truncate leading-tight">{selectedMetric.label}</p>
-              <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">{getMetricCategory(selectedMetricId)}</p>
+              <p className="text-sm font-bold text-gray-800 truncate leading-tight">
+                {selectedMetric.label}
+              </p>
+              <p className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">
+                {getMetricCategory(selectedMetricId)}
+              </p>
             </>
           ) : (
             <span className="text-sm font-medium text-gray-400">Select a metric...</span>
           )}
         </div>
-        <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown
+          className={`h-4 w-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+        />
       </button>
 
       {/* Dropdown */}
@@ -5339,8 +5952,12 @@ function MetricSelect({
                 Object.entries(grouped).map(([category, metrics]) => (
                   <div key={category}>
                     <div className="flex items-center gap-2 px-3 py-1.5">
-                      <div className={`h-1.5 w-1.5 rounded-full ${METRIC_CATEGORY_COLORS[category] ?? 'bg-gray-400'}`} />
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{category}</span>
+                      <div
+                        className={`h-1.5 w-1.5 rounded-full ${METRIC_CATEGORY_COLORS[category] ?? 'bg-gray-400'}`}
+                      />
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                        {category}
+                      </span>
                     </div>
                     <div className="space-y-0.5">
                       {metrics.map((metric) => (
@@ -5356,13 +5973,19 @@ function MetricSelect({
                             selectedMetricId === metric.id ? 'bg-blue-50/80' : ''
                           } ${metric.supported ? '' : 'opacity-80'}`}
                         >
-                          <div className={`h-8 w-8 flex flex-shrink-0 items-center justify-center rounded-full shadow-sm ${
-                            selectedMetricId === metric.id ? 'bg-primary-100 text-primary-600' : 'bg-gray-50 text-gray-500'
-                          }`}>
+                          <div
+                            className={`h-8 w-8 flex flex-shrink-0 items-center justify-center rounded-full shadow-sm ${
+                              selectedMetricId === metric.id
+                                ? 'bg-primary-100 text-primary-600'
+                                : 'bg-gray-50 text-gray-500'
+                            }`}
+                          >
                             {METRIC_ICONS[metric.id] ?? <Target className="h-3.5 w-3.5" />}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className={`text-sm font-bold truncate ${selectedMetricId === metric.id ? 'text-blue-700' : 'text-gray-700'}`}>
+                            <p
+                              className={`text-sm font-bold truncate ${selectedMetricId === metric.id ? 'text-blue-700' : 'text-gray-700'}`}
+                            >
                               {metric.label}
                             </p>
                           </div>
@@ -5399,10 +6022,13 @@ function MetricsViewContent({
   analyticsRange: AnalyticsRangeSelection;
   onUserSelect: (userName: string) => void;
 }) {
-  const [selectedMetric, setSelectedMetric] = useState<string>(coerceLegacyMetricSelection(METRICS[0].id));
+  const [selectedMetric, setSelectedMetric] = useState<string>(
+    coerceLegacyMetricSelection(METRICS[0].id),
+  );
   const selectedMetricMeta = METRICS.find((metric) => metric.id === selectedMetric);
   const selectedMetricSupported = selectedMetricMeta?.supported ?? true;
-  const { stickyRef: metricsHeaderRef, isStuck: isMetricsHeaderStuck } = useStickyHeaderState(analyticsRange);
+  const { stickyRef: metricsHeaderRef, isStuck: isMetricsHeaderStuck } =
+    useStickyHeaderState(analyticsRange);
 
   useEffect(() => {
     if (selectedMetric === 'customer-service') {
@@ -5417,8 +6043,8 @@ function MetricsViewContent({
         ref={metricsHeaderRef}
         className={`sticky -top-4 sm:-top-6 z-20 -mx-4 sm:-mx-6 rounded-b-xl border-b border-x px-5 py-4 shadow-sm backdrop-blur-xl backdrop-saturate-150 transition-[background-color,border-color,box-shadow] duration-200 ${
           isMetricsHeaderStuck
-            ? "border-primary-200/35 bg-primary-50/28 shadow-[0_1px_0_0_rgba(255,255,255,0.35)_inset]"
-            : "border-white/30 bg-white/30 shadow-[0_1px_0_0_rgba(255,255,255,0.45)_inset]"
+            ? 'border-primary-200/35 bg-primary-50/28 shadow-[0_1px_0_0_rgba(255,255,255,0.35)_inset]'
+            : 'border-white/30 bg-white/30 shadow-[0_1px_0_0_rgba(255,255,255,0.45)_inset]'
         }`}
       >
         <motion.div
@@ -5427,10 +6053,7 @@ function MetricsViewContent({
           className="flex flex-col gap-4 sm:flex-row sm:items-center w-full"
         >
           <div className="w-full sm:w-72">
-            <MetricSelect
-              selectedMetricId={selectedMetric}
-              onSelect={setSelectedMetric}
-            />
+            <MetricSelect selectedMetricId={selectedMetric} onSelect={setSelectedMetric} />
           </div>
           <motion.div
             key={selectedMetric}
@@ -5439,22 +6062,27 @@ function MetricsViewContent({
             className="grid grid-cols-3 gap-3 sm:flex sm:items-center sm:gap-6 text-sm border-t border-gray-100 pt-3 sm:border-t-0 sm:pt-0 sm:border-l sm:border-gray-100 sm:pl-6"
           >
             {[
-              { label: "Category", value: getMetricCategory(selectedMetric) },
+              { label: 'Category', value: getMetricCategory(selectedMetric) },
               {
-                label: "Type",
+                label: 'Type',
                 value:
-                  getMetricKind(selectedMetric) === "likert"
-                    ? "5-Point Scale"
-                    : getMetricKind(selectedMetric) === "monetary"
-                      ? "Currency"
-                      : selectedMetric.includes("compliance")
-                        ? "Pass/Fail"
-                        : "Percentage",
+                  getMetricKind(selectedMetric) === 'likert'
+                    ? '5-Point Scale'
+                    : getMetricKind(selectedMetric) === 'monetary'
+                      ? 'Currency'
+                      : selectedMetric.includes('compliance')
+                        ? 'Pass/Fail'
+                        : 'Percentage',
               },
-              { label: "Period", value: periodLabel },
+              { label: 'Period', value: periodLabel },
             ].map((info) => (
-              <div key={info.label} className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{info.label}</span>
+              <div
+                key={info.label}
+                className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2"
+              >
+                <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                  {info.label}
+                </span>
                 <span className="text-xs sm:text-sm font-bold text-gray-700">{info.value}</span>
               </div>
             ))}
@@ -5464,9 +6092,12 @@ function MetricsViewContent({
 
       {!selectedMetricSupported ? (
         <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/60 p-8 text-center">
-          <p className="text-lg font-semibold text-gray-700">Professional Conduct is currently unavailable</p>
+          <p className="text-lg font-semibold text-gray-700">
+            Professional Conduct is currently unavailable
+          </p>
           <p className="mt-2 text-sm text-gray-500">
-            This metric remains visible in the selector, but live snapshots and event logs are not implemented yet.
+            This metric remains visible in the selector, but live snapshots and event logs are not
+            implemented yet.
           </p>
         </div>
       ) : (
@@ -5538,7 +6169,11 @@ function formatTenureFromDateStarted(value: string | null | undefined): string {
   const dateStarted = new Date(value);
   if (Number.isNaN(dateStarted.getTime())) return '—';
 
-  const startUtc = Date.UTC(dateStarted.getFullYear(), dateStarted.getMonth(), dateStarted.getDate());
+  const startUtc = Date.UTC(
+    dateStarted.getFullYear(),
+    dateStarted.getMonth(),
+    dateStarted.getDate(),
+  );
   const now = new Date();
   const nowUtc = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
   const elapsedDays = Math.max(0, Math.floor((nowUtc - startUtc) / (1000 * 60 * 60 * 24)));
@@ -5562,7 +6197,7 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
   const [activeView, setActiveView] = useState<AnalyticsView>('general');
   const [selectedUser, setSelectedUser] = useState<UserEntry | null>(null);
   const [analyticsRange, setAnalyticsRange] = useState<AnalyticsRangeSelection>(() =>
-    createDefaultRangeForGranularity("day"),
+    createDefaultRangeForGranularity('day'),
   );
   const metricSnapshotsQuery = useQuery({
     queryKey: [
@@ -5572,10 +6207,11 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
       analyticsRange.rangeStartYmd,
       analyticsRange.rangeEndYmd,
     ],
-    queryFn: () => fetchEmployeeMetricSnapshots({
-      rangeStartYmd: analyticsRange.rangeStartYmd,
-      rangeEndYmd: analyticsRange.rangeEndYmd,
-    }),
+    queryFn: () =>
+      fetchEmployeeMetricSnapshots({
+        rangeStartYmd: analyticsRange.rangeStartYmd,
+        rangeEndYmd: analyticsRange.rangeEndYmd,
+      }),
   });
   const liveDataset = useMemo(
     () => buildLiveAnalyticsDataset(analyticsRange, metricSnapshotsQuery.data ?? []),
@@ -5590,7 +6226,9 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
       const userId = selectedUser?.id;
       if (!userId) return null;
 
-      const res = await api.get<{ success?: boolean; data?: EmployeeProfileSummary }>(`/employee-profiles/${userId}`);
+      const res = await api.get<{ success?: boolean; data?: EmployeeProfileSummary }>(
+        `/employee-profiles/${userId}`,
+      );
       return res.data?.data ?? null;
     },
   });
@@ -5605,7 +6243,7 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
   }, [selectedEmployeeProfileQuery.data]);
   const { stickyRef: employeeHeaderRef, isStuck: isEmployeeHeaderStuck } = useStickyHeaderState(
     activeView,
-    activeView === "employee",
+    activeView === 'employee',
   );
 
   useEffect(() => {
@@ -5643,12 +6281,22 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
 
   const personalEpiSeries = useMemo(() => {
     if (!selectedUser || !stats) return null;
-    return buildPersonalEpiSeries(selectedUser.name, analyticsRange, stats.epi, generalViewMock.globalEpiTrend);
+    return buildPersonalEpiSeries(
+      selectedUser.name,
+      analyticsRange,
+      stats.epi,
+      generalViewMock.globalEpiTrend,
+    );
   }, [selectedUser, stats, analyticsRange, generalViewMock]);
 
   const personalRecognition = useMemo(() => {
     if (!selectedUser || !stats) return null;
-    return buildPersonalRecognitionValues(selectedUser.name, analyticsRange, stats.awards, stats.violations);
+    return buildPersonalRecognitionValues(
+      selectedUser.name,
+      analyticsRange,
+      stats.awards,
+      stats.violations,
+    );
   }, [selectedUser, stats, analyticsRange]);
 
   const personalRankInfo = useMemo(() => {
@@ -5657,7 +6305,9 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
     if (leaderboard.length === 0) {
       return { rank: 0, total: 0 };
     }
-    const idx = leaderboard.findIndex((row) => row.userId === selectedUser.id || row.name === selectedUser.name);
+    const idx = leaderboard.findIndex(
+      (row) => row.userId === selectedUser.id || row.name === selectedUser.name,
+    );
     const rank = idx === -1 ? leaderboard.length : idx + 1;
     return { rank, total: leaderboard.length };
   }, [selectedUser, liveDataset]);
@@ -5674,15 +6324,17 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
           <div className="flex items-center gap-2">
             <BarChart2 className="h-6 w-6 text-primary-600" />
             <h1 className="text-2xl font-bold text-gray-900">
-              {activeView === 'general' && 'Global Analytics'}
+              {activeView === 'general' && 'Global Employee Analytics'}
               {activeView === 'employee' && 'Employee Analysis'}
               {activeView === 'metrics' && 'Metrics Analysis'}
             </h1>
           </div>
           <p className="mt-1 hidden text-sm text-gray-500 sm:block">
             {activeView === 'general' && 'Workforce performance metrics, trends, and intelligence.'}
-            {activeView === 'employee' && 'Deep dive into specific employee performance and growth.'}
-            {activeView === 'metrics' && 'Detailed breakdown of specific organizational performance indicators.'}
+            {activeView === 'employee' &&
+              'Deep dive into specific employee performance and growth.'}
+            {activeView === 'metrics' &&
+              'Detailed breakdown of specific organizational performance indicators.'}
           </p>
         </div>
 
@@ -5762,14 +6414,16 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
                   <GeneralKeyInsightsCard
                     analyticsRange={analyticsRange}
                     globalEpiCurrent={
-                      generalViewMock.globalEpiTrend[generalViewMock.globalEpiTrend.length - 1]?.epi ??
-                      generalViewMock.globalEpi
+                      generalViewMock.globalEpiTrend[generalViewMock.globalEpiTrend.length - 1]
+                        ?.epi ?? generalViewMock.globalEpi
                     }
                     globalEpiPrevious={
-                      generalViewMock.globalEpiTrend[0]?.epi ??
-                      generalViewMock.globalEpi
+                      generalViewMock.globalEpiTrend[0]?.epi ?? generalViewMock.globalEpi
                     }
-                    employeeEpi={[...generalViewMock.leaderboardTop, ...generalViewMock.leaderboardBottom]}
+                    employeeEpi={[
+                      ...generalViewMock.leaderboardTop,
+                      ...generalViewMock.leaderboardBottom,
+                    ]}
                   />
                 </div>
               </div>
@@ -5782,10 +6436,14 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
                 <div className="lg:col-span-2">
                   <MetricsDistributionCard
                     distributionData={generalViewMock.distribution}
-                    distributionDominantEmployeeCount={generalViewMock.distributionDominantEmployeeCount}
+                    distributionDominantEmployeeCount={
+                      generalViewMock.distributionDominantEmployeeCount
+                    }
                     distributionDominantSharePct={generalViewMock.distributionDominantSharePct}
                     distributionDominantBandLabel={generalViewMock.distributionDominantBandLabel}
-                    distributionSummaryDominantZone={generalViewMock.distributionSummaryDominantZone}
+                    distributionSummaryDominantZone={
+                      generalViewMock.distributionSummaryDominantZone
+                    }
                   />
                 </div>
               </div>
@@ -5799,8 +6457,8 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
                 ref={employeeHeaderRef}
                 className={`sticky -top-4 sm:-top-6 z-20 -mx-4 sm:-mx-6 rounded-b-xl border-b border-x px-5 py-4 shadow-sm backdrop-blur-xl backdrop-saturate-150 transition-[background-color,border-color,box-shadow] duration-200 ${
                   isEmployeeHeaderStuck
-                    ? "border-primary-200/35 bg-primary-50/28 shadow-[0_1px_0_0_rgba(255,255,255,0.35)_inset]"
-                    : "border-white/30 bg-white/30 shadow-[0_1px_0_0_rgba(255,255,255,0.45)_inset]"
+                    ? 'border-primary-200/35 bg-primary-50/28 shadow-[0_1px_0_0_rgba(255,255,255,0.35)_inset]'
+                    : 'border-white/30 bg-white/30 shadow-[0_1px_0_0_rgba(255,255,255,0.45)_inset]'
                 }`}
               >
                 <motion.div
@@ -5823,9 +6481,16 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
                       className="grid grid-cols-3 gap-3 sm:flex sm:items-center sm:gap-6 text-sm border-t border-gray-100 pt-3 sm:border-t-0 sm:pt-0 sm:border-l sm:border-gray-100 sm:pl-6"
                     >
                       {selectedEmployeeMeta.map((info) => (
-                        <div key={info.label} className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2">
-                          <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{info.label}</span>
-                          <span className="text-xs sm:text-sm font-bold text-gray-700">{info.value}</span>
+                        <div
+                          key={info.label}
+                          className="flex flex-col sm:flex-row sm:items-center gap-0.5 sm:gap-2"
+                        >
+                          <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                            {info.label}
+                          </span>
+                          <span className="text-xs sm:text-sm font-bold text-gray-700">
+                            {info.value}
+                          </span>
                         </div>
                       ))}
                     </motion.div>
@@ -5845,10 +6510,7 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
                     Select an employee above to view their detailed performance analytics.
                   </p>
                 </motion.div>
-              ) : stats &&
-                personalEpiSeries &&
-                personalRecognition &&
-                personalRankInfo ? (
+              ) : stats && personalEpiSeries && personalRecognition && personalRankInfo ? (
                 <div className="space-y-6">
                   {/* Row 1: EPI + Global Ranking + Recognition */}
                   <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
@@ -5882,17 +6544,26 @@ export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPa
                   {/* Row 2: Trend + Insights (mirrors General View trend + alerts) */}
                   <div className="grid gap-4 lg:grid-cols-10">
                     <div className="lg:col-span-7 min-w-0">
-                      <PersonalTrendCard userName={selectedUser.name} analyticsRange={analyticsRange} />
+                      <PersonalTrendCard
+                        userName={selectedUser.name}
+                        analyticsRange={analyticsRange}
+                      />
                     </div>
                     <div className="lg:col-span-3">
-                      <PersonalInsightsCard analyticsRange={analyticsRange} userName={selectedUser.name} />
+                      <PersonalInsightsCard
+                        analyticsRange={analyticsRange}
+                        userName={selectedUser.name}
+                      />
                     </div>
                   </div>
 
                   {/* Row 3: Radar + Metrics Breakdown (mirrors General View radar + distribution) */}
                   <div className="grid gap-4 lg:grid-cols-3">
                     <div className="lg:col-span-1">
-                      <PersonalRadarCard userName={selectedUser.name} analyticsRange={analyticsRange} />
+                      <PersonalRadarCard
+                        userName={selectedUser.name}
+                        analyticsRange={analyticsRange}
+                      />
                     </div>
                     <div className="lg:col-span-2">
                       <PersonalMetricsBreakdownCard

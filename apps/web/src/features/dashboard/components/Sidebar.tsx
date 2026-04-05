@@ -187,14 +187,25 @@ export function Sidebar({ className = '' }: SidebarProps) {
           My Settings
         </AnimatedNavLink>
 
-        {hasPermission(PERMISSIONS.ANALYTICS_VIEW_EMPLOYEE_ANALYTICS) && (
+        {hasAnyPermission(
+          PERMISSIONS.ANALYTICS_VIEW_EMPLOYEE_ANALYTICS,
+          PERMISSIONS.ANALYTICS_VIEW_PROFITABILITY_ANALYTICS,
+        ) && (
           <>
             <div className="my-2 border-t border-gray-200" />
             {categoryLabel('Analytics')}
-            <AnimatedNavLink to="/employee-analytics" className={linkClass}>
-              <BarChart2 className="h-5 w-5" />
-              Employee Analytics
-            </AnimatedNavLink>
+            {hasPermission(PERMISSIONS.ANALYTICS_VIEW_EMPLOYEE_ANALYTICS) && (
+              <AnimatedNavLink to="/employee-analytics" className={linkClass}>
+                <BarChart2 className="h-5 w-5" />
+                Employee Analytics
+              </AnimatedNavLink>
+            )}
+            {hasPermission(PERMISSIONS.ANALYTICS_VIEW_PROFITABILITY_ANALYTICS) && (
+              <AnimatedNavLink to="/profitability-analytics" className={linkClass}>
+                <DollarSign className="h-5 w-5" />
+                Profitability Analytics
+              </AnimatedNavLink>
+            )}
           </>
         )}
 

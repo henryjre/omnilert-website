@@ -63,8 +63,9 @@ export const PERMISSIONS = {
   CASH_REQUESTS_VIEW: 'cash_requests.view',
   CASH_REQUESTS_MANAGE: 'cash_requests.manage',
 
-  // Analytics (1)
+  // Analytics (2)
   ANALYTICS_VIEW_EMPLOYEE_ANALYTICS: 'analytics.view_employee_analytics',
+  ANALYTICS_VIEW_PROFITABILITY_ANALYTICS: 'analytics.view_profitability_analytics',
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -175,6 +176,7 @@ export const PERMISSION_CATEGORIES: Record<string, { label: string; permissions:
     label: 'Analytics',
     permissions: [
       PERMISSIONS.ANALYTICS_VIEW_EMPLOYEE_ANALYTICS,
+      PERMISSIONS.ANALYTICS_VIEW_PROFITABILITY_ANALYTICS,
     ],
   },
 };
@@ -244,4 +246,5 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
   [PERMISSIONS.CASH_REQUESTS_VIEW]: 'Access the Cash Requests management page',
   [PERMISSIONS.CASH_REQUESTS_MANAGE]: 'Approve, reject, and disburse cash requests',
   [PERMISSIONS.ANALYTICS_VIEW_EMPLOYEE_ANALYTICS]: 'Access the Employee Analytics page and view performance metrics',
+  [PERMISSIONS.ANALYTICS_VIEW_PROFITABILITY_ANALYTICS]: 'Access the Profitability Analytics page and view P&L metrics',
 };

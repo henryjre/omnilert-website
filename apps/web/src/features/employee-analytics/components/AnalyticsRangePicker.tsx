@@ -336,14 +336,14 @@ function GranularityTabs({
 
   return (
     <div className="shrink-0 border-b border-gray-100 px-3 pb-3 pt-3">
-      <div className="relative flex gap-0.5 rounded-xl bg-gray-100/80 p-1">
-        {/* Sliding pill */}
+      <div className="relative flex rounded-xl bg-gray-100/80 p-1">
+        {/* Animated pill background */}
         <motion.div
-          className="absolute top-1 bottom-1 rounded-lg bg-white shadow-sm ring-1 ring-black/[0.04]"
+          className="absolute h-8 rounded-lg bg-primary-600"
           initial={false}
           animate={{
-            left: `calc(${(activeIndex / count) * 100}% + 4px * ${activeIndex > 0 ? 1 : 0})`,
-            width: `calc(${100 / count}% - ${activeIndex === 0 || activeIndex === count - 1 ? 2 : 4}px)`,
+            left: `calc(4px + ${activeIndex} * (100% - 8px) / ${count})`,
+            width: `calc((100% - 8px) / ${count})`,
           }}
           transition={{ type: "spring", bounce: 0.15, duration: 0.4 }}
         />
@@ -354,9 +354,13 @@ function GranularityTabs({
               key={g.id}
               type="button"
               onClick={() => onChange(g.id)}
-              className="relative z-10 flex-1 rounded-lg px-2 py-2 text-center text-[11px] font-bold uppercase tracking-wide transition-colors"
+              className="group relative flex h-8 flex-1 items-center justify-center rounded-lg px-2 text-[11px] font-bold uppercase tracking-wide outline-none transition-colors"
             >
-              <span className={isActive ? "text-primary-600" : "text-gray-500"}>
+              <span
+                className={`relative z-10 transition-colors duration-200 ${
+                  isActive ? "text-white" : "text-gray-500 group-hover:text-gray-700"
+                }`}
+              >
                 {g.label}
               </span>
             </button>

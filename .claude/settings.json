@@ -1,5 +1,10 @@
 {
   "enabledPlugins": {
     "javascript-typescript@claude-code-workflows": true
+  },
+  "permissions": {
+    "allow": [
+      "Bash(rtk pnpm:*)"
+    ]
   }
 }
