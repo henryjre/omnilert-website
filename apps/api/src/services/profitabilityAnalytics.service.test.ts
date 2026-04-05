@@ -80,7 +80,7 @@ test('getProfitabilityPreviousRange uses the immediately preceding same-length w
   );
 });
 
-test('getProfitabilityAnalytics prorates monthly overhead across days and estimates a month from the immediately previous actual month', async () => {
+test('getProfitabilityAnalytics loads one superset branch range and reuses it for current, previous, and bucket snapshots', async () => {
   const odooCalls: Array<{
     model: string;
     method: string;
@@ -118,8 +118,33 @@ test('getProfitabilityAnalytics prorates monthly overhead across days and estima
 
         const domainJson = JSON.stringify(kwargs?.domain ?? []);
 
-        if (model === 'pos.session' && domainJson.includes('2026-03-31 16:00:00')) {
+        if (
+          model === 'pos.session'
+          && domainJson.includes('2026-03-29 16:00:00')
+          && domainJson.includes('2026-04-02 15:59:59')
+        ) {
           return [
+            {
+              name: 'POS/PRIOR',
+              company_id: [5, 'Main Branch'],
+              start_at: '2026-03-30 02:00:00',
+              x_discount_orders: [
+                {
+                  price_unit: -5,
+                },
+              ],
+              x_refund_orders: [
+                {
+                  price_unit: 10,
+                  qty: -1,
+                },
+              ],
+              x_payment_methods: [
+                {
+                  amount: 100,
+                },
+              ],
+            },
             {
               name: 'POS/0001',
               company_id: [5, 'Main Branch'],
@@ -144,68 +169,9 @@ test('getProfitabilityAnalytics prorates monthly overhead across days and estima
           ];
         }
 
-        if (model === 'pos.session' && domainJson.includes('2026-03-29 16:00:00')) {
-          return [
-            {
-              name: 'POS/PRIOR',
-              company_id: [5, 'Main Branch'],
-              start_at: '2026-03-30 02:00:00',
-              x_discount_orders: [
-                {
-                  price_unit: -5,
-                },
-              ],
-              x_refund_orders: [
-                {
-                  price_unit: 10,
-                  qty: -1,
-                },
-              ],
-              x_payment_methods: [
-                {
-                  amount: 100,
-                },
-              ],
-            },
-          ];
-        }
-
         if (
           model === 'account.move.line'
           && domainJson.includes('POS/0001')
-          && domainJson.includes('100')
-        ) {
-          return [
-            {
-              ref: 'POS/0001',
-              debit: 40,
-              credit: 5,
-            },
-          ];
-        }
-
-        if (model === 'account.move.line' && domainJson.includes('POS/0001')) {
-          return [
-            {
-              ref: 'POS/0001',
-              debit: 0,
-              credit: 150,
-            },
-            {
-              ref: 'POS/0001',
-              debit: 40,
-              credit: 5,
-            },
-            {
-              ref: 'POS/0001',
-              debit: 115,
-              credit: 0,
-            },
-          ];
-        }
-
-        if (
-          model === 'account.move.line'
           && domainJson.includes('POS/PRIOR')
           && domainJson.includes('100')
         ) {
@@ -215,41 +181,10 @@ test('getProfitabilityAnalytics prorates monthly overhead across days and estima
               debit: 20,
               credit: 0,
             },
-          ];
-        }
-
-        if (model === 'account.move.line' && domainJson.includes('POS/PRIOR')) {
-          return [
             {
-              ref: 'POS/PRIOR',
-              debit: 0,
-              credit: 100,
-            },
-            {
-              ref: 'POS/PRIOR',
-              debit: 20,
-              credit: 0,
-            },
-            {
-              ref: 'POS/PRIOR',
-              debit: 80,
-              credit: 0,
-            },
-          ];
-        }
-
-        if (
-          model === 'purchase.order'
-          && domainJson.includes('2026-03-31 16:00:00')
-          && domainJson.includes('1053')
-          && domainJson.includes('1052')
-          && domainJson.includes('1054')
-        ) {
-          return [
-            {
-              company_id: [5, 'Main Branch'],
-              date_approve: '2026-04-01 05:00:00',
-              amount_total: 20,
+              ref: 'POS/0001',
+              debit: 40,
+              credit: 5,
             },
           ];
         }
@@ -257,6 +192,7 @@ test('getProfitabilityAnalytics prorates monthly overhead across days and estima
         if (
           model === 'purchase.order'
           && domainJson.includes('2026-03-29 16:00:00')
+          && domainJson.includes('2026-04-02 15:59:59')
           && domainJson.includes('1053')
           && domainJson.includes('1052')
           && domainJson.includes('1054')
@@ -267,11 +203,25 @@ test('getProfitabilityAnalytics prorates monthly overhead across days and estima
               date_approve: '2026-03-30 05:00:00',
               amount_total: 10,
             },
+            {
+              company_id: [5, 'Main Branch'],
+              date_approve: '2026-04-01 05:00:00',
+              amount_total: 20,
+            },
           ];
         }
 
-        if (model === 'hr.work.entry' && domainJson.includes('2026-04-01')) {
+        if (
+          model === 'hr.work.entry'
+          && domainJson.includes('2026-03-30')
+          && domainJson.includes('2026-04-02')
+        ) {
           return [
+            {
+              company_id: [5, 'Main Branch'],
+              date: '2026-03-30',
+              x_total_wage: 20,
+            },
             {
               company_id: [5, 'Main Branch'],
               date: '2026-04-01',
@@ -280,20 +230,10 @@ test('getProfitabilityAnalytics prorates monthly overhead across days and estima
           ];
         }
 
-        if (model === 'hr.work.entry' && domainJson.includes('2026-03-30')) {
-          return [
-            {
-              company_id: [5, 'Main Branch'],
-              date: '2026-03-30',
-              x_total_wage: 20,
-            },
-          ];
-        }
-
         if (
           model === 'account.move.line'
           && domainJson.includes('107')
-          && domainJson.includes('2026-03-01')
+          && domainJson.includes('2026-02-01')
           && domainJson.includes('2026-04-30')
         ) {
           return [
@@ -358,9 +298,10 @@ test('getProfitabilityAnalytics prorates monthly overhead across days and estima
   assert.equal(result.branchComparison[0]?.branch.id, 'branch-1');
   assert.equal(result.branchComparison[0]?.current.netProfit, 44.33);
   assert.equal(result.branchComparison[0]?.previousPeriod.netProfit, 30);
+  assert.equal(odooCalls.length, 5);
 
   assert.ok(
-    odooCalls.some((call) => call.model === 'pos.session' && JSON.stringify(call.kwargs?.domain ?? []).includes('2026-03-31 16:00:00')),
+    odooCalls.some((call) => call.model === 'pos.session' && JSON.stringify(call.kwargs?.domain ?? []).includes('2026-03-29 16:00:00')),
   );
 });
 
@@ -408,32 +349,10 @@ test('getProfitabilityAnalytics does not chain monthly overhead estimates beyond
         if (
           model === 'account.move.line'
           && domainJson.includes('107')
-          && domainJson.includes('2026-03-01')
+          && domainJson.includes('2026-01-01')
           && domainJson.includes('2026-05-31')
         ) {
           return [
-            {
-              company_id: [5, 'Main Branch'],
-              date: '2026-03-15',
-              debit: 310,
-              credit: 0,
-            },
-          ];
-        }
-
-        if (
-          model === 'account.move.line'
-          && domainJson.includes('107')
-          && domainJson.includes('2026-01-01')
-          && domainJson.includes('2026-03-31')
-        ) {
-          return [
-            {
-              company_id: [5, 'Main Branch'],
-              date: '2026-02-10',
-              debit: 280,
-              credit: 0,
-            },
             {
               company_id: [5, 'Main Branch'],
               date: '2026-03-15',
@@ -454,7 +373,7 @@ test('getProfitabilityAnalytics does not chain monthly overhead estimates beyond
 
   assert.equal(result.current.overheadExpenses, 310);
   assert.equal(result.current.overheadSource, 'estimated');
-  assert.equal(result.previousPeriod.overheadExpenses, 590);
+  assert.equal(result.previousPeriod.overheadExpenses, 310);
   assert.equal(result.previousPeriod.overheadSource, 'actual');
   assert.equal(result.currentBuckets.length, 2);
   assert.equal(result.currentBuckets[0]?.key, '2026-04');

@@ -795,20 +795,27 @@ export async function getProfitabilityAnalytics(
   });
   const previousRange = getProfitabilityPreviousRange(currentRange);
   const currentBuckets = buildProfitabilityBuckets(currentRange);
-  const previousBuckets = buildProfitabilityBuckets(previousRange);
+  const branchSupersetRange: ProfitabilityRangeSelection = {
+    granularity: currentRange.granularity,
+    rangeStartYmd:
+      compareYmd(previousRange.rangeStartYmd, currentRange.rangeStartYmd) <= 0
+        ? previousRange.rangeStartYmd
+        : currentRange.rangeStartYmd,
+    rangeEndYmd:
+      compareYmd(previousRange.rangeEndYmd, currentRange.rangeEndYmd) >= 0
+        ? previousRange.rangeEndYmd
+        : currentRange.rangeEndYmd,
+  };
 
   const branchData = await Promise.all(
     input.branches.map(async (branch) => {
-      const [currentData, previousData] = await Promise.all([
-        loadBranchPeriodData(branch, currentRange, deps),
-        loadBranchPeriodData(branch, previousRange, deps),
-      ]);
+      const branchPeriodData = await loadBranchPeriodData(branch, branchSupersetRange, deps);
 
-      const previousPeriod = aggregateBranchPeriodSnapshot(previousData, previousRange);
-      const current = aggregateBranchPeriodSnapshot(currentData, currentRange);
+      const previousPeriod = aggregateBranchPeriodSnapshot(branchPeriodData, previousRange);
+      const current = aggregateBranchPeriodSnapshot(branchPeriodData, currentRange);
 
-      const bucketSnapshots = currentBuckets.map((bucket, index) => {
-        const snapshot = aggregateBranchPeriodSnapshot(currentData, bucket);
+      const bucketSnapshots = currentBuckets.map((bucket) => {
+        const snapshot = aggregateBranchPeriodSnapshot(branchPeriodData, bucket);
 
         return {
           ...bucket,
@@ -818,8 +825,6 @@ export async function getProfitabilityAnalytics(
 
       return {
         branch,
-        currentData,
-        previousData,
         current,
         previousPeriod,
         bucketSnapshots,

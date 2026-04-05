@@ -878,8 +878,11 @@ function PnLTable({ snap, prior }: { snap: ProfitabilitySnapshot; prior: Profita
 
 // ─── Selected Branches Strip ──────────────────────────────────────────────────
 
+const BRANCH_COLLAPSE_THRESHOLD = 4;
+
 function SelectedBranchesStrip() {
   const { selectedBranchIds, companyBranchGroups } = useBranchStore();
+  const [expanded, setExpanded] = useState(false);
 
   const branchNames = useMemo(() => {
     const allBranches = companyBranchGroups.flatMap((g) => g.branches);
@@ -890,21 +893,42 @@ function SelectedBranchesStrip() {
 
   if (branchNames.length === 0) return null;
 
+  const shouldCollapse = branchNames.length > BRANCH_COLLAPSE_THRESHOLD;
+  const visibleNames = shouldCollapse && !expanded ? branchNames.slice(0, BRANCH_COLLAPSE_THRESHOLD) : branchNames;
+  const hiddenCount = branchNames.length - BRANCH_COLLAPSE_THRESHOLD;
+
   return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-1.5 text-gray-400">
+    <div className="flex flex-col gap-2 rounded-lg border border-gray-100 bg-gray-50/60 px-3.5 py-2.5 sm:flex-row sm:items-start sm:gap-2.5">
+      <div className="flex shrink-0 items-center gap-1.5 text-gray-400 sm:pt-0.5">
         <GitBranch className="h-3 w-3" />
-        <span className="text-[10px] font-bold uppercase tracking-widest">Selected Branches</span>
+        <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+          {branchNames.length} {branchNames.length === 1 ? 'Branch' : 'Branches'}
+        </span>
       </div>
-      <div className="flex flex-wrap gap-1.5">
-        {branchNames.map((name) => (
-          <span
-            key={name}
-            className="rounded-full bg-primary-50 px-2.5 py-0.5 text-xs font-medium text-primary-700"
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+        <AnimatePresence initial={false}>
+          {visibleNames.map((name) => (
+            <motion.span
+              key={name}
+              initial={{ opacity: 0, scale: 0.85 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.85 }}
+              transition={{ duration: 0.15 }}
+              className="rounded-full bg-primary-50 px-2.5 py-0.5 text-xs font-medium text-primary-700"
+            >
+              {name}
+            </motion.span>
+          ))}
+        </AnimatePresence>
+        {shouldCollapse && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="rounded-full border border-gray-200 bg-white px-2.5 py-0.5 text-xs font-medium text-gray-500 transition-colors hover:border-primary-200 hover:bg-primary-50 hover:text-primary-600"
           >
-            {name}
-          </span>
-        ))}
+            {expanded ? 'Show less' : `+${hiddenCount} more`}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -968,7 +992,7 @@ export function ProfitabilityAnalyticsPage() {
     {
       icon: ShoppingCart,
       label: 'Gross Sales',
-      value: formatCurrency(snap.grossSales, true),
+      value: formatCurrency(snap.grossSales),
       deltaPct: calcDeltaPct(snap.grossSales, prior.grossSales),
       deltaCaption: 'vs prior',
       color: 'blue' as KpiColor,
@@ -976,7 +1000,7 @@ export function ProfitabilityAnalyticsPage() {
     {
       icon: Receipt,
       label: 'Net Sales',
-      value: formatCurrency(snap.netSales, true),
+      value: formatCurrency(snap.netSales),
       deltaPct: calcDeltaPct(snap.netSales, prior.netSales),
       deltaCaption: 'vs prior',
       color: 'blue' as KpiColor,
@@ -984,7 +1008,7 @@ export function ProfitabilityAnalyticsPage() {
     {
       icon: TrendingUp,
       label: 'Gross Profit',
-      value: formatCurrency(snap.grossProfit, true),
+      value: formatCurrency(snap.grossProfit),
       deltaPct: calcDeltaPct(snap.grossProfit, prior.grossProfit),
       deltaCaption: 'vs prior',
       color: 'emerald' as KpiColor,
@@ -992,7 +1016,7 @@ export function ProfitabilityAnalyticsPage() {
     {
       icon: Activity,
       label: 'Operating Profit',
-      value: formatCurrency(snap.operatingProfit, true),
+      value: formatCurrency(snap.operatingProfit),
       deltaPct: calcDeltaPct(snap.operatingProfit, prior.operatingProfit),
       deltaCaption: 'vs prior',
       color: 'emerald' as KpiColor,
@@ -1000,7 +1024,7 @@ export function ProfitabilityAnalyticsPage() {
     {
       icon: DollarSign,
       label: 'Net Profit',
-      value: formatCurrency(snap.netProfit, true),
+      value: formatCurrency(snap.netProfit),
       deltaPct: calcDeltaPct(snap.netProfit, prior.netProfit),
       deltaCaption: 'vs prior',
       color: snap.netProfit >= 0 ? ('emerald' as KpiColor) : ('rose' as KpiColor),
