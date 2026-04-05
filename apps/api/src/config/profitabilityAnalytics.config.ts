@@ -4,7 +4,7 @@ export interface ProfitabilityBranchConfig {
 }
 
 const DEFAULT_VARIABLE_EXPENSE_VENDOR_IDS = [125, 3022, 3401, 13, 155];
-const DEFAULT_OVERHEAD_ACCOUNT_IDS = [107, 123, 188];
+const DEFAULT_OVERHEAD_ACCOUNT_IDS = [107, 2507, 123, 2509, 188, 2508];
 
 const BRANCH_CONFIG_BY_BRANCH_ID: Record<string, Partial<ProfitabilityBranchConfig>> = {};
 
