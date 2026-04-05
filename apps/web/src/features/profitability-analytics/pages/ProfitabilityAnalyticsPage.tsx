@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   DollarSign,
@@ -40,27 +41,14 @@ import {
 import {
   createDefaultRangeForGranularity,
   type AnalyticsRangeSelection,
-  type AnalyticsGranularity,
 } from '@/features/employee-analytics/utils/analyticsRangeBuckets';
+import {
+  fetchProfitabilityAnalytics,
+  type ProfitabilityBucketSnapshot,
+  type ProfitabilitySnapshot,
+} from '../services/profitabilityAnalytics.api';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-interface ProfitabilitySnapshot {
-  grossSales: number;
-  discounts: number;
-  refunds: number;
-  netSales: number;
-  cogs: number;
-  grossProfit: number;
-  variableExpenses: number;
-  grossSalary: number;
-  operatingProfit: number;
-  overheadExpenses: number;
-  netProfit: number;
-  grossMarginPct: number;
-  netMarginPct: number;
-  expenseRatio: number;
-}
 
 interface TrendPoint {
   label: string;
@@ -79,67 +67,57 @@ interface StackedBarPoint {
 // ─── Mock Data ────────────────────────────────────────────────────────────────
 // TODO: replace with real API calls per the Profitability Analytics spec
 
-const MOCK_CURRENT: ProfitabilitySnapshot = {
-  grossSales: 1_248_500,
-  discounts: 37_250,
-  refunds: 12_180,
-  netSales: 1_199_070,
-  cogs: 479_628,
-  grossProfit: 719_442,
-  variableExpenses: 62_400,
-  grossSalary: 312_000,
-  operatingProfit: 345_042,
-  overheadExpenses: 98_500,
-  netProfit: 246_542,
-  grossMarginPct: 60.0,
-  netMarginPct: 20.6,
-  expenseRatio: 39.4,
+const EMPTY_SNAPSHOT: ProfitabilitySnapshot = {
+  grossSales: 0,
+  discounts: 0,
+  refunds: 0,
+  netSales: 0,
+  cogs: 0,
+  grossProfit: 0,
+  variableExpenses: 0,
+  grossSalary: 0,
+  operatingProfit: 0,
+  overheadExpenses: 0,
+  netProfit: 0,
+  grossMarginPct: 0,
+  netMarginPct: 0,
+  expenseRatio: 0,
+  overheadSource: 'actual',
+  netProfitSource: 'actual',
 };
 
-const MOCK_PRIOR: ProfitabilitySnapshot = {
-  grossSales: 1_148_200,
-  discounts: 34_440,
-  refunds: 10_960,
-  netSales: 1_102_800,
-  cogs: 452_148,
-  grossProfit: 650_652,
-  variableExpenses: 57_410,
-  grossSalary: 308_000,
-  operatingProfit: 285_242,
-  overheadExpenses: 96_000,
-  netProfit: 189_242,
-  grossMarginPct: 59.0,
-  netMarginPct: 17.2,
-  expenseRatio: 41.8,
-};
-
-function buildTrendSeries(granularity: AnalyticsGranularity): TrendPoint[] {
-  const configs: Record<AnalyticsGranularity, { count: number; labelFn: (i: number) => string }> = {
-    day: { count: 7, labelFn: (i) => ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i] },
-    week: { count: 6, labelFn: (i) => `Wk ${i + 1}` },
-    month: { count: 6, labelFn: (i) => ['Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr'][i] },
-    year: { count: 3, labelFn: (i) => `${2024 + i}` },
-  };
-  const { count, labelFn } = configs[granularity];
-  const bases = [980_000, 1_010_000, 1_050_000, 1_090_000, 1_140_000, 1_190_000, 1_199_070];
-  return Array.from({ length: count }, (_, i) => {
-    const base = bases[Math.min(i, bases.length - 1)];
-    const variation = 0.96 + Math.sin(i * 1.3) * 0.04;
-    const ns = Math.round(base * variation);
-    const gp = Math.round(ns * 0.6);
-    const np = Math.round(ns * 0.205);
-    return { label: labelFn(i), netSales: ns, grossProfit: gp, netProfit: np };
-  });
+function buildTrendSeriesFromBuckets(buckets: ProfitabilityBucketSnapshot[]): TrendPoint[] {
+  return buckets.map((bucket) => ({
+    label: bucket.label,
+    netSales: bucket.netSales,
+    grossProfit: bucket.grossProfit,
+    netProfit: bucket.netProfit,
+  }));
 }
 
-function buildStackedSeries(granularity: AnalyticsGranularity): StackedBarPoint[] {
-  const trend = buildTrendSeries(granularity);
-  return trend.map((p) => ({
-    label: p.label,
-    revenue: p.netSales,
-    costs: Math.round(p.netSales * 0.795),
-    profit: p.netProfit,
+function buildStackedSeriesFromBuckets(buckets: ProfitabilityBucketSnapshot[]): StackedBarPoint[] {
+  return buckets.map((bucket) => ({
+    label: bucket.label,
+    revenue: bucket.netSales,
+    costs: bucket.cogs + bucket.variableExpenses + bucket.grossSalary + bucket.overheadExpenses,
+    profit: bucket.netProfit,
   }));
+}
+
+function hasSnapshotValues(snapshot: ProfitabilitySnapshot): boolean {
+  return (
+    snapshot.grossSales !== 0 ||
+    snapshot.discounts !== 0 ||
+    snapshot.refunds !== 0 ||
+    snapshot.netSales !== 0 ||
+    snapshot.cogs !== 0 ||
+    snapshot.grossProfit !== 0 ||
+    snapshot.variableExpenses !== 0 ||
+    snapshot.grossSalary !== 0 ||
+    snapshot.operatingProfit !== 0 ||
+    snapshot.overheadExpenses !== 0 ||
+    snapshot.netProfit !== 0
+  );
 }
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
@@ -162,6 +140,15 @@ function calcDeltaPct(current: number, prior: number): number {
   return ((current - prior) / prior) * 100;
 }
 
+function formatTooltipCurrencyValue(
+  value: number | string | ReadonlyArray<string | number> | undefined,
+  name: string | number | undefined,
+): [string, string] {
+  const resolvedValue = Array.isArray(value) ? value[0] : value;
+  const numericValue = typeof resolvedValue === 'number' ? resolvedValue : Number(resolvedValue ?? 0);
+  return [formatCurrency(Number.isFinite(numericValue) ? numericValue : 0, true), String(name ?? '')];
+}
+
 // ─── View Options ─────────────────────────────────────────────────────────────
 
 type ProfitView = 'chart' | 'table';
@@ -172,6 +159,17 @@ const VIEW_OPTIONS: ViewOption<ProfitView>[] = [
 ];
 
 // ─── AnalyticsCard ────────────────────────────────────────────────────────────
+
+// ─── Shared Animation Variants ────────────────────────────────────────────────
+
+const fadeUp = {
+  hidden: { opacity: 0, y: 16 },
+  visible: (delay: number = 0) => ({
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.35, ease: [0.2, 0, 0, 1] as [number, number, number, number], delay },
+  }),
+};
 
 function AnalyticsCard({
   icon: Icon,
@@ -187,7 +185,11 @@ function AnalyticsCard({
   className?: string;
 }) {
   return (
-    <div className={`flex h-full flex-col overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm ${className}`}>
+    <motion.div
+      className={`flex h-full flex-col overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm ${className}`}
+      whileHover={{ y: -2, boxShadow: '0 4px 16px 0 rgba(0,0,0,0.07)' }}
+      transition={{ duration: 0.2 }}
+    >
       <div className="flex items-center gap-3 border-b border-gray-100 bg-gray-50/40 px-5 py-4 flex-shrink-0">
         <Icon className="h-4 w-4 shrink-0 text-gray-400" />
         <div className="min-w-0">
@@ -198,7 +200,7 @@ function AnalyticsCard({
         </div>
       </div>
       {children}
-    </div>
+    </motion.div>
   );
 }
 
@@ -236,7 +238,7 @@ function KpiCard({
   const deltaBg = isFlat ? 'bg-gray-100' : isUp ? 'bg-emerald-50' : 'bg-rose-50';
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+    <div className="flex h-full flex-col gap-2.5 sm:gap-3 rounded-xl border border-gray-100 bg-white p-3 sm:p-4 shadow-sm">
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">{label}</span>
         <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${c.bg}`}>
@@ -244,7 +246,7 @@ function KpiCard({
         </div>
       </div>
       <div>
-        <p className={`text-2xl font-bold ${c.text} tabular-nums`}>{value}</p>
+        <p className={`text-lg sm:text-2xl font-bold ${c.text} tabular-nums`}>{value}</p>
       </div>
       <div className={`flex items-center gap-1.5 rounded-lg px-2 py-1 w-fit ${deltaBg}`}>
         <DeltaIcon className={`h-3.5 w-3.5 ${deltaColor}`} />
@@ -331,25 +333,25 @@ function WaterfallChartCard({ snap }: { snap: ProfitabilitySnapshot }) {
       description="Gross Sales → Net Profit flow"
       className="h-full"
     >
-      <div className="p-4 flex-1" style={{ minHeight: 300 }}>
-        <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 24 }}>
+      <div className="p-3 sm:p-4 flex-1" style={{ minHeight: 260 }}>
+        <ResponsiveContainer width="100%" height={260}>
+          <BarChart data={data} margin={{ top: 8, right: 4, left: 0, bottom: 24 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
             <XAxis
               dataKey="label"
-              tick={{ fontSize: 10, fill: '#9ca3af' }}
+              tick={{ fontSize: 9, fill: '#9ca3af' }}
               tickLine={false}
               axisLine={false}
-              angle={-35}
+              angle={-30}
               textAnchor="end"
-              height={48}
+              height={44}
             />
             <YAxis
-              tick={{ fontSize: 10, fill: '#9ca3af' }}
+              tick={{ fontSize: 9, fill: '#9ca3af' }}
               tickLine={false}
               axisLine={false}
               tickFormatter={(v) => formatCurrency(v, true)}
-              width={64}
+              width={52}
             />
             <Tooltip content={<CustomWaterfallTooltip />} />
             {/* Invisible offset bar to lift the visible bar */}
@@ -418,7 +420,7 @@ function MarginPanel({ snap, prior }: { snap: ProfitabilitySnapshot; prior: Prof
     return (
       <span className={`flex items-center gap-0.5 text-xs font-semibold ${color}`}>
         <Icon className="h-3 w-3" />
-        {isFlat ? '—' : `${Math.abs(delta).toFixed(1)}pp`}
+        {isFlat ? '—' : `${Math.abs(delta).toFixed(1)}pts`}
       </span>
     );
   };
@@ -498,12 +500,12 @@ function TrendLineCard({ trend }: { trend: TrendPoint[] }) {
       description="Net Sales · Gross Profit · Net Profit over period"
       className="h-full"
     >
-      <div className="p-4 flex-1" style={{ minHeight: 260 }}>
-        <ResponsiveContainer width="100%" height={260}>
-          <LineChart data={trend} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+      <div className="p-3 sm:p-4 flex-1" style={{ minHeight: 240 }}>
+        <ResponsiveContainer width="100%" height={240}>
+          <LineChart data={trend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
-            <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#9ca3af' }} tickLine={false} axisLine={false} />
-            <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} tickLine={false} axisLine={false} tickFormatter={(v) => formatCurrency(v, true)} width={60} />
+            <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#9ca3af' }} tickLine={false} axisLine={false} />
+            <YAxis tick={{ fontSize: 9, fill: '#9ca3af' }} tickLine={false} axisLine={false} tickFormatter={(v) => formatCurrency(v, true)} width={50} />
             <Tooltip content={<CustomTrendTooltip />} />
             <Legend
               iconType="circle"
@@ -556,14 +558,14 @@ function StackedBarCard({ series }: { series: StackedBarPoint[] }) {
       description="Per period breakdown"
       className="h-full"
     >
-      <div className="p-4 flex-1" style={{ minHeight: 260 }}>
-        <ResponsiveContainer width="100%" height={260}>
-          <BarChart data={series} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+      <div className="p-3 sm:p-4 flex-1" style={{ minHeight: 240 }}>
+        <ResponsiveContainer width="100%" height={240}>
+          <BarChart data={series} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
-            <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#9ca3af' }} tickLine={false} axisLine={false} />
-            <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} tickLine={false} axisLine={false} tickFormatter={(v) => formatCurrency(v, true)} width={60} />
+            <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#9ca3af' }} tickLine={false} axisLine={false} />
+            <YAxis tick={{ fontSize: 9, fill: '#9ca3af' }} tickLine={false} axisLine={false} tickFormatter={(v) => formatCurrency(v, true)} width={50} />
             <Tooltip
-              formatter={(value: number, name: string) => [formatCurrency(value, true), name]}
+              formatter={formatTooltipCurrencyValue}
               contentStyle={{ borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 12 }}
             />
             <Legend iconType="circle" iconSize={8} wrapperStyle={{ paddingTop: 12, fontSize: 12 }} />
@@ -598,39 +600,41 @@ function CostBreakdownCard({ snap }: { snap: ProfitabilitySnapshot }) {
       className="h-full"
     >
       <div className="flex flex-col gap-4 p-4">
-        <div className="flex justify-center">
-          <PieChart width={180} height={180}>
-            <Pie
-              data={data}
-              cx={90}
-              cy={90}
-              innerRadius={54}
-              outerRadius={80}
-              paddingAngle={2}
-              dataKey="value"
-            >
-              {data.map((_, i) => (
-                <Cell key={i} fill={COST_COLORS[i]} />
-              ))}
-            </Pie>
-            <Tooltip
-              formatter={(value: number, name: string) => [formatCurrency(value, true), name]}
-              contentStyle={{ borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 12 }}
-            />
-          </PieChart>
-        </div>
-        <div className="space-y-2">
-          {data.map((d, i) => {
-            const pct = ((d.value / total) * 100).toFixed(1);
-            return (
-              <div key={d.name} className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: COST_COLORS[i] }} />
-                <span className="flex-1 text-xs text-gray-600">{d.name}</span>
-                <span className="text-xs font-semibold tabular-nums text-gray-800">{formatCurrency(d.value, true)}</span>
-                <span className="w-10 text-right text-xs text-gray-400">{pct}%</span>
-              </div>
-            );
-          })}
+        <div className="flex flex-row items-center gap-4 sm:flex-col sm:items-stretch">
+          <div className="flex shrink-0 justify-center">
+            <PieChart width={140} height={140}>
+              <Pie
+                data={data}
+                cx={70}
+                cy={70}
+                innerRadius={42}
+                outerRadius={62}
+                paddingAngle={2}
+                dataKey="value"
+              >
+                {data.map((_, i) => (
+                  <Cell key={i} fill={COST_COLORS[i]} />
+                ))}
+              </Pie>
+              <Tooltip
+                formatter={formatTooltipCurrencyValue}
+                contentStyle={{ borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 12 }}
+              />
+            </PieChart>
+          </div>
+          <div className="flex-1 space-y-2">
+            {data.map((d, i) => {
+              const pct = ((d.value / total) * 100).toFixed(1);
+              return (
+                <div key={d.name} className="flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: COST_COLORS[i] }} />
+                  <span className="flex-1 text-xs text-gray-600">{d.name}</span>
+                  <span className="text-xs font-semibold tabular-nums text-gray-800">{formatCurrency(d.value, true)}</span>
+                  <span className="w-9 text-right text-xs text-gray-400">{pct}%</span>
+                </div>
+              );
+            })}
+          </div>
         </div>
         <div className="border-t border-gray-100 pt-2 flex items-center justify-between">
           <span className="text-xs font-semibold text-gray-500">Total Costs</span>
@@ -679,18 +683,18 @@ function PnLTable({ snap, prior }: { snap: ProfitabilitySnapshot; prior: Profita
   return (
     <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-hidden">
       {/* Table header */}
-      <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 border-b border-gray-100 bg-gray-50/60 px-5 py-3">
+      <div className="grid grid-cols-[1fr_auto_auto] sm:grid-cols-[1fr_auto_auto_auto] gap-x-3 sm:gap-x-4 border-b border-gray-100 bg-gray-50/60 px-4 sm:px-5 py-3">
         <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Line Item</span>
-        <span className="w-32 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Current</span>
-        <span className="w-32 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Prior</span>
-        <span className="w-20 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Change</span>
+        <span className="w-24 sm:w-32 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Current</span>
+        <span className="hidden sm:block w-32 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Prior</span>
+        <span className="w-16 sm:w-20 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Change</span>
       </div>
 
       <div className="divide-y divide-gray-50">
         {rows.map((row, i) => {
           if (row.isSection) {
             return (
-              <div key={i} className="bg-gray-50/80 px-5 py-2">
+              <div key={i} className="bg-gray-50/80 px-4 sm:px-5 py-2">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{row.label}</span>
               </div>
             );
@@ -698,40 +702,50 @@ function PnLTable({ snap, prior }: { snap: ProfitabilitySnapshot; prior: Profita
 
           const deltaPct = calcDeltaPct(Math.abs(row.value), Math.abs(row.prior));
           const isPositiveChange = row.isSubtraction
-            ? row.value > row.prior   // smaller deduction = improvement
+            ? row.value > row.prior
             : row.value > row.prior;
           const isZeroDelta = Math.abs(deltaPct) < 0.05;
 
           return (
             <div
               key={i}
-              className={`grid grid-cols-[1fr_auto_auto_auto] gap-x-4 items-center px-5 py-3 ${
-                row.isTotal ? 'bg-gray-50/50 font-semibold' : ''
+              className={`grid grid-cols-[1fr_auto_auto] sm:grid-cols-[1fr_auto_auto_auto] gap-x-3 sm:gap-x-4 items-center px-4 sm:px-5 py-2.5 sm:py-3 ${
+                row.isTotal ? 'bg-gray-50/50' : ''
               }`}
             >
               <span
-                className={`text-sm ${row.indent ? 'pl-4 text-gray-500' : row.isTotal ? 'font-semibold text-gray-900' : 'text-gray-700'}`}
+                className={`text-xs sm:text-sm ${row.indent ? 'pl-3 sm:pl-4 text-gray-500' : row.isTotal ? 'font-semibold text-gray-900' : 'text-gray-700'}`}
               >
                 {row.label}
               </span>
               <span
-                className={`w-32 text-right text-sm tabular-nums font-${row.isTotal ? 'bold' : 'medium'} ${
+                className={`w-24 sm:w-32 text-right text-xs sm:text-sm tabular-nums ${row.isTotal ? 'font-bold' : 'font-medium'} ${
                   row.value < 0 ? 'text-rose-600' : row.isTotal ? 'text-emerald-700' : 'text-gray-800'
                 }`}
               >
-                {row.value < 0 ? `(${formatCurrency(Math.abs(row.value))})` : formatCurrency(row.value)}
+                {row.value < 0 ? (
+                  <>
+                    <span className="sm:hidden">-{formatCurrency(Math.abs(row.value))}</span>
+                    <span className="hidden sm:inline">-{formatCurrency(Math.abs(row.value))}</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="sm:hidden">{formatCurrency(row.value)}</span>
+                    <span className="hidden sm:inline">{formatCurrency(row.value)}</span>
+                  </>
+                )}
               </span>
               <span
-                className={`w-32 text-right text-sm tabular-nums ${row.prior < 0 ? 'text-rose-400' : 'text-gray-400'}`}
+                className={`hidden sm:block w-32 text-right text-sm tabular-nums ${row.prior < 0 ? 'text-rose-400' : 'text-gray-400'}`}
               >
-                {row.prior < 0 ? `(${formatCurrency(Math.abs(row.prior))})` : formatCurrency(row.prior)}
+                {row.prior < 0 ? `-${formatCurrency(Math.abs(row.prior))}` : formatCurrency(row.prior)}
               </span>
-              <div className="w-20 flex justify-end">
+              <div className="w-16 sm:w-20 flex justify-end">
                 {isZeroDelta ? (
-                  <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-400">—</span>
+                  <span className="rounded-full bg-gray-100 px-1.5 sm:px-2 py-0.5 text-[10px] font-semibold text-gray-400">—</span>
                 ) : (
                   <span
-                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                    className={`rounded-full px-1.5 sm:px-2 py-0.5 text-[10px] font-semibold ${
                       isPositiveChange
                         ? 'bg-emerald-50 text-emerald-700'
                         : 'bg-rose-50 text-rose-700'
@@ -764,19 +778,21 @@ function SelectedBranchesStrip() {
   if (branchNames.length === 0) return null;
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-col gap-1.5">
       <div className="flex items-center gap-1.5 text-gray-400">
-        <GitBranch className="h-3.5 w-3.5" />
-        <span className="text-xs font-semibold uppercase tracking-wide">Selected Branches</span>
+        <GitBranch className="h-3 w-3" />
+        <span className="text-[10px] font-bold uppercase tracking-widest">Selected Branches</span>
       </div>
-      {branchNames.map((name) => (
-        <span
-          key={name}
-          className="rounded-full bg-primary-50 px-2.5 py-0.5 text-xs font-medium text-primary-700"
-        >
-          {name}
-        </span>
-      ))}
+      <div className="flex flex-wrap gap-1.5">
+        {branchNames.map((name) => (
+          <span
+            key={name}
+            className="rounded-full bg-primary-50 px-2.5 py-0.5 text-xs font-medium text-primary-700"
+          >
+            {name}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -788,15 +804,51 @@ export function ProfitabilityAnalyticsPage() {
     createDefaultRangeForGranularity('day'),
   );
   const [activeView, setActiveView] = useState<ProfitView>('chart');
+  const selectedBranchIds = useBranchStore((state) => state.selectedBranchIds);
 
   const granularity = analyticsRange.granularity;
-  const trend = useMemo(() => buildTrendSeries(granularity), [granularity]);
-  const stacked = useMemo(() => buildStackedSeries(granularity), [granularity]);
   const periodLabel = useMemo(() => getSummaryForSelection(analyticsRange), [analyticsRange]);
-
-  // TODO: replace MOCK_CURRENT / MOCK_PRIOR with real API data
-  const snap = MOCK_CURRENT;
-  const prior = MOCK_PRIOR;
+  const profitabilityQuery = useQuery({
+    queryKey: [
+      'profitability-analytics',
+      granularity,
+      analyticsRange.rangeStartYmd,
+      analyticsRange.rangeEndYmd,
+      ...selectedBranchIds,
+    ],
+    enabled: selectedBranchIds.length > 0,
+    staleTime: 60_000,
+    queryFn: () =>
+      fetchProfitabilityAnalytics({
+        granularity,
+        rangeStartYmd: analyticsRange.rangeStartYmd,
+        rangeEndYmd: analyticsRange.rangeEndYmd,
+        branchIds: selectedBranchIds,
+      }),
+  });
+  const snap = profitabilityQuery.data?.current ?? EMPTY_SNAPSHOT;
+  const prior = profitabilityQuery.data?.previousPeriod ?? EMPTY_SNAPSHOT;
+  const trend = useMemo(
+    () => buildTrendSeriesFromBuckets(profitabilityQuery.data?.currentBuckets ?? []),
+    [profitabilityQuery.data?.currentBuckets],
+  );
+  const stacked = useMemo(
+    () => buildStackedSeriesFromBuckets(profitabilityQuery.data?.currentBuckets ?? []),
+    [profitabilityQuery.data?.currentBuckets],
+  );
+  const hasSelectedBranches = selectedBranchIds.length > 0;
+  const isInitialLoading = profitabilityQuery.isLoading && !profitabilityQuery.data;
+  const isEmptyState = Boolean(
+    profitabilityQuery.data &&
+    !hasSnapshotValues(snap) &&
+    !(profitabilityQuery.data.currentBuckets ?? []).some((bucket) => hasSnapshotValues(bucket)),
+  );
+  const showEstimatedNotice = snap.overheadSource === 'estimated' || snap.netProfitSource === 'estimated';
+  const showContent =
+    hasSelectedBranches &&
+    !isInitialLoading &&
+    (!profitabilityQuery.isError || Boolean(profitabilityQuery.data)) &&
+    !isEmptyState;
 
   const kpiCards = [
     {
@@ -842,85 +894,132 @@ export function ProfitabilityAnalyticsPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <DollarSign className="h-6 w-6 text-primary-600" />
-            <h1 className="text-2xl font-bold text-gray-900">Profitability Analytics</h1>
-          </div>
-          <p className="mt-1 hidden text-sm text-gray-500 sm:block">
-            Full P&amp;L view — Gross Sales to Net Profit.{' '}
-            <span className="text-gray-400">{periodLabel}</span>
-          </p>
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center gap-2">
+          <DollarSign className="h-5 w-5 shrink-0 text-primary-600" />
+          <h1 className="text-xl font-bold text-gray-900">Profitability Analytics</h1>
         </div>
-        <AnalyticsRangePicker
-          value={analyticsRange}
-          onChange={setAnalyticsRange}
-          className="shrink-0 self-start sm:self-center"
-        />
+        <div className="flex items-center justify-between gap-3">
+          <p className="hidden sm:block text-xs text-gray-400">Full P&amp;L view — Gross Sales to Net Profit</p>
+          <AnalyticsRangePicker
+            value={analyticsRange}
+            onChange={setAnalyticsRange}
+            minDateYmd={null}
+            className="shrink-0 sm:ml-0 mx-auto sm:mx-0"
+          />
+        </div>
       </div>
 
       {/* Selected Branches */}
       <SelectedBranchesStrip />
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-        {kpiCards.map((kpi) => (
-          <KpiCard key={kpi.label} {...kpi} />
-        ))}
-      </div>
+      {showEstimatedNotice && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Overhead expenses are estimated for {periodLabel} using the previous comparable period because live entries are not yet posted.
+        </div>
+      )}
 
-      {/* View Toggle */}
-      <ViewToggle
-        options={VIEW_OPTIONS}
-        activeId={activeView}
-        onChange={setActiveView}
-        layoutId="profitability-view-tabs"
-      />
+      {!hasSelectedBranches && (
+        <div className="rounded-xl border border-dashed border-gray-200 bg-white px-5 py-10 text-center shadow-sm">
+          <p className="text-sm font-semibold text-gray-700">Select at least one branch to view profitability analytics.</p>
+        </div>
+      )}
 
-      {/* View Content */}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={activeView}
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -10 }}
-          transition={{ duration: 0.2 }}
-        >
-          {activeView === 'chart' && (
-            <div className="space-y-6">
-              {/* Row 1: Waterfall + Margin */}
-              <div className="grid gap-4 lg:grid-cols-12">
-                <div className="lg:col-span-7">
-                  <WaterfallChartCard snap={snap} />
+      {hasSelectedBranches && isInitialLoading && (
+        <div className="rounded-xl border border-gray-100 bg-white px-5 py-10 text-center shadow-sm">
+          <p className="text-sm font-semibold text-gray-700">Loading profitability data...</p>
+          <p className="mt-1 text-xs text-gray-400">{periodLabel}</p>
+        </div>
+      )}
+
+      {hasSelectedBranches && profitabilityQuery.isError && !profitabilityQuery.data && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
+          Failed to load profitability analytics.
+        </div>
+      )}
+
+      {hasSelectedBranches && !isInitialLoading && !profitabilityQuery.isError && isEmptyState && (
+        <div className="rounded-xl border border-gray-100 bg-white px-5 py-10 text-center shadow-sm">
+          <p className="text-sm font-semibold text-gray-700">No profitability data was found for the selected branches and period.</p>
+          <p className="mt-1 text-xs text-gray-400">{periodLabel}</p>
+        </div>
+      )}
+
+      {showContent && (
+        <>
+          {/* KPI Cards */}
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-3 lg:grid-cols-5">
+            {kpiCards.map((kpi, i) => (
+              <motion.div
+                key={kpi.label}
+                className={i === 4 ? 'col-span-2 sm:col-span-1' : ''}
+                variants={fadeUp}
+                initial="hidden"
+                animate="visible"
+                custom={i * 0.07}
+              >
+                <KpiCard {...kpi} />
+              </motion.div>
+            ))}
+          </div>
+
+          {/* View Toggle */}
+          <ViewToggle
+            options={VIEW_OPTIONS}
+            activeId={activeView}
+            onChange={setActiveView}
+            layoutId="profitability-view-tabs"
+          />
+
+          {/* View Content */}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeView}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+            >
+              {activeView === 'chart' && (
+                <div className="space-y-4 sm:space-y-6">
+                  {/* Row 1: Waterfall + Margin */}
+                  <div className="grid gap-4 lg:grid-cols-12">
+                    <motion.div className="lg:col-span-7" variants={fadeUp} initial="hidden" animate="visible" custom={0}>
+                      <WaterfallChartCard snap={snap} />
+                    </motion.div>
+                    <motion.div className="lg:col-span-5" variants={fadeUp} initial="hidden" animate="visible" custom={0.08}>
+                      <MarginPanel snap={snap} prior={prior} />
+                    </motion.div>
+                  </div>
+
+                  {/* Row 2: Trend Line */}
+                  <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={0.16}>
+                    <TrendLineCard trend={trend} />
+                  </motion.div>
+
+                  {/* Row 3: Stacked Bar + Cost Breakdown */}
+                  <div className="grid gap-4 lg:grid-cols-12">
+                    <motion.div className="lg:col-span-7" variants={fadeUp} initial="hidden" animate="visible" custom={0.24}>
+                      <StackedBarCard series={stacked} />
+                    </motion.div>
+                    <motion.div className="lg:col-span-5" variants={fadeUp} initial="hidden" animate="visible" custom={0.32}>
+                      <CostBreakdownCard snap={snap} />
+                    </motion.div>
+                  </div>
                 </div>
-                <div className="lg:col-span-5">
-                  <MarginPanel snap={snap} prior={prior} />
-                </div>
-              </div>
+              )}
 
-              {/* Row 2: Trend Line */}
-              <TrendLineCard trend={trend} />
-
-              {/* Row 3: Stacked Bar + Cost Breakdown */}
-              <div className="grid gap-4 lg:grid-cols-12">
-                <div className="lg:col-span-7">
-                  <StackedBarCard series={stacked} />
-                </div>
-                <div className="lg:col-span-5">
-                  <CostBreakdownCard snap={snap} />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeView === 'table' && (
-            <PnLTable snap={snap} prior={prior} />
-          )}
-        </motion.div>
-      </AnimatePresence>
+              {activeView === 'table' && (
+                <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={0}>
+                  <PnLTable snap={snap} prior={prior} />
+                </motion.div>
+              )}
+            </motion.div>
+          </AnimatePresence>
+        </>
+      )}
     </div>
   );
 }

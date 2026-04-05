@@ -35,8 +35,7 @@ const MONTH_NAMES = [
 ] as const;
 
 const YEAR_GRID_SPAN = 9;
-const MIN_ANALYTICS_DATE_YMD = "2026-03-28";
-const MIN_ANALYTICS_DATE = fromLocalYmd(MIN_ANALYTICS_DATE_YMD);
+const DEFAULT_MIN_ANALYTICS_DATE_YMD = "2026-03-28";
 
 /* ─── Helpers ─────────────────────────────────────────────────────────── */
 
@@ -49,17 +48,21 @@ function rangeSelectionsEqual(a: AnalyticsRangeSelection, b: AnalyticsRangeSelec
   return a.granularity === b.granularity && a.rangeStartYmd === b.rangeStartYmd && a.rangeEndYmd === b.rangeEndYmd;
 }
 
-function isBeforeMinAnalyticsDate(ymd: string): boolean {
-  return compareYmd(ymd, MIN_ANALYTICS_DATE_YMD) < 0;
+function isBeforeMinAnalyticsDate(ymd: string, minAnalyticsDateYmd: string | null): boolean {
+  if (!minAnalyticsDateYmd) return false;
+  return compareYmd(ymd, minAnalyticsDateYmd) < 0;
 }
 
-function clampSelectionToMinAnalyticsDate(selection: AnalyticsRangeSelection): AnalyticsRangeSelection {
+function clampSelectionToMinAnalyticsDate(
+  selection: AnalyticsRangeSelection,
+  minAnalyticsDateYmd: string | null,
+): AnalyticsRangeSelection {
   const normalized = normalizeRangeYmd(selection.rangeStartYmd, selection.rangeEndYmd);
-  const clampedStart = isBeforeMinAnalyticsDate(normalized.rangeStartYmd)
-    ? MIN_ANALYTICS_DATE_YMD
+  const clampedStart = isBeforeMinAnalyticsDate(normalized.rangeStartYmd, minAnalyticsDateYmd)
+    ? (minAnalyticsDateYmd ?? normalized.rangeStartYmd)
     : normalized.rangeStartYmd;
-  const clampedEnd = isBeforeMinAnalyticsDate(normalized.rangeEndYmd)
-    ? MIN_ANALYTICS_DATE_YMD
+  const clampedEnd = isBeforeMinAnalyticsDate(normalized.rangeEndYmd, minAnalyticsDateYmd)
+    ? (minAnalyticsDateYmd ?? normalized.rangeEndYmd)
     : normalized.rangeEndYmd;
   const { rangeStartYmd, rangeEndYmd } = normalizeRangeYmd(clampedStart, clampedEnd);
   return {
@@ -124,17 +127,31 @@ export interface AnalyticsRangePickerProps {
   value: AnalyticsRangeSelection;
   onChange: (next: AnalyticsRangeSelection) => void;
   className?: string;
+  minDateYmd?: string | null;
 }
 
 /* ─── Main Component ──────────────────────────────────────────────────── */
 
-export function AnalyticsRangePicker({ value, onChange, className = "" }: AnalyticsRangePickerProps) {
+export function AnalyticsRangePicker({
+  value,
+  onChange,
+  className = "",
+  minDateYmd = DEFAULT_MIN_ANALYTICS_DATE_YMD,
+}: AnalyticsRangePickerProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const drawerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelId = useId();
-  const clampedValue = useMemo(() => clampSelectionToMinAnalyticsDate(value), [value]);
+  const effectiveMinAnalyticsDateYmd = minDateYmd ?? null;
+  const effectiveMinAnalyticsDate = useMemo(
+    () => (effectiveMinAnalyticsDateYmd ? fromLocalYmd(effectiveMinAnalyticsDateYmd) : null),
+    [effectiveMinAnalyticsDateYmd],
+  );
+  const clampedValue = useMemo(
+    () => clampSelectionToMinAnalyticsDate(value, effectiveMinAnalyticsDateYmd),
+    [effectiveMinAnalyticsDateYmd, value],
+  );
 
   // Snapshot the value when the picker opens — used by Discard
   const [initialValue, setInitialValue] = useState(clampedValue);
@@ -149,9 +166,9 @@ export function AnalyticsRangePicker({ value, onChange, className = "" }: Analyt
   }, [clampedValue]);
 
   const handleApply = useCallback(() => {
-    onChange(clampSelectionToMinAnalyticsDate(draft));
+    onChange(clampSelectionToMinAnalyticsDate(draft, effectiveMinAnalyticsDateYmd));
     setOpen(false);
-  }, [draft, onChange]);
+  }, [draft, effectiveMinAnalyticsDateYmd, onChange]);
 
   const handleDiscard = useCallback(() => {
     setDraft(initialValue);
@@ -165,9 +182,9 @@ export function AnalyticsRangePicker({ value, onChange, className = "" }: Analyt
   const setGranularity = useCallback(
     (g: AnalyticsGranularity) => {
       if (g === draft.granularity) return;
-      setDraft(clampSelectionToMinAnalyticsDate(createDefaultRangeForGranularity(g)));
+      setDraft(clampSelectionToMinAnalyticsDate(createDefaultRangeForGranularity(g), effectiveMinAnalyticsDateYmd));
     },
-    [draft.granularity],
+    [draft.granularity, effectiveMinAnalyticsDateYmd],
   );
 
   const isDirty = !rangeSelectionsEqual(draft, initialValue);
@@ -251,6 +268,8 @@ export function AnalyticsRangePicker({ value, onChange, className = "" }: Analyt
               isDirty={isDirty}
               onApply={handleApply}
               onDiscard={handleDiscard}
+              minAnalyticsDateYmd={effectiveMinAnalyticsDateYmd}
+              minAnalyticsDate={effectiveMinAnalyticsDate}
             />
           </motion.div>
         )}
@@ -269,6 +288,8 @@ export function AnalyticsRangePicker({ value, onChange, className = "" }: Analyt
             onApply={handleApply}
             onDiscard={handleDiscard}
             onClose={handleClose}
+            minAnalyticsDateYmd={effectiveMinAnalyticsDateYmd}
+            minAnalyticsDate={effectiveMinAnalyticsDate}
           />
         )}
       </AnimatePresence>
@@ -285,6 +306,8 @@ function PanelContent({
   isDirty,
   onApply,
   onDiscard,
+  minAnalyticsDateYmd,
+  minAnalyticsDate,
 }: {
   draft: AnalyticsRangeSelection;
   setDraft: (v: AnalyticsRangeSelection) => void;
@@ -292,6 +315,8 @@ function PanelContent({
   isDirty: boolean;
   onApply: () => void;
   onDiscard: () => void;
+  minAnalyticsDateYmd: string | null;
+  minAnalyticsDate: Date | null;
 }) {
   return (
     <>
@@ -308,10 +333,38 @@ function PanelContent({
             exit={{ opacity: 0, y: -6 }}
             transition={{ duration: 0.15 }}
           >
-            {draft.granularity === "day" && <DayGrid draft={draft} setDraft={setDraft} />}
-            {draft.granularity === "week" && <WeekGrid draft={draft} setDraft={setDraft} />}
-            {draft.granularity === "month" && <MonthGrid draft={draft} setDraft={setDraft} />}
-            {draft.granularity === "year" && <YearGrid draft={draft} setDraft={setDraft} />}
+            {draft.granularity === "day" && (
+              <DayGrid
+                draft={draft}
+                setDraft={setDraft}
+                minAnalyticsDateYmd={minAnalyticsDateYmd}
+                minAnalyticsDate={minAnalyticsDate}
+              />
+            )}
+            {draft.granularity === "week" && (
+              <WeekGrid
+                draft={draft}
+                setDraft={setDraft}
+                minAnalyticsDateYmd={minAnalyticsDateYmd}
+                minAnalyticsDate={minAnalyticsDate}
+              />
+            )}
+            {draft.granularity === "month" && (
+              <MonthGrid
+                draft={draft}
+                setDraft={setDraft}
+                minAnalyticsDateYmd={minAnalyticsDateYmd}
+                minAnalyticsDate={minAnalyticsDate}
+              />
+            )}
+            {draft.granularity === "year" && (
+              <YearGrid
+                draft={draft}
+                setDraft={setDraft}
+                minAnalyticsDateYmd={minAnalyticsDateYmd}
+                minAnalyticsDate={minAnalyticsDate}
+              />
+            )}
           </motion.div>
         </AnimatePresence>
       </div>
@@ -416,6 +469,8 @@ const MobileDrawer = forwardRef<HTMLDivElement, {
   onApply: () => void;
   onDiscard: () => void;
   onClose: () => void;
+  minAnalyticsDateYmd: string | null;
+  minAnalyticsDate: Date | null;
 }>(function MobileDrawer({
   panelId,
   draft,
@@ -425,6 +480,8 @@ const MobileDrawer = forwardRef<HTMLDivElement, {
   onApply,
   onDiscard,
   onClose,
+  minAnalyticsDateYmd,
+  minAnalyticsDate,
 }, ref) {
   const draftSummary = useMemo(() => formatAnalyticsRangeSummary(draft), [draft]);
 
@@ -481,6 +538,8 @@ const MobileDrawer = forwardRef<HTMLDivElement, {
           isDirty={isDirty}
           onApply={onApply}
           onDiscard={onDiscard}
+          minAnalyticsDateYmd={minAnalyticsDateYmd}
+          minAnalyticsDate={minAnalyticsDate}
         />
 
         {/* Safe area spacer */}
@@ -564,18 +623,22 @@ function WeekdayHeaders() {
 function DayGrid({
   draft,
   setDraft,
+  minAnalyticsDateYmd,
+  minAnalyticsDate,
 }: {
   draft: AnalyticsRangeSelection;
   setDraft: (v: AnalyticsRangeSelection) => void;
+  minAnalyticsDateYmd: string | null;
+  minAnalyticsDate: Date | null;
 }) {
   const today = new Date();
   const todayYmd = toLocalYmd(today);
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
   const [picking, setPicking] = useState<"start" | "end">("start");
-  const minYear = MIN_ANALYTICS_DATE.getFullYear();
-  const minMonth = MIN_ANALYTICS_DATE.getMonth();
-  const canGoPrevMonth = viewYear > minYear || (viewYear === minYear && viewMonth > minMonth);
+  const minYear = minAnalyticsDate?.getFullYear() ?? Number.NEGATIVE_INFINITY;
+  const minMonth = minAnalyticsDate?.getMonth() ?? Number.NEGATIVE_INFINITY;
+  const canGoPrevMonth = minAnalyticsDate === null || viewYear > minYear || (viewYear === minYear && viewMonth > minMonth);
 
   const dateFrom = draft.rangeStartYmd;
   const dateTo = draft.rangeEndYmd;
@@ -633,7 +696,7 @@ function DayGrid({
               if (day === null) return <div key={`e-${idx}`} className="h-9" />;
 
               const ymd = toLocalYmd(new Date(viewYear, viewMonth, day));
-              const isDisabled = isBeforeMinAnalyticsDate(ymd);
+              const isDisabled = isBeforeMinAnalyticsDate(ymd, minAnalyticsDateYmd);
               const isToday = ymd === todayYmd;
               const isStart = ymd === dateFrom;
               const isEnd = ymd === dateTo;
@@ -700,17 +763,21 @@ function DayGrid({
 function WeekGrid({
   draft,
   setDraft,
+  minAnalyticsDateYmd,
+  minAnalyticsDate,
 }: {
   draft: AnalyticsRangeSelection;
   setDraft: (v: AnalyticsRangeSelection) => void;
+  minAnalyticsDateYmd: string | null;
+  minAnalyticsDate: Date | null;
 }) {
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
   const [anchor, setAnchor] = useState<string | null>(null);
-  const minYear = MIN_ANALYTICS_DATE.getFullYear();
-  const minMonth = MIN_ANALYTICS_DATE.getMonth();
-  const canGoPrevMonth = viewYear > minYear || (viewYear === minYear && viewMonth > minMonth);
+  const minYear = minAnalyticsDate?.getFullYear() ?? Number.NEGATIVE_INFINITY;
+  const minMonth = minAnalyticsDate?.getMonth() ?? Number.NEGATIVE_INFINITY;
+  const canGoPrevMonth = minAnalyticsDate === null || viewYear > minYear || (viewYear === minYear && viewMonth > minMonth);
 
   const prevMonth = useCallback(() => {
     if (viewMonth === 0) { setViewMonth(11); setViewYear((y) => y - 1); }
@@ -768,7 +835,7 @@ function WeekGrid({
         >
           <div className="grid grid-cols-2 gap-2">
             {weeks.map((w) => {
-              const isDisabled = isBeforeMinAnalyticsDate(w.sundayYmd);
+              const isDisabled = isBeforeMinAnalyticsDate(w.sundayYmd, minAnalyticsDateYmd);
               const overlaps = !(compareYmd(w.sundayYmd, startY) < 0 || compareYmd(w.mondayYmd, endY) > 0);
               const isEdge = overlaps && (
                 (compareYmd(w.mondayYmd, startY) <= 0 && compareYmd(w.sundayYmd, startY) >= 0) ||
@@ -825,14 +892,18 @@ function WeekGrid({
 function MonthGrid({
   draft,
   setDraft,
+  minAnalyticsDateYmd,
+  minAnalyticsDate,
 }: {
   draft: AnalyticsRangeSelection;
   setDraft: (v: AnalyticsRangeSelection) => void;
+  minAnalyticsDateYmd: string | null;
+  minAnalyticsDate: Date | null;
 }) {
   const now = new Date();
   const [viewYear, setViewYear] = useState(now.getFullYear());
   const [anchorKey, setAnchorKey] = useState<string | null>(null);
-  const minYear = MIN_ANALYTICS_DATE.getFullYear();
+  const minYear = minAnalyticsDate?.getFullYear() ?? Number.NEGATIVE_INFINITY;
 
   const onMonthClick = useCallback(
     (mi: number) => {
@@ -877,13 +948,13 @@ function MonthGrid({
         onNext={() => setViewYear((y) => y + 1)}
         prevLabel="Previous year"
         nextLabel="Next year"
-        disablePrev={viewYear <= minYear}
+        disablePrev={minAnalyticsDate !== null && viewYear <= minYear}
       />
       <div className="grid grid-cols-3 gap-1.5">
         {MONTH_NAMES.map((name, mi) => {
           const kOrd = viewYear * 12 + mi;
           const bounds = monthKeyBounds(monthKey(viewYear, mi));
-          const isDisabled = !bounds || isBeforeMinAnalyticsDate(bounds.rangeEndYmd);
+          const isDisabled = !bounds || isBeforeMinAnalyticsDate(bounds.rangeEndYmd, minAnalyticsDateYmd);
           const selected = rangeLo !== null && kOrd >= rangeLo.loOrd && kOrd <= rangeLo.hiOrd;
           const isEdge = rangeLo !== null && (kOrd === rangeLo.loOrd || kOrd === rangeLo.hiOrd);
           return (
@@ -924,9 +995,13 @@ function MonthGrid({
 function YearGrid({
   draft,
   setDraft,
+  minAnalyticsDateYmd,
+  minAnalyticsDate,
 }: {
   draft: AnalyticsRangeSelection;
   setDraft: (v: AnalyticsRangeSelection) => void;
+  minAnalyticsDateYmd: string | null;
+  minAnalyticsDate: Date | null;
 }) {
   const cy = new Date().getFullYear();
   const [center, setCenter] = useState(cy);
@@ -936,7 +1011,7 @@ function YearGrid({
   }, [center]);
 
   const [anchorYear, setAnchorYear] = useState<number | null>(null);
-  const minYear = MIN_ANALYTICS_DATE.getFullYear();
+  const minYear = minAnalyticsDate?.getFullYear() ?? Number.NEGATIVE_INFINITY;
 
   const onYearClick = useCallback(
     (y: number) => {
@@ -968,12 +1043,12 @@ function YearGrid({
         onNext={() => setCenter((c) => c + YEAR_GRID_SPAN)}
         prevLabel="Earlier years"
         nextLabel="Later years"
-        disablePrev={years[0] <= minYear}
+        disablePrev={minAnalyticsDate !== null && years[0] <= minYear}
       />
       <div className="grid grid-cols-3 gap-1.5">
         {years.map((y) => {
           const yearEndYmd = toLocalYmd(endOfLocalDay(new Date(y, 11, 31)));
-          const isDisabled = isBeforeMinAnalyticsDate(yearEndYmd);
+          const isDisabled = isBeforeMinAnalyticsDate(yearEndYmd, minAnalyticsDateYmd);
           const inRange = y >= sy && y <= ey;
           const isEdge = y === sy || y === ey;
           return (

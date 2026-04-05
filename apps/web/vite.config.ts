@@ -2,6 +2,12 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
+const allowedHosts = [
+  'omnilert.app',
+  'www.omnilert.app',
+  'yevette-hydrotropic-pseudoeconomically.ngrok-free.dev',
+];
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -12,10 +18,11 @@ export default defineConfig({
   preview: {
     host: true,
     port: 4173,
-    allowedHosts: ['omnilert.app', 'www.omnilert.app'],
+    allowedHosts,
   },
   server: {
     port: 5173,
+    allowedHosts,
     proxy: {
       '/api': {
         target: 'http://localhost:3002',

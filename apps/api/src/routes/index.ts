@@ -25,6 +25,7 @@ import caseReportRoutes from './caseReport.routes.js';
 import violationNoticeRoutes from './violationNotice.routes.js';
 import peerEvaluationRoutes from './peerEvaluation.routes.js';
 import assignedBranchRoutes from './assignedBranch.routes.js';
+import profitabilityAnalyticsRoutes from './profitabilityAnalytics.routes.js';
 import { authenticate } from '../middleware/auth.js';
 import { resolveCompany } from '../middleware/companyResolver.js';
 import { requirePermission } from '../middleware/rbac.js';
@@ -76,6 +77,7 @@ router.use('/case-reports', caseReportRoutes);
 router.use('/violation-notices', violationNoticeRoutes);
 router.use('/peer-evaluations', peerEvaluationRoutes);
 router.use('/user/assigned-branches', assignedBranchRoutes);
+router.use('/profitability-analytics', profitabilityAnalyticsRoutes);
 router.use('/account', accountRoutes);
 router.use('/dashboard', dashboardRoutes);
 
