@@ -119,19 +119,22 @@ interface BranchAmountMetric {
   amount: number;
 }
 
+interface BranchMonthlyOverheadMetric {
+  monthKey: string;
+  amount: number;
+  hasActual: boolean;
+}
+
 interface BranchPeriodData {
   sessions: BranchSessionMetric[];
   variableExpenses: BranchAmountMetric[];
   grossSalary: BranchAmountMetric[];
-  overheadExpenses: BranchAmountMetric[];
-}
-
-interface BuildSnapshotOptions {
-  estimateOverheadFromPreviousActual?: number | null;
+  overheadExpenses: BranchMonthlyOverheadMetric[];
 }
 
 const MANILA_TIME_ZONE = 'Asia/Manila';
 const COGS_ACCOUNT_IDS = [100, 2497] as const;
+const VARIABLE_EXPENSE_EXCLUDED_PRODUCT_IDS = [1053, 1052, 1054] as const;
 const shortMonthFormatter = new Intl.DateTimeFormat('en-US', {
   timeZone: MANILA_TIME_ZONE,
   month: 'short',
@@ -281,6 +284,77 @@ function isYmdInRange(ymd: string, rangeStartYmd: string, rangeEndYmd: string): 
   return compareYmd(ymd, rangeStartYmd) >= 0 && compareYmd(ymd, rangeEndYmd) <= 0;
 }
 
+function monthKeyFromYmd(ymd: string): string {
+  return ymd.slice(0, 7);
+}
+
+function previousMonthStartYmd(ymd: string): string {
+  const monthStart = parseYmdToUtcDate(startOfMonthYmd(ymd));
+  return formatUtcDateToYmd(new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() - 1, 1)));
+}
+
+function daysBetweenInclusive(rangeStartYmd: string, rangeEndYmd: string): number {
+  return (
+    Math.floor(
+      (parseYmdToUtcDate(rangeEndYmd).getTime() - parseYmdToUtcDate(rangeStartYmd).getTime()) /
+        (1000 * 60 * 60 * 24),
+    ) + 1
+  );
+}
+
+function getAccruedOverheadForRange(
+  monthlyOverhead: BranchMonthlyOverheadMetric[],
+  range: Pick<ProfitabilityRangeSelection, 'rangeStartYmd' | 'rangeEndYmd'>,
+): {
+  amount: number;
+  source: 'actual' | 'estimated';
+} {
+  const actualByMonth = new Map<string, BranchMonthlyOverheadMetric>();
+  for (const month of monthlyOverhead) {
+    actualByMonth.set(month.monthKey, month);
+  }
+
+  let total = 0;
+  let usedEstimate = false;
+
+  for (
+    let cursor = startOfMonthYmd(range.rangeStartYmd);
+    compareYmd(cursor, range.rangeEndYmd) <= 0;
+    cursor = startOfMonthYmd(addYmdDays(endOfMonthYmd(cursor), 1))
+  ) {
+    const monthStartYmd = cursor;
+    const monthEndYmd = endOfMonthYmd(cursor);
+    const monthKey = monthKeyFromYmd(cursor);
+    const coveredStartYmd = compareYmd(range.rangeStartYmd, monthStartYmd) > 0
+      ? range.rangeStartYmd
+      : monthStartYmd;
+    const coveredEndYmd = compareYmd(range.rangeEndYmd, monthEndYmd) < 0
+      ? range.rangeEndYmd
+      : monthEndYmd;
+    const coveredDays = daysBetweenInclusive(coveredStartYmd, coveredEndYmd);
+    const totalDaysInMonth = daysBetweenInclusive(monthStartYmd, monthEndYmd);
+
+    let monthlyAmount = 0;
+    const currentMonthActual = actualByMonth.get(monthKey);
+    if (currentMonthActual?.hasActual) {
+      monthlyAmount = currentMonthActual.amount;
+    } else {
+      const previousMonthActual = actualByMonth.get(monthKeyFromYmd(previousMonthStartYmd(monthStartYmd)));
+      if (previousMonthActual?.hasActual) {
+        monthlyAmount = previousMonthActual.amount;
+        usedEstimate = true;
+      }
+    }
+
+    total += (monthlyAmount * coveredDays) / totalDaysInMonth;
+  }
+
+  return {
+    amount: round2(total),
+    source: usedEstimate ? 'estimated' : 'actual',
+  };
+}
+
 function emptySnapshot(): ProfitabilitySnapshot {
   return {
     grossSales: 0,
@@ -324,7 +398,6 @@ function toNetAccountingAmount(debit: unknown, credit: unknown): number {
 function aggregateBranchPeriodSnapshot(
   data: BranchPeriodData,
   range: Pick<ProfitabilityRangeSelection, 'rangeStartYmd' | 'rangeEndYmd'>,
-  options?: BuildSnapshotOptions,
 ): ProfitabilitySnapshot {
   const sessions = data.sessions.filter((row) =>
     isYmdInRange(row.ymd, range.rangeStartYmd, range.rangeEndYmd),
@@ -335,9 +408,6 @@ function aggregateBranchPeriodSnapshot(
   const grossSalary = data.grossSalary.filter((row) =>
     isYmdInRange(row.ymd, range.rangeStartYmd, range.rangeEndYmd),
   );
-  const overheadRows = data.overheadExpenses.filter((row) =>
-    isYmdInRange(row.ymd, range.rangeStartYmd, range.rangeEndYmd),
-  );
 
   const discounts = round2(sumBy(sessions, (row) => row.discounts));
   const refunds = round2(sumBy(sessions, (row) => row.refunds));
@@ -345,15 +415,9 @@ function aggregateBranchPeriodSnapshot(
   const cogs = round2(sumBy(sessions, (row) => row.cogs));
   const variableExpenseAmount = round2(sumBy(variableExpenses, (row) => row.amount));
   const grossSalaryAmount = round2(sumBy(grossSalary, (row) => row.amount));
-  const actualOverhead = round2(sumBy(overheadRows, (row) => row.amount));
-  const shouldEstimate =
-    overheadRows.length === 0 &&
-    options?.estimateOverheadFromPreviousActual !== undefined &&
-    options?.estimateOverheadFromPreviousActual !== null;
-  const overheadExpenses = shouldEstimate
-    ? round2(options?.estimateOverheadFromPreviousActual ?? 0)
-    : actualOverhead;
-  const overheadSource: 'actual' | 'estimated' = shouldEstimate ? 'estimated' : 'actual';
+  const overhead = getAccruedOverheadForRange(data.overheadExpenses, range);
+  const overheadExpenses = overhead.amount;
+  const overheadSource = overhead.source;
   const grossSales = round2(netSales + discounts + refunds);
   const grossProfit = round2(netSales - cogs);
   const operatingProfit = round2(grossProfit - variableExpenseAmount - grossSalaryAmount);
@@ -436,6 +500,8 @@ async function loadBranchPeriodData(
 ): Promise<BranchPeriodData> {
   const callOdooKwFn = deps?.callOdooKwFn ?? callOdooKw;
   const { startAtUtc, endAtUtc } = toManilaRangeDatetimes(range);
+  const overheadQueryStartYmd = previousMonthStartYmd(range.rangeStartYmd);
+  const overheadQueryEndYmd = endOfMonthYmd(range.rangeEndYmd);
 
   const posSessions = (await callOdooKwFn('pos.session', 'search_read', [], {
     domain: [
@@ -502,6 +568,7 @@ async function loadBranchPeriodData(
         ['partner_id', 'in', branch.variableExpenseVendorIds],
         ['date_approve', '>=', startAtUtc],
         ['date_approve', '<=', endAtUtc],
+        ['product_id', 'not in', [...VARIABLE_EXPENSE_EXCLUDED_PRODUCT_IDS]],
       ],
       fields: ['company_id', 'date_approve', 'amount_total'],
       limit: 0,
@@ -535,23 +602,32 @@ async function loadBranchPeriodData(
       domain: [
         ['account_id', 'in', branch.overheadAccountIds],
         ['company_id', 'in', [branch.odooCompanyId]],
-        ['date', '>=', range.rangeStartYmd],
-        ['date', '<=', range.rangeEndYmd],
+        ['date', '>=', overheadQueryStartYmd],
+        ['date', '<=', overheadQueryEndYmd],
       ],
       fields: ['company_id', 'date', 'debit', 'credit'],
       limit: 0,
     })) as OdooAccountMoveLineRow[];
 
-  const overheadExpenses = overheadRows.map((row) => ({
-    ymd: String(row.date ?? '').slice(0, 10) || range.rangeStartYmd,
-    amount: round2(toNetAccountingAmount(row.debit, row.credit)),
-  }));
+  const overheadByMonth = new Map<string, BranchMonthlyOverheadMetric>();
+  for (const row of overheadRows) {
+    const ymd = String(row.date ?? '').slice(0, 10) || range.rangeStartYmd;
+    const monthKey = monthKeyFromYmd(ymd);
+    const current = overheadByMonth.get(monthKey) ?? {
+      monthKey,
+      amount: 0,
+      hasActual: false,
+    };
+    current.amount = round2(current.amount + toNetAccountingAmount(row.debit, row.credit));
+    current.hasActual = true;
+    overheadByMonth.set(monthKey, current);
+  }
 
   return {
     sessions,
     variableExpenses,
     grossSalary,
-    overheadExpenses,
+    overheadExpenses: Array.from(overheadByMonth.values()),
   };
 }
 
@@ -720,13 +796,6 @@ export async function getProfitabilityAnalytics(
   const previousRange = getProfitabilityPreviousRange(currentRange);
   const currentBuckets = buildProfitabilityBuckets(currentRange);
   const previousBuckets = buildProfitabilityBuckets(previousRange);
-  const now = deps?.now?.() ?? new Date();
-  const todayManilaYmd = formatDateInTimeZoneYmd(now, MANILA_TIME_ZONE);
-  const shouldEstimateCurrentPeriod = isYmdInRange(
-    todayManilaYmd,
-    currentRange.rangeStartYmd,
-    currentRange.rangeEndYmd,
-  );
 
   const branchData = await Promise.all(
     input.branches.map(async (branch) => {
@@ -736,28 +805,10 @@ export async function getProfitabilityAnalytics(
       ]);
 
       const previousPeriod = aggregateBranchPeriodSnapshot(previousData, previousRange);
-      const current = aggregateBranchPeriodSnapshot(currentData, currentRange, {
-        estimateOverheadFromPreviousActual:
-          shouldEstimateCurrentPeriod && previousPeriod.overheadExpenses !== 0
-            ? previousPeriod.overheadExpenses
-            : undefined,
-      });
+      const current = aggregateBranchPeriodSnapshot(currentData, currentRange);
 
       const bucketSnapshots = currentBuckets.map((bucket, index) => {
-        const previousBucket = previousBuckets[index];
-        const previousBucketActual = previousBucket
-          ? aggregateBranchPeriodSnapshot(previousData, previousBucket)
-          : emptySnapshot();
-        const estimateForBucket =
-          shouldEstimateCurrentPeriod &&
-          previousBucket &&
-          isYmdInRange(todayManilaYmd, bucket.rangeStartYmd, bucket.rangeEndYmd) &&
-          previousBucketActual.overheadExpenses !== 0
-            ? previousBucketActual.overheadExpenses
-            : undefined;
-        const snapshot = aggregateBranchPeriodSnapshot(currentData, bucket, {
-          estimateOverheadFromPreviousActual: estimateForBucket,
-        });
+        const snapshot = aggregateBranchPeriodSnapshot(currentData, bucket);
 
         return {
           ...bucket,

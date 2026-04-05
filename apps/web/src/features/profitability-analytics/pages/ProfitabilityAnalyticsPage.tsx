@@ -145,8 +145,12 @@ function formatTooltipCurrencyValue(
   name: string | number | undefined,
 ): [string, string] {
   const resolvedValue = Array.isArray(value) ? value[0] : value;
-  const numericValue = typeof resolvedValue === 'number' ? resolvedValue : Number(resolvedValue ?? 0);
-  return [formatCurrency(Number.isFinite(numericValue) ? numericValue : 0, true), String(name ?? '')];
+  const numericValue =
+    typeof resolvedValue === 'number' ? resolvedValue : Number(resolvedValue ?? 0);
+  return [
+    formatCurrency(Number.isFinite(numericValue) ? numericValue : 0, true),
+    String(name ?? ''),
+  ];
 }
 
 // ─── View Options ─────────────────────────────────────────────────────────────
@@ -185,22 +189,18 @@ function AnalyticsCard({
   className?: string;
 }) {
   return (
-    <motion.div
+    <div
       className={`flex h-full flex-col overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm ${className}`}
-      whileHover={{ y: -2, boxShadow: '0 4px 16px 0 rgba(0,0,0,0.07)' }}
-      transition={{ duration: 0.2 }}
     >
       <div className="flex items-center gap-3 border-b border-gray-100 bg-gray-50/40 px-5 py-4 flex-shrink-0">
         <Icon className="h-4 w-4 shrink-0 text-gray-400" />
         <div className="min-w-0">
           <p className="text-sm font-semibold text-gray-900 truncate">{title}</p>
-          {description && (
-            <p className="text-xs text-gray-500 mt-0.5 truncate">{description}</p>
-          )}
+          {description && <p className="text-xs text-gray-500 mt-0.5 truncate">{description}</p>}
         </div>
       </div>
       {children}
-    </motion.div>
+    </div>
   );
 }
 
@@ -308,7 +308,7 @@ function buildWaterfallData(snap: ProfitabilitySnapshot) {
 const TYPE_COLOR = {
   positive: '#2563eb', // primary-600
   negative: '#f43f5e', // rose-500
-  total: '#059669',    // emerald-600
+  total: '#059669', // emerald-600
 };
 
 function CustomWaterfallTooltip({ active, payload, label }: any) {
@@ -359,11 +359,7 @@ function WaterfallChartCard({ snap }: { snap: ProfitabilitySnapshot }) {
             {/* Visible value bar */}
             <Bar dataKey="value" stackId="a" radius={[4, 4, 0, 0]}>
               {data.map((entry, index) => (
-                <Cell
-                  key={`cell-${index}`}
-                  fill={TYPE_COLOR[entry.type]}
-                  opacity={0.9}
-                />
+                <Cell key={`cell-${index}`} fill={TYPE_COLOR[entry.type]} opacity={0.9} />
               ))}
             </Bar>
           </BarChart>
@@ -392,7 +388,9 @@ function MarginGauge({ label, pct, color }: { label: string; pct: number; color:
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold text-gray-600">{label}</span>
-        <span className="text-lg font-bold tabular-nums" style={{ color }}>{pct.toFixed(1)}%</span>
+        <span className="text-lg font-bold tabular-nums" style={{ color }}>
+          {pct.toFixed(1)}%
+        </span>
       </div>
       <div className="h-2.5 w-full overflow-hidden rounded-full bg-gray-100">
         <motion.div
@@ -407,7 +405,13 @@ function MarginGauge({ label, pct, color }: { label: string; pct: number; color:
   );
 }
 
-function MarginPanel({ snap, prior }: { snap: ProfitabilitySnapshot; prior: ProfitabilitySnapshot }) {
+function MarginPanel({
+  snap,
+  prior,
+}: {
+  snap: ProfitabilitySnapshot;
+  prior: ProfitabilitySnapshot;
+}) {
   const grossDelta = snap.grossMarginPct - prior.grossMarginPct;
   const netDelta = snap.netMarginPct - prior.netMarginPct;
   const expDelta = snap.expenseRatio - prior.expenseRatio;
@@ -457,9 +461,21 @@ function MarginPanel({ snap, prior }: { snap: ProfitabilitySnapshot; prior: Prof
 
         <div className="mt-1 rounded-lg bg-gray-50 border border-gray-100 p-3 space-y-2.5">
           {[
-            { label: 'Gross Profit', value: formatCurrency(snap.grossProfit, true), color: 'text-emerald-600' },
-            { label: 'Operating Profit', value: formatCurrency(snap.operatingProfit, true), color: 'text-primary-600' },
-            { label: 'Net Profit', value: formatCurrency(snap.netProfit, true), color: 'text-emerald-700' },
+            {
+              label: 'Gross Profit',
+              value: formatCurrency(snap.grossProfit, true),
+              color: 'text-emerald-600',
+            },
+            {
+              label: 'Operating Profit',
+              value: formatCurrency(snap.operatingProfit, true),
+              color: 'text-primary-600',
+            },
+            {
+              label: 'Net Profit',
+              value: formatCurrency(snap.netProfit, true),
+              color: 'text-emerald-700',
+            },
           ].map((row) => (
             <div key={row.label} className="flex items-center justify-between">
               <span className="text-xs text-gray-500">{row.label}</span>
@@ -504,8 +520,19 @@ function TrendLineCard({ trend }: { trend: TrendPoint[] }) {
         <ResponsiveContainer width="100%" height={240}>
           <LineChart data={trend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
-            <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#9ca3af' }} tickLine={false} axisLine={false} />
-            <YAxis tick={{ fontSize: 9, fill: '#9ca3af' }} tickLine={false} axisLine={false} tickFormatter={(v) => formatCurrency(v, true)} width={50} />
+            <XAxis
+              dataKey="label"
+              tick={{ fontSize: 10, fill: '#9ca3af' }}
+              tickLine={false}
+              axisLine={false}
+            />
+            <YAxis
+              tick={{ fontSize: 9, fill: '#9ca3af' }}
+              tickLine={false}
+              axisLine={false}
+              tickFormatter={(v) => formatCurrency(v, true)}
+              width={50}
+            />
             <Tooltip content={<CustomTrendTooltip />} />
             <Legend
               iconType="circle"
@@ -562,16 +589,43 @@ function StackedBarCard({ series }: { series: StackedBarPoint[] }) {
         <ResponsiveContainer width="100%" height={240}>
           <BarChart data={series} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
-            <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#9ca3af' }} tickLine={false} axisLine={false} />
-            <YAxis tick={{ fontSize: 9, fill: '#9ca3af' }} tickLine={false} axisLine={false} tickFormatter={(v) => formatCurrency(v, true)} width={50} />
+            <XAxis
+              dataKey="label"
+              tick={{ fontSize: 10, fill: '#9ca3af' }}
+              tickLine={false}
+              axisLine={false}
+            />
+            <YAxis
+              tick={{ fontSize: 9, fill: '#9ca3af' }}
+              tickLine={false}
+              axisLine={false}
+              tickFormatter={(v) => formatCurrency(v, true)}
+              width={50}
+            />
             <Tooltip
               formatter={formatTooltipCurrencyValue}
               contentStyle={{ borderRadius: 8, border: '1px solid #e5e7eb', fontSize: 12 }}
             />
-            <Legend iconType="circle" iconSize={8} wrapperStyle={{ paddingTop: 12, fontSize: 12 }} />
-            <Bar dataKey="revenue" name="Revenue" fill="#2563eb" opacity={0.8} radius={[2, 2, 0, 0]} />
+            <Legend
+              iconType="circle"
+              iconSize={8}
+              wrapperStyle={{ paddingTop: 12, fontSize: 12 }}
+            />
+            <Bar
+              dataKey="revenue"
+              name="Revenue"
+              fill="#2563eb"
+              opacity={0.8}
+              radius={[2, 2, 0, 0]}
+            />
             <Bar dataKey="costs" name="Costs" fill="#f43f5e" opacity={0.75} radius={[2, 2, 0, 0]} />
-            <Bar dataKey="profit" name="Profit" fill="#059669" opacity={0.85} radius={[2, 2, 0, 0]} />
+            <Bar
+              dataKey="profit"
+              name="Profit"
+              fill="#059669"
+              opacity={0.85}
+              radius={[2, 2, 0, 0]}
+            />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -627,9 +681,14 @@ function CostBreakdownCard({ snap }: { snap: ProfitabilitySnapshot }) {
               const pct = ((d.value / total) * 100).toFixed(1);
               return (
                 <div key={d.name} className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: COST_COLORS[i] }} />
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: COST_COLORS[i] }}
+                  />
                   <span className="flex-1 text-xs text-gray-600">{d.name}</span>
-                  <span className="text-xs font-semibold tabular-nums text-gray-800">{formatCurrency(d.value, true)}</span>
+                  <span className="text-xs font-semibold tabular-nums text-gray-800">
+                    {formatCurrency(d.value, true)}
+                  </span>
                   <span className="w-9 text-right text-xs text-gray-400">{pct}%</span>
                 </div>
               );
@@ -638,7 +697,9 @@ function CostBreakdownCard({ snap }: { snap: ProfitabilitySnapshot }) {
         </div>
         <div className="border-t border-gray-100 pt-2 flex items-center justify-between">
           <span className="text-xs font-semibold text-gray-500">Total Costs</span>
-          <span className="text-sm font-bold text-rose-600 tabular-nums">{formatCurrency(total, true)}</span>
+          <span className="text-sm font-bold text-rose-600 tabular-nums">
+            {formatCurrency(total, true)}
+          </span>
         </div>
       </div>
     </AnalyticsCard>
@@ -661,18 +722,52 @@ function buildTableRows(snap: ProfitabilitySnapshot, prior: ProfitabilitySnapsho
   return [
     { label: 'REVENUE', value: 0, prior: 0, isSection: true },
     { label: 'Gross Sales', value: snap.grossSales, prior: prior.grossSales },
-    { label: 'Less: Discounts', value: -snap.discounts, prior: -prior.discounts, indent: true, isSubtraction: true },
-    { label: 'Less: Refunds', value: -snap.refunds, prior: -prior.refunds, indent: true, isSubtraction: true },
+    {
+      label: 'Discounts',
+      value: -snap.discounts,
+      prior: -prior.discounts,
+      indent: true,
+      isSubtraction: true,
+    },
+    {
+      label: 'Refunds',
+      value: -snap.refunds,
+      prior: -prior.refunds,
+      indent: true,
+      isSubtraction: true,
+    },
     { label: 'Net Sales', value: snap.netSales, prior: prior.netSales, isTotal: true },
     { label: 'COST OF GOODS SOLD', value: 0, prior: 0, isSection: true },
     { label: 'COGS', value: -snap.cogs, prior: -prior.cogs, isSubtraction: true },
     { label: 'Gross Profit', value: snap.grossProfit, prior: prior.grossProfit, isTotal: true },
     { label: 'OPERATING COSTS', value: 0, prior: 0, isSection: true },
-    { label: 'Variable Expenses', value: -snap.variableExpenses, prior: -prior.variableExpenses, indent: true, isSubtraction: true },
-    { label: 'Gross Salary', value: -snap.grossSalary, prior: -prior.grossSalary, indent: true, isSubtraction: true },
-    { label: 'Operating Profit', value: snap.operatingProfit, prior: prior.operatingProfit, isTotal: true },
+    {
+      label: 'Variable Expenses',
+      value: -snap.variableExpenses,
+      prior: -prior.variableExpenses,
+      indent: true,
+      isSubtraction: true,
+    },
+    {
+      label: 'Gross Salary',
+      value: -snap.grossSalary,
+      prior: -prior.grossSalary,
+      indent: true,
+      isSubtraction: true,
+    },
+    {
+      label: 'Operating Profit',
+      value: snap.operatingProfit,
+      prior: prior.operatingProfit,
+      isTotal: true,
+    },
     { label: 'OVERHEAD', value: 0, prior: 0, isSection: true },
-    { label: 'Overhead Expenses', value: -snap.overheadExpenses, prior: -prior.overheadExpenses, isSubtraction: true },
+    {
+      label: 'Overhead Expenses',
+      value: -snap.overheadExpenses,
+      prior: -prior.overheadExpenses,
+      isSubtraction: true,
+    },
     { label: 'Net Profit', value: snap.netProfit, prior: prior.netProfit, isTotal: true },
   ];
 }
@@ -684,10 +779,18 @@ function PnLTable({ snap, prior }: { snap: ProfitabilitySnapshot; prior: Profita
     <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-hidden">
       {/* Table header */}
       <div className="grid grid-cols-[1fr_auto_auto] sm:grid-cols-[1fr_auto_auto_auto] gap-x-3 sm:gap-x-4 border-b border-gray-100 bg-gray-50/60 px-4 sm:px-5 py-3">
-        <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Line Item</span>
-        <span className="w-24 sm:w-32 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Current</span>
-        <span className="hidden sm:block w-32 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Prior</span>
-        <span className="w-16 sm:w-20 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Change</span>
+        <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+          Line Item
+        </span>
+        <span className="w-24 sm:w-32 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">
+          Current
+        </span>
+        <span className="hidden sm:block w-32 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">
+          Prior
+        </span>
+        <span className="w-16 sm:w-20 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">
+          Change
+        </span>
       </div>
 
       <div className="divide-y divide-gray-50">
@@ -695,7 +798,9 @@ function PnLTable({ snap, prior }: { snap: ProfitabilitySnapshot; prior: Profita
           if (row.isSection) {
             return (
               <div key={i} className="bg-gray-50/80 px-4 sm:px-5 py-2">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{row.label}</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                  {row.label}
+                </span>
               </div>
             );
           }
@@ -720,7 +825,11 @@ function PnLTable({ snap, prior }: { snap: ProfitabilitySnapshot; prior: Profita
               </span>
               <span
                 className={`w-24 sm:w-32 text-right text-xs sm:text-sm tabular-nums ${row.isTotal ? 'font-bold' : 'font-medium'} ${
-                  row.value < 0 ? 'text-rose-600' : row.isTotal ? 'text-emerald-700' : 'text-gray-800'
+                  row.value < 0
+                    ? 'text-rose-600'
+                    : row.isTotal
+                      ? 'text-emerald-700'
+                      : 'text-gray-800'
                 }`}
               >
                 {row.value < 0 ? (
@@ -738,11 +847,15 @@ function PnLTable({ snap, prior }: { snap: ProfitabilitySnapshot; prior: Profita
               <span
                 className={`hidden sm:block w-32 text-right text-sm tabular-nums ${row.prior < 0 ? 'text-rose-400' : 'text-gray-400'}`}
               >
-                {row.prior < 0 ? `-${formatCurrency(Math.abs(row.prior))}` : formatCurrency(row.prior)}
+                {row.prior < 0
+                  ? `-${formatCurrency(Math.abs(row.prior))}`
+                  : formatCurrency(row.prior)}
               </span>
               <div className="w-16 sm:w-20 flex justify-end">
                 {isZeroDelta ? (
-                  <span className="rounded-full bg-gray-100 px-1.5 sm:px-2 py-0.5 text-[10px] font-semibold text-gray-400">—</span>
+                  <span className="rounded-full bg-gray-100 px-1.5 sm:px-2 py-0.5 text-[10px] font-semibold text-gray-400">
+                    —
+                  </span>
                 ) : (
                   <span
                     className={`rounded-full px-1.5 sm:px-2 py-0.5 text-[10px] font-semibold ${
@@ -843,7 +956,8 @@ export function ProfitabilityAnalyticsPage() {
     !hasSnapshotValues(snap) &&
     !(profitabilityQuery.data.currentBuckets ?? []).some((bucket) => hasSnapshotValues(bucket)),
   );
-  const showEstimatedNotice = snap.overheadSource === 'estimated' || snap.netProfitSource === 'estimated';
+  const showEstimatedNotice =
+    snap.overheadSource === 'estimated' || snap.netProfitSource === 'estimated';
   const showContent =
     hasSelectedBranches &&
     !isInitialLoading &&
@@ -896,20 +1010,23 @@ export function ProfitabilityAnalyticsPage() {
   return (
     <div className="space-y-4 sm:space-y-6">
       {/* Page Header */}
-      <div className="flex flex-col gap-3">
-        <div className="flex items-center gap-2">
-          <DollarSign className="h-5 w-5 shrink-0 text-primary-600" />
-          <h1 className="text-xl font-bold text-gray-900">Profitability Analytics</h1>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <DollarSign className="h-6 w-6 text-primary-600" />
+            <h1 className="text-2xl font-bold text-gray-900">Profitability Analytics</h1>
+          </div>
+          <p className="mt-1 hidden text-sm text-gray-500 sm:block">
+            Full P&amp;L view — Gross Sales to Net Profit.
+          </p>
         </div>
-        <div className="flex items-center justify-between gap-3">
-          <p className="hidden sm:block text-xs text-gray-400">Full P&amp;L view — Gross Sales to Net Profit</p>
-          <AnalyticsRangePicker
-            value={analyticsRange}
-            onChange={setAnalyticsRange}
-            minDateYmd={null}
-            className="shrink-0 sm:ml-0 mx-auto sm:mx-0"
-          />
-        </div>
+
+        <AnalyticsRangePicker
+          value={analyticsRange}
+          onChange={setAnalyticsRange}
+          minDateYmd={null}
+          className="shrink-0 self-center"
+        />
       </div>
 
       {/* Selected Branches */}
@@ -917,13 +1034,16 @@ export function ProfitabilityAnalyticsPage() {
 
       {showEstimatedNotice && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Overhead expenses are estimated for {periodLabel} using the previous comparable period because live entries are not yet posted.
+          Overhead expenses for {periodLabel} include month-based estimates when a covered month
+          has no actual entries but the immediately previous month does.
         </div>
       )}
 
       {!hasSelectedBranches && (
         <div className="rounded-xl border border-dashed border-gray-200 bg-white px-5 py-10 text-center shadow-sm">
-          <p className="text-sm font-semibold text-gray-700">Select at least one branch to view profitability analytics.</p>
+          <p className="text-sm font-semibold text-gray-700">
+            Select at least one branch to view profitability analytics.
+          </p>
         </div>
       )}
 
@@ -942,7 +1062,9 @@ export function ProfitabilityAnalyticsPage() {
 
       {hasSelectedBranches && !isInitialLoading && !profitabilityQuery.isError && isEmptyState && (
         <div className="rounded-xl border border-gray-100 bg-white px-5 py-10 text-center shadow-sm">
-          <p className="text-sm font-semibold text-gray-700">No profitability data was found for the selected branches and period.</p>
+          <p className="text-sm font-semibold text-gray-700">
+            No profitability data was found for the selected branches and period.
+          </p>
           <p className="mt-1 text-xs text-gray-400">{periodLabel}</p>
         </div>
       )}
@@ -986,10 +1108,22 @@ export function ProfitabilityAnalyticsPage() {
                 <div className="space-y-4 sm:space-y-6">
                   {/* Row 1: Waterfall + Margin */}
                   <div className="grid gap-4 lg:grid-cols-12">
-                    <motion.div className="lg:col-span-7" variants={fadeUp} initial="hidden" animate="visible" custom={0}>
+                    <motion.div
+                      className="lg:col-span-7"
+                      variants={fadeUp}
+                      initial="hidden"
+                      animate="visible"
+                      custom={0}
+                    >
                       <WaterfallChartCard snap={snap} />
                     </motion.div>
-                    <motion.div className="lg:col-span-5" variants={fadeUp} initial="hidden" animate="visible" custom={0.08}>
+                    <motion.div
+                      className="lg:col-span-5"
+                      variants={fadeUp}
+                      initial="hidden"
+                      animate="visible"
+                      custom={0.08}
+                    >
                       <MarginPanel snap={snap} prior={prior} />
                     </motion.div>
                   </div>
@@ -1001,10 +1135,22 @@ export function ProfitabilityAnalyticsPage() {
 
                   {/* Row 3: Stacked Bar + Cost Breakdown */}
                   <div className="grid gap-4 lg:grid-cols-12">
-                    <motion.div className="lg:col-span-7" variants={fadeUp} initial="hidden" animate="visible" custom={0.24}>
+                    <motion.div
+                      className="lg:col-span-7"
+                      variants={fadeUp}
+                      initial="hidden"
+                      animate="visible"
+                      custom={0.24}
+                    >
                       <StackedBarCard series={stacked} />
                     </motion.div>
-                    <motion.div className="lg:col-span-5" variants={fadeUp} initial="hidden" animate="visible" custom={0.32}>
+                    <motion.div
+                      className="lg:col-span-5"
+                      variants={fadeUp}
+                      initial="hidden"
+                      animate="visible"
+                      custom={0.32}
+                    >
                       <CostBreakdownCard snap={snap} />
                     </motion.div>
                   </div>

@@ -80,7 +80,7 @@ test('getProfitabilityPreviousRange uses the immediately preceding same-length w
   );
 });
 
-test('getProfitabilityAnalytics aggregates profitability metrics and estimates missing current overhead from the previous period', async () => {
+test('getProfitabilityAnalytics prorates monthly overhead across days and estimates a month from the immediately previous actual month', async () => {
   const odooCalls: Array<{
     model: string;
     method: string;
@@ -238,7 +238,13 @@ test('getProfitabilityAnalytics aggregates profitability metrics and estimates m
           ];
         }
 
-        if (model === 'purchase.order' && domainJson.includes('2026-03-31 16:00:00')) {
+        if (
+          model === 'purchase.order'
+          && domainJson.includes('2026-03-31 16:00:00')
+          && domainJson.includes('1053')
+          && domainJson.includes('1052')
+          && domainJson.includes('1054')
+        ) {
           return [
             {
               company_id: [5, 'Main Branch'],
@@ -248,7 +254,13 @@ test('getProfitabilityAnalytics aggregates profitability metrics and estimates m
           ];
         }
 
-        if (model === 'purchase.order' && domainJson.includes('2026-03-29 16:00:00')) {
+        if (
+          model === 'purchase.order'
+          && domainJson.includes('2026-03-29 16:00:00')
+          && domainJson.includes('1053')
+          && domainJson.includes('1052')
+          && domainJson.includes('1054')
+        ) {
           return [
             {
               company_id: [5, 'Main Branch'],
@@ -281,21 +293,30 @@ test('getProfitabilityAnalytics aggregates profitability metrics and estimates m
         if (
           model === 'account.move.line'
           && domainJson.includes('107')
-          && domainJson.includes('2026-04-01')
+          && domainJson.includes('2026-03-01')
+          && domainJson.includes('2026-04-30')
         ) {
-          return [];
+          return [
+            {
+              company_id: [5, 'Main Branch'],
+              date: '2026-03-15',
+              debit: 310,
+              credit: 0,
+            },
+          ];
         }
 
         if (
           model === 'account.move.line'
           && domainJson.includes('107')
-          && domainJson.includes('2026-03-30')
+          && domainJson.includes('2026-02-01')
+          && domainJson.includes('2026-03-31')
         ) {
           return [
             {
               company_id: [5, 'Main Branch'],
-              date: '2026-03-30',
-              debit: 12,
+              date: '2026-03-15',
+              debit: 310,
               credit: 0,
             },
           ];
@@ -316,27 +337,129 @@ test('getProfitabilityAnalytics aggregates profitability metrics and estimates m
   assert.equal(result.current.variableExpenses, 20);
   assert.equal(result.current.grossSalary, 30);
   assert.equal(result.current.operatingProfit, 65);
-  assert.equal(result.current.overheadExpenses, 12);
-  assert.equal(result.current.netProfit, 53);
+  assert.equal(result.current.overheadExpenses, 20.67);
+  assert.equal(result.current.netProfit, 44.33);
   assert.equal(result.current.overheadSource, 'estimated');
   assert.equal(result.current.netProfitSource, 'estimated');
-  assert.equal(result.current.expenseRatio, 41.33);
+  assert.equal(result.current.expenseRatio, 47.11);
 
   assert.equal(result.previousPeriod.grossSales, 115);
   assert.equal(result.previousPeriod.netSales, 100);
-  assert.equal(result.previousPeriod.overheadExpenses, 12);
+  assert.equal(result.previousPeriod.overheadExpenses, 20);
   assert.equal(result.previousPeriod.overheadSource, 'actual');
-  assert.equal(result.previousPeriod.netProfit, 38);
+  assert.equal(result.previousPeriod.netProfit, 30);
 
   assert.equal(result.currentBuckets.length, 2);
   assert.equal(result.currentBuckets[0]?.key, '2026-04-01');
   assert.equal(result.currentBuckets[0]?.grossSales, 184);
+  assert.equal(result.currentBuckets[0]?.overheadExpenses, 10.33);
+  assert.equal(result.currentBuckets[0]?.overheadSource, 'estimated');
   assert.equal(result.branchComparison.length, 1);
   assert.equal(result.branchComparison[0]?.branch.id, 'branch-1');
-  assert.equal(result.branchComparison[0]?.current.netProfit, 53);
-  assert.equal(result.branchComparison[0]?.previousPeriod.netProfit, 38);
+  assert.equal(result.branchComparison[0]?.current.netProfit, 44.33);
+  assert.equal(result.branchComparison[0]?.previousPeriod.netProfit, 30);
 
   assert.ok(
     odooCalls.some((call) => call.model === 'pos.session' && JSON.stringify(call.kwargs?.domain ?? []).includes('2026-03-31 16:00:00')),
   );
+});
+
+test('getProfitabilityAnalytics does not chain monthly overhead estimates beyond one month', async () => {
+  const result = await getProfitabilityAnalytics(
+    {
+      granularity: 'month',
+      rangeStartYmd: '2026-04-01',
+      rangeEndYmd: '2026-05-31',
+      branches: [
+        {
+          id: 'branch-1',
+          name: 'Main Branch',
+          companyId: 'company-1',
+          companyName: 'Company One',
+          odooCompanyId: 5,
+          variableExpenseVendorIds: [125, 3022],
+          overheadAccountIds: [107, 2507],
+        },
+      ],
+    },
+    {
+      now: () => new Date('2026-05-10T12:00:00+08:00'),
+      callOdooKwFn: async (
+        model: string,
+        method: string,
+        args: unknown[],
+        kwargs?: Record<string, unknown>,
+      ) => {
+        assert.equal(method, 'search_read');
+        const domainJson = JSON.stringify(kwargs?.domain ?? []);
+
+        if (model === 'pos.session') {
+          return [];
+        }
+
+        if (model === 'purchase.order') {
+          return [];
+        }
+
+        if (model === 'hr.work.entry') {
+          return [];
+        }
+
+        if (
+          model === 'account.move.line'
+          && domainJson.includes('107')
+          && domainJson.includes('2026-03-01')
+          && domainJson.includes('2026-05-31')
+        ) {
+          return [
+            {
+              company_id: [5, 'Main Branch'],
+              date: '2026-03-15',
+              debit: 310,
+              credit: 0,
+            },
+          ];
+        }
+
+        if (
+          model === 'account.move.line'
+          && domainJson.includes('107')
+          && domainJson.includes('2026-01-01')
+          && domainJson.includes('2026-03-31')
+        ) {
+          return [
+            {
+              company_id: [5, 'Main Branch'],
+              date: '2026-02-10',
+              debit: 280,
+              credit: 0,
+            },
+            {
+              company_id: [5, 'Main Branch'],
+              date: '2026-03-15',
+              debit: 310,
+              credit: 0,
+            },
+          ];
+        }
+
+        if (model === 'account.move.line') {
+          return [];
+        }
+
+        throw new Error(`Unhandled Odoo call: ${model} ${domainJson}`);
+      },
+    },
+  );
+
+  assert.equal(result.current.overheadExpenses, 310);
+  assert.equal(result.current.overheadSource, 'estimated');
+  assert.equal(result.previousPeriod.overheadExpenses, 590);
+  assert.equal(result.previousPeriod.overheadSource, 'actual');
+  assert.equal(result.currentBuckets.length, 2);
+  assert.equal(result.currentBuckets[0]?.key, '2026-04');
+  assert.equal(result.currentBuckets[0]?.overheadExpenses, 310);
+  assert.equal(result.currentBuckets[0]?.overheadSource, 'estimated');
+  assert.equal(result.currentBuckets[1]?.key, '2026-05');
+  assert.equal(result.currentBuckets[1]?.overheadExpenses, 0);
 });
