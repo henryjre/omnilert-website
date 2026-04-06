@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   compareYmd,
+  createCurrentMonthToDateRangeSelection,
   createDefaultRangeForGranularity,
+  createTrailingDayRangeSelection,
   fromLocalYmd,
   normalizeRangeYmd,
   toLocalYmd,
@@ -27,6 +29,20 @@ test("createDefaultRangeForGranularity week has Monday start before Sunday end",
   const sun = fromLocalYmd(r.rangeEndYmd);
   assert.equal(mon.getDay(), 1);
   assert.equal(sun.getDay(), 0);
+});
+
+test("createTrailingDayRangeSelection includes today and 14 prior days", () => {
+  const r = createTrailingDayRangeSelection(14, new Date(2026, 3, 6, 10, 0, 0, 0));
+  assert.equal(r.granularity, "day");
+  assert.equal(r.rangeStartYmd, "2026-03-23");
+  assert.equal(r.rangeEndYmd, "2026-04-06");
+});
+
+test("createCurrentMonthToDateRangeSelection uses the first day of the current month through today", () => {
+  const r = createCurrentMonthToDateRangeSelection(new Date(2026, 3, 6, 10, 0, 0, 0));
+  assert.equal(r.granularity, "month");
+  assert.equal(r.rangeStartYmd, "2026-04-01");
+  assert.equal(r.rangeEndYmd, "2026-04-06");
 });
 
 test("normalizeRangeYmd swaps when start is after end", () => {

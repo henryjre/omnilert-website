@@ -37,11 +37,12 @@ import {
 import { SingleUserSelect, type UserEntry } from '../components/SingleUserSelect';
 import { AnalyticsRangePicker, getSummaryForSelection } from '../components/AnalyticsRangePicker';
 import {
-  createDefaultRangeForGranularity,
+  createTrailingDayRangeSelection,
   fromLocalYmd,
   toLocalYmd,
   type AnalyticsRangeSelection,
 } from '../utils/analyticsRangeBuckets';
+import { usePersistedAnalyticsRange } from '../utils/analyticsRangePersistence';
 import {
   buildGeneralKeyInsights as buildGeneralKeyInsightsMock,
   buildGeneralViewMockData as buildGeneralViewMockDataMock,
@@ -6196,8 +6197,9 @@ function formatTenureFromDateStarted(value: string | null | undefined): string {
 export function EmployeeAnalyticsPage({ isLoading = false }: EmployeeAnalyticsPageProps) {
   const [activeView, setActiveView] = useState<AnalyticsView>('general');
   const [selectedUser, setSelectedUser] = useState<UserEntry | null>(null);
-  const [analyticsRange, setAnalyticsRange] = useState<AnalyticsRangeSelection>(() =>
-    createDefaultRangeForGranularity('day'),
+  const [analyticsRange, setAnalyticsRange] = usePersistedAnalyticsRange(
+    'employee-analytics.range',
+    createTrailingDayRangeSelection(14)
   );
   const metricSnapshotsQuery = useQuery({
     queryKey: [

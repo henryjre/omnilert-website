@@ -67,11 +67,15 @@ async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKp
       .select(dbConn.raw(`css_star_rating as star_rating`), dbConn.raw(`completed_at::text as audited_at`)),
     dbConn('peer_evaluations')
       .where({ evaluated_user_id: userId })
-      .whereNotNull('submitted_at')
+      .andWhere((peerEvalQuery) => {
+        peerEvalQuery.whereNotNull('submitted_at').orWhere('status', 'expired');
+      })
       .select(
         dbConn.raw(`(q1_score + q2_score + q3_score) / 3.0 as average_score`),
         dbConn.raw(`submitted_at::text`),
         dbConn.raw(`wrs_effective_at::text`),
+        'status',
+        dbConn.raw(`expires_at::text`),
       ),
     // Compliance audits: the user was the auditor
     dbConn('store_audits')

@@ -241,11 +241,15 @@ async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKp
       .select(dbConn.raw('css_star_rating as star_rating'), dbConn.raw('completed_at::text as audited_at')),
     dbConn('peer_evaluations')
       .where({ evaluated_user_id: userId })
-      .whereNotNull('submitted_at')
+      .andWhere((peerEvalQuery) => {
+        peerEvalQuery.whereNotNull('submitted_at').orWhere('status', 'expired');
+      })
       .select(
         dbConn.raw('(q1_score + q2_score + q3_score) / 3.0 as average_score'),
         dbConn.raw('submitted_at::text'),
         dbConn.raw('wrs_effective_at::text'),
+        'status',
+        dbConn.raw('expires_at::text'),
       ),
     dbConn('store_audits')
       .where({ type: 'service_crew_cctv', status: 'completed' })
@@ -473,14 +477,18 @@ async function fetchLiveSnapshotRows(
 
     // Query 2 — Peer evaluations (30-day rolling average)
     (() => {
+      const wrsEffectiveAtSql = `CASE WHEN pe.status = 'expired' AND pe.submitted_at IS NULL THEN pe.expires_at ELSE COALESCE(pe.wrs_effective_at, pe.submitted_at) END`;
+      const wrsScoreSql = `CASE WHEN pe.status = 'expired' AND pe.submitted_at IS NULL THEN 5.0 ELSE (pe.q1_score + pe.q2_score + pe.q3_score) / 3.0 END`;
       const q = dbConn('peer_evaluations as pe')
-        .whereNotNull('pe.submitted_at')
-        .whereRaw('COALESCE(pe.wrs_effective_at, pe.submitted_at) >= ?', [rollingStart])
-        .whereRaw('COALESCE(pe.wrs_effective_at, pe.submitted_at) <= ?', [todayEnd])
+        .andWhere((peerEvalQuery) => {
+          peerEvalQuery.whereNotNull('pe.submitted_at').orWhere('pe.status', 'expired');
+        })
+        .whereRaw(`${wrsEffectiveAtSql} >= ?`, [rollingStart])
+        .whereRaw(`${wrsEffectiveAtSql} <= ?`, [todayEnd])
         .groupBy('pe.evaluated_user_id')
         .select(
           'pe.evaluated_user_id as user_id',
-          dbConn.raw('AVG((pe.q1_score + pe.q2_score + pe.q3_score) / 3.0) as avg_wrs'),
+          dbConn.raw(`AVG(${wrsScoreSql}) as avg_wrs`),
         );
       if (filterUserId) q.where('pe.evaluated_user_id', filterUserId);
       return q;

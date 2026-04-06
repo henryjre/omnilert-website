@@ -39,9 +39,10 @@ import {
   getSummaryForSelection,
 } from '@/features/employee-analytics/components/AnalyticsRangePicker';
 import {
-  createDefaultRangeForGranularity,
+  createCurrentMonthToDateRangeSelection,
   type AnalyticsRangeSelection,
 } from '@/features/employee-analytics/utils/analyticsRangeBuckets';
+import { usePersistedAnalyticsRange } from '@/features/employee-analytics/utils/analyticsRangePersistence';
 import {
   fetchProfitabilityAnalytics,
   type ProfitabilityBucketSnapshot,
@@ -937,8 +938,9 @@ function SelectedBranchesStrip() {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export function ProfitabilityAnalyticsPage() {
-  const [analyticsRange, setAnalyticsRange] = useState<AnalyticsRangeSelection>(() =>
-    createDefaultRangeForGranularity('day'),
+  const [analyticsRange, setAnalyticsRange] = usePersistedAnalyticsRange(
+    'profitability-analytics.range',
+    createCurrentMonthToDateRangeSelection()
   );
   const [activeView, setActiveView] = useState<ProfitView>('chart');
   const { selectedBranchIds, branches } = useBranchStore();

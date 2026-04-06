@@ -181,6 +181,30 @@ export function createDefaultRangeForGranularity(
   }
 }
 
+export function createTrailingDayRangeSelection(
+  daysBack: number,
+  now: Date = new Date(),
+): AnalyticsRangeSelection {
+  const endDay = startOfLocalDay(now);
+  const startDay = addLocalDays(endDay, -Math.max(0, daysBack));
+  return {
+    granularity: "day",
+    rangeStartYmd: toLocalYmd(startDay),
+    rangeEndYmd: toLocalYmd(endDay),
+  };
+}
+
+export function createCurrentMonthToDateRangeSelection(
+  now: Date = new Date(),
+): AnalyticsRangeSelection {
+  const endDay = startOfLocalDay(now);
+  return {
+    granularity: "month",
+    rangeStartYmd: toLocalYmd(new Date(endDay.getFullYear(), endDay.getMonth(), 1, 0, 0, 0, 0)),
+    rangeEndYmd: toLocalYmd(endDay),
+  };
+}
+
 /** Ensure start <= end by swapping if needed. */
 export function normalizeRangeYmd(startYmd: string, endYmd: string): { rangeStartYmd: string; rangeEndYmd: string } {
   if (compareYmd(startYmd, endYmd) <= 0) {

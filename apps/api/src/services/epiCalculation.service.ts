@@ -49,6 +49,14 @@ export interface WrsStatusSummary {
   delayedCount: number;
 }
 
+type WrsEvaluationRow = {
+  average_score: number;
+  submitted_at?: string | null;
+  wrs_effective_at?: string | null;
+  status?: string | null;
+  expires_at?: string | null;
+};
+
 export interface KpiQueryDeps {
   getOdooEmployeeIdsByWebsiteKey: typeof getOdooEmployeeIdsByWebsiteKey;
   getScheduledSlots: typeof getScheduledSlots;
@@ -259,11 +267,7 @@ function resolveKpiComputationWindow(window?: KpiComputationWindow): { from: Dat
 }
 
 function splitWrsEvaluations(
-  peerEvaluations: Array<{
-    average_score: number;
-    submitted_at?: string | null;
-    wrs_effective_at?: string | null;
-  }> | null,
+  peerEvaluations: WrsEvaluationRow[] | null,
   from: Date,
   to: Date,
 ): {
@@ -279,17 +283,21 @@ function splitWrsEvaluations(
 
   for (const evaluation of peerEvaluations) {
     const submittedAt = evaluation.submitted_at ? parseUtcTimestamp(evaluation.submitted_at) : null;
-    const effectiveAtRaw = evaluation.wrs_effective_at ?? evaluation.submitted_at;
+    const isExpiredWithoutSubmission = evaluation.status === 'expired' && !evaluation.submitted_at;
+    const effectiveAtRaw = isExpiredWithoutSubmission
+      ? evaluation.expires_at ?? evaluation.wrs_effective_at ?? evaluation.submitted_at
+      : evaluation.wrs_effective_at ?? evaluation.submitted_at;
     const effectiveAt = effectiveAtRaw ? parseUtcTimestamp(effectiveAtRaw) : null;
+    const averageScore = isExpiredWithoutSubmission ? 5 : evaluation.average_score;
     if (!effectiveAt || Number.isNaN(effectiveAt.getTime())) continue;
 
     if (effectiveAt >= from && effectiveAt <= to) {
-      effective.push({ average_score: evaluation.average_score });
+      effective.push({ average_score: averageScore });
       continue;
     }
 
     if (submittedAt && !Number.isNaN(submittedAt.getTime()) && submittedAt >= from && submittedAt <= to && effectiveAt > to) {
-      delayed.push({ average_score: evaluation.average_score });
+      delayed.push({ average_score: averageScore });
     }
   }
 
@@ -297,11 +305,7 @@ function splitWrsEvaluations(
 }
 
 export function getWrsStatusSummary(
-  peerEvaluations: Array<{
-    average_score: number;
-    submitted_at?: string | null;
-    wrs_effective_at?: string | null;
-  }> | null,
+  peerEvaluations: WrsEvaluationRow[] | null,
   from: Date,
   to: Date,
 ): WrsStatusSummary {
@@ -315,11 +319,7 @@ export function getWrsStatusSummary(
 // ─── Individual KPI Calculators ───────────────────────────────────────────────
 
 function calcWrs(
-  peerEvaluations: Array<{
-    average_score: number;
-    submitted_at?: string | null;
-    wrs_effective_at?: string | null;
-  }> | null,
+  peerEvaluations: WrsEvaluationRow[] | null,
   from: Date,
   to: Date,
   minRecords: number = 10,
@@ -560,11 +560,7 @@ export interface UserKpiData {
   userId: string;
   userKey: string;
   cssAudits: Array<{ star_rating: number; audited_at: string }> | null;
-  peerEvaluations: Array<{
-    average_score: number;
-    submitted_at?: string | null;
-    wrs_effective_at?: string | null;
-  }> | null;
+  peerEvaluations: WrsEvaluationRow[] | null;
   complianceAudit: Array<{ answers: Record<string, any>; audited_at: string }> | null;
   violationNotices: Array<{ epi_decrease?: number | null; completed_at?: string | null }> | null;
 }

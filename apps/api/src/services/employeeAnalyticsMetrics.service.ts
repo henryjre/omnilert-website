@@ -221,22 +221,28 @@ async function queryWorkplaceRelationsEvents(input: MetricEventQueryInput): Prom
   const { startYmd, endYmd } = normalizeRangeYmd(input.rangeStartYmd, input.rangeEndYmd);
   const start = toLocalStartDate(startYmd);
   const end = toLocalEndDate(endYmd);
+  const dbConn = db.getDb();
+  const wrsEffectiveAtSql = `CASE WHEN pe.status = 'expired' AND pe.submitted_at IS NULL THEN pe.expires_at ELSE COALESCE(pe.wrs_effective_at, pe.submitted_at) END`;
+  const wrsScoreSql = `CASE WHEN pe.status = 'expired' AND pe.submitted_at IS NULL THEN 5.0 ELSE (pe.q1_score + pe.q2_score + pe.q3_score) / 3.0 END`;
 
-  const rows = await db.getDb()('peer_evaluations as pe')
+  const rows = await dbConn('peer_evaluations as pe')
     .join('users as evaluator', 'evaluator.id', 'pe.evaluator_user_id')
     .leftJoin('employee_shifts as shifts', 'shifts.id', 'pe.shift_id')
     .leftJoin('branches as b', 'b.id', 'shifts.branch_id')
     .where({ 'pe.evaluated_user_id': input.userId })
-    .whereNotNull('pe.wrs_effective_at')
-    .whereBetween('pe.wrs_effective_at', [start, end])
+    .andWhere((peerEvalQuery) => {
+      peerEvalQuery.whereNotNull('pe.submitted_at').orWhere('pe.status', 'expired');
+    })
+    .whereRaw(`${wrsEffectiveAtSql} >= ?`, [start])
+    .whereRaw(`${wrsEffectiveAtSql} <= ?`, [end])
     .select(
       'pe.submitted_at as submittedAt',
-      'pe.wrs_effective_at as effectiveAt',
-      db.getDb().raw(`NULLIF(TRIM(CONCAT_WS(' ', evaluator.first_name, evaluator.last_name)), '') as "evaluatorName"`),
+      dbConn.raw(`${wrsEffectiveAtSql} as "effectiveAt"`),
+      dbConn.raw(`NULLIF(TRIM(CONCAT_WS(' ', evaluator.first_name, evaluator.last_name)), '') as "evaluatorName"`),
       'b.name as branchName',
-      db.getDb().raw('(q1_score + q2_score + q3_score) / 3.0 as score'),
+      dbConn.raw(`${wrsScoreSql} as score`),
     )
-    .orderBy('pe.wrs_effective_at', 'desc');
+    .orderByRaw(`${wrsEffectiveAtSql} desc`);
 
   const mapped = rows.map((row) => ({
     submittedAt: row.submittedAt,

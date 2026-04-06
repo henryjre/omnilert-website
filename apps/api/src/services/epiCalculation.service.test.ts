@@ -234,6 +234,58 @@ test('getWrsStatusSummary falls back to submitted_at when wrs_effective_at is nu
   assert.equal(summary.delayedCount, 0);
 });
 
+test('getWrsStatusSummary counts expired evaluations as effective using expires_at', () => {
+  const from = new Date('2026-03-01T00:00:00.000Z');
+  const to = new Date('2026-03-31T23:59:59.999Z');
+
+  const summary = getWrsStatusSummary([
+    {
+      average_score: 1.5,
+      submitted_at: null,
+      wrs_effective_at: null,
+      status: 'expired',
+      expires_at: '2026-03-18T08:00:00.000Z',
+    } as any,
+  ], from, to);
+
+  assert.equal(summary.effectiveCount, 1);
+  assert.equal(summary.delayedCount, 0);
+});
+
+test('calculateKpiScoresWithQueryDeps uses the default 5 score for expired peer evaluations', async () => {
+  const result = await calculateKpiScoresWithQueryDeps({
+    userId: 'user-1',
+    userKey: 'website-key-1',
+    cssAudits: null,
+    peerEvaluations: [
+      {
+        average_score: 1,
+        submitted_at: null,
+        wrs_effective_at: null,
+        status: 'expired',
+        expires_at: '2026-03-18T08:00:00.000Z',
+      } as any,
+    ],
+    complianceAudit: null,
+    violationNotices: null,
+  }, {
+    getOdooEmployeeIdsByWebsiteKey: async () => [101],
+    getScheduledSlots: async () => [],
+    getAttendanceRecords: async () => [],
+    getPosOrders: async () => [],
+    getBranchPosOrders: async () => [],
+  }, {
+    minRecords: 1,
+    window: {
+      from: new Date('2026-03-01T00:00:00.000Z'),
+      to: new Date('2026-03-31T23:59:59.999Z'),
+    },
+  });
+
+  assert.equal(result.breakdown.wrs.score, 5);
+  assert.equal(result.breakdown.wrs.impact, 0.25);
+});
+
 test('calculateKpiScoresWithQueryDeps respects explicit rolling window', async () => {
   const calls: Array<{ fn: 'slots' | 'attendance' | 'orders'; from: string; to: string }> = [];
 
