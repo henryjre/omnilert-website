@@ -7,6 +7,7 @@ import { initAttendanceQueue, stopAttendanceQueue } from './services/attendanceQ
 import { initServiceCrewCctvCron, stopServiceCrewCctvCron } from './services/serviceCrewCctvCron.service.js';
 import { initPeerEvaluationQueue, stopPeerEvaluationQueue } from './services/peerEvaluationQueue.service.js';
 import { initPeerEvaluationCron, stopPeerEvaluationCron } from './services/peerEvaluationCron.service.js';
+import { initPosAlertsMonitor, stopPosAlertsMonitor } from './services/posAnalyticsAlerts.service.js';
 import { initShiftAuthorizationCron, stopShiftAuthorizationCron } from './services/shiftAuthorizationCron.service.js';
 import { initEpiSnapshotCrons, stopEpiSnapshotCrons } from './services/epiSnapshotCron.service.js';
 import { logger } from './utils/logger.js';
@@ -53,6 +54,12 @@ async function shutdown(signal: string): Promise<void> {
   }
 
   try {
+    stopPosAlertsMonitor();
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to stop POS alerts monitor');
+  }
+
+  try {
     stopShiftAuthorizationCron();
   } catch (error) {
     logger.error({ err: error }, 'Failed to stop shift authorization cron');
@@ -83,6 +90,7 @@ async function bootstrap(): Promise<void> {
   await initServiceCrewCctvCron();
   await initPeerEvaluationQueue();
   initPeerEvaluationCron();
+  initPosAlertsMonitor();
   initShiftAuthorizationCron();
   await initEpiSnapshotCrons();
 

@@ -29,6 +29,7 @@ import { ViolationNoticesPage } from '@/features/violation-notices/pages/Violati
 import { PeerEvaluationsPage } from '@/features/peer-evaluations/pages/PeerEvaluationsPage';
 import { EmployeeAnalyticsPage } from '@/features/employee-analytics/pages/EmployeeAnalyticsPage';
 import { ProfitabilityAnalyticsPage } from '@/features/profitability-analytics/pages/ProfitabilityAnalyticsPage';
+import { PosAnalyticsPage } from '@/features/pos-analytics/pages/PosAnalyticsPage';
 import { PERMISSIONS } from '@omnilert/shared';
 
 export const router = createBrowserRouter([
@@ -176,6 +177,14 @@ export const router = createBrowserRouter([
             element: (
               <PermissionGuard permission={PERMISSIONS.ANALYTICS_VIEW_PROFITABILITY_ANALYTICS}>
                 <ProfitabilityAnalyticsPage />
+              </PermissionGuard>
+            ),
+          },
+          {
+            path: 'pos-analytics',
+            element: (
+              <PermissionGuard permission={PERMISSIONS.ANALYTICS_VIEW_POS_ANALYTICS}>
+                <PosAnalyticsPage />
               </PermissionGuard>
             ),
           },

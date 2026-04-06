@@ -149,7 +149,7 @@ function formatTooltipCurrencyValue(
   const numericValue =
     typeof resolvedValue === 'number' ? resolvedValue : Number(resolvedValue ?? 0);
   return [
-    formatCurrency(Number.isFinite(numericValue) ? numericValue : 0, true),
+    formatCurrency(Number.isFinite(numericValue) ? numericValue : 0),
     String(name ?? ''),
   ];
 }
@@ -351,8 +351,8 @@ function WaterfallChartCard({ snap }: { snap: ProfitabilitySnapshot }) {
               tick={{ fontSize: 9, fill: '#9ca3af' }}
               tickLine={false}
               axisLine={false}
-              tickFormatter={(v) => formatCurrency(v, true)}
-              width={52}
+              tickFormatter={(v) => formatCurrency(v)}
+              width={104}
             />
             <Tooltip content={<CustomWaterfallTooltip />} />
             {/* Invisible offset bar to lift the visible bar */}
@@ -501,7 +501,7 @@ function CustomTrendTooltip({ active, payload, label }: any) {
           <span className="h-2 w-2 rounded-full" style={{ backgroundColor: p.color }} />
           <span className="text-xs text-gray-500">{p.name}</span>
           <span className="text-xs font-bold text-gray-800 tabular-nums ml-auto">
-            {formatCurrency(p.value, true)}
+            {formatCurrency(p.value)}
           </span>
         </div>
       ))}
@@ -531,8 +531,8 @@ function TrendLineCard({ trend }: { trend: TrendPoint[] }) {
               tick={{ fontSize: 9, fill: '#9ca3af' }}
               tickLine={false}
               axisLine={false}
-              tickFormatter={(v) => formatCurrency(v, true)}
-              width={50}
+              tickFormatter={(v) => formatCurrency(v)}
+              width={104}
             />
             <Tooltip content={<CustomTrendTooltip />} />
             <Legend
@@ -600,8 +600,8 @@ function StackedBarCard({ series }: { series: StackedBarPoint[] }) {
               tick={{ fontSize: 9, fill: '#9ca3af' }}
               tickLine={false}
               axisLine={false}
-              tickFormatter={(v) => formatCurrency(v, true)}
-              width={50}
+              tickFormatter={(v) => formatCurrency(v)}
+              width={104}
             />
             <Tooltip
               formatter={formatTooltipCurrencyValue}
@@ -688,7 +688,7 @@ function CostBreakdownCard({ snap }: { snap: ProfitabilitySnapshot }) {
                   />
                   <span className="flex-1 text-xs text-gray-600">{d.name}</span>
                   <span className="text-xs font-semibold tabular-nums text-gray-800">
-                    {formatCurrency(d.value, true)}
+                    {formatCurrency(d.value)}
                   </span>
                   <span className="w-9 text-right text-xs text-gray-400">{pct}%</span>
                 </div>
@@ -699,7 +699,7 @@ function CostBreakdownCard({ snap }: { snap: ProfitabilitySnapshot }) {
         <div className="border-t border-gray-100 pt-2 flex items-center justify-between">
           <span className="text-xs font-semibold text-gray-500">Total Costs</span>
           <span className="text-sm font-bold text-rose-600 tabular-nums">
-            {formatCurrency(total, true)}
+            {formatCurrency(total)}
           </span>
         </div>
       </div>

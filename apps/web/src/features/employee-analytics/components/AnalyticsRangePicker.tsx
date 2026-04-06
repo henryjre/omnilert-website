@@ -72,6 +72,16 @@ function clampSelectionToMinAnalyticsDate(
   };
 }
 
+function getSelectionFocusDate(selection: AnalyticsRangeSelection): Date {
+  return fromLocalYmd(selection.rangeEndYmd);
+}
+
+function getSelectionFocusYear(selection: AnalyticsRangeSelection): number {
+  const startYear = fromLocalYmd(selection.rangeStartYmd).getFullYear();
+  const endYear = fromLocalYmd(selection.rangeEndYmd).getFullYear();
+  return Math.floor((Math.min(startYear, endYear) + Math.max(startYear, endYear)) / 2);
+}
+
 /** Build cells for a month: null = empty leading/trailing slot, number = day. */
 function buildMonthCells(year: number, month: number): (number | null)[] {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -128,6 +138,7 @@ export interface AnalyticsRangePickerProps {
   onChange: (next: AnalyticsRangeSelection) => void;
   className?: string;
   minDateYmd?: string | null;
+  excludeGranularities?: AnalyticsGranularity[];
 }
 
 /* ─── Main Component ──────────────────────────────────────────────────── */
@@ -137,6 +148,7 @@ export function AnalyticsRangePicker({
   onChange,
   className = "",
   minDateYmd = DEFAULT_MIN_ANALYTICS_DATE_YMD,
+  excludeGranularities = [],
 }: AnalyticsRangePickerProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -270,6 +282,7 @@ export function AnalyticsRangePicker({
               onDiscard={handleDiscard}
               minAnalyticsDateYmd={effectiveMinAnalyticsDateYmd}
               minAnalyticsDate={effectiveMinAnalyticsDate}
+              excludeGranularities={excludeGranularities}
             />
           </motion.div>
         )}
@@ -290,6 +303,7 @@ export function AnalyticsRangePicker({
             onClose={handleClose}
             minAnalyticsDateYmd={effectiveMinAnalyticsDateYmd}
             minAnalyticsDate={effectiveMinAnalyticsDate}
+            excludeGranularities={excludeGranularities}
           />
         )}
       </AnimatePresence>
@@ -308,6 +322,7 @@ function PanelContent({
   onDiscard,
   minAnalyticsDateYmd,
   minAnalyticsDate,
+  excludeGranularities = [],
 }: {
   draft: AnalyticsRangeSelection;
   setDraft: (v: AnalyticsRangeSelection) => void;
@@ -317,11 +332,12 @@ function PanelContent({
   onDiscard: () => void;
   minAnalyticsDateYmd: string | null;
   minAnalyticsDate: Date | null;
+  excludeGranularities?: AnalyticsGranularity[];
 }) {
   return (
     <>
       {/* Granularity tabs */}
-      <GranularityTabs active={draft.granularity} onChange={setGranularity} />
+      <GranularityTabs active={draft.granularity} onChange={setGranularity} excludeGranularities={excludeGranularities} />
 
       {/* Grid body */}
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-3 pt-3">
@@ -380,12 +396,15 @@ function PanelContent({
 function GranularityTabs({
   active,
   onChange,
+  excludeGranularities = [],
 }: {
   active: AnalyticsGranularity;
   onChange: (g: AnalyticsGranularity) => void;
+  excludeGranularities?: AnalyticsGranularity[];
 }) {
-  const activeIndex = GRANULARITIES.findIndex((g) => g.id === active);
-  const count = GRANULARITIES.length;
+  const visibleGranularities = GRANULARITIES.filter((g) => !excludeGranularities.includes(g.id));
+  const activeIndex = visibleGranularities.findIndex((g) => g.id === active);
+  const count = visibleGranularities.length;
 
   return (
     <div className="shrink-0 border-b border-gray-100 px-3 pb-3 pt-3">
@@ -400,7 +419,7 @@ function GranularityTabs({
           }}
           transition={{ type: "spring", bounce: 0.15, duration: 0.4 }}
         />
-        {GRANULARITIES.map((g) => {
+        {visibleGranularities.map((g) => {
           const isActive = active === g.id;
           return (
             <button
@@ -471,6 +490,7 @@ const MobileDrawer = forwardRef<HTMLDivElement, {
   onClose: () => void;
   minAnalyticsDateYmd: string | null;
   minAnalyticsDate: Date | null;
+  excludeGranularities?: AnalyticsGranularity[];
 }>(function MobileDrawer({
   panelId,
   draft,
@@ -482,6 +502,7 @@ const MobileDrawer = forwardRef<HTMLDivElement, {
   onClose,
   minAnalyticsDateYmd,
   minAnalyticsDate,
+  excludeGranularities = [],
 }, ref) {
   const draftSummary = useMemo(() => formatAnalyticsRangeSummary(draft), [draft]);
 
@@ -540,6 +561,7 @@ const MobileDrawer = forwardRef<HTMLDivElement, {
           onDiscard={onDiscard}
           minAnalyticsDateYmd={minAnalyticsDateYmd}
           minAnalyticsDate={minAnalyticsDate}
+          excludeGranularities={excludeGranularities}
         />
 
         {/* Safe area spacer */}
@@ -633,8 +655,9 @@ function DayGrid({
 }) {
   const today = new Date();
   const todayYmd = toLocalYmd(today);
-  const [viewYear, setViewYear] = useState(today.getFullYear());
-  const [viewMonth, setViewMonth] = useState(today.getMonth());
+  const focusDate = getSelectionFocusDate(draft);
+  const [viewYear, setViewYear] = useState(() => focusDate.getFullYear());
+  const [viewMonth, setViewMonth] = useState(() => focusDate.getMonth());
   const [picking, setPicking] = useState<"start" | "end">("start");
   const minYear = minAnalyticsDate?.getFullYear() ?? Number.NEGATIVE_INFINITY;
   const minMonth = minAnalyticsDate?.getMonth() ?? Number.NEGATIVE_INFINITY;
@@ -771,9 +794,9 @@ function WeekGrid({
   minAnalyticsDateYmd: string | null;
   minAnalyticsDate: Date | null;
 }) {
-  const today = new Date();
-  const [viewYear, setViewYear] = useState(today.getFullYear());
-  const [viewMonth, setViewMonth] = useState(today.getMonth());
+  const focusDate = getSelectionFocusDate(draft);
+  const [viewYear, setViewYear] = useState(() => focusDate.getFullYear());
+  const [viewMonth, setViewMonth] = useState(() => focusDate.getMonth());
   const [anchor, setAnchor] = useState<string | null>(null);
   const minYear = minAnalyticsDate?.getFullYear() ?? Number.NEGATIVE_INFINITY;
   const minMonth = minAnalyticsDate?.getMonth() ?? Number.NEGATIVE_INFINITY;
@@ -900,8 +923,8 @@ function MonthGrid({
   minAnalyticsDateYmd: string | null;
   minAnalyticsDate: Date | null;
 }) {
-  const now = new Date();
-  const [viewYear, setViewYear] = useState(now.getFullYear());
+  const focusDate = getSelectionFocusDate(draft);
+  const [viewYear, setViewYear] = useState(() => focusDate.getFullYear());
   const [anchorKey, setAnchorKey] = useState<string | null>(null);
   const minYear = minAnalyticsDate?.getFullYear() ?? Number.NEGATIVE_INFINITY;
 
@@ -1003,8 +1026,7 @@ function YearGrid({
   minAnalyticsDateYmd: string | null;
   minAnalyticsDate: Date | null;
 }) {
-  const cy = new Date().getFullYear();
-  const [center, setCenter] = useState(cy);
+  const [center, setCenter] = useState(() => getSelectionFocusYear(draft));
   const years = useMemo(() => {
     const start = center - Math.floor(YEAR_GRID_SPAN / 2);
     return Array.from({ length: YEAR_GRID_SPAN }, (_, i) => start + i);

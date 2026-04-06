@@ -190,6 +190,7 @@ export function Sidebar({ className = '' }: SidebarProps) {
         {hasAnyPermission(
           PERMISSIONS.ANALYTICS_VIEW_EMPLOYEE_ANALYTICS,
           PERMISSIONS.ANALYTICS_VIEW_PROFITABILITY_ANALYTICS,
+          PERMISSIONS.ANALYTICS_VIEW_POS_ANALYTICS,
         ) && (
           <>
             <div className="my-2 border-t border-gray-200" />
@@ -198,6 +199,12 @@ export function Sidebar({ className = '' }: SidebarProps) {
               <AnimatedNavLink to="/employee-analytics" className={linkClass}>
                 <BarChart2 className="h-5 w-5" />
                 Employee Analytics
+              </AnimatedNavLink>
+            )}
+            {hasPermission(PERMISSIONS.ANALYTICS_VIEW_POS_ANALYTICS) && (
+              <AnimatedNavLink to="/pos-analytics" className={linkClass}>
+                <Monitor className="h-5 w-5" />
+                POS Analytics
               </AnimatedNavLink>
             )}
             {hasPermission(PERMISSIONS.ANALYTICS_VIEW_PROFITABILITY_ANALYTICS) && (
