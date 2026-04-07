@@ -473,7 +473,7 @@ function TopProductsRow({ products }: { products: DerivedProduct[] }) {
                 <Pie data={pieData} cx="50%" cy="50%" innerRadius="45%" outerRadius="78%" dataKey="value" paddingAngle={2}>
                   {pieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
                 </Pie>
-                <Tooltip formatter={(v: number) => [`${v.toFixed(1)}%`, 'Share']} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }} />
+                <Tooltip formatter={((v: number) => [`${v.toFixed(1)}%`, 'Share']) as any} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }} />
               </PieChart>
             </ResponsiveContainer>
           </div>
@@ -850,7 +850,7 @@ function CostChangeRow({ products }: { products: DerivedProduct[] }) {
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                 <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(v) => `PHP ${v}`} axisLine={false} tickLine={false} />
-                <Tooltip formatter={(v: number) => [formatCurrency(v), 'Cost Change']} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }} />
+                <Tooltip formatter={((v: number) => [formatCurrency(v), 'Cost Change']) as any} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }} />
                 <Bar dataKey="costChange" name="Cost Change" radius={[4, 4, 0, 0]}>
                   {barData.map((entry) => (
                     <Cell key={entry.id} fill={entry.costChange > 0 ? '#e11d48' : entry.costChange < 0 ? '#059669' : '#cbd5e1'} />
@@ -936,7 +936,7 @@ function CostTrendCard({ products }: { products: DerivedProduct[] }) {
             <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
             <XAxis dataKey="period" tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
             <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(v) => `PHP ${v}`} axisLine={false} tickLine={false} />
-            <Tooltip formatter={(v: number) => [formatCurrency(v), 'Cost / Unit']} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }} />
+            <Tooltip formatter={((v: number) => [formatCurrency(v), 'Cost / Unit']) as any} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }} />
             {top5.map((p, i) =>
               visible.has(p.id) ? (
                 <Line
@@ -979,7 +979,7 @@ function MarginImpactRow({ products }: { products: DerivedProduct[] }) {
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
               <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(v) => formatCurrency(v, true)} axisLine={false} tickLine={false} />
-              <Tooltip formatter={(v: number) => [formatCurrency(v), 'Gross Profit']} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }} />
+              <Tooltip formatter={((v: number) => [formatCurrency(v), 'Gross Profit']) as any} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }} />
               <Bar dataKey="profit" name="Gross Profit" radius={[4, 4, 0, 0]}>
                 {barData.map((entry, i) => (
                   <Cell key={i} fill={entry.profit >= 0 ? '#2563eb' : '#e11d48'} />
@@ -1001,7 +1001,7 @@ function MarginImpactRow({ products }: { products: DerivedProduct[] }) {
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
               <XAxis dataKey="name" tick={{ fontSize: 9, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} tickFormatter={(v) => `${v}%`} axisLine={false} tickLine={false} />
-              <Tooltip formatter={(v: number) => [`${v.toFixed(1)}%`, 'Margin']} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }} />
+              <Tooltip formatter={((v: number) => [`${v.toFixed(1)}%`, 'Margin']) as any} contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }} />
               <Bar dataKey="margin" name="Margin %" radius={[4, 4, 0, 0]}>
                 {barData.map((entry, i) => (
                   <Cell key={i} fill={entry.margin >= 20 ? '#059669' : entry.margin >= 5 ? '#f59e0b' : '#e11d48'} />
@@ -1039,8 +1039,8 @@ export function ProductAnalyticsPage() {
   const [view, setView] = useState<ProductView>('chart');
   const [isLoading, setIsLoading] = useState(true);
   const [rangeSelection, setRangeSelection] = usePersistedAnalyticsRange(
-    'product-analytics',
-    createCurrentMonthToDateRangeSelection,
+    'product-analytics.range',
+    createCurrentMonthToDateRangeSelection(),
   );
 
   // Suppress unused warning — range selection drives the mock data in a real implementation
@@ -1152,7 +1152,7 @@ export function ProductAnalyticsPage() {
       )}
 
       {/* ── View toggle ── */}
-      <ViewToggle options={VIEW_OPTIONS} value={view} onChange={setView} />
+      <ViewToggle options={VIEW_OPTIONS} activeId={view} onChange={(id) => setView(id)} />
 
       {/* ── Tab content — only this section re-renders on tab switch ── */}
       {isLoading ? (
