@@ -23,6 +23,7 @@ import {
   TriangleAlert,
   FileWarning,
   BarChart2,
+  ShoppingBag,
 } from 'lucide-react';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useAuth } from '@/features/auth/hooks/useAuth';
@@ -191,6 +192,7 @@ export function Sidebar({ className = '' }: SidebarProps) {
           PERMISSIONS.ANALYTICS_VIEW_EMPLOYEE_ANALYTICS,
           PERMISSIONS.ANALYTICS_VIEW_PROFITABILITY_ANALYTICS,
           PERMISSIONS.ANALYTICS_VIEW_POS_ANALYTICS,
+          PERMISSIONS.ANALYTICS_VIEW_PRODUCT_ANALYTICS,
         ) && (
           <>
             <div className="my-2 border-t border-gray-200" />
@@ -211,6 +213,12 @@ export function Sidebar({ className = '' }: SidebarProps) {
               <AnimatedNavLink to="/profitability-analytics" className={linkClass}>
                 <DollarSign className="h-5 w-5" />
                 Profitability Analytics
+              </AnimatedNavLink>
+            )}
+            {hasPermission(PERMISSIONS.ANALYTICS_VIEW_PRODUCT_ANALYTICS) && (
+              <AnimatedNavLink to="/product-analytics" className={linkClass}>
+                <ShoppingBag className="h-5 w-5" />
+                Product Analytics
               </AnimatedNavLink>
             )}
           </>
