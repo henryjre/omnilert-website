@@ -6,6 +6,9 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   BarChart3,
+  ChevronDown,
+  ChevronUp,
+  ChevronsUpDown,
   CreditCard,
   DollarSign,
   GitBranch,
@@ -750,6 +753,8 @@ const PRODUCT_TABLE_DESKTOP_HEADERS = ['Sales', 'Unit Cost', 'Gross Profit', 'Ma
 
 function TableViewTab({ products }: { products: DerivedProduct[] }) {
   const [selectedProduct, setSelectedProduct] = useState<DerivedProduct | null>(null);
+  const [sortKey, setSortKey] = useState<keyof DerivedProduct | null>(null);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc' | null>(null);
 
   useEffect(() => {
     if (!selectedProduct) return;
@@ -761,10 +766,54 @@ function TableViewTab({ products }: { products: DerivedProduct[] }) {
     }
   }, [selectedProduct, products]);
 
+  const handleSort = (key: keyof DerivedProduct) => {
+    if (sortKey !== key) {
+      setSortKey(key);
+      setSortDir('desc');
+    } else if (sortDir === 'desc') {
+      setSortDir('asc');
+    } else if (sortDir === 'asc') {
+      setSortKey(null);
+      setSortDir(null);
+    }
+  };
+
+  const sortedProducts = useMemo(() => {
+    if (!sortKey || !sortDir) return products;
+
+    return [...products].sort((a, b) => {
+      const aVal = a[sortKey];
+      const bVal = b[sortKey];
+
+      if (aVal === null || aVal === undefined) return 1;
+      if (bVal === null || bVal === undefined) return -1;
+
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        const cmp = aVal.localeCompare(bVal);
+        return sortDir === 'asc' ? cmp : -cmp;
+      }
+
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
+      }
+
+      return 0;
+    });
+  }, [products, sortKey, sortDir]);
+
   const isDetailView = selectedProduct !== null;
   const tableSubtitle = isDetailView && selectedProduct
     ? `${selectedProduct.name} • Performance Metrics`
-    : `All metrics for the selected period and branches.`;
+    : `Click headers to sort (Desc → Asc → None). Showing metrics for performance.`;
+
+  const SortIndicator = ({ columnKey }: { columnKey: keyof DerivedProduct }) => {
+    if (sortKey !== columnKey) return <ChevronsUpDown className="h-2.5 w-2.5 text-gray-200 group-hover:text-gray-400" />;
+    return sortDir === 'desc' ? (
+      <ChevronDown className="h-3 w-3 text-primary-500" />
+    ) : (
+      <ChevronUp className="h-3 w-3 text-primary-500" />
+    );
+  };
 
   return (
     <div className="flex flex-col overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
@@ -798,17 +847,32 @@ function TableViewTab({ products }: { products: DerivedProduct[] }) {
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50/60">
-                <th className="whitespace-nowrap px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide text-gray-400">Rank</th>
-                <th className="whitespace-nowrap px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide text-gray-400">Product Name</th>
-                <th className="hidden whitespace-nowrap px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide text-gray-400 lg:table-cell">Sales</th>
-                <th className="hidden whitespace-nowrap px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide text-gray-400 lg:table-cell">Unit Cost</th>
-                <th className="hidden whitespace-nowrap px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide text-gray-400 lg:table-cell">Gross Profit</th>
-                <th className="whitespace-nowrap px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide text-gray-400">Margin</th>
-                <th className="hidden whitespace-nowrap px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide text-gray-400 lg:table-cell">Classification</th>
+                {[
+                  { label: 'Rank', key: 'rank' as const, mobile: true },
+                  { label: 'Product Name', key: 'name' as const, mobile: true },
+                  { label: 'Sales', key: 'revenue' as const, mobile: false },
+                  { label: 'Unit Cost', key: 'costPerUnit' as const, mobile: false },
+                  { label: 'Gross Profit', key: 'grossProfit' as const, mobile: false },
+                  { label: 'Margin', key: 'margin' as const, mobile: true },
+                  { label: 'Classification', key: 'classification' as const, mobile: false },
+                ].map((col) => (
+                  <th
+                    key={col.key}
+                    onClick={() => handleSort(col.key)}
+                    className={`${col.mobile ? '' : 'hidden lg:table-cell'} cursor-pointer select-none whitespace-nowrap px-4 py-4 text-left transition-colors hover:bg-gray-100/80 group`}
+                  >
+                    <div className="flex items-center gap-2">
+                       <span className={`text-[10px] font-bold uppercase tracking-wide ${sortKey === col.key ? 'text-primary-600' : 'text-gray-400 group-hover:text-gray-600'}`}>
+                        {col.label}
+                      </span>
+                      <SortIndicator columnKey={col.key} />
+                    </div>
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {products.map((p) => (
+              {sortedProducts.map((p) => (
                 <tr
                   key={p.id}
                   role="button"
@@ -1333,7 +1397,7 @@ export function ProductAnalyticsPage() {
   ];
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 sm:p-6">
+    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 sm:p-6 lg:p-8">
       {/* ── Page header ── */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
@@ -1357,51 +1421,72 @@ export function ProductAnalyticsPage() {
       {/* ── Selected branches strip ── */}
       <SelectedBranchesStrip />
 
-      {/* ── KPI cards — stable, outside tab content ── */}
       {isLoading ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="h-28 animate-pulse rounded-xl border border-gray-100 bg-gray-100" />
-          ))}
-        </div>
-      ) : (
         <motion.div
-          className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"
-          initial="hidden"
-          animate="visible"
-        >
-          {kpis.map((kpi, i) => (
-            <motion.div key={kpi.label} variants={fadeUp} custom={i * 0.05}>
-              <KpiCard {...kpi} />
-            </motion.div>
-          ))}
-        </motion.div>
-      )}
-
-      {/* ── View toggle ── */}
-      <ViewToggle options={VIEW_OPTIONS} activeId={view} onChange={(id) => setView(id)} />
-
-      {/* ── Tab content — only this section re-renders on tab switch ── */}
-      {isLoading ? (
-        <div className="h-64 animate-pulse rounded-xl border border-gray-100 bg-gray-100">
-          <div className="flex h-full items-center justify-center">
-            <p className="text-sm text-gray-400">Loading product analytics data...</p>
-          </div>
-        </div>
+           initial={{ opacity: 0, y: 6 }}
+           animate={{ opacity: 1, y: 0 }}
+           transition={{ duration: 0.3 }}
+           className="rounded-xl border border-gray-100 bg-white px-5 py-12 text-center shadow-sm"
+         >
+           {/* Animated bars */}
+           <div className="flex items-end justify-center gap-1 h-8 mb-4">
+             {[0, 1, 2, 3, 4].map((i) => (
+               <motion.div
+                 key={i}
+                 className="w-1.5 rounded-full bg-primary-400"
+                 animate={{ scaleY: [0.3, 1, 0.3] }}
+                 transition={{
+                   duration: 1,
+                   repeat: Infinity,
+                   delay: i * 0.12,
+                   ease: 'easeInOut',
+                 }}
+                 style={{ originY: 1, height: '100%' }}
+               />
+             ))}
+           </div>
+           <motion.p
+             className="text-sm font-semibold text-gray-700"
+             animate={{ opacity: [0.5, 1, 0.5] }}
+             transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+           >
+             Loading product data...
+           </motion.p>
+           <p className="mt-1 text-xs text-gray-400">{getSummaryForSelection(rangeSelection)}</p>
+         </motion.div>
       ) : (
-        <AnimatePresence mode="wait">
+        <>
+          {/* ── KPI cards — stable, outside tab content ── */}
           <motion.div
-            key={view}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.2 }}
+            className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"
+            initial="hidden"
+            animate="visible"
           >
-            {view === 'chart' && <ChartViewTab products={derived} />}
+            {kpis.map((kpi, i) => (
+              <motion.div key={kpi.label} variants={fadeUp} custom={i * 0.05}>
+                <KpiCard {...kpi} />
+              </motion.div>
+            ))}
+          </motion.div>
+
+          {/* ── View toggle ── */}
+          <ViewToggle options={VIEW_OPTIONS} activeId={view} onChange={(id) => setView(id)} />
+
+          {/* ── Tab content — only this section re-renders on tab switch ── */}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={view}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.2 }}
+            >
+              {view === 'chart' && <ChartViewTab products={derived} />}
             {view === 'table' && <TableViewTab products={derived} />}
             {view === 'costing' && <CostingTab products={derived} />}
           </motion.div>
         </AnimatePresence>
+      </>
       )}
     </div>
   );

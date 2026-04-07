@@ -9,6 +9,9 @@ import {
   ArrowUpRight,
   BarChart3,
   Clock,
+  ChevronDown,
+  ChevronUp,
+  ChevronsUpDown,
   CreditCard,
   GitBranch,
   Minus,
@@ -16,6 +19,7 @@ import {
   Receipt,
   ShoppingCart,
   TableProperties,
+  TrendingDown,
   TrendingUp,
   Wallet,
 } from 'lucide-react';
@@ -831,6 +835,8 @@ function SessionDetailCard({
   periodLabel: string;
 }) {
   const [selectedSession, setSelectedSession] = useState<PosSessionDetail | null>(null);
+  const [sortKey, setSortKey] = useState<keyof PosSessionDetail | null>(null);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc' | null>(null);
 
   useEffect(() => {
     if (!selectedSession) return;
@@ -851,10 +857,54 @@ function SessionDetailCard({
     }
   }, [selectedSession, sessions]);
 
+  const handleSort = (key: keyof PosSessionDetail) => {
+    if (sortKey !== key) {
+      setSortKey(key);
+      setSortDir('desc');
+    } else if (sortDir === 'desc') {
+      setSortDir('asc');
+    } else if (sortDir === 'asc') {
+      setSortKey(null);
+      setSortDir(null);
+    }
+  };
+
+  const sortedSessions = useMemo(() => {
+    if (!sortKey || !sortDir) return sessions;
+
+    return [...sessions].sort((a, b) => {
+      const aVal = a[sortKey];
+      const bVal = b[sortKey];
+
+      if (aVal === null || aVal === undefined) return 1;
+      if (bVal === null || bVal === undefined) return -1;
+
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        const cmp = aVal.localeCompare(bVal);
+        return sortDir === 'asc' ? cmp : -cmp;
+      }
+
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
+      }
+
+      return 0;
+    });
+  }, [sessions, sortKey, sortDir]);
+
   const isDetailView = selectedSession !== null;
   const sessionDetailSubtitle = isDetailView && selectedSession
     ? `${selectedSession.sessionName} • ${selectedSession.branchName}`
-    : `${sessions.length} session${sessions.length === 1 ? '' : 's'} - ${periodLabel}`;
+    : `Click headers to sort (Desc → Asc → None). Showing ${sessions.length} sessions.`;
+
+  const SortIndicator = ({ columnKey }: { columnKey: keyof PosSessionDetail }) => {
+    if (sortKey !== columnKey) return <ChevronsUpDown className="h-2.5 w-2.5 text-gray-200 group-hover:text-gray-400" />;
+    return sortDir === 'desc' ? (
+      <ChevronDown className="h-3 w-3 text-primary-500" />
+    ) : (
+      <ChevronUp className="h-3 w-3 text-primary-500" />
+    );
+  };
 
   return (
     <div className="flex flex-col overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
@@ -890,27 +940,33 @@ function SessionDetailCard({
           ) : (
             <table className="w-full text-xs">
               <thead>
-                <tr className="border-b border-gray-100 bg-gray-50/60">
-                  {SESSION_TABLE_HEADERS.map((header) => (
+                <tr className="border-b border-gray-100 bg-gray-50/60 transition-colors">
+                  {[
+                    { label: 'Session', key: 'sessionName' as const, mobile: true },
+                    { label: 'Branch', key: 'branchName' as const, mobile: true },
+                    { label: 'Date', key: 'startAt' as const, mobile: true },
+                    { label: 'Gross Sales', key: 'grossSales' as const, mobile: false },
+                    { label: 'Discounts', key: 'discounts' as const, mobile: false },
+                    { label: 'Refunds', key: 'refunds' as const, mobile: false },
+                    { label: 'Net Sales', key: 'netSales' as const, mobile: false },
+                  ].map((col) => (
                     <th
-                      key={header}
-                      className="whitespace-nowrap px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide text-gray-400"
+                      key={col.key}
+                      onClick={() => handleSort(col.key)}
+                      className={`${col.mobile ? '' : 'hidden lg:table-cell'} cursor-pointer select-none whitespace-nowrap px-4 py-4 text-left transition-colors hover:bg-gray-100/80 group`}
                     >
-                      {header}
-                    </th>
-                  ))}
-                  {SESSION_TABLE_DESKTOP_HEADERS.map((header) => (
-                    <th
-                      key={header}
-                      className="hidden whitespace-nowrap px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide text-gray-400 lg:table-cell"
-                    >
-                      {header}
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] font-bold uppercase tracking-wide ${sortKey === col.key ? 'text-primary-600' : 'text-gray-400 group-hover:text-gray-600'}`}>
+                          {col.label}
+                        </span>
+                        <SortIndicator columnKey={col.key} />
+                      </div>
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {sessions.map((session, index) => (
+                {sortedSessions.map((session, index) => (
                   <tr
                     key={`${session.sessionName}-${index}`}
                     role="button"
