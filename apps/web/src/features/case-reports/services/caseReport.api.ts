@@ -36,8 +36,25 @@ export async function getCaseReport(caseId: string) {
   return response.data.data as CaseReportDetail;
 }
 
-export async function createCaseReport(payload: { title: string; description: string; branchId?: string | null }) {
-  const response = await api.post('/case-reports', payload);
+export async function createCaseReport(payload: {
+  title: string;
+  description: string;
+  companyId?: string | null;
+  branchId?: string | null;
+}) {
+  const response = await api.post(
+    '/case-reports',
+    {
+      title: payload.title,
+      description: payload.description,
+      branchId: payload.branchId ?? null,
+    },
+    payload.companyId
+      ? {
+          headers: { 'X-Company-Id': payload.companyId },
+        }
+      : undefined,
+  );
   return response.data.data as CaseReport;
 }
 

@@ -7,7 +7,12 @@ import type { CompanyBranchValue } from '@/shared/components/CompanyBranchPicker
 
 interface CreateCaseModalProps {
   onClose: () => void;
-  onSubmit: (payload: { title: string; description: string; branchId?: string | null }) => Promise<void> | void;
+  onSubmit: (payload: {
+    title: string;
+    description: string;
+    companyId?: string | null;
+    branchId?: string | null;
+  }) => Promise<void> | void;
 }
 
 const INPUT_CLS =
@@ -85,7 +90,12 @@ export function CreateCaseModal({ onClose, onSubmit }: CreateCaseModalProps) {
           onClick={async () => {
             setSubmitting(true);
             try {
-              await onSubmit({ title, description, branchId: branchValue?.branchId ?? null });
+              await onSubmit({
+                title,
+                description,
+                companyId: branchValue?.companyId ?? null,
+                branchId: branchValue?.branchId ?? null,
+              });
               setTitle('');
               setDescription('');
               setBranchValue(null);

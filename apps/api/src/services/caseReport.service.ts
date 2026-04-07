@@ -87,6 +87,42 @@ function ensureNonEmpty(value: string, label: string): string {
   return trimmed;
 }
 
+async function resolveAndValidateCaseBranchId(
+  companyId: string,
+  userId: string,
+  branchIdInput?: string | null,
+): Promise<string | null> {
+  const branchId = typeof branchIdInput === 'string' ? branchIdInput.trim() : '';
+  if (!branchId) return null;
+
+  const branch = await db
+    .getDb()('branches')
+    .where({ id: branchId, company_id: companyId, is_active: true })
+    .select('id', 'is_active')
+    .first();
+
+  if (!branch || branch.is_active !== true) {
+    throw new AppError(400, 'Selected branch is invalid or inactive. Please refresh and try again.');
+  }
+
+  const [legacyAssignments, companyAssignments] = await Promise.all([
+    db.getDb()('user_branches').where({ company_id: companyId, user_id: userId }).select('branch_id'),
+    db.getDb()('user_company_branches').where({ company_id: companyId, user_id: userId }).select('branch_id'),
+  ]);
+
+  const effectiveAssignments = companyAssignments.length > 0 ? companyAssignments : legacyAssignments;
+  if (effectiveAssignments.length > 0) {
+    const isAssigned = effectiveAssignments.some(
+      (row: { branch_id: string }) => row.branch_id === branchId,
+    );
+    if (!isAssigned) {
+      throw new AppError(403, 'You are not assigned to the selected branch');
+    }
+  }
+
+  return branchId;
+}
+
 function hasManagePermission(permissions: string[]): boolean {
   return permissions.includes(PERMISSIONS.CASE_REPORT_MANAGE);
 }
@@ -614,6 +650,7 @@ export async function createCaseReport(input: {
 }): Promise<CaseReport> {
   const title = ensureNonEmpty(input.title, 'Title');
   const description = ensureNonEmpty(input.description, 'Description');
+  const branchId = await resolveAndValidateCaseBranchId(input.companyId, input.userId, input.branchId);
   const userNames = await resolveUserNames([input.userId]);
 
   const report = await db.getDb().transaction(async (trx) => {
@@ -625,7 +662,7 @@ export async function createCaseReport(input: {
         title,
         description,
         created_by: input.userId,
-        branch_id: input.branchId ?? null,
+        branch_id: branchId,
       })
       .returning('*');
     await upsertParticipant(
