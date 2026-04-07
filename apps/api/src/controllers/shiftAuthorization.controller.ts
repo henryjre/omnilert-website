@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
+import { canReviewSubmittedRequest } from '@omnilert/shared';
 import { AppError } from '../middleware/errorHandler.js';
 import { getIO } from '../config/socket.js';
 import { logger } from '../utils/logger.js';
@@ -141,6 +142,9 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
     const tenantDb = db.getDb();
     const auth = await tenantDb('shift_authorizations').where({ id }).first();
     if (!auth) throw new AppError(404, 'Authorization not found');
+    if (!canReviewSubmittedRequest({ actingUserId: managerId, requestUserId: auth.user_id })) {
+      throw new AppError(403, 'You cannot review your own shift authorization');
+    }
     if (auth.status !== 'pending') {
       throw new AppError(400, 'Authorization is already resolved');
     }
@@ -245,6 +249,9 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
     const tenantDb = db.getDb();
     const auth = await tenantDb('shift_authorizations').where({ id }).first();
     if (!auth) throw new AppError(404, 'Authorization not found');
+    if (!canReviewSubmittedRequest({ actingUserId: managerId, requestUserId: auth.user_id })) {
+      throw new AppError(403, 'You cannot review your own shift authorization');
+    }
     if (auth.status !== 'pending') {
       throw new AppError(400, 'Authorization is already resolved');
     }

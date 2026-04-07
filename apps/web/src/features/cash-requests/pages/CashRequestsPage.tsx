@@ -10,7 +10,8 @@ import { api } from '@/shared/services/api.client';
 import { useBranchStore } from '@/shared/store/branchStore';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useAppToast } from '@/shared/hooks/useAppToast';
-import { PERMISSIONS } from '@omnilert/shared';
+import { useAuthStore } from '@/features/auth/store/authSlice';
+import { canReviewSubmittedRequest, PERMISSIONS } from '@omnilert/shared';
 import { ImagePreviewModal } from '@/features/case-reports/components/ImagePreviewModal';
 import {
   AlertCircle, Banknote, Calendar, CheckCircle, ChevronRight,
@@ -99,13 +100,14 @@ type ConfirmModalState = {
 interface DetailPanelProps {
   request: any;
   detailLoading: boolean;
-  canApprove: boolean;
+  canReview: boolean;
+  canDisburse: boolean;
   onClose: () => void;
   onUpdated: (updated: any) => void;
   onViewAttachment: (url: string) => void;
 }
 
-function DetailPanel({ request, detailLoading, canApprove, onClose, onUpdated, onViewAttachment }: DetailPanelProps) {
+function DetailPanel({ request, detailLoading, canReview, canDisburse, onClose, onUpdated, onViewAttachment }: DetailPanelProps) {
   const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const [loading, setLoading] = useState<'approve' | 'reject' | 'disburse' | null>(null);
   const [rejectMode, setRejectMode] = useState(false);
@@ -113,8 +115,8 @@ function DetailPanel({ request, detailLoading, canApprove, onClose, onUpdated, o
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState>(null);
   const [copiedAccountNumber, setCopiedAccountNumber] = useState(false);
 
-  const canAct = canApprove && request.status === 'pending';
-  const canDisburse = canApprove && request.status === 'approved';
+  const canAct = canReview && request.status === 'pending';
+  const canDisburseAction = canDisburse && request.status === 'approved';
   const typeLabel = REQUEST_TYPE_LABELS[request.request_type] ?? request.request_type;
 
   /**
@@ -364,7 +366,7 @@ function DetailPanel({ request, detailLoading, canApprove, onClose, onUpdated, o
         )}
 
         {/* Footer actions */}
-        {(canAct || canDisburse) && (
+        {(canAct || canDisburseAction) && (
           <div className="border-t border-gray-200 px-6 py-4">
             {canAct && !rejectMode && (
               <div className="flex gap-3">
@@ -416,7 +418,7 @@ function DetailPanel({ request, detailLoading, canApprove, onClose, onUpdated, o
                 </div>
               </div>
             )}
-            {canDisburse && (
+            {canDisburseAction && (
               <Button
                 className="w-full"
                 disabled={loading !== null}
@@ -499,6 +501,7 @@ export function CashRequestsPage() {
 
   const { branches, selectedBranchIds } = useBranchStore();
   const { hasPermission } = usePermission();
+  const currentUserId = useAuthStore((state) => state.user?.id ?? null);
   const canApprove = hasPermission(PERMISSIONS.CASH_REQUESTS_MANAGE);
 
   const branchLabel = useMemo(() => {
@@ -552,6 +555,13 @@ export function CashRequestsPage() {
   const totalPages = Math.max(1, Math.ceil(filteredRequests.length / PAGE_SIZE));
   const pagedRequests = filteredRequests.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const pendingCount = requests.filter((r) => r.status === 'pending').length;
+  const canReviewRequest = useCallback(
+    (request: any) => canApprove && canReviewSubmittedRequest({
+      actingUserId: currentUserId,
+      requestUserId: request?.user_id,
+    }),
+    [canApprove, currentUserId],
+  );
 
   useEffect(() => { setPage(1); }, [statusTab]);
   useEffect(() => { setPage((prev) => Math.min(prev, totalPages)); }, [totalPages]);
@@ -713,7 +723,8 @@ export function CashRequestsPage() {
                 <DetailPanel
                   request={selectedRequest}
                   detailLoading={detailLoading}
-                  canApprove={canApprove}
+                  canReview={canReviewRequest(selectedRequest)}
+                  canDisburse={canApprove}
                   onClose={() => { setSelectedRequest(null); setDetailLoading(false); }}
                   onUpdated={handleUpdated}
                   onViewAttachment={(url) => { setPreviewItems([{ url, fileName: 'receipt' }]); setPreviewIndex(0); }}

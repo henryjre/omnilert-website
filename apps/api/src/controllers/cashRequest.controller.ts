@@ -1,4 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
+import { canReviewSubmittedRequest } from '@omnilert/shared';
 import { AppError } from '../middleware/errorHandler.js';
 import { createAndDispatchNotification } from '../services/notification.service.js';
 import { db } from '../config/database.js';
@@ -84,6 +85,9 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
 
     const cashReq = await tenantDb('cash_requests').where({ id }).first();
     if (!cashReq) throw new AppError(404, 'Cash request not found');
+    if (!canReviewSubmittedRequest({ actingUserId: reviewerId, requestUserId: cashReq.user_id })) {
+      throw new AppError(403, 'You cannot review your own cash request');
+    }
     if (cashReq.status !== 'pending') throw new AppError(400, 'Request is already resolved');
 
     const reviewedAt = new Date();
@@ -124,6 +128,9 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
 
     const cashReq = await tenantDb('cash_requests').where({ id }).first();
     if (!cashReq) throw new AppError(404, 'Cash request not found');
+    if (!canReviewSubmittedRequest({ actingUserId: reviewerId, requestUserId: cashReq.user_id })) {
+      throw new AppError(403, 'You cannot review your own cash request');
+    }
     if (cashReq.status !== 'pending') throw new AppError(400, 'Request is already resolved');
 
     const reviewedAt = new Date();

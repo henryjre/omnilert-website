@@ -10,7 +10,8 @@ import { api } from '@/shared/services/api.client';
 import { useBranchStore } from '@/shared/store/branchStore';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useAppToast } from '@/shared/hooks/useAppToast';
-import { PERMISSIONS } from '@omnilert/shared';
+import { useAuthStore } from '@/features/auth/store/authSlice';
+import { canReviewSubmittedRequest, PERMISSIONS } from '@omnilert/shared';
 import { ShiftExchangeDetailModal } from '@/features/shift-exchange/components/ShiftExchangeDetailModal';
 import { resolveAuthorizationRequestSectionAccess } from './authorizationRequestAccess';
 import {
@@ -1100,6 +1101,7 @@ export function AuthorizationRequestsPage() {
 
   const { selectedBranchIds, branches } = useBranchStore();
   const { hasPermission, hasAnyPermission } = usePermission();
+  const currentUserId = useAuthStore((state) => state.user?.id ?? null);
 
   const branchLabel = useMemo(() => {
     if (branches.length === 0) return '';
@@ -1139,6 +1141,20 @@ export function AuthorizationRequestsPage() {
   const totalCrewPages = Math.max(1, Math.ceil(filteredServiceCrew.length / pageSize));
   const pagedManagement = filteredManagement.slice((mgmtPage - 1) * pageSize, mgmtPage * pageSize);
   const pagedServiceCrew = filteredServiceCrew.slice((crewPage - 1) * pageSize, crewPage * pageSize);
+  const canReviewManagementRequest = useCallback(
+    (request: any) => canApproveManagement && canReviewSubmittedRequest({
+      actingUserId: currentUserId,
+      requestUserId: request?.user_id,
+    }),
+    [canApproveManagement, currentUserId],
+  );
+  const canReviewServiceCrewRequest = useCallback(
+    (request: any) => canApproveServiceCrew && canReviewSubmittedRequest({
+      actingUserId: currentUserId,
+      requestUserId: request?.user_id,
+    }),
+    [canApproveServiceCrew, currentUserId],
+  );
 
   const fetchRequests = useCallback(async () => {
     if (!showManagementSection && !showServiceCrewSection) {
@@ -1447,7 +1463,7 @@ export function AuthorizationRequestsPage() {
                 {selectedItem?.type === 'management' && (
                   <ManagementDetailPanel
                     request={selectedItem.data}
-                    canApprove={canApproveManagement}
+                    canApprove={canReviewManagementRequest(selectedItem.data)}
                     onClose={() => setSelectedItem(null)}
                     onUpdated={handleManagementUpdated}
                   />
@@ -1455,7 +1471,7 @@ export function AuthorizationRequestsPage() {
                 {selectedItem?.type === 'service_crew' && (
                   <ServiceCrewDetailPanel
                     auth={selectedItem.data}
-                    canApprove={canApproveServiceCrew}
+                    canApprove={canReviewServiceCrewRequest(selectedItem.data)}
                     onClose={() => setSelectedItem(null)}
                     onUpdated={handleServiceCrewUpdated}
                   />

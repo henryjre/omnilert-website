@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
-import { PERMISSIONS } from '@omnilert/shared';
+import { canReviewSubmittedRequest, PERMISSIONS } from '@omnilert/shared';
 import { AppError } from '../middleware/errorHandler.js';
 import { db } from '../config/database.js';
 import { createAndDispatchNotification } from '../services/notification.service.js';
@@ -140,6 +140,9 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
 
     const authReq = await tenantDb('authorization_requests').where({ id }).first();
     if (!authReq) throw new AppError(404, 'Authorization request not found');
+    if (!canReviewSubmittedRequest({ actingUserId: reviewerId, requestUserId: authReq.user_id })) {
+      throw new AppError(403, 'You cannot review your own authorization request');
+    }
     if (authReq.status !== 'pending') throw new AppError(400, 'Request is already resolved');
 
     const reviewedAt = new Date();
@@ -189,6 +192,9 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
 
     const authReq = await tenantDb('authorization_requests').where({ id }).first();
     if (!authReq) throw new AppError(404, 'Authorization request not found');
+    if (!canReviewSubmittedRequest({ actingUserId: reviewerId, requestUserId: authReq.user_id })) {
+      throw new AppError(403, 'You cannot review your own authorization request');
+    }
     if (authReq.status !== 'pending') throw new AppError(400, 'Request is already resolved');
 
     const reviewedAt = new Date();

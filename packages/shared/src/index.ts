@@ -30,6 +30,10 @@ export {
   DEFAULT_ROLE_PRIORITIES,
 } from './constants/roles.js';
 export type { SystemRoleName } from './constants/roles.js';
+export {
+  REQUEST_REVIEW_SELF_EXCEPTION_USER_ID,
+  canReviewSubmittedRequest,
+} from './policies/requestReviewPolicy.js';
 
 // Validation schemas
 export {
