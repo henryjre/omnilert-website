@@ -171,6 +171,7 @@ export async function endShift(req: Request, res: Response, next: NextFunction) 
     const { companyId } = req.companyContext!;
     const tenantDb = db.getDb();
     const managerId = req.user!.sub;
+    const requestedCheckOutTime = req.body?.checkOutTime;
     const userPermissions = new Set(req.user!.permissions);
     const canEndAnyShift = userPermissions.has(PERMISSIONS.SCHEDULE_MANAGE_SHIFT)
       || userPermissions.has(PERMISSIONS.SCHEDULE_END_SHIFT)
@@ -203,6 +204,10 @@ export async function endShift(req: Request, res: Response, next: NextFunction) 
     const managerName = managerUser 
       ? `${managerUser.first_name} ${managerUser.last_name}`.trim() 
       : 'User';
+    const checkOutTime = requestedCheckOutTime ? new Date(requestedCheckOutTime) : new Date();
+    if (Number.isNaN(checkOutTime.getTime())) {
+      throw new AppError(400, 'Invalid checkOutTime');
+    }
 
     // 3. Create the shift_ended log immediately. 
     // The Odoo webhook that follows will see this existing log and update it with Odoo metadata.
@@ -221,7 +226,7 @@ export async function endShift(req: Request, res: Response, next: NextFunction) 
 
     // 4. Trigger Odoo checkout
     // This will trigger the Omnilert checkout webhook which calculates and deducts breaks from the work entry.
-    await batchCheckOutAttendances([Number(lastCheckIn.odoo_attendance_id)], new Date());
+    await batchCheckOutAttendances([Number(lastCheckIn.odoo_attendance_id)], checkOutTime);
 
     res.json({ success: true, message: 'Check out triggered in Odoo.' });
   } catch (err) {

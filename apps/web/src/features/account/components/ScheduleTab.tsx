@@ -1226,18 +1226,6 @@ const ShiftDetailPanel = memo(
                       ))}
                   </div>
 
-                  {canEndShift && (
-                    <Button
-                      className="w-full"
-                      variant="danger"
-                      size="sm"
-                      disabled={activityLoading}
-                      onClick={() => onEndShift(shift.id)}
-                    >
-                      <LogOut className="mr-2 h-4 w-4" />
-                      Check Out
-                    </Button>
-                  )}
                 </div>
               )}
             </div>

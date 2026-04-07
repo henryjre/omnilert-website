@@ -6,6 +6,7 @@ import { AnimatedModal } from '@/shared/components/ui/AnimatedModal';
 import { Button } from '@/shared/components/ui/Button';
 import { Badge } from '@/shared/components/ui/Badge';
 import { DateRangePicker } from '@/shared/components/ui/DateRangePicker';
+import { DateTimePicker } from '@/shared/components/ui/DateTimePicker';
 import { useSocket } from '@/shared/hooks/useSocket';
 import { useBranchStore } from '@/shared/store/branchStore';
 import { useAuthStore } from '@/features/auth/store/authSlice';
@@ -599,7 +600,7 @@ const ShiftCard = memo(
     canEndShift: boolean;
     canExchangeShift: boolean;
     onClick: () => void;
-    onEndShift: (id: string) => void;
+    onEndShift: (id: string, defaultCheckOutTime: string) => void;
     onExchangeShift: (shift: any) => void;
     onOpenActivityModal: (id: string, type: 'break' | 'field_task', isEnd: boolean) => void;
   }) => {
@@ -1223,7 +1224,7 @@ const ShiftDetailPanel = memo(
     onClose: () => void;
     onAuthorizationUpdate: (updatedAuth: any) => void;
     onOpenPeerEvaluation: (evaluationId: string) => void;
-    onEndShift?: (shiftId: string) => void;
+    onEndShift?: (shiftId: string, defaultCheckOutTime: string) => void;
     canEndShift?: boolean;
     onOpenActivityModal: (id: string, type: 'break' | 'field_task', isEnd: boolean) => void;
     showActivityModal: { id: string; type: 'break' | 'field_task'; isEnd: boolean } | null;
@@ -1450,7 +1451,7 @@ const ShiftDetailPanel = memo(
                       variant="danger"
                       size="sm"
                       disabled={activityLoading}
-                      onClick={() => onEndShift?.(shift.id)}
+                      onClick={() => onEndShift?.(shift.id, shift.shift_end)}
                     >
                       <LogOut className="mr-2 h-4 w-4" />
                       Check Out
@@ -1665,6 +1666,7 @@ export function EmployeeShiftsPage() {
   interface EndShiftConfirmState {
     shiftId: string;
     step: EndShiftConfirmStep;
+    checkOutTime: string;
   }
 
   const [endShiftConfirm, setEndShiftConfirm] = useState<EndShiftConfirmState | null>(null);
@@ -1727,9 +1729,9 @@ export function EmployeeShiftsPage() {
     }
   };
 
-  const handleEndShift = async (shiftId: string): Promise<boolean> => {
+  const handleEndShift = async (shiftId: string, checkOutTime: string): Promise<boolean> => {
     try {
-      const res = await api.post(`/employee-shifts/${shiftId}/end`);
+      const res = await api.post(`/employee-shifts/${shiftId}/end`, { checkOutTime });
       setShifts((prev) =>
         prev
           .map((s) => (s.id === shiftId ? { ...s, ...res.data.data } : s))
@@ -1744,8 +1746,8 @@ export function EmployeeShiftsPage() {
     }
   };
 
-  const requestEndShift = (shiftId: string) => {
-    setEndShiftConfirm({ shiftId, step: 1 });
+  const requestEndShift = (shiftId: string, defaultCheckOutTime: string) => {
+    setEndShiftConfirm({ shiftId, step: 1, checkOutTime: defaultCheckOutTime });
   };
 
   const closeEndShiftConfirm = () => {
@@ -1761,7 +1763,7 @@ export function EmployeeShiftsPage() {
     if (!endShiftConfirm) return;
     setEndShiftLoading(true);
     try {
-      const ok = await handleEndShift(endShiftConfirm.shiftId);
+      const ok = await handleEndShift(endShiftConfirm.shiftId, endShiftConfirm.checkOutTime);
       if (ok) setEndShiftConfirm(null);
     } finally {
       setEndShiftLoading(false);
@@ -2436,6 +2438,17 @@ export function EmployeeShiftsPage() {
                 </p>
               ) : (
                 <div className="space-y-2">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-gray-500">
+                      Checkout date and time
+                    </label>
+                    <DateTimePicker
+                      value={endShiftConfirm.checkOutTime}
+                      onChange={(next) =>
+                        setEndShiftConfirm((prev) => (prev ? { ...prev, checkOutTime: next } : prev))
+                      }
+                    />
+                  </div>
                   <p className="text-sm text-gray-700">You are about to end this shift.</p>
                   <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
                     <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
