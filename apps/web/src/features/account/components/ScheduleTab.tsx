@@ -56,7 +56,7 @@ const DUTY_COLORS: Record<number, string> = {
 };
 
 const ACCOUNT_SHIFT_STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
-  open: { label: 'Open', cls: 'bg-blue-100 text-blue-700' },
+  open: { label: 'Upcoming', cls: 'bg-blue-100 text-blue-700' },
   active: { label: 'Active', cls: 'bg-green-100 text-green-700' },
   ended: { label: 'Closed', cls: 'bg-red-100 text-red-700' },
 };
@@ -1913,7 +1913,7 @@ export function ScheduleTab() {
   const TABS: ViewOption<TabType>[] = [
     { id: 'all', label: 'All', icon: LayoutGrid },
     { id: 'active', label: 'Active', icon: CheckCircle },
-    { id: 'open', label: 'Open', icon: Clock },
+    { id: 'open', label: 'Upcoming', icon: Clock },
     { id: 'ended', label: 'Closed', icon: XCircle },
   ];
 

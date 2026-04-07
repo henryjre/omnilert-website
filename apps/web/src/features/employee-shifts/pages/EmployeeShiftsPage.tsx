@@ -67,7 +67,7 @@ const FIELD_LABELS: Record<string, string> = {
 };
 
 const SHIFT_STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
-  open: { label: 'Open', cls: 'bg-blue-100 text-blue-700' },
+  open: { label: 'Upcoming', cls: 'bg-blue-100 text-blue-700' },
   active: { label: 'Active', cls: 'bg-green-100 text-green-700' },
   ended: { label: 'Closed', cls: 'bg-red-100 text-red-700' },
   on_break: { label: 'On Break', cls: 'bg-gray-100 text-gray-700' },
@@ -2023,7 +2023,7 @@ export function EmployeeShiftsPage() {
 
   const TABS: { id: TabType; label: string; icon: LucideIcon }[] = [
     { id: 'all', label: 'All', icon: Users },
-    { id: 'open', label: 'Open', icon: CalendarDays },
+    { id: 'open', label: 'Upcoming', icon: CalendarDays },
     { id: 'active', label: 'Active', icon: Clock },
     { id: 'ended', label: 'Closed', icon: X },
   ];
