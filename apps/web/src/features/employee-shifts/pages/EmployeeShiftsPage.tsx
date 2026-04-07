@@ -18,6 +18,7 @@ import { ShiftExchangeFlowModal } from '@/features/shift-exchange/components/Shi
 import { PeerEvaluationModal } from '@/features/peer-evaluations/components/PeerEvaluationModal';
 import { PERMISSIONS } from '@omnilert/shared';
 import { formatDuration } from '@/shared/utils/duration';
+import { formatDateTimeInManila } from '@/shared/utils/dateTime';
 import {
   AlertTriangle,
   ArrowDown,
@@ -78,27 +79,11 @@ const SHIFT_STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
 // --- Helpers ---
 
 function fmtShift(iso: string) {
-  const d = new Date(iso);
-  const date = d.toLocaleString('en-US', {
-    month: 'long',
-    day: '2-digit',
-    year: 'numeric',
-  });
-  const time = d.toLocaleString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  });
-  return `${date} at ${time}`;
+  return formatDateTimeInManila(iso) ?? iso;
 }
 
 function fmtTime(iso: string) {
-  const d = new Date(iso);
-  const month = d.toLocaleString('en-US', { month: 'long' });
-  const day = String(d.getDate()).padStart(2, '0');
-  const year = d.getFullYear();
-  const time = d.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-  return `${month} ${day}, ${year} at ${time}`;
+  return formatDateTimeInManila(iso) ?? iso;
 }
 
 function fmtShiftUpdatedValue(field: string, value: unknown): string {
@@ -112,10 +97,7 @@ function fmtShiftUpdatedValue(field: string, value: unknown): string {
     field === 'shift_end';
 
   if (!isShiftDateTimeField) return value;
-
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return fmtShift(d.toISOString());
+  return formatDateTimeInManila(value) ?? value;
 }
 
 function parseEmployeeName(raw: string): { prefix: string; name: string } {

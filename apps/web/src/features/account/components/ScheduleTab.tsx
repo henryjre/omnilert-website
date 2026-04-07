@@ -21,6 +21,7 @@ import { ShiftExchangeDetailModal } from '@/features/shift-exchange/components/S
 import { PeerEvaluationModal } from '@/features/peer-evaluations/components/PeerEvaluationModal';
 import { PERMISSIONS } from '@omnilert/shared';
 import { formatDuration } from '@/shared/utils/duration';
+import { formatDateTimeInManila } from '@/shared/utils/dateTime';
 import { type ComponentType } from 'react';
 import {
   AlertTriangle,
@@ -75,21 +76,11 @@ const FIELD_LABELS: Record<string, string> = {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function fmtShift(dt: string) {
-  const d = new Date(dt);
-  const month = d.toLocaleString('en-US', { month: 'long' });
-  const day = String(d.getDate()).padStart(2, '0');
-  const year = d.getFullYear();
-  const time = d.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-  return `${month} ${day}, ${year} at ${time}`;
+  return formatDateTimeInManila(dt) ?? dt;
 }
 
 function fmtTime(iso: string) {
-  const d = new Date(iso);
-  const month = d.toLocaleString('en-US', { month: 'long' });
-  const day = String(d.getDate()).padStart(2, '0');
-  const year = d.getFullYear();
-  const time = d.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
-  return `${month} ${day}, ${year} at ${time}`;
+  return formatDateTimeInManila(iso) ?? iso;
 }
 
 function fmtShiftUpdatedValue(field: string, value: unknown): string {
@@ -103,10 +94,7 @@ function fmtShiftUpdatedValue(field: string, value: unknown): string {
     field === 'shift_end';
 
   if (!isShiftDateTimeField) return value;
-
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return fmtShift(d.toISOString());
+  return formatDateTimeInManila(value) ?? value;
 }
 
 function fmtTimeShort(dt: string) {
