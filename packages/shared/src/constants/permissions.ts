@@ -63,10 +63,11 @@ export const PERMISSIONS = {
   CASH_REQUESTS_VIEW: 'cash_requests.view',
   CASH_REQUESTS_MANAGE: 'cash_requests.manage',
 
-  // Analytics (3)
+  // Analytics (4)
   ANALYTICS_VIEW_EMPLOYEE_ANALYTICS: 'analytics.view_employee_analytics',
   ANALYTICS_VIEW_PROFITABILITY_ANALYTICS: 'analytics.view_profitability_analytics',
   ANALYTICS_VIEW_POS_ANALYTICS: 'analytics.view_pos_analytics',
+  ANALYTICS_VIEW_PRODUCT_ANALYTICS: 'analytics.view_product_analytics',
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -179,6 +180,7 @@ export const PERMISSION_CATEGORIES: Record<string, { label: string; permissions:
       PERMISSIONS.ANALYTICS_VIEW_EMPLOYEE_ANALYTICS,
       PERMISSIONS.ANALYTICS_VIEW_PROFITABILITY_ANALYTICS,
       PERMISSIONS.ANALYTICS_VIEW_POS_ANALYTICS,
+      PERMISSIONS.ANALYTICS_VIEW_PRODUCT_ANALYTICS,
     ],
   },
 };
@@ -250,4 +252,5 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
   [PERMISSIONS.ANALYTICS_VIEW_EMPLOYEE_ANALYTICS]: 'Access the Employee Analytics page and view performance metrics',
   [PERMISSIONS.ANALYTICS_VIEW_PROFITABILITY_ANALYTICS]: 'Access the Profitability Analytics page and view P&L metrics',
   [PERMISSIONS.ANALYTICS_VIEW_POS_ANALYTICS]: 'Access the POS Analytics page and view session metrics',
+  [PERMISSIONS.ANALYTICS_VIEW_PRODUCT_ANALYTICS]: 'Access the Product Analytics page and view product-level sales and costing metrics',
 };
