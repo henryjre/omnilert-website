@@ -2,14 +2,18 @@ import { useEffect, useMemo, useState, useSyncExternalStore, type ElementType, t
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   AlertTriangle,
+  ArrowLeft,
   ArrowDownRight,
   ArrowUpRight,
   BarChart3,
+  CreditCard,
   DollarSign,
   GitBranch,
   Hash,
   Minus,
+  Monitor,
   PieChart as PieChartIcon,
+  Receipt,
   ShoppingBag,
   Star,
   TableProperties,
@@ -183,11 +187,6 @@ function deriveProducts(products: MockProduct[]): DerivedProduct[] {
 /* ─── Formatters ─────────────────────────────────────────────────────────── */
 
 function formatCurrency(value: number, compact = false): string {
-  if (compact) {
-    if (Math.abs(value) >= 1_000_000) return `PHP ${(value / 1_000_000).toFixed(2)}M`;
-    if (Math.abs(value) >= 1_000) return `PHP ${(value / 1_000).toFixed(1)}K`;
-    return `PHP ${value.toLocaleString('en-PH')}`;
-  }
   return `PHP ${value.toLocaleString('en-PH', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
@@ -382,6 +381,69 @@ function marginColor(margin: number): string {
   if (margin >= 5) return 'text-amber-600';
   return 'text-rose-600';
 }
+
+function LedgerRow({
+  label,
+  value,
+  tone = 'default',
+  indent = false,
+  bold = false,
+  separator = false,
+}: {
+  label: string;
+  value: string;
+  tone?: 'default' | 'positive' | 'negative' | 'muted';
+  indent?: boolean;
+  bold?: boolean;
+  separator?: boolean;
+}) {
+  const valueClass =
+    tone === 'positive'
+      ? 'text-emerald-700'
+      : tone === 'negative'
+        ? 'text-rose-700'
+        : tone === 'muted'
+          ? 'text-gray-400'
+          : 'text-gray-800';
+
+  const rowBg =
+    tone === 'positive'
+      ? 'bg-emerald-50/60'
+      : tone === 'negative'
+        ? 'bg-rose-50/60'
+        : '';
+
+  return (
+    <>
+      {separator && <div className="my-1 border-t border-dashed border-gray-100" />}
+      <div className={`flex items-baseline justify-between gap-4 rounded px-2 py-1.5 ${rowBg}`}>
+        <span className={`text-xs ${indent ? 'pl-3 text-gray-400' : bold ? 'font-semibold text-gray-700' : 'text-gray-500'}`}>
+          {label}
+        </span>
+        <span className={`shrink-0 font-mono text-xs tabular-nums ${bold ? 'font-semibold' : ''} ${valueClass}`}>
+          {value}
+        </span>
+      </div>
+    </>
+  );
+}
+
+function LedgerSection({ title, icon: Icon, children }: { title: string; icon: ElementType; children: ReactNode }) {
+  return (
+    <div className="rounded-xl border border-gray-100 bg-white">
+      <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-2.5">
+        <Icon className="h-3.5 w-3.5 shrink-0 text-gray-300" />
+        <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">{title}</span>
+      </div>
+      <div className="px-2 py-2">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+
+
 
 /* ═══════════════════════════════════════════════════════════════════════════
    CHART VIEW TAB
@@ -683,105 +745,178 @@ function ChartViewTab({ products }: { products: DerivedProduct[] }) {
    TABLE VIEW TAB
 ═══════════════════════════════════════════════════════════════════════════ */
 
-const TABLE_COLUMNS: { key: SortKey; label: string; align?: string }[] = [
-  { key: 'rank',          label: 'Rank' },
-  { key: 'name',          label: 'Product' },
-  { key: 'revenue',       label: 'Sales (Revenue)',   align: 'right' },
-  { key: 'qtySold',       label: 'Qty Sold',          align: 'right' },
-  { key: 'contribution',  label: 'Contribution %',    align: 'right' },
-  { key: 'growthRate',    label: 'Growth %',          align: 'right' },
-  { key: 'costPerUnit',   label: 'Cost / Unit',       align: 'right' },
-  { key: 'totalCost',     label: 'Total Cost',        align: 'right' },
-  { key: 'grossProfit',   label: 'Gross Profit',      align: 'right' },
-  { key: 'margin',        label: 'Margin %',          align: 'right' },
-  { key: 'costChange',    label: 'Cost Change',       align: 'right' },
-  { key: 'costChangePct', label: 'Cost Chg %',        align: 'right' },
-];
+const PRODUCT_TABLE_MOBILE_HEADERS = ['Rank', 'Product Name', 'Margin'] as const;
+const PRODUCT_TABLE_DESKTOP_HEADERS = ['Sales', 'Unit Cost', 'Gross Profit', 'Margin', 'Classification'] as const;
 
 function TableViewTab({ products }: { products: DerivedProduct[] }) {
-  const [sortKey, setSortKey] = useState<SortKey>('revenue');
-  const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [selectedProduct, setSelectedProduct] = useState<DerivedProduct | null>(null);
 
-  const sorted = useMemo(() => {
-    return [...products].sort((a, b) => {
-      const av = a[sortKey] as string | number;
-      const bv = b[sortKey] as string | number;
-      const cmp = typeof av === 'string' ? av.localeCompare(bv as string) : (av as number) - (bv as number);
-      return sortDir === 'asc' ? cmp : -cmp;
-    });
-  }, [products, sortKey, sortDir]);
-
-  const handleSort = (key: SortKey) => {
-    if (key === sortKey) {
-      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortKey(key);
-      setSortDir('desc');
+  useEffect(() => {
+    if (!selectedProduct) return;
+    const match = products.find((p) => p.id === selectedProduct.id) ?? null;
+    if (!match) {
+      setSelectedProduct(null);
+    } else if (match !== selectedProduct) {
+      setSelectedProduct(match);
     }
-  };
+  }, [selectedProduct, products]);
+
+  const isDetailView = selectedProduct !== null;
+  const tableSubtitle = isDetailView && selectedProduct
+    ? `${selectedProduct.name} • Performance Metrics`
+    : `All metrics for the selected period and branches.`;
 
   return (
-    <div className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
-      <div className="flex items-center gap-3 border-b border-gray-100 bg-gray-50/50 px-5 py-4">
-        <TableProperties className="h-4 w-4 shrink-0 text-gray-400" />
-        <div>
-          <p className="text-sm font-semibold text-gray-900">Product Performance Table</p>
-          <p className="mt-0.5 text-xs text-gray-500">Click column headers to sort. All metrics for the selected period and branches.</p>
+    <div className="flex flex-col overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
+      <div className="flex items-center justify-between gap-3 border-b border-gray-100 bg-gray-50/50 px-5 py-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <TableProperties className="h-4 w-4 shrink-0 text-gray-400" />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-gray-900">Product Performance Table</p>
+            <p className="mt-0.5 truncate text-xs text-gray-500">{tableSubtitle}</p>
+          </div>
         </div>
+        {isDetailView && (
+          <button
+            type="button"
+            onClick={() => setSelectedProduct(null)}
+            className="flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-600"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Back
+          </button>
+        )}
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-100 bg-gray-50/50">
-              {TABLE_COLUMNS.map((col) => (
-                <th
-                  key={col.key}
-                  onClick={() => handleSort(col.key)}
-                  className={`cursor-pointer select-none whitespace-nowrap px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-700 ${col.align === 'right' ? 'text-right' : 'text-left'}`}
-                >
-                  {col.label}
-                  {col.key === sortKey ? (
-                    <span className="ml-1 text-primary-500">{sortDir === 'asc' ? '↑' : '↓'}</span>
-                  ) : (
-                    <span className="ml-1 text-gray-300">↕</span>
-                  )}
-                </th>
-              ))}
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Classification</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((p) => (
-              <tr key={p.id} className="border-b border-gray-50 transition-colors hover:bg-gray-50">
-                <td className="px-4 py-3 text-xs font-bold text-gray-400">#{p.rank}</td>
-                <td className="px-4 py-3 font-medium text-gray-900">{p.name}</td>
-                <td className="px-4 py-3 text-right tabular-nums text-gray-700">{formatCurrency(p.revenue, true)}</td>
-                <td className="px-4 py-3 text-right tabular-nums text-gray-700">{p.qtySold.toLocaleString('en-PH')}</td>
-                <td className="px-4 py-3 text-right tabular-nums text-gray-700">{p.contribution.toFixed(1)}%</td>
-                <td className={`px-4 py-3 text-right tabular-nums font-semibold ${p.growthRate >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                  {p.growthRate >= 0 ? '↑' : '↓'} {formatPercent(p.growthRate)}
-                </td>
-                <td className="px-4 py-3 text-right tabular-nums text-gray-700">{formatCurrency(p.costPerUnit)}</td>
-                <td className="px-4 py-3 text-right tabular-nums text-gray-700">{formatCurrency(p.totalCost, true)}</td>
-                <td className={`px-4 py-3 text-right tabular-nums font-semibold ${p.grossProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                  {formatCurrency(p.grossProfit, true)}
-                </td>
-                <td className={`px-4 py-3 text-right tabular-nums font-semibold ${marginColor(p.margin)}`}>
-                  {formatPercent(p.margin, false)}
-                </td>
-                <td className={`px-4 py-3 text-right tabular-nums font-semibold ${p.costChange > 0 ? 'text-rose-600' : p.costChange < 0 ? 'text-emerald-600' : 'text-gray-400'}`}>
-                  {p.costChange !== 0 ? (p.costChange > 0 ? '↑ ' : '↓ ') : ''}{formatCurrency(Math.abs(p.costChange))}
-                </td>
-                <td className={`px-4 py-3 text-right tabular-nums font-semibold ${p.costChangePct > 0 ? 'text-rose-600' : p.costChangePct < 0 ? 'text-emerald-600' : 'text-gray-400'}`}>
-                  {formatPercent(p.costChangePct)}
-                </td>
-                <td className="px-4 py-3">
-                  <ClassificationBadge classification={p.classification} />
-                </td>
+
+      <div className="relative overflow-hidden">
+        <motion.div
+          animate={{ x: isDetailView ? '-100%' : 0, opacity: isDetailView ? 0 : 1 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+          aria-hidden={isDetailView}
+          className="overflow-x-auto"
+        >
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50/60">
+                <th className="whitespace-nowrap px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide text-gray-400">Rank</th>
+                <th className="whitespace-nowrap px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide text-gray-400">Product Name</th>
+                <th className="hidden whitespace-nowrap px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide text-gray-400 lg:table-cell">Sales</th>
+                <th className="hidden whitespace-nowrap px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide text-gray-400 lg:table-cell">Unit Cost</th>
+                <th className="hidden whitespace-nowrap px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide text-gray-400 lg:table-cell">Gross Profit</th>
+                <th className="whitespace-nowrap px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide text-gray-400">Margin</th>
+                <th className="hidden whitespace-nowrap px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide text-gray-400 lg:table-cell">Classification</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {products.map((p) => (
+                <tr
+                  key={p.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setSelectedProduct(p)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setSelectedProduct(p);
+                    }
+                  }}
+                  className="cursor-pointer transition-colors hover:bg-primary-100/60 focus-visible:bg-primary-50/40 focus-visible:outline-none"
+                >
+                  <td className="whitespace-nowrap px-4 py-3 font-bold text-gray-400">#{p.rank}</td>
+                  <td className="px-4 py-3 font-semibold text-primary-700">{p.name}</td>
+                  <td className="hidden whitespace-nowrap px-4 py-3 text-gray-600 lg:table-cell">
+                    {formatCurrency(p.revenue, true)}
+                  </td>
+                  <td className="hidden whitespace-nowrap px-4 py-3 text-gray-600 lg:table-cell">
+                    {formatCurrency(p.costPerUnit)}
+                  </td>
+                  <td className={`hidden whitespace-nowrap px-4 py-3 font-semibold lg:table-cell ${p.grossProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {formatCurrency(p.grossProfit, true)}
+                  </td>
+                  <td className={`whitespace-nowrap px-4 py-3 font-bold ${marginColor(p.margin)}`}>
+                    {formatPercent(p.margin, false)}
+                  </td>
+                  <td className="hidden px-4 py-3 lg:table-cell">
+                    <ClassificationBadge classification={p.classification} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </motion.div>
+
+        <AnimatePresence initial={false}>
+          {selectedProduct ? (
+            <motion.div
+              key={`detail-${selectedProduct.id}`}
+              initial={{ x: '100%', opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: '100%', opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+              className="absolute inset-0 overflow-y-auto bg-gray-50/40"
+            >
+              <div className="space-y-3 p-4 sm:p-5">
+                {/* Product Identity */}
+                <LedgerSection title="Product Info" icon={ShoppingBag}>
+                  <LedgerRow label="Product Name" value={selectedProduct.name} bold />
+                  <LedgerRow label="Rank" value={`#${selectedProduct.rank}`} />
+                  <LedgerRow
+                    label="Classification"
+                    value={CLASSIFICATION_CONFIG[selectedProduct.classification!]?.label ?? 'N/A'}
+                  />
+                  <LedgerRow label="Units Sold" value={selectedProduct.qtySold.toLocaleString('en-PH')} />
+                </LedgerSection>
+
+                {/* Financial Performance */}
+                <LedgerSection title="Financials" icon={TrendingUp}>
+                  <LedgerRow label="Gross Revenue" value={formatCurrency(selectedProduct.revenue)} bold />
+                  <LedgerRow
+                    label="Sales Contribution"
+                    value={formatPercent(selectedProduct.contribution, false)}
+                    indent
+                  />
+                  <LedgerRow
+                    label="Growth Rate"
+                    value={formatPercent(selectedProduct.growthRate)}
+                    tone={selectedProduct.growthRate >= 0 ? 'positive' : 'negative'}
+                    indent
+                  />
+                  <LedgerRow
+                    label="Total Cost of Sales"
+                    value={`− ${formatCurrency(selectedProduct.totalCost)}`}
+                    indent
+                    tone="negative"
+                  />
+                  <LedgerRow label="Gross Profit" value={formatCurrency(selectedProduct.grossProfit)} bold separator />
+                  <LedgerRow
+                    label="Profit Margin"
+                    value={formatPercent(selectedProduct.margin, false)}
+                    tone={selectedProduct.margin >= 20 ? 'positive' : selectedProduct.margin < 5 ? 'negative' : 'default'}
+                    bold
+                  />
+                </LedgerSection>
+
+                {/* Costing Analysis */}
+                <LedgerSection title="Costing Analysis" icon={Wallet}>
+                  <LedgerRow label="Unit Cost (Current)" value={formatCurrency(selectedProduct.costPerUnit)} bold />
+                  <LedgerRow label="Unit Cost (Prior)" value={formatCurrency(selectedProduct.prevCostPerUnit)} indent tone="muted" />
+                  <LedgerRow
+                    label="Cost Variance"
+                    value={`${selectedProduct.costChange >= 0 ? '+' : ''}${formatCurrency(selectedProduct.costChange)}`}
+                    tone={selectedProduct.costChange > 0 ? 'negative' : selectedProduct.costChange < 0 ? 'positive' : 'muted'}
+                    indent
+                  />
+                  <LedgerRow
+                    label="Cost Change %"
+                    value={formatPercent(selectedProduct.costChangePct)}
+                    tone={selectedProduct.costChangePct > 0 ? 'negative' : selectedProduct.costChangePct < 0 ? 'positive' : 'muted'}
+                    indent
+                  />
+                </LedgerSection>
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
       </div>
     </div>
   );
@@ -794,35 +929,127 @@ function TableViewTab({ products }: { products: DerivedProduct[] }) {
 /* ── Row 1: Cost Overview (full width) ───────────────────────────────────── */
 
 function CostOverviewCard({ products }: { products: DerivedProduct[] }) {
+  const isMobile = useIsMobile();
+  const [selectedProduct, setSelectedProduct] = useState<DerivedProduct | null>(null);
+
+  useEffect(() => {
+    if (!selectedProduct) return;
+    const match = products.find((p) => p.id === selectedProduct.id) ?? null;
+    if (!match) {
+      setSelectedProduct(null);
+    } else if (match !== selectedProduct) {
+      setSelectedProduct(match);
+    }
+  }, [selectedProduct, products]);
+
+  const isDetailView = selectedProduct !== null;
+  const subtitle = isDetailView && selectedProduct
+    ? `${selectedProduct.name} • Cost Metrics`
+    : 'Cost, profit, and margin per product for the selected period';
+
   return (
-    <AnalyticsCard icon={Wallet} title="Product Cost Overview" description="Cost, profit, and margin per product for the selected period">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-100 bg-gray-50/50">
-              {['Product', 'Cost / Unit', 'Total Cost', 'Gross Profit', 'Margin %'].map((h) => (
-                <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {products.map((p) => (
-              <tr key={p.id} className="border-b border-gray-50 transition-colors hover:bg-gray-50">
-                <td className="px-4 py-3 font-medium text-gray-900">{p.name}</td>
-                <td className="px-4 py-3 tabular-nums text-gray-700">{formatCurrency(p.costPerUnit)}</td>
-                <td className="px-4 py-3 tabular-nums text-gray-700">{formatCurrency(p.totalCost, true)}</td>
-                <td className={`px-4 py-3 tabular-nums font-semibold ${p.grossProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                  {formatCurrency(p.grossProfit, true)}
-                </td>
-                <td className={`px-4 py-3 tabular-nums font-semibold ${marginColor(p.margin)}`}>
-                  {formatPercent(p.margin, false)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <div className="flex flex-col overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
+      <div className="flex items-center justify-between gap-3 border-b border-gray-100 bg-gray-50/50 px-5 py-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <Wallet className="h-4 w-4 shrink-0 text-gray-400" />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-gray-900">Product Cost Overview</p>
+            <p className="mt-0.5 truncate text-xs text-gray-500">{subtitle}</p>
+          </div>
+        </div>
+        {isDetailView && isMobile && (
+          <button
+            type="button"
+            onClick={() => setSelectedProduct(null)}
+            className="flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-600"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Back
+          </button>
+        )}
       </div>
-    </AnalyticsCard>
+
+      <div className="relative overflow-hidden">
+        <motion.div
+          animate={{ x: isDetailView && isMobile ? '-100%' : 0, opacity: isDetailView && isMobile ? 0 : 1 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+          aria-hidden={isDetailView && isMobile}
+          className="overflow-x-auto"
+        >
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50/60">
+                <th className="px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wide text-gray-400">Product</th>
+                <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-wide text-gray-400">Cost / Unit</th>
+                <th className="hidden px-4 py-3 text-right text-[10px] font-bold uppercase tracking-wide text-gray-400 sm:table-cell">Total Cost</th>
+                <th className="hidden px-4 py-3 text-right text-[10px] font-bold uppercase tracking-wide text-gray-400 sm:table-cell">Gross Profit</th>
+                <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-wide text-gray-400">Margin %</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {products.map((p) => (
+                <tr
+                  key={p.id}
+                  role={isMobile ? 'button' : undefined}
+                  tabIndex={isMobile ? 0 : undefined}
+                  onClick={() => isMobile && setSelectedProduct(p)}
+                  onKeyDown={isMobile ? (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setSelectedProduct(p);
+                    }
+                  } : undefined}
+                  className={`border-b border-gray-50 transition-colors hover:bg-primary-100/60 ${isMobile ? 'cursor-pointer' : ''}`}
+                >
+                  <td className="px-4 py-3 font-semibold text-gray-900">{p.name}</td>
+                  <td className="px-4 py-3 text-right tabular-nums text-gray-700">{formatCurrency(p.costPerUnit)}</td>
+                  <td className="hidden px-4 py-3 text-right tabular-nums text-gray-700 sm:table-cell">{formatCurrency(p.totalCost, true)}</td>
+                  <td className={`hidden px-4 py-3 text-right tabular-nums font-semibold sm:table-cell ${p.grossProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {formatCurrency(p.grossProfit, true)}
+                  </td>
+                  <td className={`px-4 py-3 text-right tabular-nums font-semibold ${marginColor(p.margin)}`}>
+                    {formatPercent(p.margin, false)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </motion.div>
+
+        <AnimatePresence initial={false}>
+          {selectedProduct && isMobile ? (
+            <motion.div
+              key={`cost-detail-${selectedProduct.id}`}
+              initial={{ x: '100%', opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: '100%', opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+              className="absolute inset-0 overflow-y-auto bg-gray-50/40"
+            >
+              <div className="space-y-3 p-4 sm:p-5">
+                <LedgerSection title="Unit Economics" icon={Wallet}>
+                  <LedgerRow label="Product" value={selectedProduct.name} bold />
+                  <LedgerRow label="Cost per Unit" value={formatCurrency(selectedProduct.costPerUnit)} bold />
+                  <LedgerRow label="Units Sold" value={selectedProduct.qtySold.toLocaleString('en-PH')} />
+                </LedgerSection>
+
+                <LedgerSection title="Financial Impact" icon={TrendingUp}>
+                  <LedgerRow label="Total Cost of Sales" value={formatCurrency(selectedProduct.totalCost)} tone="negative" bold />
+                  <LedgerRow label="Revenue Generated" value={formatCurrency(selectedProduct.revenue)} indent tone="muted" />
+                  <LedgerRow label="Gross Profit" value={formatCurrency(selectedProduct.grossProfit)} bold separator />
+                  <LedgerRow
+                    label="Profit Margin"
+                    value={formatPercent(selectedProduct.margin, false)}
+                    tone={selectedProduct.margin >= 20 ? 'positive' : selectedProduct.margin < 5 ? 'negative' : 'default'}
+                    bold
+                  />
+                </LedgerSection>
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+      </div>
+    </div>
   );
 }
 

@@ -209,16 +209,16 @@ export function Sidebar({ className = '' }: SidebarProps) {
                 POS Analytics
               </AnimatedNavLink>
             )}
-            {hasPermission(PERMISSIONS.ANALYTICS_VIEW_PROFITABILITY_ANALYTICS) && (
-              <AnimatedNavLink to="/profitability-analytics" className={linkClass}>
-                <DollarSign className="h-5 w-5" />
-                Profitability Analytics
-              </AnimatedNavLink>
-            )}
             {hasPermission(PERMISSIONS.ANALYTICS_VIEW_PRODUCT_ANALYTICS) && (
               <AnimatedNavLink to="/product-analytics" className={linkClass}>
                 <ShoppingBag className="h-5 w-5" />
                 Product Analytics
+              </AnimatedNavLink>
+            )}
+            {hasPermission(PERMISSIONS.ANALYTICS_VIEW_PROFITABILITY_ANALYTICS) && (
+              <AnimatedNavLink to="/profitability-analytics" className={linkClass}>
+                <DollarSign className="h-5 w-5" />
+                Profitability Analytics
               </AnimatedNavLink>
             )}
           </>

@@ -536,11 +536,11 @@ export function RoleManagementPage() {
                           {category.label}
                         </h4>
                         <div className="space-y-1">
-                          {permissions
-                            .filter((permission) =>
-                              category.permissions.includes(permission.key as PermissionKey),
-                            )
-                            .map((permission) => {
+                          {category.permissions
+                            .map((permKey) => {
+                              const permission = permissions.find((p) => p.key === permKey);
+                              if (!permission) return null;
+
                               const isChecked = roleDraft.permissionIds.includes(permission.id);
                               const isPrerequisite = isEnabledAsPrerequisite(
                                 permission.id,
