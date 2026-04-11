@@ -6,6 +6,10 @@ import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import { createAndDispatchNotification } from './notification.service.js';
 import {
+  endActivity as endShiftActivityRecord,
+  startActivity as startShiftActivityRecord,
+} from './shiftActivity.service.js';
+import {
   batchCheckOutAttendances,
   getActiveAttendancesForWebsiteUserKey,
   getAttendanceIdentityByAttendanceId,
@@ -20,6 +24,7 @@ const DISABLED_AUDIT_ODOO_COMPANY_IDS = new Set<number>([2]);
 const SHIFT_ENDED_LOG_TYPE = 'shift_ended';
 const INTERIM_DUTY_AUTH_TYPE = 'interim_duty';
 const PRESERVED_INTERIM_DUTY_STATUSES = new Set(['pending', 'approved', 'rejected']);
+const MANAGEMENT_INTERRUPT_BREAK_SOURCE = 'management_interrupt';
 
 export function shouldPreserveInterimDutyPlanningSlotDelete(statuses: string[]): boolean {
   return statuses.some((status) => PRESERVED_INTERIM_DUTY_STATUSES.has(status));
@@ -659,6 +664,18 @@ interface IdentityActiveAttendance {
   check_in: string;
 }
 
+interface ShiftActivityRow {
+  id: string;
+  user_id: string;
+  shift_id: string;
+  activity_type: 'break' | 'field_task';
+  start_time: string | Date;
+  end_time: string | Date | null;
+  duration_minutes?: number | null;
+  activity_details?: string | Record<string, unknown> | null;
+  [key: string]: unknown;
+}
+
 type CheckInRoleType = typeof SYSTEM_ROLES.MANAGEMENT | typeof SYSTEM_ROLES.SERVICE_CREW;
 
 interface AttendanceProcessorDeps {
@@ -695,6 +712,25 @@ interface AttendanceProcessorDeps {
     websiteUserKey: string,
   ) => Promise<IdentityActiveAttendance[]>;
   findExistingCheckOutLog: (attendanceId: number) => Promise<AttendanceShiftLogRow | null>;
+  findLatestCheckInLog: (attendanceId: number) => Promise<AttendanceShiftLogRow | null>;
+  findOpenShiftActivity: (shiftId: string, userId: string) => Promise<ShiftActivityRow | null>;
+  startShiftActivity: (input: {
+    userId: string;
+    shiftId: string;
+    activityType: 'break' | 'field_task';
+    details?: Record<string, unknown>;
+    occurredAt?: Date;
+  }) => Promise<{ activity: ShiftActivityRow; log: AttendanceShiftLogRow }>;
+  listOpenManagementInterruptBreaks: (
+    userId: string,
+    managementAttendanceId: number,
+  ) => Promise<ShiftActivityRow[]>;
+  endShiftActivity: (input: {
+    userId: string;
+    shiftId: string;
+    activityId: string;
+    endedAt?: Date;
+  }) => Promise<{ activity: ShiftActivityRow; log: AttendanceShiftLogRow }>;
   deleteEarlyCheckOutAuthByShiftLogId: (shiftLogId: string) => Promise<boolean>;
   deleteShiftLog: (input: { odooAttendanceId?: number; shiftId?: string; logType: string }) => Promise<number>;
   checkOutAttendancesByIds: (attendanceIds: number[], checkOutTime: Date) => Promise<void>;
@@ -789,6 +825,17 @@ function parseEmployeeName(raw: string): { prefix: string; name: string } {
   if (!raw || !raw.includes(' - ')) return { prefix: '', name: raw || '' };
   const parts = raw.split(' - ');
   return { prefix: (parts[0] || '').trim(), name: (parts[1] || '').trim() };
+}
+
+function parseRecord(value: unknown): Record<string, unknown> {
+  if (!value) return {};
+  if (typeof value === 'object') return value as Record<string, unknown>;
+  if (typeof value !== 'string') return {};
+  try {
+    return JSON.parse(value) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
 }
 
 function resolveOppositeRoleType(roleType: CheckInRoleType): CheckInRoleType {
@@ -937,6 +984,50 @@ const defaultAttendanceProcessorDeps: AttendanceProcessorDeps = {
       .getDb()('shift_logs')
       .where({ odoo_attendance_id: attendanceId, log_type: 'check_out' })
       .first()) as AttendanceShiftLogRow | null ?? null,
+  findLatestCheckInLog: async (attendanceId) =>
+    (await db
+      .getDb()('shift_logs')
+      .where({ odoo_attendance_id: attendanceId, log_type: 'check_in' })
+      .orderBy('event_time', 'desc')
+      .first()) as AttendanceShiftLogRow | null ?? null,
+  findOpenShiftActivity: async (shiftId, userId) =>
+    (await db
+      .getDb()('shift_activities')
+      .where({ shift_id: shiftId, user_id: userId, end_time: null })
+      .first()) as ShiftActivityRow | null ?? null,
+  startShiftActivity: async (input) => {
+    const result = await startShiftActivityRecord({
+      userId: input.userId,
+      shiftId: input.shiftId,
+      activityType: input.activityType,
+      details: input.details,
+      occurredAt: input.occurredAt,
+    });
+    return result as { activity: ShiftActivityRow; log: AttendanceShiftLogRow };
+  },
+  listOpenManagementInterruptBreaks: async (userId, managementAttendanceId) => {
+    const activities = (await db
+      .getDb()('shift_activities')
+      .where({ user_id: userId, activity_type: 'break', end_time: null })
+      .select('*')) as ShiftActivityRow[];
+
+    return activities.filter((activity) => {
+      const details = parseRecord(activity.activity_details);
+      return (
+        details.source === MANAGEMENT_INTERRUPT_BREAK_SOURCE &&
+        Number(details.management_attendance_id ?? 0) === managementAttendanceId
+      );
+    });
+  },
+  endShiftActivity: async (input) => {
+    const result = await endShiftActivityRecord({
+      userId: input.userId,
+      shiftId: input.shiftId,
+      activityId: input.activityId,
+      endedAt: input.endedAt,
+    });
+    return result as { activity: ShiftActivityRow; log: AttendanceShiftLogRow };
+  },
   deleteShiftLog: async (input) => {
     const query = db.getDb()('shift_logs').where({ log_type: input.logType });
     if (input.odooAttendanceId) {
@@ -988,6 +1079,166 @@ async function resolveInterimReason(
   return otherBranchShift ? 'scheduled_other_branch' : 'no_planning_schedule';
 }
 
+async function tryStartManagementInterruptBreak(input: {
+  deps: AttendanceProcessorDeps;
+  userId: string;
+  managementAttendanceId: number;
+  interruptedAttendance: IdentityActiveAttendance;
+  occurredAt: Date;
+}): Promise<boolean> {
+  const { deps, userId, managementAttendanceId, interruptedAttendance, occurredAt } = input;
+
+  const checkInLog = await deps.findLatestCheckInLog(interruptedAttendance.id);
+  const shiftId = typeof checkInLog?.shift_id === 'string' ? checkInLog.shift_id.trim() : '';
+  if (!shiftId) {
+    logger.warn(
+      { interruptedAttendanceId: interruptedAttendance.id, managementAttendanceId },
+      'Falling back to auto-checkout because the interrupted attendance has no mapped check-in log',
+    );
+    return false;
+  }
+
+  const shift = await deps.findShiftById(shiftId);
+  if (!shift || shift.status !== 'active') {
+    logger.warn(
+      {
+        interruptedAttendanceId: interruptedAttendance.id,
+        managementAttendanceId,
+        shiftId,
+        shiftStatus: shift?.status ?? null,
+      },
+      'Falling back to auto-checkout because the interrupted attendance is not mapped to an active shift',
+    );
+    return false;
+  }
+
+  const targetUserId =
+    typeof shift.user_id === 'string' && shift.user_id.trim() ? String(shift.user_id) : userId;
+  if (typeof shift.user_id === 'string' && shift.user_id.trim() && shift.user_id !== userId) {
+    logger.warn(
+      {
+        interruptedAttendanceId: interruptedAttendance.id,
+        managementAttendanceId,
+        shiftId,
+        shiftUserId: shift.user_id,
+        expectedUserId: userId,
+      },
+      'Falling back to auto-checkout because the interrupted attendance maps to a different user',
+    );
+    return false;
+  }
+
+  const existingActivity = await deps.findOpenShiftActivity(shiftId, targetUserId);
+  if (existingActivity) {
+    logger.warn(
+      {
+        interruptedAttendanceId: interruptedAttendance.id,
+        managementAttendanceId,
+        shiftId,
+        activityId: existingActivity.id,
+        activityType: existingActivity.activity_type,
+      },
+      'Falling back to auto-checkout because the interrupted shift already has an open activity',
+    );
+    return false;
+  }
+
+  await deps.startShiftActivity({
+    userId: targetUserId,
+    shiftId,
+    activityType: 'break',
+    details: {
+      source: MANAGEMENT_INTERRUPT_BREAK_SOURCE,
+      management_attendance_id: managementAttendanceId,
+      interrupted_attendance_id: interruptedAttendance.id,
+    },
+    occurredAt,
+  });
+
+  return true;
+}
+
+async function endManagementInterruptBreaks(input: {
+  deps: AttendanceProcessorDeps;
+  userId: string;
+  managementAttendanceId: number;
+  endedAt: Date;
+}): Promise<void> {
+  const { deps, userId, managementAttendanceId, endedAt } = input;
+  const openBreaks = await deps.listOpenManagementInterruptBreaks(userId, managementAttendanceId);
+
+  for (const activity of openBreaks) {
+    try {
+      await deps.endShiftActivity({
+        userId,
+        shiftId: String(activity.shift_id),
+        activityId: String(activity.id),
+        endedAt,
+      });
+    } catch (error) {
+      logger.error(
+        {
+          err: error,
+          managementAttendanceId,
+          activityId: activity.id,
+          shiftId: activity.shift_id,
+        },
+        'Failed to auto-end management interrupt break activity',
+      );
+    }
+  }
+}
+
+async function finalizeRoleScopeAfterCheckOut(input: {
+  deps: AttendanceProcessorDeps;
+  payload: AttendancePayload;
+  userId: string;
+  websiteUserKey: string;
+}): Promise<void> {
+  const { deps, payload, userId, websiteUserKey } = input;
+  const activeAttendances = await deps.listActiveAttendancesByWebsiteUserKey(websiteUserKey);
+
+  if (activeAttendances.length === 0) {
+    const clearedCount = await deps.clearUserDisabledRoles(userId);
+    if (clearedCount > 0) {
+      deps.emitSocketEvent('user:auth-scope-updated', { userId });
+    }
+    return;
+  }
+
+  if (resolveCheckInRoleType(payload.x_company_id) !== SYSTEM_ROLES.MANAGEMENT) {
+    return;
+  }
+
+  const roleMembership = await deps.listUserRoleMembership(userId);
+  if (roleMembership.some((role) => role.roleName === SYSTEM_ROLES.ADMINISTRATOR)) {
+    return;
+  }
+
+  const hasManagementAttendance = activeAttendances.some(
+    (attendance) => resolveCheckInRoleType(attendance.company_id) === SYSTEM_ROLES.MANAGEMENT,
+  );
+  const hasServiceCrewAttendance = activeAttendances.some(
+    (attendance) => resolveCheckInRoleType(attendance.company_id) === SYSTEM_ROLES.SERVICE_CREW,
+  );
+
+  if (!hasServiceCrewAttendance || hasManagementAttendance) {
+    return;
+  }
+
+  const roleByName = new Map(roleMembership.map((role) => [role.roleName, role]));
+  const managementRole = roleByName.get(SYSTEM_ROLES.MANAGEMENT);
+  const serviceCrewRole = roleByName.get(SYSTEM_ROLES.SERVICE_CREW);
+
+  if (!managementRole || !serviceCrewRole) {
+    return;
+  }
+
+  await deps.enableUserRole(userId, serviceCrewRole.roleId);
+  await deps.disableUserRole(userId, managementRole.roleId);
+  deps.emitSocketEvent('user:auth-scope-updated', { userId });
+}
+
 async function applyCheckInRoleScopeAndAttendanceGuard(input: {
   deps: AttendanceProcessorDeps;
   payload: AttendancePayload;
@@ -1026,15 +1277,35 @@ async function applyCheckInRoleScopeAndAttendanceGuard(input: {
   }
 
   const activeAttendances = await deps.listActiveAttendancesByWebsiteUserKey(websiteUserKey);
+  const otherActiveAttendances = activeAttendances.filter((attendance) => attendance.id !== payload.id);
+  const attendanceIdsToCheckOut: number[] = [];
 
-  const attendanceIdsToCheckOut =
-    checkInRoleType === SYSTEM_ROLES.MANAGEMENT
-      ? activeAttendances
-          .filter((attendance) => attendance.id !== payload.id)
-          .map((attendance) => attendance.id)
-      : activeAttendances
-          .filter((attendance) => attendance.id !== payload.id && attendance.company_id === 1)
-          .map((attendance) => attendance.id);
+  if (checkInRoleType === SYSTEM_ROLES.MANAGEMENT) {
+    for (const attendance of otherActiveAttendances) {
+      if (resolveCheckInRoleType(attendance.company_id) !== SYSTEM_ROLES.SERVICE_CREW) {
+        attendanceIdsToCheckOut.push(attendance.id);
+        continue;
+      }
+
+      const startedBreak = await tryStartManagementInterruptBreak({
+        deps,
+        userId,
+        managementAttendanceId: payload.id,
+        interruptedAttendance: attendance,
+        occurredAt: checkInTime,
+      });
+
+      if (!startedBreak) {
+        attendanceIdsToCheckOut.push(attendance.id);
+      }
+    }
+  } else {
+    attendanceIdsToCheckOut.push(
+      ...otherActiveAttendances
+        .filter((attendance) => attendance.company_id === 1)
+        .map((attendance) => attendance.id),
+    );
+  }
 
   if (attendanceIdsToCheckOut.length > 0) {
     await deps.checkOutAttendancesByIds(attendanceIdsToCheckOut, checkInTime);
@@ -1497,17 +1768,21 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
     }
 
     if (isCheckOut && resolvedIdentity.userId && resolvedIdentity.websiteUserKey) {
-      const activeAttendances = await deps.listActiveAttendancesByWebsiteUserKey(
-        resolvedIdentity.websiteUserKey,
-      );
-      if (activeAttendances.length === 0) {
-        const clearedCount = await deps.clearUserDisabledRoles(resolvedIdentity.userId);
-        if (clearedCount > 0) {
-          deps.emitSocketEvent('user:auth-scope-updated', {
-            userId: resolvedIdentity.userId,
-          });
-        }
+      if (resolveCheckInRoleType(payload.x_company_id) === SYSTEM_ROLES.MANAGEMENT) {
+        await endManagementInterruptBreaks({
+          deps,
+          userId: resolvedIdentity.userId,
+          managementAttendanceId: payload.id,
+          endedAt: eventTime,
+        });
       }
+
+      await finalizeRoleScopeAfterCheckOut({
+        deps,
+        payload,
+        userId: resolvedIdentity.userId,
+        websiteUserKey: resolvedIdentity.websiteUserKey,
+      });
     }
 
     deps.emitSocketEvent('shift:log-new', {

@@ -10,12 +10,14 @@ export interface StartActivityInput {
   shiftId: string;
   activityType: ActivityType;
   details?: any;
+  occurredAt?: Date;
 }
 
 export interface EndActivityInput {
   userId: string;
   shiftId: string;
   activityId?: string; // Optional if we want to end the "current" one
+  endedAt?: Date;
 }
 
 export async function startActivity(input: StartActivityInput) {
@@ -34,7 +36,7 @@ export async function startActivity(input: StartActivityInput) {
     throw new AppError(400, `An active ${existingActive.activity_type} is already in progress`);
   }
 
-  const startTime = new Date();
+  const startTime = input.occurredAt ?? new Date();
 
   return await db.getDb().transaction(async (trx) => {
     // 1. Create activity record
@@ -80,7 +82,7 @@ export async function startActivity(input: StartActivityInput) {
 
 export async function endActivity(input: EndActivityInput) {
   const tenantDb = db.getDb();
-  const endTime = new Date();
+  const endTime = input.endedAt ?? new Date();
 
   const query = tenantDb('shift_activities')
     .where({ shift_id: input.shiftId, user_id: input.userId, end_time: null });

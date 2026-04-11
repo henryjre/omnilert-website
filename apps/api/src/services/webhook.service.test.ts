@@ -41,6 +41,19 @@ type ShiftRecord = {
   updated_at?: Date;
 };
 
+type ShiftActivityRecord = {
+  id: string;
+  user_id: string;
+  shift_id: string;
+  activity_type: 'break' | 'field_task';
+  start_time: string | Date;
+  end_time: string | Date | null;
+  duration_minutes: number | null;
+  activity_details: string | null;
+  created_at?: Date;
+  updated_at?: Date;
+};
+
 function createShift(
   partial: Partial<ShiftRecord> & Pick<ShiftRecord, 'id' | 'odoo_shift_id' | 'branch_id'>,
 ): ShiftRecord {
@@ -77,8 +90,37 @@ function hasPositiveOverlap(
   return latestStart < earliestEnd;
 }
 
+function parseActivityDetails(value: string | null | undefined): Record<string, unknown> {
+  if (!value) return {};
+  try {
+    return JSON.parse(value) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+function createActivity(
+  partial: Partial<ShiftActivityRecord> &
+    Pick<ShiftActivityRecord, 'id' | 'user_id' | 'shift_id' | 'activity_type'>,
+): ShiftActivityRecord {
+  return {
+    id: partial.id,
+    user_id: partial.user_id,
+    shift_id: partial.shift_id,
+    activity_type: partial.activity_type,
+    start_time: partial.start_time ?? '2026-03-20T00:30:00.000Z',
+    end_time: partial.end_time ?? null,
+    duration_minutes: partial.duration_minutes ?? null,
+    activity_details: partial.activity_details ?? null,
+    created_at: partial.created_at ?? new Date('2026-03-20T00:30:00.000Z'),
+    updated_at: partial.updated_at ?? new Date('2026-03-20T00:30:00.000Z'),
+  };
+}
+
 function createAttendanceHarness(options?: {
   shifts?: ShiftRecord[];
+  logs?: Array<Record<string, unknown>>;
+  activities?: ShiftActivityRecord[];
   websiteUserKey?: string | null;
   resolvedUserId?: string | null;
   resolvedEmployeeName?: string;
@@ -102,7 +144,8 @@ function createAttendanceHarness(options?: {
     { id: 'branch-other', odoo_branch_id: '99', name: 'Other Branch' },
   ];
   const shifts = [...(options?.shifts ?? [])];
-  const logs: Array<Record<string, unknown>> = [];
+  const logs: Array<Record<string, unknown>> = [...(options?.logs ?? [])];
+  const activities = [...(options?.activities ?? [])];
   const auths: Array<Record<string, unknown>> = [];
   const queuedJobs: Array<{ payload: Record<string, unknown>; runAt: Date }> = [];
   const notifications: Array<Record<string, unknown>> = [];
@@ -152,12 +195,14 @@ function createAttendanceHarness(options?: {
 
   let logCount = 0;
   let authCount = 0;
+  let activityCount = activities.length;
   let interimShiftCount = 0;
 
   return {
     branches,
     shifts,
     logs,
+    activities,
     auths,
     queuedJobs,
     notifications,
@@ -293,6 +338,89 @@ function createAttendanceHarness(options?: {
         (logs.find(
           (log) => log.odoo_attendance_id === attendanceId && log.log_type === 'check_out',
         ) ?? null) as Record<string, unknown> | null,
+      findLatestCheckInLog: async (attendanceId: number) =>
+        ([...logs]
+          .reverse()
+          .find(
+            (log) => log.odoo_attendance_id === attendanceId && log.log_type === 'check_in',
+          ) ?? null) as Record<string, unknown> | null,
+      findOpenShiftActivity: async (shiftId: string, userId: string) =>
+        (activities.find(
+          (activity) =>
+            activity.shift_id === shiftId && activity.user_id === userId && activity.end_time == null,
+        ) ?? null) as ShiftActivityRecord | null,
+      startShiftActivity: async (input: Record<string, unknown>) => {
+        const shift = shifts.find((row) => row.id === input.shiftId);
+        assert.ok(shift, `shift ${String(input.shiftId)} must exist before starting an activity`);
+        const startedAt = (input.occurredAt as Date | undefined) ?? now;
+        const activity = createActivity({
+          id: `activity-${++activityCount}`,
+          user_id: String(input.userId),
+          shift_id: String(input.shiftId),
+          activity_type: input.activityType as 'break' | 'field_task',
+          start_time: startedAt,
+          activity_details: input.details ? JSON.stringify(input.details) : null,
+        });
+        activities.push(activity);
+
+        const logType = activity.activity_type === 'break' ? 'break_start' : 'field_task_start';
+        const log = {
+          id: `log-${++logCount}`,
+          company_id: 'company-1',
+          shift_id: activity.shift_id,
+          branch_id: shift.branch_id,
+          log_type: logType,
+          changes: JSON.stringify({ activity_id: activity.id, details: input.details ?? null }),
+          event_time: startedAt,
+          odoo_payload: JSON.stringify({}),
+        };
+        logs.push(log);
+        return { activity, log };
+      },
+      listOpenManagementInterruptBreaks: async (userId: string, managementAttendanceId: number) =>
+        activities.filter((activity) => {
+          if (activity.user_id !== userId || activity.activity_type !== 'break' || activity.end_time != null) {
+            return false;
+          }
+          const details = parseActivityDetails(activity.activity_details);
+          return (
+            details.source === 'management_interrupt' &&
+            Number(details.management_attendance_id ?? 0) === managementAttendanceId
+          );
+        }),
+      endShiftActivity: async (input: Record<string, unknown>) => {
+        const activity = activities.find(
+          (row) =>
+            row.id === input.activityId &&
+            row.shift_id === input.shiftId &&
+            row.user_id === input.userId &&
+            row.end_time == null,
+        );
+        assert.ok(activity, `activity ${String(input.activityId)} must exist before ending`);
+        const endedAt = (input.endedAt as Date | undefined) ?? now;
+        const durationMinutes = Math.max(
+          0,
+          Math.round((endedAt.getTime() - new Date(activity.start_time).getTime()) / 60000),
+        );
+        activity.end_time = endedAt;
+        activity.duration_minutes = durationMinutes;
+
+        const shift = shifts.find((row) => row.id === activity.shift_id);
+        assert.ok(shift, `shift ${activity.shift_id} must exist before ending an activity`);
+        const logType = activity.activity_type === 'break' ? 'break_end' : 'field_task_end';
+        const log = {
+          id: `log-${++logCount}`,
+          company_id: 'company-1',
+          shift_id: activity.shift_id,
+          branch_id: shift.branch_id,
+          log_type: logType,
+          changes: JSON.stringify({ activity_id: activity.id, duration_minutes: durationMinutes }),
+          event_time: endedAt,
+          odoo_payload: JSON.stringify({}),
+        };
+        logs.push(log);
+        return { activity, log };
+      },
       deleteEarlyCheckOutAuthByShiftLogId: async (shiftLogId: string) => {
         const idx = auths.findIndex(
           (a) => a.shift_log_id === shiftLogId && a.auth_type === 'early_check_out',
@@ -689,8 +817,28 @@ test('createAttendanceProcessor keeps late check-out on the normal authorization
   assert.equal(harness.auths[0]?.status, 'pending');
 });
 
-test('createAttendanceProcessor management check-in disables service crew and checks out every other active attendance', async () => {
+test('createAttendanceProcessor management check-in starts a break for mapped service crew attendance and only checks out non-service-crew attendances', async () => {
+  const serviceShift = createShift({
+    id: 'shift-service-break',
+    odoo_shift_id: 91020,
+    branch_id: 'branch-service',
+    user_id: 'user-1',
+    status: 'active',
+    check_in_status: 'checked_in',
+  });
   const harness = createAttendanceHarness({
+    shifts: [serviceShift],
+    logs: [
+      {
+        id: 'log-service-check-in',
+        shift_id: serviceShift.id,
+        branch_id: serviceShift.branch_id,
+        log_type: 'check_in',
+        odoo_attendance_id: 9102,
+        event_time: new Date('2026-03-20T00:30:00.000Z'),
+        odoo_payload: JSON.stringify({}),
+      },
+    ],
     websiteUserKey: 'website-user-1',
     resolvedUserId: 'user-1',
     userRolesByUserId: {
@@ -720,16 +868,254 @@ test('createAttendanceProcessor management check-in disables service crew and ch
   });
 
   assert.equal(harness.checkoutOps.length, 1);
-  assert.deepEqual(
-    harness.checkoutOps[0]?.attendanceIds.sort((a, b) => a - b),
-    [9102, 9103],
-  );
+  assert.deepEqual(harness.checkoutOps[0]?.attendanceIds, [9103]);
   assert.equal(harness.checkoutOps[0]?.checkOutTime.toISOString(), '2026-03-20T01:00:00.000Z');
+  assert.equal(harness.activities.length, 1);
+  assert.equal(harness.activities[0]?.activity_type, 'break');
+  assert.equal(harness.activities[0]?.shift_id, serviceShift.id);
+  const details = parseActivityDetails(harness.activities[0]?.activity_details ?? null);
+  assert.equal(details.source, 'management_interrupt');
+  assert.equal(details.management_attendance_id, 9101);
+  assert.equal(details.interrupted_attendance_id, 9102);
+  const breakStartLog = harness.logs.find((log) => log.log_type === 'break_start');
+  assert.ok(breakStartLog, 'break_start log should be created for the interrupted service crew shift');
+  assert.equal(breakStartLog?.shift_id, serviceShift.id);
+  assert.equal(
+    new Date(breakStartLog?.event_time as string | Date).toISOString(),
+    '2026-03-20T01:00:00.000Z',
+  );
 
   const disabled = harness.disabledRoleIdsByUserId.get('user-1');
   assert.ok(disabled?.has('role-service-crew'));
   assert.equal(disabled?.has('role-management'), false);
   assert.ok(harness.socketEvents.some((evt) => evt.event === 'user:auth-scope-updated'));
+});
+
+test('createAttendanceProcessor management check-in falls back to checkout when the interrupted service crew attendance is unmapped', async () => {
+  const harness = createAttendanceHarness({
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+    userRolesByUserId: {
+      'user-1': [
+        { id: 'role-management', name: 'Management' },
+        { id: 'role-service-crew', name: 'Service Crew' },
+      ],
+    },
+    activeAttendancesByWebsiteKey: {
+      'website-user-1': [
+        { id: 9111, company_id: 1, check_in: '2026-03-20 01:00:00' },
+        { id: 9112, company_id: 2, check_in: '2026-03-20 00:30:00' },
+      ],
+    },
+  });
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  await processAttendance({
+    id: 9111,
+    check_in: '2026-03-20 01:00:00',
+    x_company_id: 1,
+    x_cumulative_minutes: 0,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: false,
+    x_website_key: 'website-user-1',
+  });
+
+  assert.equal(harness.activities.length, 0);
+  assert.equal(harness.checkoutOps.length, 1);
+  assert.deepEqual(harness.checkoutOps[0]?.attendanceIds, [9112]);
+});
+
+test('createAttendanceProcessor management check-in falls back to checkout when the interrupted service crew shift already has an open activity', async () => {
+  const serviceShift = createShift({
+    id: 'shift-service-open-activity',
+    odoo_shift_id: 91220,
+    branch_id: 'branch-service',
+    user_id: 'user-1',
+    status: 'active',
+    check_in_status: 'checked_in',
+  });
+  const harness = createAttendanceHarness({
+    shifts: [serviceShift],
+    logs: [
+      {
+        id: 'log-service-check-in-open-activity',
+        shift_id: serviceShift.id,
+        branch_id: serviceShift.branch_id,
+        log_type: 'check_in',
+        odoo_attendance_id: 9122,
+        event_time: new Date('2026-03-20T00:30:00.000Z'),
+        odoo_payload: JSON.stringify({}),
+      },
+    ],
+    activities: [
+      createActivity({
+        id: 'activity-field-task-open',
+        user_id: 'user-1',
+        shift_id: serviceShift.id,
+        activity_type: 'field_task',
+        start_time: '2026-03-20T00:45:00.000Z',
+      }),
+    ],
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+    userRolesByUserId: {
+      'user-1': [
+        { id: 'role-management', name: 'Management' },
+        { id: 'role-service-crew', name: 'Service Crew' },
+      ],
+    },
+    activeAttendancesByWebsiteKey: {
+      'website-user-1': [
+        { id: 9121, company_id: 1, check_in: '2026-03-20 01:00:00' },
+        { id: 9122, company_id: 2, check_in: '2026-03-20 00:30:00' },
+      ],
+    },
+  });
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  await processAttendance({
+    id: 9121,
+    check_in: '2026-03-20 01:00:00',
+    x_company_id: 1,
+    x_cumulative_minutes: 0,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: false,
+    x_website_key: 'website-user-1',
+  });
+
+  assert.equal(harness.activities.length, 1, 'no new break should be created when an activity is already open');
+  assert.equal(harness.checkoutOps.length, 1);
+  assert.deepEqual(harness.checkoutOps[0]?.attendanceIds, [9122]);
+  assert.equal(
+    harness.logs.filter((log) => log.log_type === 'break_start').length,
+    0,
+    'break_start log should not be created during fallback checkout',
+  );
+});
+
+test('createAttendanceProcessor management checkout auto-ends linked break activities on the interrupted service crew shift', async () => {
+  const serviceShift = createShift({
+    id: 'shift-service-interrupted',
+    odoo_shift_id: 91302,
+    branch_id: 'branch-service',
+    user_id: 'user-1',
+    status: 'active',
+    check_in_status: 'checked_in',
+  });
+  const linkedBreak = createActivity({
+    id: 'activity-management-interrupt',
+    user_id: 'user-1',
+    shift_id: serviceShift.id,
+    activity_type: 'break',
+    start_time: '2026-03-20T00:45:00.000Z',
+    activity_details: JSON.stringify({
+      source: 'management_interrupt',
+      management_attendance_id: 9131,
+      interrupted_attendance_id: 9132,
+    }),
+  });
+  const harness = createAttendanceHarness({
+    shifts: [serviceShift],
+    activities: [linkedBreak],
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+  });
+  const deps = {
+    ...harness.deps,
+    listActiveAttendancesByWebsiteUserKey: async () => [],
+  };
+  const processAttendance = createAttendanceProcessor(deps as any);
+
+  await processAttendance({
+    id: 9131,
+    check_in: '2026-03-20 01:00:00',
+    check_out: '2026-03-20 01:45:00',
+    worked_hours: 0.75,
+    x_company_id: 1,
+    x_cumulative_minutes: 45,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: false,
+    x_website_key: 'website-user-1',
+  });
+
+  assert.equal(
+    new Date(harness.activities[0]?.end_time as string | Date).toISOString(),
+    '2026-03-20T01:45:00.000Z',
+  );
+  assert.equal(harness.activities[0]?.duration_minutes, 60);
+  const breakEndLog = harness.logs.find((log) => log.log_type === 'break_end');
+  assert.ok(breakEndLog, 'break_end log should be created when management checks out');
+  assert.equal(breakEndLog?.shift_id, serviceShift.id);
+  assert.equal(
+    new Date(breakEndLog?.event_time as string | Date).toISOString(),
+    '2026-03-20T01:45:00.000Z',
+  );
+});
+
+test('createAttendanceProcessor management checkout reverts role scope to service crew when only service crew attendance remains active', async () => {
+  const serviceShift = createShift({
+    id: 'shift-service-revert',
+    odoo_shift_id: 91402,
+    branch_id: 'branch-service',
+    user_id: 'user-1',
+    status: 'active',
+    check_in_status: 'checked_in',
+  });
+  const harness = createAttendanceHarness({
+    shifts: [serviceShift],
+    activities: [
+      createActivity({
+        id: 'activity-management-interrupt-revert',
+        user_id: 'user-1',
+        shift_id: serviceShift.id,
+        activity_type: 'break',
+        start_time: '2026-03-20T00:45:00.000Z',
+        activity_details: JSON.stringify({
+          source: 'management_interrupt',
+          management_attendance_id: 9141,
+          interrupted_attendance_id: 9142,
+        }),
+      }),
+    ],
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+    userRolesByUserId: {
+      'user-1': [
+        { id: 'role-management', name: 'Management' },
+        { id: 'role-service-crew', name: 'Service Crew' },
+      ],
+    },
+    initialDisabledRoleIdsByUserId: {
+      'user-1': ['role-service-crew'],
+    },
+  });
+  const deps = {
+    ...harness.deps,
+    listActiveAttendancesByWebsiteUserKey: async () => [
+      { id: 9142, company_id: 2, check_in: '2026-03-20 00:30:00' },
+    ],
+  };
+  const processAttendance = createAttendanceProcessor(deps as any);
+
+  await processAttendance({
+    id: 9141,
+    check_in: '2026-03-20 01:00:00',
+    check_out: '2026-03-20 01:45:00',
+    worked_hours: 0.75,
+    x_company_id: 1,
+    x_cumulative_minutes: 45,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: false,
+    x_website_key: 'website-user-1',
+  });
+
+  const disabled = harness.disabledRoleIdsByUserId.get('user-1');
+  assert.ok(disabled?.has('role-management'));
+  assert.equal(disabled?.has('role-service-crew'), false);
+  assert.ok(
+    harness.socketEvents.some((evt) => evt.event === 'user:auth-scope-updated'),
+    'role restoration should emit user:auth-scope-updated',
+  );
 });
 
 test('createAttendanceProcessor service crew check-in disables management and checks out active management attendance only', async () => {
