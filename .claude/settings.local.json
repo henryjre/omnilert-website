@@ -20,7 +20,8 @@
       "Bash(cd:*)",
       "Bash(python -c \"import sys,json; p=json.load\\(sys.stdin\\); [print\\(k,'''':'''',v\\) for k,v in p.get\\(''''scripts'''',{}\\).items\\(\\)]\")",
       "Bash(node_modules/.bin/tsx --test src/services/webhook.service.test.ts)",
-      "Bash(grep -E \"\\\\.ts$\")"
+      "Bash(grep -E \"\\\\.ts$\")",
+      "Bash(find /e/Github/omnilert-website/apps/web/src/shared/components -type f -name \"*.tsx\" -exec grep -l \"DrawerPanel\\\\|Drawer\" {} \\\\;)"
     ]
   }
 }
