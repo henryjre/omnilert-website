@@ -44,9 +44,11 @@ const TYPE_DOT: Record<string, string> = {
 
 interface TopBarProps {
   onOpenSidebar?: () => void;
+  onOpenAccountSidebar?: () => void;
+  accountSidebarOpen?: boolean;
 }
 
-export function TopBar({ onOpenSidebar }: TopBarProps) {
+export function TopBar({ onOpenSidebar, onOpenAccountSidebar, accountSidebarOpen }: TopBarProps) {
   const user = useAuthStore((s) => s.user);
   const updateUser = useAuthStore((s) => s.updateUser);
   const setTokens = useAuthStore((s) => s.setTokens);
@@ -405,7 +407,18 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
           </AnimatePresence>
         </div>
 
-        <div className="flex items-center gap-2">
+        <motion.button
+          type="button"
+          onClick={onOpenAccountSidebar}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          className={`cursor-pointer rounded-full transition-shadow focus:outline-none ${
+            accountSidebarOpen
+              ? 'ring-2 ring-primary-500'
+              : 'hover:ring-2 hover:ring-primary-300'
+          }`}
+          aria-label="Open account menu"
+        >
           {user?.avatarUrl ? (
             <img
               src={user.avatarUrl}
@@ -418,7 +431,7 @@ export function TopBar({ onOpenSidebar }: TopBarProps) {
               {user?.lastName?.[0]}
             </div>
           )}
-        </div>
+        </motion.button>
       </div>
     </header>
   );
