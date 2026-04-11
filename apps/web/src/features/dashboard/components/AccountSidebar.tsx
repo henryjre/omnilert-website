@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { NavLink } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import {
   Calendar,
   Receipt,
@@ -12,7 +12,6 @@ import {
   Settings,
   LogOut,
   X,
-  ChevronDown,
 } from 'lucide-react';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useAuth } from '@/features/auth/hooks/useAuth';
@@ -53,7 +52,6 @@ interface AccountSidebarProps {
 export function AccountSidebar({ className = '', onClose }: AccountSidebarProps) {
   const { hasPermission } = usePermission();
   const { logout, user } = useAuth();
-  const navigate = useNavigate();
 
   const handleLogout = () => {
     onClose();
