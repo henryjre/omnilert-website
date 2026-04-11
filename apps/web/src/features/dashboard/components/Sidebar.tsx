@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useState } from 'react';
-import { useNavigate, NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard,
@@ -10,15 +10,9 @@ import {
   Users,
   Building2,
   Shield,
-  LogOut,
   FileText,
   DollarSign,
-  ClipboardCheck,
   ChevronDown,
-  Bell,
-  IdCard,
-  Settings,
-  Receipt,
   ClipboardList,
   TriangleAlert,
   FileWarning,
@@ -26,7 +20,6 @@ import {
   ShoppingBag,
 } from 'lucide-react';
 import { usePermission } from '@/shared/hooks/usePermission';
-import { useAuth } from '@/features/auth/hooks/useAuth';
 import { usePosVerificationStore } from '@/shared/store/posVerificationStore';
 import { PERMISSIONS } from '@omnilert/shared';
 
@@ -56,7 +49,6 @@ interface SidebarProps {
 }
 
 const HR_PATHS = ['/employee-profiles', '/employee-schedule', '/violation-notices', '/workplace-relations'];
-const ANALYTICS_PATHS = ['/employee-analytics'];
 const FINANCE_PATHS = ['/cash-requests'];
 const AUDIT_PATHS = ['/store-audits'];
 
@@ -108,8 +100,6 @@ function SubCategory({
 
 export function Sidebar({ className = '' }: SidebarProps) {
   const { hasPermission, hasAnyPermission } = usePermission();
-  const { logout, user } = useAuth();
-  const navigate = useNavigate();
   const location = useLocation();
   const pendingVerificationCount = usePosVerificationStore((s) => s.pendingCount);
   const [hrExpanded, setHrExpanded] = useState(() =>
@@ -144,50 +134,6 @@ export function Sidebar({ className = '' }: SidebarProps) {
           <LayoutDashboard className="h-5 w-5" />
           Dashboard
         </AnimatedNavLink>
-        <div className="my-2 border-t border-gray-200" />
-
-        {categoryLabel('My Account')}
-        {hasPermission(PERMISSIONS.ACCOUNT_VIEW_SCHEDULE) && (
-          <AnimatedNavLink to="/account/schedule" className={linkClass}>
-            <Calendar className="h-5 w-5" />
-            My Schedule
-          </AnimatedNavLink>
-        )}
-        <AnimatedNavLink to="/account/payslip" className={linkClass}>
-          <Receipt className="h-5 w-5" />
-          My Payslip
-        </AnimatedNavLink>
-        {hasPermission(PERMISSIONS.ACCOUNT_MANAGE_AUTH_REQUEST) && (
-          <AnimatedNavLink to="/account/authorization-requests" className={linkClass}>
-            <FileText className="h-5 w-5" />
-            My Authorization Requests
-          </AnimatedNavLink>
-        )}
-        {hasPermission(PERMISSIONS.ACCOUNT_MANAGE_CASH_REQUEST) && (
-          <AnimatedNavLink to="/account/cash-requests" className={linkClass}>
-            <DollarSign className="h-5 w-5" />
-            My Cash Requests
-          </AnimatedNavLink>
-        )}
-        {hasPermission(PERMISSIONS.ACCOUNT_VIEW_AUDIT_RESULTS) && (
-          <AnimatedNavLink to="/account/audit-results" className={linkClass}>
-            <ClipboardList className="h-5 w-5" />
-            My Audit Results
-          </AnimatedNavLink>
-        )}
-        <AnimatedNavLink to="/account/notifications" className={linkClass}>
-          <Bell className="h-5 w-5" />
-          My Notifications
-        </AnimatedNavLink>
-        <AnimatedNavLink to="/account/profile" className={linkClass}>
-          <IdCard className="h-5 w-5" />
-          My Profile
-        </AnimatedNavLink>
-        <AnimatedNavLink to="/account/settings" className={linkClass}>
-          <Settings className="h-5 w-5" />
-          My Settings
-        </AnimatedNavLink>
-
         {hasAnyPermission(
           PERMISSIONS.ANALYTICS_VIEW_EMPLOYEE_ANALYTICS,
           PERMISSIONS.ANALYTICS_VIEW_PROFITABILITY_ANALYTICS,
@@ -384,25 +330,6 @@ export function Sidebar({ className = '' }: SidebarProps) {
           </>
         )}
       </nav>
-
-      {/* User section */}
-      <div className="mt-auto border-t border-gray-200 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
-        <div className="mb-2 text-sm">
-          <p className="font-medium text-gray-900">
-            {user?.firstName} {user?.lastName}
-          </p>
-          <p className="text-xs text-gray-500">{user?.email}</p>
-        </div>
-        <motion.button
-          onClick={logout}
-          whileHover={{ x: 4 }}
-          whileTap={{ scale: 0.98 }}
-          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900"
-        >
-          <LogOut className="h-4 w-4" />
-          Sign Out
-        </motion.button>
-      </div>
     </aside>
   );
 }
