@@ -921,17 +921,19 @@ export async function updateAccountEmail(req: Request, res: Response, next: Next
     const userId = req.user!.sub;
     const email = normalizeEmail(String(req.body.email));
 
-    const user = await masterDb('users')
-      .where({ id: userId })
-      .first(
-        'id',
-        'email',
-        'user_key',
-        'mobile_number',
-        'legal_name',
-        'birthday',
-        'gender',
-      );
+    const user = await masterDb('users as users')
+      .leftJoin('user_sensitive_info as usi', 'usi.user_id', 'users.id')
+      .where('users.id', userId)
+      .select(
+        'users.id',
+        'users.email',
+        'users.user_key',
+        'users.mobile_number',
+        'usi.legal_name',
+        'usi.birthday',
+        'usi.gender',
+      )
+      .first();
     if (!user) {
       throw new AppError(404, 'User not found');
     }
