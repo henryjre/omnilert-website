@@ -22,6 +22,12 @@ const caseReportApiPath = path.join(
   'services',
   'caseReport.api.ts',
 );
+const apiClientPath = path.join(
+  webSrcDir,
+  'shared',
+  'services',
+  'api.client.ts',
+);
 const caseReportServicePath = path.join(apiSrcDir, 'services', 'caseReport.service.ts');
 
 test('case report create flow sends X-Company-Id from the selected branch company', () => {
@@ -41,6 +47,21 @@ test('case report create flow sends X-Company-Id from the selected branch compan
     createCaseApiBlock,
     /headers:\s*\{\s*['"]X-Company-Id['"]:\s*payload\.companyId\s*\}/,
     'createCaseReport should scope the request to the selected branch company',
+  );
+});
+
+test('api client preserves explicit X-Company-Id headers for cross-company create flows', () => {
+  const source = fs.readFileSync(apiClientPath, 'utf8');
+
+  assert.match(
+    source,
+    /const explicitCompanyHeader =\s*config\.headers\?\.\['X-Company-Id'\] \?\? config\.headers\?\.\['x-company-id'\];/s,
+    'api client should read any caller-provided company scope before applying branch defaults',
+  );
+  assert.match(
+    source,
+    /if \(!explicitCompanyHeader && selectedBranchIds\.length > 0 && branches\.length > 0\)/,
+    'api client should only derive X-Company-Id from the branch selector when the request did not already provide one',
   );
 });
 

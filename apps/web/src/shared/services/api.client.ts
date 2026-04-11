@@ -22,10 +22,13 @@ api.interceptors.request.use((config) => {
     config.headers.Authorization = `Bearer ${token}`;
   }
 
-  // Derive operating company from the first selected branch and send as header.
-  // Backend companyResolver uses this to scope queries to the correct company.
+  const explicitCompanyHeader =
+    config.headers?.['X-Company-Id'] ?? config.headers?.['x-company-id'];
+
+  // Derive operating company from the first selected branch only when the caller
+  // did not explicitly scope the request to another accessible company.
   const { selectedBranchIds, branches } = useBranchStore.getState();
-  if (selectedBranchIds.length > 0 && branches.length > 0) {
+  if (!explicitCompanyHeader && selectedBranchIds.length > 0 && branches.length > 0) {
     const firstBranch = branches.find((b) => b.id === selectedBranchIds[0]);
     if (firstBranch?.companyId) {
       config.headers['X-Company-Id'] = firstBranch.companyId;
