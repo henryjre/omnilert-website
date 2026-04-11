@@ -142,13 +142,17 @@ function MetricBar({
   value,
   max,
   format,
+  zoneOverride,
+  markers,
 }: {
   label: string;
   value: number;
   max: number;
-  format: string;
+  format: React.ReactNode;
+  zoneOverride?: ReturnType<typeof getRateZone>;
+  markers?: Array<{ value: number; color?: string }>;
 }) {
-  const zone = max === 5 ? getScoreZone(value) : getRateZone(value);
+  const zone = zoneOverride ?? (max === 5 ? getScoreZone(value) : getRateZone(value));
   const colors = getZoneColors(zone);
   const pct = Math.min(100, (value / max) * 100);
 
@@ -158,14 +162,28 @@ function MetricBar({
         <span className="text-gray-500 dark:text-gray-400">{label}</span>
         <span className={`font-semibold ${colors.text} ${colors.darkText}`}>{format}</span>
       </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+      <div className="relative h-1.5 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
         <motion.div
-          className="h-1.5 rounded-full"
+          className="absolute inset-y-0 left-0 rounded-full"
           style={{ backgroundColor: colors.stroke }}
           initial={{ width: '0%' }}
           animate={{ width: `${pct}%` }}
           transition={{ duration: 0.6, ease: 'easeOut' }}
         />
+        {markers?.map((marker, idx) => {
+          const markerPct = max > 0 ? Math.max(0, Math.min((marker.value / max) * 100, 100)) : 0;
+          return (
+            <div
+              key={idx}
+              className="absolute bottom-0 top-0 w-1"
+              style={{
+                left: `${markerPct}%`,
+                backgroundColor: marker.color ?? '#9ca3af',
+                transform: 'translateX(-50%)',
+              }}
+            />
+          );
+        })}
       </div>
     </div>
   );
@@ -425,21 +443,33 @@ function ExpandedMetrics({
           ) : (
             <NullMetric label="Productivity Rate" />
           )}
-          {criteria.aov !== null && aovColors ? (
-            <div>
-              <div className="mb-0.5 flex items-center justify-between">
-                <span className="text-gray-500 dark:text-gray-400">Avg Order Value</span>
-                <span className={`font-semibold ${aovColors.text} ${aovColors.darkText}`}>
-                  P{formatThreshold(criteria.aov)}
+          {criteria.aov !== null && aovZone ? (
+            <MetricBar
+              label="Avg Order Value"
+              value={criteria.aov}
+              max={
+                criteria.branchAov !== null
+                  ? Math.max(criteria.aov, criteria.branchAov)
+                  : criteria.aov
+              }
+              format={
+                <>
+                  ₱{formatThreshold(criteria.aov)}
                   {criteria.branchAov ? (
                     <span className="font-normal text-gray-400">
                       {' '}
-                      / Branch P{formatThreshold(criteria.branchAov)}
+                      / Branch ₱{formatThreshold(criteria.branchAov)}
                     </span>
                   ) : null}
-                </span>
-              </div>
-            </div>
+                </>
+              }
+              zoneOverride={aovZone}
+              markers={
+                criteria.branchAov !== null && criteria.branchAov > 0
+                  ? [{ value: criteria.branchAov, color: '#9ca3af' }]
+                  : undefined
+              }
+            />
           ) : (
             <NullMetric label="Avg Order Value" />
           )}

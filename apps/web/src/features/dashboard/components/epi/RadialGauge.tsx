@@ -15,10 +15,14 @@ interface RadialGaugeProps {
   delay?: number;
   duration?: number;
   decimals?: number;
+  prefix?: string;
+  suffix?: string;
   /** Override track color */
   trackColor?: string;
   /** Override value color */
   valueColor?: string;
+  /** Optional markers to draw on the gauge */
+  markers?: Array<{ value: number; color?: string }>;
 }
 
 /**
@@ -38,8 +42,11 @@ export function RadialGauge({
   delay = 0,
   duration = 1.2,
   decimals = 1,
+  prefix,
+  suffix,
   trackColor,
   valueColor,
+  markers,
 }: RadialGaugeProps) {
   const colors = getZoneColors(zone);
 
@@ -103,6 +110,32 @@ export function RadialGauge({
             animate={{ strokeDashoffset: dashOffset }}
             transition={{ duration, delay, ease: 'easeOut' }}
           />
+
+          {/* Markers */}
+          {markers?.map((marker, idx) => {
+            const markerRatio = max > 0 ? Math.max(0, Math.min(marker.value / max, 1)) : 0;
+            const markerDeg = arcStartDeg + markerRatio * arcSweepDeg;
+            const innerR = r - strokeWidth / 1.5;
+            const outerR = r + strokeWidth / 1.5;
+            
+            const x1 = cx + innerR * Math.cos(toRad(markerDeg));
+            const y1 = cy + innerR * Math.sin(toRad(markerDeg));
+            const x2 = cx + outerR * Math.cos(toRad(markerDeg));
+            const y2 = cy + outerR * Math.sin(toRad(markerDeg));
+
+            return (
+              <line
+                key={idx}
+                x1={x1}
+                y1={y1}
+                x2={x2}
+                y2={y2}
+                stroke={marker.color ?? '#6b7280'}
+                strokeWidth={3}
+                strokeLinecap="round"
+              />
+            );
+          })}
         </svg>
 
         {/* Center content */}
@@ -130,14 +163,19 @@ export function RadialGauge({
                 })()}
               </span>
             ) : (
-              <AnimatedCounter
-                value={clampedValue}
-                decimals={decimals}
-                delay={delay}
-                duration={duration}
-                className={`font-bold leading-none ${valueColor ? '' : `${colors.text} ${colors.darkText}`}`}
-                style={{ fontSize: size * 0.22 }}
-              />
+              <div 
+                className={`flex items-baseline justify-center font-bold leading-none ${valueColor ? '' : `${colors.text} ${colors.darkText}`}`}
+                style={{ fontSize: decimals > 0 ? size * 0.16 : size * 0.22 }}
+              >
+                {prefix && <span className="mr-0.5 text-[0.85em] font-medium opacity-80">{prefix}</span>}
+                <AnimatedCounter
+                  value={clampedValue}
+                  decimals={decimals}
+                  delay={delay}
+                  duration={duration}
+                />
+                {suffix && <span className="ml-0.5 text-[0.6em] font-medium opacity-80">{suffix}</span>}
+              </div>
             )}
             {label && (
               <span

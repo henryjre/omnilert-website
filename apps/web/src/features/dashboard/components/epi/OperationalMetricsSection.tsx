@@ -247,47 +247,23 @@ export function OperationalMetricsSection({ criteria }: OperationalMetricsSectio
               {criteria.aov !== null ? (
                 <>
                   <MetricIcon icon={ShoppingCart} zone={aovZone} />
-                  <div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">Your AOV</p>
-                    <AnimatedCounter
-                      value={criteria.aov}
-                      decimals={0}
-                      prefix="P"
-                      delay={0.3}
-                      className={`text-xl lg:text-2xl font-bold ${aovColors.text} ${aovColors.darkText}`}
-                    />
-                  </div>
-                  <ZoneBadge zone={aovZone} />
-                  {/* Comparison bars */}
-                  <div className="w-full space-y-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-10 text-right text-[10px] text-gray-400">You</span>
-                      <div className="relative flex-1 h-2.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
-                        <motion.div
-                          className={`absolute inset-y-0 left-0 rounded-full ${aovColors.bg}`}
-                          style={{ backgroundColor: aovColors.stroke }}
-                          initial={{ width: '0%' }}
-                          animate={{ width: `${aovPercent}%` }}
-                          transition={{ duration: 1.2, delay: 0.3, ease: 'easeOut' }}
-                        />
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-10 text-right text-[10px] text-gray-400">Branch</span>
-                      <div className="relative flex-1 h-2.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
-                        <motion.div
-                          className="absolute inset-y-0 left-0 rounded-full bg-gray-400 dark:bg-gray-500"
-                          initial={{ width: '0%' }}
-                          animate={{ width: `${branchPercent}%` }}
-                          transition={{ duration: 1.2, delay: 0.4, ease: 'easeOut' }}
-                        />
-                      </div>
-                    </div>
-                    <p className="text-xs text-gray-400">
-                      Branch avg: P
-                      {criteria.branchAov !== null ? formatThreshold(criteria.branchAov) : '--'}
+                  <RadialGauge
+                    value={criteria.aov}
+                    max={criteria.branchAov !== null ? Math.max(criteria.aov, criteria.branchAov) : criteria.aov}
+                    size={96}
+                    strokeWidth={8}
+                    zone={aovZone}
+                    decimals={2}
+                    prefix="₱"
+                    delay={0.3}
+                    markers={criteria.branchAov !== null && criteria.branchAov > 0 ? [{ value: criteria.branchAov, color: '#9ca3af' }] : undefined}
+                  />
+                  {criteria.branchAov !== null && criteria.branchAov > 0 && (
+                    <p className="z-10 text-[10px] text-gray-500 -mt-6 mb-2">
+                      Branch avg: ₱{formatThreshold(criteria.branchAov)}
                     </p>
-                  </div>
+                  )}
+                  <ZoneBadge zone={aovZone} />
                   <div>
                     <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
                       Average Order Value
