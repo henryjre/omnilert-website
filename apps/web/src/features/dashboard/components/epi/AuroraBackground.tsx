@@ -40,11 +40,12 @@ export function AuroraBackground({ zone }: AuroraBackgroundProps) {
         overflow: 'hidden',
         pointerEvents: 'none',
         borderRadius: 'inherit',
+        zIndex: 0,
       }}
     >
       {BANDS.map((band, i) => (
         <motion.div
-          key={i}
+          key={`aurora-band-${i}`}
           animate={{
             x: [0, band.driftX, 0],
             scaleY: [1, band.driftScaleY, 1],
