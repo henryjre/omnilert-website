@@ -1,5 +1,6 @@
 import type { CaseAttachment, CaseMessage, CaseReport } from '@omnilert/shared';
 import { api } from '@/shared/services/api.client';
+import type { SelectorCompanySnapshot } from '@/shared/components/branchSelectorState';
 
 export type CaseReportFilters = {
   status?: 'open' | 'closed';
@@ -34,6 +35,11 @@ export async function listCaseReports(filters: CaseReportFilters) {
 export async function getCaseReport(caseId: string) {
   const response = await api.get(`/case-reports/${caseId}`);
   return response.data.data as CaseReportDetail;
+}
+
+export async function listCreateCaseReportBranches() {
+  const response = await api.get('/case-reports/create-branches');
+  return response.data.data as SelectorCompanySnapshot[];
 }
 
 export async function createCaseReport(payload: {

@@ -13,7 +13,9 @@ import { AppError } from '../middleware/errorHandler.js';
 import { createAndDispatchNotification } from './notification.service.js';
 import { buildTenantStoragePrefix, deleteFile, uploadFile } from './storage.service.js';
 import {
+  getGlobalUserById,
   hydrateUsersByIds,
+  normalizeEmail,
   resolveCompanyUsersWithPermission,
   resolveRolesWithPermission,
 } from './globalUser.service.js';
@@ -76,6 +78,26 @@ type MentionableUser = {
   avatar_url: string | null;
 };
 
+type CaseCreateBranchRow = {
+  company_id: string;
+  company_name: string;
+  company_slug: string;
+  branch_id: string;
+  branch_name: string;
+  odoo_branch_id: string | null;
+};
+
+export type CaseCreateBranchGroup = {
+  id: string;
+  name: string;
+  slug: string | null;
+  branches: Array<{
+    id: string;
+    name: string;
+    odoo_branch_id: string | null;
+  }>;
+};
+
 function toIso(value: Date | string | null | undefined): string | null {
   if (!value) return null;
   return new Date(value).toISOString();
@@ -90,6 +112,7 @@ function ensureNonEmpty(value: string, label: string): string {
 async function resolveAndValidateCaseBranchId(
   companyId: string,
   userId: string,
+  permissions: string[],
   branchIdInput?: string | null,
 ): Promise<string | null> {
   const branchId = typeof branchIdInput === 'string' ? branchIdInput.trim() : '';
@@ -111,7 +134,7 @@ async function resolveAndValidateCaseBranchId(
   ]);
 
   const effectiveAssignments = companyAssignments.length > 0 ? companyAssignments : legacyAssignments;
-  if (effectiveAssignments.length > 0) {
+  if (effectiveAssignments.length > 0 && !hasManagePermission(permissions)) {
     const isAssigned = effectiveAssignments.some(
       (row: { branch_id: string }) => row.branch_id === branchId,
     );
@@ -125,6 +148,30 @@ async function resolveAndValidateCaseBranchId(
 
 function hasManagePermission(permissions: string[]): boolean {
   return permissions.includes(PERMISSIONS.CASE_REPORT_MANAGE);
+}
+
+async function isSuperAdminUser(userId: string): Promise<boolean> {
+  const user = await getGlobalUserById(userId);
+  if (!user?.email) return false;
+
+  return Boolean(
+    await db.getDb()('super_admins')
+      .whereRaw('LOWER(email) = ?', [normalizeEmail(String(user.email ?? ''))])
+      .first('id'),
+  );
+}
+
+async function assertUserCanCreateCaseInCompany(companyId: string, userId: string): Promise<void> {
+  const isSuperAdmin = await isSuperAdminUser(userId);
+  if (isSuperAdmin) return;
+
+  const companyAccess = await db.getDb()('user_company_access')
+    .where({ user_id: userId, company_id: companyId, is_active: true })
+    .first('id');
+
+  if (!companyAccess) {
+    throw new AppError(403, 'You do not have access to the selected company');
+  }
 }
 
 function normalizeSortOrder(value?: string): 'asc' | 'desc' {
@@ -644,13 +691,20 @@ export async function getCaseReport(input: {
 export async function createCaseReport(input: {
   companyId: string;
   userId: string;
+  permissions: string[];
   title: string;
   description: string;
   branchId?: string | null;
 }): Promise<CaseReport> {
   const title = ensureNonEmpty(input.title, 'Title');
   const description = ensureNonEmpty(input.description, 'Description');
-  const branchId = await resolveAndValidateCaseBranchId(input.companyId, input.userId, input.branchId);
+  const branchId = await resolveAndValidateCaseBranchId(
+    input.companyId,
+    input.userId,
+    input.permissions,
+    input.branchId,
+  );
+  await assertUserCanCreateCaseInCompany(input.companyId, input.userId);
   const userNames = await resolveUserNames([input.userId]);
 
   const report = await db.getDb().transaction(async (trx) => {
@@ -704,6 +758,69 @@ export async function createCaseReport(input: {
 
   const [enriched] = await enrichCaseReports([reportWithNames], input.userId);
   return enriched;
+}
+
+export async function listCreateBranches(input: { userId: string }): Promise<CaseCreateBranchGroup[]> {
+  const superAdmin = await isSuperAdminUser(input.userId);
+
+  const rows = superAdmin
+    ? await db.getDb()('branches as b')
+        .join('companies as c', 'b.company_id', 'c.id')
+        .where('b.is_active', true)
+        .where('c.is_active', true)
+        .where('c.is_root', false)
+        .select(
+          'c.id as company_id',
+          'c.name as company_name',
+          'c.slug as company_slug',
+          'b.id as branch_id',
+          'b.name as branch_name',
+          'b.odoo_branch_id',
+        )
+        .orderBy('c.name', 'asc')
+        .orderBy('b.name', 'asc')
+    : await db.getDb()('user_company_access as uca')
+        .join('companies as c', 'uca.company_id', 'c.id')
+        .join('branches as b', 'b.company_id', 'c.id')
+        .where('uca.user_id', input.userId)
+        .where('uca.is_active', true)
+        .where('b.is_active', true)
+        .where('c.is_active', true)
+        .where('c.is_root', false)
+        .select(
+          'c.id as company_id',
+          'c.name as company_name',
+          'c.slug as company_slug',
+          'b.id as branch_id',
+          'b.name as branch_name',
+          'b.odoo_branch_id',
+        )
+        .orderBy('c.name', 'asc')
+        .orderBy('b.name', 'asc');
+
+  const groupMap = new Map<string, CaseCreateBranchGroup>();
+  for (const row of rows as CaseCreateBranchRow[]) {
+    let group = groupMap.get(row.company_id);
+    if (!group) {
+      group = {
+        id: String(row.company_id),
+        name: String(row.company_name),
+        slug: row.company_slug ? String(row.company_slug) : null,
+        branches: [],
+      };
+      groupMap.set(row.company_id, group);
+    }
+
+    if (!group.branches.some((branch) => branch.id === row.branch_id)) {
+      group.branches.push({
+        id: String(row.branch_id),
+        name: String(row.branch_name),
+        odoo_branch_id: row.odoo_branch_id ? String(row.odoo_branch_id) : null,
+      });
+    }
+  }
+
+  return Array.from(groupMap.values());
 }
 
 export async function updateCorrectiveAction(input: {

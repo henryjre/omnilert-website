@@ -2,6 +2,7 @@ import { useRef, useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Building2, Check, ChevronDown, GitBranch, X } from 'lucide-react';
 import { useBranchStore } from '@/shared/store/branchStore';
+import type { SelectorCompanyGroup } from './branchSelectorState';
 
 export interface CompanyBranchValue {
   companyId: string;
@@ -14,6 +15,7 @@ interface CompanyBranchPickerProps {
   disabled?: boolean;
   label?: string;
   placeholder?: string;
+  companyBranchGroups?: SelectorCompanyGroup[];
 }
 
 export function CompanyBranchPicker({
@@ -22,8 +24,10 @@ export function CompanyBranchPicker({
   disabled = false,
   label,
   placeholder = 'Select branch',
+  companyBranchGroups,
 }: CompanyBranchPickerProps) {
-  const companyBranchGroups = useBranchStore((s) => s.companyBranchGroups);
+  const storeCompanyBranchGroups = useBranchStore((s) => s.companyBranchGroups);
+  const resolvedCompanyBranchGroups = companyBranchGroups ?? storeCompanyBranchGroups;
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -46,7 +50,7 @@ export function CompanyBranchPicker({
   }, [open]);
 
   const selectedBranch = value
-    ? companyBranchGroups
+    ? resolvedCompanyBranchGroups
         .flatMap((g) => g.branches.map((b) => ({ ...b, companyId: g.id, companyName: g.name })))
         .find((b) => b.id === value.branchId && b.companyId === value.companyId)
     : null;
@@ -94,13 +98,13 @@ export function CompanyBranchPicker({
                 transition={{ duration: 0.15, ease: [0.2, 0, 0, 1] }}
                 className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-50 max-h-72 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-xl"
               >
-                {companyBranchGroups.length === 0 ? (
+                {resolvedCompanyBranchGroups.length === 0 ? (
                   <div className="px-4 py-6 text-center text-sm text-gray-400">
                     No branches assigned
                   </div>
                 ) : (
                   <div className="space-y-2 p-2">
-                    {companyBranchGroups.map((company) => (
+                    {resolvedCompanyBranchGroups.map((company) => (
                       <section key={company.id}>
                         <div className="flex items-center gap-2 px-2 pb-1 pt-2">
                           <Building2 className="h-3.5 w-3.5 shrink-0 text-gray-400" />

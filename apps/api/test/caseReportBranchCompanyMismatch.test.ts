@@ -22,6 +22,8 @@ const caseReportApiPath = path.join(
   'services',
   'caseReport.api.ts',
 );
+const caseReportControllerPath = path.join(apiSrcDir, 'controllers', 'caseReport.controller.ts');
+const caseReportRoutesPath = path.join(apiSrcDir, 'routes', 'caseReport.routes.ts');
 const apiClientPath = path.join(
   webSrcDir,
   'shared',
@@ -84,12 +86,65 @@ test('case report creation validates the branch against the scoped company befor
   );
   assert.match(
     createCaseBlock,
-    /const branchId = await resolveAndValidateCaseBranchId\(\s*input\.companyId,\s*input\.userId,\s*input\.branchId\s*\)/,
-    'createCaseReport should resolve the branch through the scoped-company validator before insert',
+    /permissions:\s*string\[\];/,
+    'createCaseReport should accept caller permissions so branch validation can distinguish managers from branch-assigned users',
+  );
+  assert.match(
+    createCaseBlock,
+    /const branchId = await resolveAndValidateCaseBranchId\(\s*input\.companyId,\s*input\.userId,\s*input\.permissions,\s*input\.branchId,?\s*\)/,
+    'createCaseReport should pass caller permissions into the branch validator',
+  );
+  assert.match(
+    source,
+    /if\s*\(\s*effectiveAssignments\.length\s*>\s*0\s*&&\s*!hasManagePermission\(permissions\)\s*\)/,
+    'branch assignment enforcement should be bypassed for users with CASE_REPORT_MANAGE',
+  );
+  assert.match(
+    source,
+    /user_company_access[\s\S]*where\(\{\s*user_id:\s*userId,\s*company_id:\s*companyId,\s*is_active:\s*true\s*\}\)/,
+    'caseReport.service should still require active company access for the selected company',
   );
   assert.match(
     createCaseBlock,
     /branch_id:\s*branchId/,
     'createCaseReport should insert the validated branchId instead of the raw request value',
+  );
+});
+
+test('case report create controller passes caller permissions to the service', () => {
+  const source = fs.readFileSync(caseReportControllerPath, 'utf8');
+  const createBlock = source.slice(
+    source.indexOf('export async function create'),
+    source.indexOf('export async function updateCorrectiveAction'),
+  );
+
+  assert.match(
+    createBlock,
+    /permissions:\s*req\.user!\.permissions/,
+    'case report create controller should forward req.user.permissions into createCaseReport',
+  );
+});
+
+test('case report routes expose a manage-guarded create-branches endpoint before :id routes', () => {
+  const source = fs.readFileSync(caseReportRoutesPath, 'utf8');
+  const controllerSource = fs.readFileSync(caseReportControllerPath, 'utf8');
+  const createBranchesIndex = source.indexOf("router.get('/create-branches'");
+  const getByIdIndex = source.indexOf("router.get('/:id'");
+
+  assert.notEqual(createBranchesIndex, -1, 'case report routes should define a create-branches endpoint');
+  assert.notEqual(getByIdIndex, -1, 'case report routes should define the existing :id endpoint');
+  assert.ok(
+    createBranchesIndex < getByIdIndex,
+    'create-branches must be registered before /:id so Express does not treat it as a case id',
+  );
+  assert.match(
+    source,
+    /router\.get\(\s*'\/create-branches',\s*requirePermission\(PERMISSIONS\.CASE_REPORT_MANAGE\),\s*caseReportController\.listCreateBranches\s*\)/,
+    'create-branches should require CASE_REPORT_MANAGE and map to the controller handler',
+  );
+  assert.match(
+    controllerSource,
+    /export async function listCreateBranches/,
+    'caseReport controller should export a create-branches handler',
   );
 });

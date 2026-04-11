@@ -65,6 +65,7 @@ router.use(authenticate, resolveCompany);
 router.get('/mentionables', requirePermission(PERMISSIONS.CASE_REPORT_VIEW), caseReportController.mentionables);
 router.get('/', requirePermission(PERMISSIONS.CASE_REPORT_VIEW), caseReportController.list);
 router.post('/', requirePermission(PERMISSIONS.CASE_REPORT_MANAGE), validateBody(createCaseSchema), caseReportController.create);
+router.get('/create-branches', requirePermission(PERMISSIONS.CASE_REPORT_MANAGE), caseReportController.listCreateBranches);
 router.get('/:id', requirePermission(PERMISSIONS.CASE_REPORT_VIEW), caseReportController.getById);
 router.patch(
   '/:id/corrective-action',

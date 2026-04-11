@@ -1,9 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '@/shared/components/ui/Button';
 import { AnimatedModal } from '@/shared/components/ui/AnimatedModal';
 import { CompanyBranchPicker } from '@/shared/components/CompanyBranchPicker';
+import type { SelectorCompanyGroup } from '@/shared/components/branchSelectorState';
+import { buildSelectorCompanyGroupsFromSnapshots } from '@/shared/components/branchSelectorState';
+import { useAuthStore } from '@/features/auth/store/authSlice';
+import { useAppToast } from '@/shared/hooks/useAppToast';
 import type { CompanyBranchValue } from '@/shared/components/CompanyBranchPicker';
+import { listCreateCaseReportBranches } from '../services/caseReport.api';
 
 interface CreateCaseModalProps {
   onClose: () => void;
@@ -20,10 +25,41 @@ const INPUT_CLS =
 const LABEL_CLS = 'block text-sm font-medium text-gray-700';
 
 export function CreateCaseModal({ onClose, onSubmit }: CreateCaseModalProps) {
+  const companySlug = useAuthStore((state) => state.companySlug);
+  const { error: showErrorToast } = useAppToast();
   const [branchValue, setBranchValue] = useState<CompanyBranchValue | null>(null);
+  const [companyBranchGroups, setCompanyBranchGroups] = useState<SelectorCompanyGroup[]>([]);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [loadingBranchOptions, setLoadingBranchOptions] = useState(true);
+
+  useEffect(() => {
+    let isActive = true;
+
+    async function loadBranchOptions() {
+      setLoadingBranchOptions(true);
+      try {
+        const snapshots = await listCreateCaseReportBranches();
+        if (!isActive) return;
+        setCompanyBranchGroups(buildSelectorCompanyGroupsFromSnapshots(snapshots, companySlug));
+      } catch (error: any) {
+        if (!isActive) return;
+        setCompanyBranchGroups([]);
+        showErrorToast(error.response?.data?.error || 'Failed to load case report branches');
+      } finally {
+        if (isActive) {
+          setLoadingBranchOptions(false);
+        }
+      }
+    }
+
+    void loadBranchOptions();
+
+    return () => {
+      isActive = false;
+    };
+  }, [companySlug, showErrorToast]);
 
   return (
     <AnimatedModal maxWidth="max-w-2xl" onBackdropClick={submitting ? undefined : onClose}>
@@ -45,11 +81,12 @@ export function CreateCaseModal({ onClose, onSubmit }: CreateCaseModalProps) {
       <div className="space-y-4 p-6">
         {/* Branch picker */}
         <CompanyBranchPicker
+          companyBranchGroups={companyBranchGroups}
           label="Branch"
           value={branchValue}
           onChange={setBranchValue}
-          placeholder="Select the branch this case belongs to"
-          disabled={submitting}
+          placeholder={loadingBranchOptions ? 'Loading branches...' : 'Select the branch this case belongs to'}
+          disabled={submitting || loadingBranchOptions}
         />
 
         {/* Title */}
@@ -86,7 +123,7 @@ export function CreateCaseModal({ onClose, onSubmit }: CreateCaseModalProps) {
           Cancel
         </Button>
         <Button
-          disabled={submitting || !branchValue || !title.trim() || !description.trim()}
+          disabled={submitting || loadingBranchOptions || !branchValue || !title.trim() || !description.trim()}
           onClick={async () => {
             setSubmitting(true);
             try {

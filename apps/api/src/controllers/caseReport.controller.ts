@@ -55,11 +55,23 @@ export async function create(req: Request, res: Response, next: NextFunction) {
     const data = await caseReportService.createCaseReport({
       companyId,
       userId: req.user!.sub,
+      permissions: req.user!.permissions,
       title: String(req.body.title ?? ''),
       description: String(req.body.description ?? ''),
       branchId: typeof req.body.branchId === 'string' ? req.body.branchId : null,
     });
     res.status(201).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function listCreateBranches(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await caseReportService.listCreateBranches({
+      userId: req.user!.sub,
+    });
+    res.json({ success: true, data });
   } catch (error) {
     next(error);
   }
