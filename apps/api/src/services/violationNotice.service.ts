@@ -580,8 +580,8 @@ async function maybeNotifyMentionedUsers(input: {
       if (participantMap.get(targetUserId)?.is_muted) return;
       await createAndDispatchNotification({
         userId: targetUserId,
-        title: 'Violation notice mention',
-        message: `${senderName} mentioned you in a violation notice`,
+        title: 'Violation Notice Mention',
+        message: `${senderName} mentioned you in a violation notice.`,
         type: 'info',
         linkUrl: `/violation-notices?vnId=${input.vnId}&messageId=${input.messageId}`,
       });
@@ -1102,12 +1102,10 @@ export async function completeViolationNotice(input: {
         .select<{ user_id: string }[]>('user_id');
 
       for (const target of targets) {
-        const user = await trx('users')
-          .where({ id: target.user_id })
-          .first<{
-            epi_score: number | string | null;
-            epi_history: any;
-          }>('epi_score', 'epi_history');
+        const user = await trx('users').where({ id: target.user_id }).first<{
+          epi_score: number | string | null;
+          epi_history: any;
+        }>('epi_score', 'epi_history');
 
         if (!user) continue;
 

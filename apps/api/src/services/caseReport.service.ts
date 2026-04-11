@@ -125,15 +125,25 @@ async function resolveAndValidateCaseBranchId(
     .first();
 
   if (!branch || branch.is_active !== true) {
-    throw new AppError(400, 'Selected branch is invalid or inactive. Please refresh and try again.');
+    throw new AppError(
+      400,
+      'Selected branch is invalid or inactive. Please refresh and try again.',
+    );
   }
 
   const [legacyAssignments, companyAssignments] = await Promise.all([
-    db.getDb()('user_branches').where({ company_id: companyId, user_id: userId }).select('branch_id'),
-    db.getDb()('user_company_branches').where({ company_id: companyId, user_id: userId }).select('branch_id'),
+    db
+      .getDb()('user_branches')
+      .where({ company_id: companyId, user_id: userId })
+      .select('branch_id'),
+    db
+      .getDb()('user_company_branches')
+      .where({ company_id: companyId, user_id: userId })
+      .select('branch_id'),
   ]);
 
-  const effectiveAssignments = companyAssignments.length > 0 ? companyAssignments : legacyAssignments;
+  const effectiveAssignments =
+    companyAssignments.length > 0 ? companyAssignments : legacyAssignments;
   if (effectiveAssignments.length > 0 && !hasManagePermission(permissions)) {
     const isAssigned = effectiveAssignments.some(
       (row: { branch_id: string }) => row.branch_id === branchId,
@@ -155,7 +165,8 @@ async function isSuperAdminUser(userId: string): Promise<boolean> {
   if (!user?.email) return false;
 
   return Boolean(
-    await db.getDb()('super_admins')
+    await db
+      .getDb()('super_admins')
       .whereRaw('LOWER(email) = ?', [normalizeEmail(String(user.email ?? ''))])
       .first('id'),
   );
@@ -165,7 +176,8 @@ async function assertUserCanCreateCaseInCompany(companyId: string, userId: strin
   const isSuperAdmin = await isSuperAdminUser(userId);
   if (isSuperAdmin) return;
 
-  const companyAccess = await db.getDb()('user_company_access')
+  const companyAccess = await db
+    .getDb()('user_company_access')
     .where({ user_id: userId, company_id: companyId, is_active: true })
     .first('id');
 
@@ -592,8 +604,8 @@ async function maybeNotifyMentionedUsers(input: {
       if (participantMap.get(targetUserId)?.is_muted) return;
       await createAndDispatchNotification({
         userId: targetUserId,
-        title: 'Case report mention',
-        message: `${senderName} mentioned you in a case report`,
+        title: 'Case Report Mention',
+        message: `${senderName} mentioned you in a case report.`,
         type: 'info',
         linkUrl: `/case-reports?caseId=${input.caseId}&messageId=${input.messageId}`,
       });
@@ -760,11 +772,14 @@ export async function createCaseReport(input: {
   return enriched;
 }
 
-export async function listCreateBranches(input: { userId: string }): Promise<CaseCreateBranchGroup[]> {
+export async function listCreateBranches(input: {
+  userId: string;
+}): Promise<CaseCreateBranchGroup[]> {
   const superAdmin = await isSuperAdminUser(input.userId);
 
   const rows = superAdmin
-    ? await db.getDb()('branches as b')
+    ? await db
+        .getDb()('branches as b')
         .join('companies as c', 'b.company_id', 'c.id')
         .where('b.is_active', true)
         .where('c.is_active', true)
@@ -779,7 +794,8 @@ export async function listCreateBranches(input: { userId: string }): Promise<Cas
         )
         .orderBy('c.name', 'asc')
         .orderBy('b.name', 'asc')
-    : await db.getDb()('user_company_access as uca')
+    : await db
+        .getDb()('user_company_access as uca')
         .join('companies as c', 'uca.company_id', 'c.id')
         .join('branches as b', 'b.company_id', 'c.id')
         .where('uca.user_id', input.userId)
