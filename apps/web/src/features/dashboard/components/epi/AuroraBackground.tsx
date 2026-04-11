@@ -48,10 +48,6 @@ export function AuroraBackground({ zone }: AuroraBackgroundProps) {
           animate={{
             x: [0, band.driftX, 0],
             scaleY: [1, band.driftScaleY, 1],
-            background: [
-              `linear-gradient(90deg, ${colors[i]}cc, ${colors[(i + 1) % 3]}66, transparent)`,
-              `linear-gradient(90deg, ${colors[i]}cc, ${colors[(i + 1) % 3]}66, transparent)`,
-            ],
           }}
           transition={{
             x: {
@@ -68,10 +64,6 @@ export function AuroraBackground({ zone }: AuroraBackgroundProps) {
               repeatType: 'mirror',
               ease: 'easeInOut',
             },
-            background: {
-              duration: 0.8,
-              ease: 'easeInOut',
-            },
           }}
           style={{
             position: 'absolute',
@@ -83,6 +75,8 @@ export function AuroraBackground({ zone }: AuroraBackgroundProps) {
             borderRadius: '50%',
             filter: 'blur(32px)',
             opacity: band.opacity,
+            background: `linear-gradient(90deg, ${colors[i]}cc, ${colors[(i + 1) % 3]}66, transparent)`,
+            transition: 'background 0.8s ease-in-out',
           }}
         />
       ))}
