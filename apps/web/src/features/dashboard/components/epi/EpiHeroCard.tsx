@@ -4,6 +4,7 @@ import { getEpiZone, formatThreshold } from './epiUtils';
 import { OdometerGauge } from './OdometerGauge';
 import { TrendChart } from './TrendChart';
 import { getHeroZoneLabel, resolveHeroEpiComparison, type HeroEpiZone } from './heroEpiComparison';
+import { AuroraBackground } from './AuroraBackground';
 
 const ZONE_COLOR: Record<HeroEpiZone, string> = {
   green: '#4ade80',
@@ -76,12 +77,13 @@ export function EpiHeroCard({ data, selectedEntry }: EpiHeroCardProps) {
 
   return (
     <div
-      className="rounded-xl p-6 shadow-lg"
+      className="relative rounded-xl p-6 shadow-lg"
       style={{
         background: 'linear-gradient(135deg, rgb(var(--primary-600)) 0%, rgb(var(--primary-700)) 50%, rgb(var(--primary-800)) 100%)',
       }}
     >
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-center">
+      <AuroraBackground zone={heroComparison.zone} />
+      <div className="relative z-[1] flex flex-col gap-6 lg:flex-row lg:items-center">
         <div className="flex flex-col items-center gap-3">
           <OdometerGauge
             key={selectedEntry.monthKey}
