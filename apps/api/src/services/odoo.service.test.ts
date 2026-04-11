@@ -17,6 +17,7 @@ const {
   createOdooRpcClient,
   archiveEmployeesByWebsiteUserKey,
   unarchiveEmployeesByWebsiteUserKey,
+  upsertBreakWorkEntry,
 } = await import('./odoo.service.js');
 
 type Deferred<T> = {
@@ -232,6 +233,104 @@ test('unarchiveEmployeesByWebsiteUserKey includes inactive employees in lookup a
   assert.equal(calls[1]?.model, 'hr.employee');
   assert.equal(calls[1]?.method, 'write');
   assert.deepEqual(calls[1]?.args, [[11], { active: true }]);
+});
+
+test('upsertBreakWorkEntry creates a type-129 break work entry when none exists for the employee and date', async () => {
+  const calls: Array<{
+    model: string;
+    method: string;
+    args: unknown[];
+    kwargs?: Record<string, unknown>;
+  }> = [];
+
+  const result = await upsertBreakWorkEntry(
+    {
+      employeeId: 501,
+      date: '2026-04-02',
+      durationMinutes: 30,
+    },
+    {
+      callOdooKwFn: async (
+        model: string,
+        method: string,
+        args: unknown[],
+        kwargs?: Record<string, unknown>,
+      ) => {
+        calls.push({ model, method, args, kwargs });
+
+        if (method === 'search_read') {
+          return [];
+        }
+
+        if (method === 'create') {
+          return 9876;
+        }
+
+        throw new Error(`Unexpected method: ${method}`);
+      },
+    },
+  );
+
+  assert.deepEqual(result, { id: 9876, action: 'created', durationHours: 0.5 });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0]?.model, 'hr.work.entry');
+  assert.equal(calls[0]?.method, 'search_read');
+  assert.equal(calls[1]?.model, 'hr.work.entry');
+  assert.equal(calls[1]?.method, 'create');
+  assert.deepEqual(calls[1]?.args, [
+    {
+      employee_id: 501,
+      date: '2026-04-02',
+      work_entry_type_id: 129,
+      duration: 0.5,
+      name: 'Break - Synced from Omnilert',
+    },
+  ]);
+});
+
+test('upsertBreakWorkEntry increases the existing type-129 break work entry duration by the new break minutes', async () => {
+  const calls: Array<{
+    model: string;
+    method: string;
+    args: unknown[];
+    kwargs?: Record<string, unknown>;
+  }> = [];
+
+  const result = await upsertBreakWorkEntry(
+    {
+      employeeId: 502,
+      date: '2026-04-03',
+      durationMinutes: 15,
+    },
+    {
+      callOdooKwFn: async (
+        model: string,
+        method: string,
+        args: unknown[],
+        kwargs?: Record<string, unknown>,
+      ) => {
+        calls.push({ model, method, args, kwargs });
+
+        if (method === 'search_read') {
+          return [{ id: 321, duration: 0.5 }];
+        }
+
+        if (method === 'write') {
+          return true;
+        }
+
+        throw new Error(`Unexpected method: ${method}`);
+      },
+    },
+  );
+
+  assert.deepEqual(result, { id: 321, action: 'updated', durationHours: 0.75 });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0]?.model, 'hr.work.entry');
+  assert.equal(calls[0]?.method, 'search_read');
+  assert.equal(calls[1]?.model, 'hr.work.entry');
+  assert.equal(calls[1]?.method, 'write');
+  assert.deepEqual(calls[1]?.args, [[321], { duration: 0.75, name: 'Break - Synced from Omnilert' }]);
 });
 
 test('unarchiveEmployeesByWebsiteUserKey skips calls when website key is blank', async () => {

@@ -279,7 +279,7 @@ const AuthorizationCard = memo(
 
         {/* Pending — awaiting employee reason */}
         {auth.status === 'pending' && auth.needs_employee_reason && !auth.employee_reason && (
-          <p className="text-xs text-orange-600">Awaiting employee reason before approval</p>
+          <p className="text-xs text-orange-600">Awaiting employee reason before manager review</p>
         )}
 
         {/* Employee submits reason */}

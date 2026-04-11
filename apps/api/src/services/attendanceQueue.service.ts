@@ -165,7 +165,7 @@ export function createEarlyCheckInJobProcessor(
       user_id: payload.userId ?? (shift.user_id as string) ?? null,
       auth_type: 'early_check_in',
       diff_minutes: diffMinutes,
-      needs_employee_reason: false,
+      needs_employee_reason: true,
       status: 'pending',
     });
 

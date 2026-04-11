@@ -60,3 +60,46 @@ test('createEarlyCheckInJobProcessor skips creating an authorization when the ch
   assert.equal(auths.length, 0);
   assert.equal(emitted.length, 0);
 });
+
+test('createEarlyCheckInJobProcessor creates an early check-in authorization that requires an employee reason', async () => {
+  const auths: Array<Record<string, unknown>> = [];
+  const processJob = createEarlyCheckInJobProcessor({
+    findShiftById: async () => ({
+      id: 'shift-scheduled',
+      user_id: 'user-1',
+      shift_start: '2026-03-20T09:00:00.000Z',
+    }),
+    findShiftLogById: async () => ({
+      id: 'log-check-in',
+      branch_id: 'branch-main',
+      shift_id: 'shift-scheduled',
+      log_type: 'check_in',
+      event_time: '2026-03-20T07:30:00.000Z',
+    }),
+    findExistingAuthorization: async () => null,
+    createShiftAuthorization: async (input: Record<string, unknown>) => {
+      auths.push(input);
+      return { id: 'auth-1', ...input };
+    },
+    incrementShiftPendingApprovals: async () => undefined,
+    emitSocketEvent: () => undefined,
+    logInfo: () => undefined,
+  } as any);
+
+  await processJob({
+    id: 'job-2',
+    data: {
+      companyId: 'company-a',
+      branchId: 'branch-main',
+      shiftId: 'shift-scheduled',
+      shiftLogId: 'log-check-in',
+      userId: 'user-1',
+      checkInEventTime: '2026-03-20T07:30:00.000Z',
+    },
+  });
+
+  assert.equal(auths.length, 1);
+  assert.equal(auths[0]?.auth_type, 'early_check_in');
+  assert.equal(auths[0]?.needs_employee_reason, true);
+  assert.equal(auths[0]?.status, 'pending');
+});

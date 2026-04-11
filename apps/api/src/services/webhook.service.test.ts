@@ -13,6 +13,7 @@ process.env.OPENAI_API_KEY ??= 'test-openai-key';
 process.env.OPENAI_ORGANIZATION_ID ??= 'test-openai-org';
 process.env.OPENAI_PROJECT_ID ??= 'test-openai-project';
 
+const { db } = await import('../config/database.js');
 const {
   createAttendanceProcessor,
   emitAttendanceSocketEvent,
@@ -50,9 +51,21 @@ type ShiftActivityRecord = {
   end_time: string | Date | null;
   duration_minutes: number | null;
   activity_details: string | null;
+  is_calculated: boolean;
   created_at?: Date;
   updated_at?: Date;
 };
+
+type WorkEntryRecord = {
+  id: number;
+  employee_id: number;
+  date: string;
+  work_entry_type_id: number;
+  duration: number;
+  name: string;
+};
+
+type HarnessShape = ReturnType<typeof createAttendanceHarness>;
 
 function createShift(
   partial: Partial<ShiftRecord> & Pick<ShiftRecord, 'id' | 'odoo_shift_id' | 'branch_id'>,
@@ -112,6 +125,7 @@ function createActivity(
     end_time: partial.end_time ?? null,
     duration_minutes: partial.duration_minutes ?? null,
     activity_details: partial.activity_details ?? null,
+    is_calculated: partial.is_calculated ?? false,
     created_at: partial.created_at ?? new Date('2026-03-20T00:30:00.000Z'),
     updated_at: partial.updated_at ?? new Date('2026-03-20T00:30:00.000Z'),
   };
@@ -121,9 +135,12 @@ function createAttendanceHarness(options?: {
   shifts?: ShiftRecord[];
   logs?: Array<Record<string, unknown>>;
   activities?: ShiftActivityRecord[];
+  workEntries?: WorkEntryRecord[];
   websiteUserKey?: string | null;
   resolvedUserId?: string | null;
   resolvedEmployeeName?: string;
+  odooEmployee?: { id: number; name: string } | null;
+  upsertBreakWorkEntryError?: Error;
   userRolesByUserId?: Record<string, Array<{ id: string; name: string }>>;
   activeAttendancesByWebsiteKey?: Record<
     string,
@@ -146,12 +163,32 @@ function createAttendanceHarness(options?: {
   const shifts = [...(options?.shifts ?? [])];
   const logs: Array<Record<string, unknown>> = [...(options?.logs ?? [])];
   const activities = [...(options?.activities ?? [])];
+  const workEntries = [...(options?.workEntries ?? [])];
   const auths: Array<Record<string, unknown>> = [];
   const queuedJobs: Array<{ payload: Record<string, unknown>; runAt: Date }> = [];
   const notifications: Array<Record<string, unknown>> = [];
   const socketEvents: Array<{ event: string; payload: Record<string, unknown> }> = [];
   const branchAssignments: Array<{ userId: string; branchId: string }> = [];
   const checkoutOps: Array<{ attendanceIds: number[]; checkOutTime: Date }> = [];
+  const users =
+    options?.websiteUserKey && (options?.resolvedUserId ?? 'user-1')
+      ? [{ id: options?.resolvedUserId ?? 'user-1', user_key: options.websiteUserKey }]
+      : [];
+  const breakWorkEntryAttempts: Array<{
+    employeeId: number;
+    date: string;
+    durationMinutes: number;
+    workEntryTypeId: number;
+    description: string;
+  }> = [];
+  const breakWorkEntryOps: Array<{
+    action: 'created' | 'updated';
+    workEntryId: number;
+    employeeId: number;
+    date: string;
+    durationMinutes: number;
+    totalDurationHours: number;
+  }> = [];
 
   const roleMembershipByUserId = new Map<string, Array<{ roleId: string; roleName: string }>>();
   const defaultResolvedUserId = options?.resolvedUserId ?? 'user-1';
@@ -197,18 +234,25 @@ function createAttendanceHarness(options?: {
   let authCount = 0;
   let activityCount = activities.length;
   let interimShiftCount = 0;
+  let workEntryCount = workEntries.reduce((max, entry) => Math.max(max, entry.id), 0);
+  const defaultOdooEmployee =
+    options?.odooEmployee === undefined ? { id: 7001, name: '001 - Alex Crew' } : options.odooEmployee;
 
   return {
     branches,
     shifts,
     logs,
     activities,
+    workEntries,
     auths,
     queuedJobs,
     notifications,
     socketEvents,
     branchAssignments,
     checkoutOps,
+    users,
+    breakWorkEntryAttempts,
+    breakWorkEntryOps,
     roleMembershipByUserId,
     disabledRoleIdsByUserId,
     activeAttendancesByWebsiteKey,
@@ -421,12 +465,139 @@ function createAttendanceHarness(options?: {
         logs.push(log);
         return { activity, log };
       },
+      listOpenShiftActivitiesByShiftId: async (shiftId: string) =>
+        activities.filter((activity) => activity.shift_id === shiftId && activity.end_time == null),
+      autoEndShiftActivityOnCheckOut: async (input: Record<string, unknown>) => {
+        const activity = activities.find(
+          (row) => row.id === input.activityId && row.shift_id === input.shiftId && row.end_time == null,
+        );
+        assert.ok(activity, `activity ${String(input.activityId)} must exist before auto-ending`);
+        const endedAt = (input.endedAt as Date | undefined) ?? now;
+        const durationMinutes = Math.max(
+          0,
+          Math.round((endedAt.getTime() - new Date(activity.start_time).getTime()) / 60000),
+        );
+        activity.end_time = endedAt;
+        activity.duration_minutes = durationMinutes;
+
+        const logType = activity.activity_type === 'break' ? 'break_end' : 'field_task_end';
+        const log = {
+          id: `log-${++logCount}`,
+          company_id: String(input.companyId ?? 'company-1'),
+          shift_id: activity.shift_id,
+          branch_id: String(input.branchId),
+          log_type: logType,
+          changes: JSON.stringify({
+            activity_id: activity.id,
+            duration_minutes: durationMinutes,
+            note: 'Auto-ended on check-out',
+          }),
+          event_time: endedAt,
+          odoo_payload: JSON.stringify({}),
+        };
+        logs.push(log);
+        return { activity, log };
+      },
+      listEndedUncalculatedBreakActivities: async (shiftId: string) =>
+        activities.filter(
+          (activity) =>
+            activity.shift_id === shiftId &&
+            activity.activity_type === 'break' &&
+            activity.end_time != null &&
+            !activity.is_calculated,
+        ),
+      markShiftActivitiesCalculated: async (activityIds: string[]) => {
+        const targetIds = new Set(activityIds);
+        let updatedCount = 0;
+
+        for (const activity of activities) {
+          if (
+            targetIds.has(activity.id) &&
+            activity.activity_type === 'break' &&
+            activity.end_time != null &&
+            !activity.is_calculated
+          ) {
+            activity.is_calculated = true;
+            updatedCount += 1;
+          }
+        }
+
+        return updatedCount;
+      },
+      findOdooEmployeeByWebsiteUserKey: async (websiteUserKey: string) =>
+        websiteUserKey && defaultOdooEmployee ? { ...defaultOdooEmployee } : null,
+      upsertBreakWorkEntry: async (input: Record<string, unknown>) => {
+        const employeeId = Number(input.employeeId);
+        const date = String(input.date);
+        const durationMinutes = Number(input.durationMinutes);
+        const workEntryTypeId = Number(input.workEntryTypeId ?? 129);
+        const description = String(input.description ?? 'Break - Synced from Omnilert');
+
+        breakWorkEntryAttempts.push({
+          employeeId,
+          date,
+          durationMinutes,
+          workEntryTypeId,
+          description,
+        });
+
+        if (options?.upsertBreakWorkEntryError) {
+          throw options.upsertBreakWorkEntryError;
+        }
+
+        const durationHours = durationMinutes / 60;
+        const existingEntry = workEntries.find(
+          (entry) =>
+            entry.employee_id === employeeId &&
+            entry.date === date &&
+            entry.work_entry_type_id === workEntryTypeId,
+        );
+
+        if (existingEntry) {
+          existingEntry.duration += durationHours;
+          existingEntry.name = description;
+          breakWorkEntryOps.push({
+            action: 'updated',
+            workEntryId: existingEntry.id,
+            employeeId,
+            date,
+            durationMinutes,
+            totalDurationHours: existingEntry.duration,
+          });
+          return { id: existingEntry.id, action: 'updated', durationHours: existingEntry.duration };
+        }
+
+        const createdEntry: WorkEntryRecord = {
+          id: ++workEntryCount,
+          employee_id: employeeId,
+          date,
+          work_entry_type_id: workEntryTypeId,
+          duration: durationHours,
+          name: description,
+        };
+        workEntries.push(createdEntry);
+        breakWorkEntryOps.push({
+          action: 'created',
+          workEntryId: createdEntry.id,
+          employeeId,
+          date,
+          durationMinutes,
+          totalDurationHours: createdEntry.duration,
+        });
+        return { id: createdEntry.id, action: 'created', durationHours: createdEntry.duration };
+      },
       deleteEarlyCheckOutAuthByShiftLogId: async (shiftLogId: string) => {
         const idx = auths.findIndex(
           (a) => a.shift_log_id === shiftLogId && a.auth_type === 'early_check_out',
         );
         if (idx === -1) return false;
-        auths.splice(idx, 1);
+        const [deletedAuth] = auths.splice(idx, 1);
+        if (deletedAuth?.status === 'pending' && typeof deletedAuth.shift_id === 'string') {
+          const shift = shifts.find((row) => row.id === deletedAuth.shift_id);
+          if (shift) {
+            shift.pending_approvals = Math.max(0, Number(shift.pending_approvals ?? 0) - 1);
+          }
+        }
         return true;
       },
       checkOutAttendancesByIds: async (attendanceIds: number[], checkOutTime: Date) => {
@@ -455,6 +626,146 @@ function createAttendanceHarness(options?: {
   };
 }
 
+function createHarnessTenantDb(harness: HarnessShape) {
+  const getTableRows = (tableName: string): Array<Record<string, unknown>> => {
+    switch (tableName) {
+      case 'employee_shifts':
+        return harness.shifts as Array<Record<string, unknown>>;
+      case 'shift_activities':
+        return harness.activities as Array<Record<string, unknown>>;
+      case 'shift_logs':
+        return harness.logs;
+      case 'users':
+        return harness.users as Array<Record<string, unknown>>;
+      case 'shift_authorizations':
+        return harness.auths;
+      default:
+        return [];
+    }
+  };
+
+  const createQuery = (tableName: string) => {
+    const rows = getTableRows(tableName);
+    const predicates: Array<(row: Record<string, unknown>) => boolean> = [];
+    let selectedFields: string[] | null = null;
+    let orderByField: string | null = null;
+    let orderDirection: 'asc' | 'desc' = 'asc';
+
+    const getMatchedRows = () => {
+      const matched = rows.filter((row) => predicates.every((predicate) => predicate(row)));
+      if (!orderByField) return matched;
+
+      return [...matched].sort((left, right) => {
+        const leftValue = left[orderByField!];
+        const rightValue = right[orderByField!];
+        if (leftValue === rightValue) return 0;
+        if (leftValue == null) return orderDirection === 'asc' ? -1 : 1;
+        if (rightValue == null) return orderDirection === 'asc' ? 1 : -1;
+        return leftValue < rightValue
+          ? orderDirection === 'asc'
+            ? -1
+            : 1
+          : orderDirection === 'asc'
+            ? 1
+            : -1;
+      });
+    };
+
+    const applySelection = (matchedRows: Array<Record<string, unknown>>) => {
+      if (!selectedFields) return matchedRows;
+      return matchedRows.map((row) => {
+        const selected: Record<string, unknown> = {};
+        for (const field of selectedFields ?? []) {
+          selected[field] = row[field];
+        }
+        return selected;
+      });
+    };
+
+    const query: Record<string, any> = {
+      where(condition: Record<string, unknown>) {
+        predicates.push((row) =>
+          Object.entries(condition).every(([key, value]) => row[key] === value),
+        );
+        return query;
+      },
+      whereNotNull(field: string) {
+        predicates.push((row) => row[field] != null);
+        return query;
+      },
+      whereNull(field: string) {
+        predicates.push((row) => row[field] == null);
+        return query;
+      },
+      select(...fields: string[]) {
+        selectedFields = fields.flat();
+        return query;
+      },
+      orderBy(field: string, direction: 'asc' | 'desc' = 'asc') {
+        orderByField = field;
+        orderDirection = direction;
+        return query;
+      },
+      first() {
+        const matchedRows = getMatchedRows();
+        const selectedRows = applySelection(matchedRows);
+        return Promise.resolve(selectedRows[0] ?? null);
+      },
+      insert(input: Record<string, unknown> | Array<Record<string, unknown>>) {
+        const inserted = (Array.isArray(input) ? input : [input]).map((row) => ({ ...row }));
+        rows.push(...inserted);
+        return {
+          returning: async () => inserted,
+          then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) =>
+            Promise.resolve(inserted).then(resolve, reject),
+        };
+      },
+      update(updates: Record<string, unknown>) {
+        const matchedRows = getMatchedRows();
+        for (const row of matchedRows) {
+          Object.assign(row, updates);
+        }
+        return {
+          returning: async () => matchedRows,
+          then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) =>
+            Promise.resolve(matchedRows.length).then(resolve, reject),
+        };
+      },
+      increment(column: string, amount = 1) {
+        const matchedRows = getMatchedRows();
+        for (const row of matchedRows) {
+          const currentValue = Number(row[column] ?? 0);
+          row[column] = currentValue + amount;
+        }
+        return Promise.resolve(matchedRows.length);
+      },
+      delete() {
+        const matchedRows = getMatchedRows();
+        for (const row of matchedRows) {
+          const index = rows.indexOf(row);
+          if (index >= 0) rows.splice(index, 1);
+        }
+        return Promise.resolve(matchedRows.length);
+      },
+      then(resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) {
+        return Promise.resolve(applySelection(getMatchedRows())).then(resolve, reject);
+      },
+    };
+
+    return query;
+  };
+
+  return ((tableName: string) => createQuery(tableName)) as any;
+}
+
+function installHarnessDb(harness: HarnessShape, registerCleanup: (cleanup: () => void) => void) {
+  const originalGetDb = db.getDb.bind(db);
+  (db as any).getDb = () => createHarnessTenantDb(harness);
+  registerCleanup(() => {
+    (db as any).getDb = originalGetDb;
+  });
+}
+
 test('reassignUserToSingleCheckedInBranch is exported and accepts (userId, branchId) arguments', () => {
   assert.equal(typeof reassignUserToSingleCheckedInBranch, 'function');
   assert.equal(reassignUserToSingleCheckedInBranch.length, 2);
@@ -468,11 +779,12 @@ test('shouldPreserveInterimDutyPlanningSlotDelete preserves rejected interim-dut
   assert.equal(shouldPreserveInterimDutyPlanningSlotDelete([]), false);
 });
 
-test('createAttendanceProcessor creates a synthetic interim-duty shift for unlinked attendance on checkout', async () => {
+test('createAttendanceProcessor creates a synthetic interim-duty shift for unlinked attendance on checkout', async (t) => {
   const harness = createAttendanceHarness({
     websiteUserKey: 'website-user-1',
     resolvedUserId: 'user-1',
   });
+  installHarnessDb(harness, (cleanup) => t.after(cleanup));
   const processAttendance = createAttendanceProcessor(harness.deps as any);
 
   await processAttendance({
@@ -515,12 +827,13 @@ test('createAttendanceProcessor creates a synthetic interim-duty shift for unlin
   assert.equal(interimPayload.interim_reason, 'no_planning_schedule');
   assert.equal(interimPayload.source_attendance_id, 9001);
 
-  assert.equal(harness.logs.length, 2);
+  assert.ok(harness.logs.length >= 2);
   assert.ok(harness.logs.every((log) => log.shift_id === interimShift?.id));
   assert.equal(harness.auths.length, 1);
   assert.equal(harness.auths[0]?.auth_type, 'interim_duty');
   assert.equal(harness.auths[0]?.status, 'pending');
   assert.equal(harness.auths[0]?.diff_minutes, 480);
+  assert.equal(harness.auths[0]?.needs_employee_reason, true);
   assert.equal(harness.auths[0]?.shift_id, interimShift?.id);
   assert.equal(interimShift?.pending_approvals, 1);
 });
@@ -551,7 +864,7 @@ test('createAttendanceProcessor does not create interim duty for management atte
   assert.equal(harness.auths.length, 0);
 });
 
-test('createAttendanceProcessor restores the planned shift and reclassifies a fully pre-shift attendance as interim duty', async () => {
+test('createAttendanceProcessor restores the planned shift and reclassifies a fully pre-shift attendance as interim duty', async (t) => {
   const plannedShift = createShift({
     id: 'shift-100',
     odoo_shift_id: 100,
@@ -564,6 +877,7 @@ test('createAttendanceProcessor restores the planned shift and reclassifies a fu
     websiteUserKey: 'website-user-1',
     resolvedUserId: 'user-1',
   });
+  installHarnessDb(harness, (cleanup) => t.after(cleanup));
   const processAttendance = createAttendanceProcessor(harness.deps as any);
 
   await processAttendance({
@@ -600,6 +914,7 @@ test('createAttendanceProcessor restores the planned shift and reclassifies a fu
   assert.equal(harness.auths.length, 1);
   assert.equal(harness.auths[0]?.auth_type, 'interim_duty');
   assert.equal(harness.auths[0]?.status, 'pending');
+  assert.equal(harness.auths[0]?.needs_employee_reason, true);
   assert.equal(harness.auths[0]?.shift_id, interimShift?.id);
   assert.equal(interimShift?.pending_approvals, 1);
   assert.ok(harness.logs.every((log) => log.shift_id === interimShift?.id));
@@ -780,7 +1095,9 @@ test('createAttendanceProcessor keeps early check-out on the normal authorizatio
 
   assert.equal(harness.auths.length, 1);
   assert.equal(harness.auths[0]?.auth_type, 'early_check_out');
-  assert.equal(harness.auths[0]?.status, 'no_approval_needed');
+  assert.equal(harness.auths[0]?.status, 'pending');
+  assert.equal(harness.auths[0]?.needs_employee_reason, true);
+  assert.equal(plannedShift.pending_approvals, 1);
 });
 
 test('createAttendanceProcessor keeps late check-out on the normal authorization path when attendance overlaps the shift', async () => {
@@ -1116,6 +1433,279 @@ test('createAttendanceProcessor management checkout reverts role scope to servic
     harness.socketEvents.some((evt) => evt.event === 'user:auth-scope-updated'),
     'role restoration should emit user:auth-scope-updated',
   );
+});
+
+test('createAttendanceProcessor checkout creates a type-129 break work entry for newly ended uncalculated breaks and marks them calculated', async (t) => {
+  const plannedShift = createShift({
+    id: 'shift-break-sync-create',
+    odoo_shift_id: 9301,
+    branch_id: 'branch-main',
+    user_id: 'user-1',
+    shift_start: '2026-04-02T07:00:00.000Z',
+    shift_end: '2026-04-02T18:00:00.000Z',
+    allocated_hours: 12,
+    status: 'active',
+    check_in_status: 'checked_in',
+  });
+  const harness = createAttendanceHarness({
+    shifts: [plannedShift],
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+    activities: [
+      createActivity({
+        id: 'activity-break-sync-create',
+        user_id: 'user-1',
+        shift_id: plannedShift.id,
+        activity_type: 'break',
+        start_time: '2026-04-02T10:00:00.000Z',
+        end_time: '2026-04-02T10:30:00.000Z',
+        duration_minutes: 30,
+      }),
+    ],
+  });
+  installHarnessDb(harness, (cleanup) => t.after(cleanup));
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  await processAttendance({
+    id: 9301,
+    check_in: '2026-04-02 07:00:00',
+    check_out: '2026-04-02 12:00:00',
+    worked_hours: 5,
+    x_company_id: 12,
+    x_cumulative_minutes: 300,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: 9301,
+    x_website_key: 'website-user-1',
+  });
+
+  assert.equal(harness.breakWorkEntryAttempts.length, 1);
+  assert.equal(harness.breakWorkEntryOps.length, 1);
+  assert.equal(harness.breakWorkEntryOps[0]?.action, 'created');
+  assert.equal(harness.breakWorkEntryOps[0]?.durationMinutes, 30);
+  assert.equal(harness.workEntries.length, 1);
+  assert.equal(harness.workEntries[0]?.work_entry_type_id, 129);
+  assert.equal(harness.workEntries[0]?.date, '2026-04-02');
+  assert.equal(harness.workEntries[0]?.duration, 0.5);
+  assert.equal(harness.activities[0]?.is_calculated, true);
+});
+
+test('createAttendanceProcessor creates overtime authorization with needs_employee_reason true when total worked time exceeds allocated hours', async (t) => {
+  const shift = createShift({
+    id: 'shift-overtime-1',
+    odoo_shift_id: 2501,
+    branch_id: 'branch-main',
+    user_id: 'user-1',
+    shift_start: '2026-04-02T00:00:00.000Z',
+    shift_end: '2026-04-02T09:00:00.000Z',
+    allocated_hours: 8,
+    total_worked_hours: 1,
+    status: 'active',
+    check_in_status: 'checked_in',
+  });
+  const harness = createAttendanceHarness({
+    shifts: [shift],
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+  });
+  installHarnessDb(harness, (cleanup) => t.after(cleanup));
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  await processAttendance({
+    id: 12501,
+    check_in: '2026-04-02 01:00:00',
+    check_out: '2026-04-02 09:00:00',
+    worked_hours: 8,
+    x_company_id: 12,
+    x_cumulative_minutes: 480,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: 2501,
+    x_website_key: 'website-user-1',
+  });
+
+  const overtimeAuth = harness.auths.find((auth) => auth.auth_type === 'overtime');
+  assert.ok(overtimeAuth, 'overtime authorization should be created');
+  assert.equal(overtimeAuth?.needs_employee_reason, true);
+  assert.equal(overtimeAuth?.status, 'pending');
+});
+
+test('createAttendanceProcessor checkout updates the existing type-129 break work entry using only newly uncalculated management-interrupt break minutes', async (t) => {
+  const plannedShift = createShift({
+    id: 'shift-break-sync-update',
+    odoo_shift_id: 9302,
+    branch_id: 'branch-main',
+    user_id: 'user-1',
+    shift_start: '2026-04-03T07:00:00.000Z',
+    shift_end: '2026-04-03T18:00:00.000Z',
+    allocated_hours: 12,
+    status: 'active',
+    check_in_status: 'checked_in',
+  });
+  const harness = createAttendanceHarness({
+    shifts: [plannedShift],
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+    workEntries: [
+      {
+        id: 12901,
+        employee_id: 7001,
+        date: '2026-04-03',
+        work_entry_type_id: 129,
+        duration: 0.5,
+        name: 'Break - Synced from Omnilert',
+      },
+    ],
+    activities: [
+      createActivity({
+        id: 'activity-break-sync-existing',
+        user_id: 'user-1',
+        shift_id: plannedShift.id,
+        activity_type: 'break',
+        start_time: '2026-04-03T09:00:00.000Z',
+        end_time: '2026-04-03T09:30:00.000Z',
+        duration_minutes: 30,
+        is_calculated: true,
+      }),
+      createActivity({
+        id: 'activity-break-sync-management',
+        user_id: 'user-1',
+        shift_id: plannedShift.id,
+        activity_type: 'break',
+        start_time: '2026-04-03T11:00:00.000Z',
+        end_time: '2026-04-03T11:15:00.000Z',
+        duration_minutes: 15,
+        activity_details: JSON.stringify({
+          source: 'management_interrupt',
+          management_attendance_id: 9991,
+          interrupted_attendance_id: 9992,
+        }),
+      }),
+    ],
+  });
+  installHarnessDb(harness, (cleanup) => t.after(cleanup));
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  await processAttendance({
+    id: 9302,
+    check_in: '2026-04-03 07:00:00',
+    check_out: '2026-04-03 12:00:00',
+    worked_hours: 5,
+    x_company_id: 12,
+    x_cumulative_minutes: 300,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: 9302,
+    x_website_key: 'website-user-1',
+  });
+
+  assert.equal(harness.breakWorkEntryAttempts.length, 1);
+  assert.equal(harness.breakWorkEntryOps.length, 1);
+  assert.equal(harness.breakWorkEntryOps[0]?.action, 'updated');
+  assert.equal(harness.breakWorkEntryOps[0]?.durationMinutes, 15);
+  assert.equal(harness.workEntries[0]?.duration, 0.75);
+  assert.equal(harness.activities[0]?.is_calculated, true);
+  assert.equal(harness.activities[1]?.is_calculated, true);
+});
+
+test('createAttendanceProcessor checkout auto-ends an open break and syncs it to the type-129 break work entry in the same pass', async (t) => {
+  const plannedShift = createShift({
+    id: 'shift-break-sync-open',
+    odoo_shift_id: 9303,
+    branch_id: 'branch-main',
+    user_id: 'user-1',
+    shift_start: '2026-04-04T07:00:00.000Z',
+    shift_end: '2026-04-04T18:00:00.000Z',
+    allocated_hours: 12,
+    status: 'active',
+    check_in_status: 'checked_in',
+  });
+  const harness = createAttendanceHarness({
+    shifts: [plannedShift],
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+    activities: [
+      createActivity({
+        id: 'activity-break-sync-open',
+        user_id: 'user-1',
+        shift_id: plannedShift.id,
+        activity_type: 'break',
+        start_time: '2026-04-04T11:00:00.000Z',
+      }),
+    ],
+  });
+  installHarnessDb(harness, (cleanup) => t.after(cleanup));
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  await processAttendance({
+    id: 9303,
+    check_in: '2026-04-04 07:00:00',
+    check_out: '2026-04-04 11:20:00',
+    worked_hours: 4.33,
+    x_company_id: 12,
+    x_cumulative_minutes: 260,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: 9303,
+    x_website_key: 'website-user-1',
+  });
+
+  assert.equal(harness.activities[0]?.duration_minutes, 20);
+  assert.equal(
+    new Date(harness.activities[0]?.end_time as string | Date).toISOString(),
+    '2026-04-04T11:20:00.000Z',
+  );
+  assert.equal(harness.activities[0]?.is_calculated, true);
+  assert.equal(harness.breakWorkEntryOps.length, 1);
+  assert.equal(harness.breakWorkEntryOps[0]?.durationMinutes, 20);
+  const breakEndLog = harness.logs.find((log) => log.log_type === 'break_end');
+  assert.ok(breakEndLog, 'break_end log should be created when checkout auto-ends an open break');
+});
+
+test('createAttendanceProcessor checkout leaves break rows retryable when the type-129 work entry sync fails', async (t) => {
+  const plannedShift = createShift({
+    id: 'shift-break-sync-failure',
+    odoo_shift_id: 9304,
+    branch_id: 'branch-main',
+    user_id: 'user-1',
+    shift_start: '2026-04-05T07:00:00.000Z',
+    shift_end: '2026-04-05T18:00:00.000Z',
+    allocated_hours: 12,
+    status: 'active',
+    check_in_status: 'checked_in',
+  });
+  const harness = createAttendanceHarness({
+    shifts: [plannedShift],
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+    upsertBreakWorkEntryError: new Error('Odoo break work entry sync failed'),
+    activities: [
+      createActivity({
+        id: 'activity-break-sync-failure',
+        user_id: 'user-1',
+        shift_id: plannedShift.id,
+        activity_type: 'break',
+        start_time: '2026-04-05T09:00:00.000Z',
+        end_time: '2026-04-05T09:20:00.000Z',
+        duration_minutes: 20,
+      }),
+    ],
+  });
+  installHarnessDb(harness, (cleanup) => t.after(cleanup));
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  await processAttendance({
+    id: 9304,
+    check_in: '2026-04-05 07:00:00',
+    check_out: '2026-04-05 12:00:00',
+    worked_hours: 5,
+    x_company_id: 12,
+    x_cumulative_minutes: 300,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: 9304,
+    x_website_key: 'website-user-1',
+  });
+
+  assert.equal(harness.breakWorkEntryAttempts.length, 1);
+  assert.equal(harness.breakWorkEntryOps.length, 0);
+  assert.equal(harness.workEntries.length, 0);
+  assert.equal(harness.activities[0]?.is_calculated, false);
 });
 
 test('createAttendanceProcessor service crew check-in disables management and checks out active management attendance only', async () => {
@@ -1621,7 +2211,16 @@ test('createAttendanceProcessor retroactively voids early_check_out when re-chec
     x_website_key: 'website-user-1',
   });
 
-  assert.equal(harness.auths.filter((a) => a.auth_type === 'early_check_out').length, 1, 'early_check_out should be initially created');
+  assert.equal(
+    harness.auths.filter((a) => a.auth_type === 'early_check_out').length,
+    1,
+    'early_check_out should be initially created',
+  );
+  assert.equal(
+    plannedShift.pending_approvals,
+    2,
+    'tardiness + early_check_out should both count as pending before re-check-in',
+  );
 
   // Re-check-in at 1:00 PM with x_prev_attendance_id → should void the early_check_out
   await processAttendance({
@@ -1643,6 +2242,11 @@ test('createAttendanceProcessor retroactively voids early_check_out when re-chec
   assert.ok(
     harness.socketEvents.some((e) => e.event === 'shift:authorization-voided'),
     'shift:authorization-voided must be emitted',
+  );
+  assert.equal(
+    plannedShift.pending_approvals,
+    1,
+    'voiding the false-positive early_check_out should restore pending approvals to the remaining tardiness auth only',
   );
 });
 

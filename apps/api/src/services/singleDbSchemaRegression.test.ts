@@ -1080,6 +1080,33 @@ test('interim duty auth type migration exists for shift authorizations', () => {
   );
 });
 
+test('historical early check out approval migration exists', () => {
+  const migrationNames = fs.readdirSync(migrationsDirPath);
+  const migrationName = migrationNames.find((name) => /032_.*early.*check.*out.*\.ts$/i.test(name));
+
+  assert.ok(
+    migrationName,
+    'Expected a 032 migration to normalize historical early_check_out no_approval_needed rows',
+  );
+
+  const source = fs.readFileSync(path.join(migrationsDirPath, migrationName!), 'utf8');
+  assert.match(
+    source,
+    /\.where\(\{\s*auth_type:\s*'early_check_out',\s*status:\s*'no_approval_needed'\s*\}\)/,
+    'Historical early_check_out migration should target no_approval_needed early_check_out rows',
+  );
+  assert.match(
+    source,
+    /status:\s*'approved'/,
+    'Historical early_check_out migration should convert rows to approved',
+  );
+  assert.match(
+    source,
+    /resolved_at[\s\S]*(NOW\(\)|knex\.fn\.now)/i,
+    'Historical early_check_out migration should stamp resolved_at',
+  );
+});
+
 test('authorization requests API and page expose approved/rejected reviewer names', () => {
   const controllerSource = fs.readFileSync(authorizationRequestControllerPath, 'utf8');
   const pageSource = fs.readFileSync(authorizationRequestsPagePath, 'utf8');

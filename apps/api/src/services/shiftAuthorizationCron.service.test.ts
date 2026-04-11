@@ -1,0 +1,138 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+process.env.JWT_SECRET ??= 'test-jwt-secret-12345';
+process.env.JWT_REFRESH_SECRET ??= 'test-jwt-refresh-secret';
+process.env.SUPER_ADMIN_BOOTSTRAP_SECRET ??= 'test-bootstrap-secret-1234567890';
+process.env.SUPER_ADMIN_JWT_SECRET ??= 'test-super-admin-jwt-secret-123456';
+process.env.ODOO_DB ??= 'test-odoo-db';
+process.env.ODOO_URL ??= 'http://localhost:8069';
+process.env.ODOO_USERNAME ??= 'test-odoo-user@example.com';
+process.env.ODOO_PASSWORD ??= 'test-odoo-password';
+process.env.OPENAI_API_KEY ??= 'test-openai-key';
+process.env.OPENAI_ORGANIZATION_ID ??= 'test-openai-org';
+process.env.OPENAI_PROJECT_ID ??= 'test-openai-project';
+
+const { createShiftAuthorizationExpiryRunner } = await import('./shiftAuthorizationCron.service.js');
+
+test('createShiftAuthorizationExpiryRunner auto-rejects expired missing-reason authorizations for both existing and newly gated auth types', async () => {
+  const now = new Date('2026-04-11T12:00:00.000Z');
+  const rejections: Array<{
+    auth: Record<string, unknown>;
+    reason: string;
+    resolvedAt: Date;
+    resolvedBy: string | null;
+    resolvedByName: string;
+    companyId?: string | null;
+  }> = [];
+  const cronRuns: Array<Record<string, unknown>> = [];
+
+  const runExpiry = createShiftAuthorizationExpiryRunner({
+    now: () => now,
+    listPendingReasonRequiredAuthorizations: async () => [
+      {
+        id: 'auth-early',
+        auth_type: 'early_check_in',
+        needs_employee_reason: true,
+        employee_reason: '',
+        status: 'pending',
+        created_at: '2026-04-10T10:00:00.000Z',
+      },
+      {
+        id: 'auth-ot',
+        auth_type: 'overtime',
+        needs_employee_reason: true,
+        employee_reason: '   ',
+        status: 'pending',
+        created_at: '2026-04-10T10:00:00.000Z',
+      },
+      {
+        id: 'auth-interim',
+        auth_type: 'interim_duty',
+        needs_employee_reason: true,
+        employee_reason: null,
+        status: 'pending',
+        created_at: '2026-04-10T10:00:00.000Z',
+      },
+      {
+        id: 'auth-late',
+        auth_type: 'late_check_out',
+        needs_employee_reason: true,
+        employee_reason: null,
+        status: 'pending',
+        created_at: '2026-04-10T10:00:00.000Z',
+      },
+      {
+        id: 'auth-tardy',
+        auth_type: 'tardiness',
+        needs_employee_reason: true,
+        employee_reason: '',
+        status: 'pending',
+        created_at: '2026-04-10T10:00:00.000Z',
+      },
+      {
+        id: 'auth-has-reason',
+        auth_type: 'overtime',
+        needs_employee_reason: true,
+        employee_reason: 'Traffic and approval note',
+        status: 'pending',
+        created_at: '2026-04-10T10:00:00.000Z',
+      },
+      {
+        id: 'auth-fresh',
+        auth_type: 'early_check_in',
+        needs_employee_reason: true,
+        employee_reason: '',
+        status: 'pending',
+        created_at: '2026-04-11T11:30:00.000Z',
+      },
+      {
+        id: 'auth-ignored',
+        auth_type: 'early_check_out',
+        needs_employee_reason: true,
+        employee_reason: '',
+        status: 'pending',
+        created_at: '2026-04-10T10:00:00.000Z',
+      },
+    ],
+    rejectAuthorization: async (input: {
+      auth: Record<string, unknown>;
+      reason: string;
+      resolvedAt: Date;
+      resolvedBy: string | null;
+      resolvedByName: string;
+      companyId?: string | null;
+    }) => {
+      rejections.push(input);
+    },
+    notifyCronJobRun: async (input: Record<string, unknown>) => {
+      cronRuns.push(input);
+    },
+    logInfo: () => undefined,
+    logError: () => undefined,
+  } as any);
+
+  await runExpiry({ source: 'scheduled' });
+
+  assert.deepEqual(
+    rejections.map((entry) => String(entry.auth.id)),
+    ['auth-early', 'auth-ot', 'auth-interim', 'auth-late', 'auth-tardy', 'auth-ignored'],
+  );
+  for (const entry of rejections) {
+    assert.equal(
+      entry.reason,
+      'System generated rejection: No employee reason provided within 24 hours.',
+    );
+    assert.equal(entry.resolvedBy, null);
+    assert.equal(entry.resolvedByName, 'System');
+  }
+
+  assert.equal(cronRuns.length, 1);
+  assert.equal(cronRuns[0]?.status, 'success');
+  assert.deepEqual(cronRuns[0]?.stats, {
+    processed: 6,
+    succeeded: 6,
+    failed: 0,
+    skipped: 0,
+  });
+});

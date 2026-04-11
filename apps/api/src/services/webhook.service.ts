@@ -13,9 +13,8 @@ import {
   batchCheckOutAttendances,
   getActiveAttendancesForWebsiteUserKey,
   getAttendanceIdentityByAttendanceId,
-  findWorkEntryByEmployeeAndDate,
-  deductWorkEntryDuration,
   getEmployeeByWebsiteUserKey,
+  upsertBreakWorkEntry as upsertBreakWorkEntryRecord,
 } from './odoo.service.js';
 import { emitStoreAuditEvent } from './storeAuditRealtime.service.js';
 import { SYSTEM_ROLES } from '@omnilert/shared';
@@ -673,7 +672,14 @@ interface ShiftActivityRow {
   end_time: string | Date | null;
   duration_minutes?: number | null;
   activity_details?: string | Record<string, unknown> | null;
+  is_calculated?: boolean | null;
   [key: string]: unknown;
+}
+
+interface BreakWorkEntryUpsertResult {
+  id: number;
+  action: 'created' | 'updated';
+  durationHours: number;
 }
 
 type CheckInRoleType = typeof SYSTEM_ROLES.MANAGEMENT | typeof SYSTEM_ROLES.SERVICE_CREW;
@@ -725,6 +731,25 @@ interface AttendanceProcessorDeps {
     userId: string,
     managementAttendanceId: number,
   ) => Promise<ShiftActivityRow[]>;
+  listOpenShiftActivitiesByShiftId: (shiftId: string) => Promise<ShiftActivityRow[]>;
+  autoEndShiftActivityOnCheckOut: (input: {
+    activityId: string;
+    shiftId: string;
+    branchId: string;
+    companyId: string;
+    endedAt: Date;
+  }) => Promise<{ activity: ShiftActivityRow; log: AttendanceShiftLogRow }>;
+  listEndedUncalculatedBreakActivities: (shiftId: string) => Promise<ShiftActivityRow[]>;
+  markShiftActivitiesCalculated: (activityIds: string[]) => Promise<number>;
+  findOdooEmployeeByWebsiteUserKey: (
+    websiteUserKey: string,
+    companyId: number,
+  ) => Promise<{ id: number; name: string } | null>;
+  upsertBreakWorkEntry: (input: {
+    employeeId: number;
+    date: string;
+    durationMinutes: number;
+  }) => Promise<BreakWorkEntryUpsertResult | null>;
   endShiftActivity: (input: {
     userId: string;
     shiftId: string;
@@ -743,12 +768,6 @@ interface AttendanceProcessorDeps {
     input: Parameters<typeof createAndDispatchNotification>[0],
   ) => ReturnType<typeof createAndDispatchNotification>;
   emitSocketEvent: (event: string, payload: Record<string, unknown>) => void;
-  deductBreakFromWorkEntry: (
-    websiteUserKey: string,
-    odooBranchId: number,
-    date: string,
-    breakHours: number,
-  ) => Promise<void>;
 }
 
 interface SocketNamespaceEmitter {
@@ -1019,6 +1038,69 @@ const defaultAttendanceProcessorDeps: AttendanceProcessorDeps = {
       );
     });
   },
+  listOpenShiftActivitiesByShiftId: async (shiftId) =>
+    (await db
+      .getDb()('shift_activities')
+      .where({ shift_id: shiftId, end_time: null })
+      .select('*')) as ShiftActivityRow[],
+  autoEndShiftActivityOnCheckOut: async (input) => {
+    const tenantDb = db.getDb();
+    const activity = (await tenantDb('shift_activities')
+      .where({ id: input.activityId, shift_id: input.shiftId, end_time: null })
+      .first()) as ShiftActivityRow | null;
+    if (!activity) {
+      throw new AppError(404, 'No active activity found to auto-end on check-out');
+    }
+
+    const durationMs = input.endedAt.getTime() - new Date(activity.start_time).getTime();
+    const durationMinutes = Math.max(0, Math.round(durationMs / 60000));
+
+    await tenantDb('shift_activities').where({ id: input.activityId }).update({
+      end_time: input.endedAt,
+      duration_minutes: durationMinutes,
+    });
+
+    const logType = activity.activity_type === 'break' ? 'break_end' : 'field_task_end';
+    const [log] = await tenantDb('shift_logs')
+      .insert({
+        company_id: input.companyId,
+        shift_id: input.shiftId,
+        branch_id: input.branchId,
+        log_type: logType,
+        changes: JSON.stringify({
+          activity_id: activity.id,
+          duration_minutes: durationMinutes,
+          note: 'Auto-ended on check-out',
+        }),
+        event_time: input.endedAt,
+        odoo_payload: JSON.stringify({}),
+      })
+      .returning('*');
+
+    return {
+      activity: {
+        ...activity,
+        end_time: input.endedAt,
+        duration_minutes: durationMinutes,
+      },
+      log: log as AttendanceShiftLogRow,
+    };
+  },
+  listEndedUncalculatedBreakActivities: async (shiftId) =>
+    (await db
+      .getDb()('shift_activities')
+      .where({ shift_id: shiftId, activity_type: 'break', is_calculated: false })
+      .whereNotNull('end_time')
+      .select('*')) as ShiftActivityRow[],
+  markShiftActivitiesCalculated: async (activityIds) => {
+    if (activityIds.length === 0) return 0;
+    return Number(
+      await db.getDb()('shift_activities').whereIn('id', activityIds).update({ is_calculated: true }),
+    );
+  },
+  findOdooEmployeeByWebsiteUserKey: async (websiteUserKey, companyId) =>
+    getEmployeeByWebsiteUserKey(websiteUserKey, companyId),
+  upsertBreakWorkEntry: async (input) => upsertBreakWorkEntryRecord(input),
   endShiftActivity: async (input) => {
     const result = await endShiftActivityRecord({
       userId: input.userId,
@@ -1039,11 +1121,23 @@ const defaultAttendanceProcessorDeps: AttendanceProcessorDeps = {
     return Number(await query.delete());
   },
   deleteEarlyCheckOutAuthByShiftLogId: async (shiftLogId) => {
-    const count = await db
-      .getDb()('shift_authorizations')
+    const tenantDb = db.getDb();
+    const auth = (await tenantDb('shift_authorizations')
       .where({ shift_log_id: shiftLogId, auth_type: 'early_check_out' })
-      .delete();
-    return Number(count) > 0;
+      .first()) as AttendanceShiftAuthorizationRow | null;
+    if (!auth) {
+      return false;
+    }
+
+    await tenantDb('shift_authorizations').where({ id: auth.id }).delete();
+
+    if (auth.status === 'pending' && typeof auth.shift_id === 'string' && auth.shift_id.trim()) {
+      await tenantDb('employee_shifts')
+        .where({ id: auth.shift_id })
+        .decrement('pending_approvals', 1);
+    }
+
+    return true;
   },
   checkOutAttendancesByIds: async (attendanceIds, checkOutTime) => {
     await batchCheckOutAttendances(attendanceIds, checkOutTime);
@@ -1059,10 +1153,6 @@ const defaultAttendanceProcessorDeps: AttendanceProcessorDeps = {
     } catch {
       logger.warn(`Socket.IO not available for ${event} emit`);
     }
-  },
-  deductBreakFromWorkEntry: async (websiteUserKey, odooBranchId, date, breakHours) => {
-    const { deductBreakFromWorkEntry } = await import('./odoo.service.js');
-    return deductBreakFromWorkEntry(websiteUserKey, odooBranchId, date, breakHours);
   },
 };
 
@@ -1186,6 +1276,78 @@ async function endManagementInterruptBreaks(input: {
         'Failed to auto-end management interrupt break activity',
       );
     }
+  }
+}
+
+async function autoEndOpenShiftActivitiesOnCheckOut(input: {
+  deps: AttendanceProcessorDeps;
+  shiftId: string;
+  branch: AttendanceBranchRow;
+  endedAt: Date;
+}): Promise<void> {
+  const { deps, shiftId, branch, endedAt } = input;
+  const openActivities = await deps.listOpenShiftActivitiesByShiftId(shiftId);
+
+  for (const activity of openActivities) {
+    await deps.autoEndShiftActivityOnCheckOut({
+      activityId: String(activity.id),
+      shiftId,
+      branchId: String(branch.id),
+      companyId: String(branch.company_id),
+      endedAt,
+    });
+  }
+}
+
+async function syncUncalculatedBreaksToWorkEntry(input: {
+  deps: AttendanceProcessorDeps;
+  activeShift: AttendanceShiftRow;
+  branch: AttendanceBranchRow;
+  resolvedIdentity: ResolvedAttendanceIdentity;
+}): Promise<void> {
+  const { deps, activeShift, branch, resolvedIdentity } = input;
+  const websiteUserKey = String(resolvedIdentity.websiteUserKey ?? '').trim();
+  const odooBranchId = Number(branch.odoo_branch_id ?? 0);
+
+  if (!websiteUserKey || !Number.isFinite(odooBranchId) || odooBranchId <= 0) {
+    return;
+  }
+
+  const uncalculatedBreaks = await deps.listEndedUncalculatedBreakActivities(String(activeShift.id));
+  if (uncalculatedBreaks.length === 0) {
+    return;
+  }
+
+  const totalBreakMinutes = uncalculatedBreaks.reduce(
+    (sum, activity) => sum + (Number(activity.duration_minutes) || 0),
+    0,
+  );
+  if (totalBreakMinutes <= 0) {
+    return;
+  }
+
+  const odooEmployee = await deps.findOdooEmployeeByWebsiteUserKey(websiteUserKey, odooBranchId);
+  if (!odooEmployee) {
+    return;
+  }
+
+  try {
+    const shiftDate = new Date(activeShift.shift_start as string | Date).toISOString().split('T')[0];
+    await deps.upsertBreakWorkEntry({
+      employeeId: odooEmployee.id,
+      date: shiftDate,
+      durationMinutes: totalBreakMinutes,
+    });
+    await deps.markShiftActivitiesCalculated(uncalculatedBreaks.map((activity) => String(activity.id)));
+  } catch (err) {
+    logger.error(
+      {
+        err,
+        shiftId: activeShift.id,
+        activityIds: uncalculatedBreaks.map((activity) => activity.id),
+      },
+      'Failed to sync break work entry to Odoo',
+    );
   }
 }
 
@@ -1390,7 +1552,7 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
       const allowsInterimDuty = payload.x_company_id !== 1;
 
       let interimReason: 'no_planning_schedule' | 'scheduled_other_branch' | null = null;
-      if (allowsInterimDuty && !shift) {
+      if (allowsInterimDuty && (!shift || !linkedShiftHasOverlap)) {
         interimReason = await resolveInterimReason(deps, {
           userId: resolvedIdentity.userId,
           branchId: branch.id,
@@ -1458,7 +1620,7 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
           user_id: interimShift.user_id ?? null,
           auth_type: INTERIM_DUTY_AUTH_TYPE,
           diff_minutes: Math.max(0, Math.round(Number(payload.x_cumulative_minutes ?? 0))),
-          needs_employee_reason: false,
+          needs_employee_reason: true,
           status: 'pending',
         });
         await deps.incrementShiftPendingApprovals(interimShift.id as string);
@@ -1537,63 +1699,20 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
 
     if (isCheckOut && activeShift) {
       // 1. End any ongoing activities
-      const openActivities = await tenantDb('shift_activities')
-        .where({ shift_id: activeShift.id, end_time: null });
-      
-      for (const activity of openActivities) {
-        const durationMs = eventTime.getTime() - new Date(activity.start_time).getTime();
-        const durationMinutes = Math.max(0, Math.round(durationMs / 60000));
-        
-        await tenantDb('shift_activities')
-          .where({ id: activity.id })
-          .update({
-            end_time: eventTime,
-            duration_minutes: durationMinutes,
-          });
+      await autoEndOpenShiftActivitiesOnCheckOut({
+        deps,
+        shiftId: String(activeShift.id),
+        branch,
+        endedAt: eventTime,
+      });
 
-        // Log the auto-end
-        const logType = activity.activity_type === 'break' ? 'break_end' : 'field_task_end';
-        await tenantDb('shift_logs').insert({
-          company_id: branch.company_id,
-          shift_id: activeShift.id,
-          branch_id: branch.id,
-          log_type: logType,
-          changes: JSON.stringify({ 
-            activity_id: activity.id, 
-            duration_minutes: durationMinutes,
-            note: 'Auto-ended on check-out'
-          }),
-          event_time: eventTime,
-          odoo_payload: JSON.stringify({}),
-        });
-      }
-
-      // 2. Calculate ALL break duration for this shift and deduct from Odoo work entry
-      const allBreaks = await tenantDb('shift_activities')
-        .where({ shift_id: activeShift.id, activity_type: 'break' })
-        .whereNotNull('end_time');
-      
-      const totalBreakMinutes = allBreaks.reduce((sum, b) => sum + Number(b.duration_minutes || 0), 0);
-      
-      if (totalBreakMinutes > 0 && activeShift.user_id) {
-        try {
-          const user = await tenantDb('users').where({ id: activeShift.user_id }).select('user_key').first();
-          const userKey = String(user?.user_key ?? '').trim();
-          
-          if (userKey && branch.odoo_branch_id) {
-            const odooEmployee = await import('./odoo.service.js').then(m => m.getEmployeeByWebsiteUserKey(userKey, Number(branch.odoo_branch_id)));
-            if (odooEmployee) {
-              const shiftDate = new Date(activeShift.shift_start as string).toISOString().split('T')[0];
-              const regularEntry = await import('./odoo.service.js').then(m => m.findWorkEntryByEmployeeAndDate(odooEmployee.id, shiftDate, 1));
-              if (regularEntry) {
-                await deps.deductBreakFromWorkEntry(userKey, Number(branch.odoo_branch_id), shiftDate, totalBreakMinutes / 60);
-              }
-            }
-          }
-        } catch (err) {
-          logger.error({ err, shiftId: activeShift.id }, 'Failed to deduct break minutes from Odoo work entry');
-        }
-      }
+      // 2. Sync newly completed break time into the Odoo break work entry
+      await syncUncalculatedBreaksToWorkEntry({
+        deps,
+        activeShift,
+        branch,
+        resolvedIdentity,
+      });
 
       // 3. Threshold check for Overtime Authorization and Peer Evaluation
       const checkInTime = parseOdooUtcDateTime(payload.check_in);
@@ -1617,7 +1736,7 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
               user_id: activeShift.user_id ?? null,
               auth_type: 'overtime',
               diff_minutes: overtimeMinutes,
-              needs_employee_reason: false,
+              needs_employee_reason: true,
               status: 'pending',
             })
             .returning('*');
@@ -1724,9 +1843,19 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
             user_id: (shift.user_id as string) ?? null,
             auth_type: 'early_check_out',
             diff_minutes: diffMinutes,
-            needs_employee_reason: false,
-            status: 'no_approval_needed',
+            needs_employee_reason: true,
+            status: 'pending',
           });
+          await deps.incrementShiftPendingApprovals(shift.id as string);
+          if (shift.user_id) {
+            await deps.createAndDispatchNotification({
+              userId: shift.user_id as string,
+              title: 'Early Check Out - Reason Required',
+              message: `You checked out ${formatDiffMinutes(diffMinutes)} before your scheduled shift end. Please submit a reason in the Authorization Requests tab.`,
+              type: 'warning',
+              linkUrl: '/account/schedule',
+            });
+          }
           deps.emitSocketEvent('shift:authorization-new', auth as Record<string, unknown>);
         } else if (diffMinutes < 0) {
           const absDiff = Math.abs(diffMinutes);

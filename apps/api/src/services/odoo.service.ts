@@ -1285,6 +1285,82 @@ export async function createOvertimeWorkEntry(params: {
   return newId;
 }
 
+const BREAK_WORK_ENTRY_TYPE_ID = 129;
+const BREAK_WORK_ENTRY_DESCRIPTION = 'Break - Synced from Omnilert';
+
+export async function upsertBreakWorkEntry(
+  params: {
+    employeeId: number;
+    date: string;
+    durationMinutes: number;
+  },
+  deps?: { callOdooKwFn?: OdooKwCallFn },
+): Promise<{ id: number; action: 'created' | 'updated'; durationHours: number } | null> {
+  if (!Number.isFinite(params.durationMinutes) || params.durationMinutes <= 0) {
+    return null;
+  }
+
+  const callFn = deps?.callOdooKwFn ?? callOdooKw;
+  const durationHours = params.durationMinutes / 60;
+  const existingEntries = (await callFn('hr.work.entry', 'search_read', [], {
+    domain: [
+      ['employee_id', '=', params.employeeId],
+      ['date', '=', params.date],
+      ['work_entry_type_id', '=', BREAK_WORK_ENTRY_TYPE_ID],
+    ],
+    fields: ['id', 'duration'],
+    order: 'id asc',
+    limit: 1,
+  })) as Array<{ id: number; duration: number }>;
+
+  if (existingEntries.length > 0) {
+    const existingEntry = existingEntries[0];
+    const newDurationHours = Number(existingEntry.duration || 0) + durationHours;
+
+    await callFn('hr.work.entry', 'write', [
+      [existingEntry.id],
+      { duration: newDurationHours, name: BREAK_WORK_ENTRY_DESCRIPTION },
+    ]);
+
+    logger.info(
+      {
+        entryId: existingEntry.id,
+        employeeId: params.employeeId,
+        date: params.date,
+        addedDurationHours: durationHours,
+        totalDurationHours: newDurationHours,
+        workEntryTypeId: BREAK_WORK_ENTRY_TYPE_ID,
+      },
+      'Updated Odoo break work entry from Omnilert break duration',
+    );
+
+    return { id: existingEntry.id, action: 'updated', durationHours: newDurationHours };
+  }
+
+  const createdEntryId = (await callFn('hr.work.entry', 'create', [
+    {
+      employee_id: params.employeeId,
+      date: params.date,
+      work_entry_type_id: BREAK_WORK_ENTRY_TYPE_ID,
+      duration: durationHours,
+      name: BREAK_WORK_ENTRY_DESCRIPTION,
+    },
+  ])) as number;
+
+  logger.info(
+    {
+      entryId: createdEntryId,
+      employeeId: params.employeeId,
+      date: params.date,
+      durationHours,
+      workEntryTypeId: BREAK_WORK_ENTRY_TYPE_ID,
+    },
+    'Created Odoo break work entry from Omnilert break duration',
+  );
+
+  return { id: createdEntryId, action: 'created', durationHours };
+}
+
 export async function searchWorkEntriesByEmployeeAndDate(
   employeeId: number,
   date: string,

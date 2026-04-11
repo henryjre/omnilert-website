@@ -565,7 +565,7 @@ function ServiceCrewDetailPanel({
         {auth.status === 'pending' && auth.needs_employee_reason && !auth.employee_reason && (
           <div className="flex items-start gap-3 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-orange-500" />
-            <p className="text-sm text-orange-700">Awaiting employee reason before approval.</p>
+            <p className="text-sm text-orange-700">Awaiting employee reason before manager review.</p>
           </div>
         )}
 
