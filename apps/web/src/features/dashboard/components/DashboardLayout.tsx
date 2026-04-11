@@ -124,7 +124,7 @@ export function DashboardLayout() {
         style={{ touchAction: 'pan-y' }}
         onPanStart={(_, info) => setPanStartX(info.point.x)}
         onPanEnd={(_, info) => {
-          if (!mobileSidebarOpen && panStartX !== null) {
+          if (!mobileSidebarOpen && !accountSidebarOpen && panStartX !== null) {
             // Started within 80px of left edge, swiped right by at least 40px
             // and vertical movement was minimal (ignoring unintentional vertical drags)
             if (panStartX < 80 && info.offset.x > 40 && Math.abs(info.offset.y) < 60) {
