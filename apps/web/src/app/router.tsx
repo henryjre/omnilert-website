@@ -11,6 +11,7 @@ import { EmployeeNotificationsTab } from '@/features/account/components/Employee
 import { SettingsTab } from '@/features/account/components/SettingsTab';
 import { AuditResultsPage } from '@/features/account/pages/AuditResultsPage';
 import { PayslipPage } from '@/features/account/pages/PayslipPage';
+import { TokenPayPage } from '@/features/account/pages/TokenPayPage';
 import { EmploymentTab } from '@/features/account/components/EmploymentTab';
 import { PosVerificationPage } from '@/features/pos-verification/pages/PosVerificationPage';
 import { PosSessionPage } from '@/features/pos-session/pages/PosSessionPage';
@@ -100,6 +101,10 @@ export const router = createBrowserRouter([
           {
             path: 'account/settings',
             element: <SettingsTab />,
+          },
+          {
+            path: 'account/token-pay',
+            element: <TokenPayPage />,
           },
           {
             path: 'account/profile',
