@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { linkClass, AnimatedNavLink } from './sidebar-nav';
 import {
   LayoutDashboard,
   User,
@@ -23,25 +24,10 @@ import { usePermission } from '@/shared/hooks/usePermission';
 import { usePosVerificationStore } from '@/shared/store/posVerificationStore';
 import { PERMISSIONS } from '@omnilert/shared';
 
-const linkClass = ({ isActive }: { isActive: boolean }) =>
-  `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-    isActive
-      ? 'bg-primary-50 text-primary-700 shadow-sm'
-      : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-  }`;
-
 const categoryLabel = (label: string) => (
   <p className="px-3 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-gray-400">
     {label}
   </p>
-);
-
-const AnimatedNavLink = ({ to, children, className, end, onClick }: { to: string, children: ReactNode, className?: any, end?: boolean, onClick?: () => void }) => (
-  <motion.div whileHover={{ x: 4 }} whileTap={{ scale: 0.98 }} className="block">
-    <NavLink to={to} className={className} end={end} onClick={onClick}>
-      {children}
-    </NavLink>
-  </motion.div>
 );
 
 interface SidebarProps {
