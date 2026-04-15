@@ -9,6 +9,7 @@ const YMD_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 interface CliArgs {
   apply: boolean;
   all: boolean;
+  fillGaps: boolean;
   date: string | null;
   from: string | null;
   to: string | null;
@@ -58,6 +59,7 @@ function parseArgs(): CliArgs {
   const args = process.argv.slice(2);
   let apply = false;
   let all = false;
+  let fillGaps = false;
   let date: string | null = null;
   let from: string | null = null;
   let to: string | null = null;
@@ -80,6 +82,11 @@ function parseArgs(): CliArgs {
 
     if (arg === '--all') {
       all = true;
+      continue;
+    }
+
+    if (arg === '--fill-gaps') {
+      fillGaps = true;
       continue;
     }
 
@@ -110,12 +117,16 @@ function parseArgs(): CliArgs {
     throw new Error(`Unknown argument: ${arg}`);
   }
 
-  if (date && (all || from || to)) {
-    throw new Error('date cannot be combined with all/from/to');
+  if (date && (all || fillGaps || from || to)) {
+    throw new Error('date cannot be combined with all/fill-gaps/from/to');
   }
 
-  if (all && (from || to)) {
-    throw new Error('all cannot be combined with from/to');
+  if (all && (fillGaps || from || to)) {
+    throw new Error('all cannot be combined with fill-gaps/from/to');
+  }
+
+  if (fillGaps && !from) {
+    throw new Error('--fill-gaps requires --from (and optionally --to)');
   }
 
   if (!from && to) {
@@ -128,11 +139,38 @@ function parseArgs(): CliArgs {
   return {
     apply,
     all,
+    fillGaps,
     date,
     from,
     to,
     limitDates,
   };
+}
+
+function generateDateRange(fromYmd: string, toYmd: string): string[] {
+  const dates: string[] = [];
+  const { year: fy, month: fm, day: fd } = parseYmd(fromYmd);
+  const { year: ty, month: tm, day: td } = parseYmd(toYmd);
+
+  const current = new Date(Date.UTC(fy, fm - 1, fd));
+  const end = new Date(Date.UTC(ty, tm - 1, td));
+
+  while (current <= end) {
+    const y = current.getUTCFullYear();
+    const m = String(current.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(current.getUTCDate()).padStart(2, '0');
+    dates.push(`${y}-${m}-${d}`);
+    current.setUTCDate(current.getUTCDate() + 1);
+  }
+
+  return dates;
+}
+
+async function listMissingSnapshotDates(fromYmd: string, toYmd: string): Promise<string[]> {
+  const expected = new Set(generateDateRange(fromYmd, toYmd));
+  const existing = await listDistinctSnapshotDates({ fromYmd, toYmd });
+  const existingSet = new Set(existing);
+  return [...expected].filter((d) => !existingSet.has(d)).sort();
 }
 
 async function getLatestSnapshotDate(): Promise<string | null> {
@@ -172,6 +210,11 @@ async function resolveTargetDates(args: CliArgs): Promise<string[]> {
 
   if (args.all) {
     return listDistinctSnapshotDates();
+  }
+
+  if (args.fillGaps && args.from && args.to) {
+    const { fromYmd, toYmd } = normalizeRange(args.from, args.to);
+    return listMissingSnapshotDates(fromYmd, toYmd);
   }
 
   if (args.from && args.to) {
