@@ -327,7 +327,7 @@ function calcWrs(
   const { effective } = splitWrsEvaluations(peerEvaluations, from, to);
   const count = effective.length;
   if (count < minRecords) return { score: null, impact: 0, count };
-  const avg = effective.reduce((s, e) => s + e.average_score, 0) / count;
+  const avg = effective.reduce((s, e) => s + Number(e.average_score), 0) / count;
   const score = Math.round(avg * 100) / 100;
   return { score, impact: wrsImpact(score), count };
 }
