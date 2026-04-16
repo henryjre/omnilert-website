@@ -38,6 +38,7 @@ function mapOdooCategory(orderType: string): TokenTransaction['category'] {
 // ---------------------------------------------------------------------------
 
 function normalizeOdooHistory(record: OdooLoyaltyHistory): TokenTransaction {
+  // When both issued and used are 0 (voided entry), treat as a zero-value debit
   const isCredit = record.issued > 0;
   return {
     id: `odoo-${record.id}`,
@@ -78,7 +79,7 @@ async function getUserKey(userId: string): Promise<string> {
   if (!user || !user.user_key) {
     throw new AppError(404, 'User not found');
   }
-  return user.user_key as string;
+  return user.user_key;
 }
 
 // ---------------------------------------------------------------------------
@@ -172,7 +173,7 @@ export async function getTransactions(
       page,
       limit,
       total: totalCount,
-      totalPages: Math.ceil(totalCount / limit),
+      totalPages: Math.ceil(totalCount / Math.max(1, limit)),
     },
   };
 }
