@@ -13,6 +13,7 @@ export type * from './types/storeAudit.types.js';
 export type * from './types/user.types.js';
 export type * from './types/violationNotice.types.js';
 export type * from './types/webhook.types.js';
+export type * from './types/tokenPay.types.js';
 
 // Constants
 export {
