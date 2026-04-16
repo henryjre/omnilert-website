@@ -407,15 +407,15 @@ export function TopBar({ onOpenSidebar, onOpenAccountSidebar, accountSidebarOpen
           </AnimatePresence>
         </div>
 
+        {/* Mobile: avatar-only button */}
         <motion.button
           type="button"
           onClick={onOpenAccountSidebar}
-          whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
-          className={`cursor-pointer rounded-full transition-shadow focus:outline-none ${
+          className={`sm:hidden flex h-9 w-9 items-center justify-center rounded-full border cursor-pointer focus:outline-none transition-colors ${
             accountSidebarOpen
-              ? 'ring-2 ring-primary-500'
-              : 'hover:ring-2 hover:ring-primary-300'
+              ? 'border-primary-500 bg-primary-50'
+              : 'border-gray-300 bg-gray-100 hover:border-primary-400 hover:bg-primary-50'
           }`}
           aria-label="Open account menu"
         >
@@ -423,14 +423,41 @@ export function TopBar({ onOpenSidebar, onOpenAccountSidebar, accountSidebarOpen
             <img
               src={user.avatarUrl}
               alt="Profile"
-              className="h-8 w-8 rounded-full object-cover"
+              className="h-full w-full rounded-full object-cover"
             />
           ) : (
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-100 text-sm font-medium text-primary-700">
-              {user?.firstName?.[0]}
-              {user?.lastName?.[0]}
+            <span className="text-sm font-medium text-primary-700">
+              {user?.firstName?.[0]}{user?.lastName?.[0]}
+            </span>
+          )}
+        </motion.button>
+
+        {/* Desktop: avatar + name pill */}
+        <motion.button
+          type="button"
+          onClick={onOpenAccountSidebar}
+          whileTap={{ scale: 0.98 }}
+          className={`hidden sm:flex items-center gap-2 rounded-full border px-2 py-1 cursor-pointer focus:outline-none transition-colors ${
+            accountSidebarOpen
+              ? 'border-primary-500 bg-primary-50'
+              : 'border-gray-300 bg-gray-50 hover:border-primary-400 hover:bg-primary-50'
+          }`}
+          aria-label="Open account menu"
+        >
+          {user?.avatarUrl ? (
+            <img
+              src={user.avatarUrl}
+              alt="Profile"
+              className="h-7 w-7 rounded-full object-cover"
+            />
+          ) : (
+            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary-600 text-xs font-semibold text-white">
+              {user?.firstName?.[0]}{user?.lastName?.[0]}
             </div>
           )}
+          <span className="max-w-[96px] truncate text-sm font-medium text-gray-700">
+            {user?.firstName}
+          </span>
         </motion.button>
       </div>
     </header>
