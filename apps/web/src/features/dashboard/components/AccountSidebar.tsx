@@ -3,6 +3,7 @@ import { linkClass, AnimatedNavLink } from './sidebar-nav';
 import {
   Calendar,
   Receipt,
+  Wallet,
   FileText,
   DollarSign,
   ClipboardList,
@@ -60,6 +61,10 @@ export function AccountSidebar({ className = '', onClose }: AccountSidebarProps)
         <AnimatedNavLink to="/account/payslip" className={linkClass} onClick={onClose}>
           <Receipt className="h-5 w-5" />
           My Payslip
+        </AnimatedNavLink>
+        <AnimatedNavLink to="/account/token-pay" className={linkClass} onClick={onClose}>
+          <Wallet className="h-5 w-5" />
+          My Token Pay
         </AnimatedNavLink>
         {hasPermission(PERMISSIONS.ACCOUNT_MANAGE_AUTH_REQUEST) && (
           <AnimatedNavLink to="/account/authorization-requests" className={linkClass} onClick={onClose}>

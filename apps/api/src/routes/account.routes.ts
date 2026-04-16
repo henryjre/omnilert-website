@@ -11,6 +11,7 @@ import {
 } from '@omnilert/shared';
 import { validateBody } from '../middleware/validateRequest.js';
 import * as accountController from '../controllers/account.controller.js';
+import * as tokenPayController from '../controllers/tokenPay.controller.js';
 
 // Use memory storage for S3 uploads
 const storage = multer.memoryStorage();
@@ -152,6 +153,10 @@ router.get('/push/preferences', accountController.getPushPreferences);
 router.patch('/push/preferences', accountController.updatePushPreferences);
 router.post('/push/subscriptions', accountController.upsertPushSubscription);
 router.delete('/push/subscriptions', accountController.removePushSubscription);
+
+// Token Pay wallet and transaction history
+router.get('/token-pay/wallet', requirePermission(PERMISSIONS.ACCOUNT_VIEW_TOKEN_PAY), tokenPayController.getWallet);
+router.get('/token-pay/transactions', requirePermission(PERMISSIONS.ACCOUNT_VIEW_TOKEN_PAY), tokenPayController.getTransactions);
 
 // Token pay verification — customer fetches their own verification details
 router.get('/token-pay/:id', accountController.getTokenPayVerification);
