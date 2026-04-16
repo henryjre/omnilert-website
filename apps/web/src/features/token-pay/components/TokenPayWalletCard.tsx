@@ -10,6 +10,10 @@ function formatCurrency(value: number): string {
   return `₱${value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+// Noise texture SVG as a data URL for the subtle grain overlay
+const NOISE_SVG =
+  "data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E";
+
 interface TokenPayWalletCardProps {
   wallet: TokenPayCardSummary;
   selected: boolean;
@@ -21,6 +25,10 @@ export const TokenPayWalletCard = memo(function TokenPayWalletCard({
   selected,
   onClick,
 }: TokenPayWalletCardProps) {
+  const activeGradient = 'linear-gradient(135deg, rgb(30 64 175) 0%, rgb(37 99 235) 100%)';
+  const suspendedGradient = 'linear-gradient(135deg, #374151 0%, #6b7280 100%)';
+  const gradient = wallet.isSuspended ? suspendedGradient : activeGradient;
+
   return (
     <div
       role="button"
@@ -32,64 +40,87 @@ export const TokenPayWalletCard = memo(function TokenPayWalletCard({
           onClick(wallet.userId);
         }
       }}
-      className={`flex flex-col rounded-xl border bg-white p-4 text-left transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${
+      className={`flex flex-col overflow-hidden rounded-xl shadow-md transition-all duration-200 cursor-pointer focus:outline-none ${
+        wallet.isSuspended ? 'opacity-75' : ''
+      } ${
         selected
-          ? 'border-primary-300 ring-1 ring-primary-300 bg-primary-50/50'
-          : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
+          ? 'ring-2 ring-primary-500 ring-offset-2 shadow-lg'
+          : 'hover:shadow-lg'
       }`}
     >
-      {/* Identity row */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-3">
-          {wallet.avatarUrl ? (
-            <img
-              src={wallet.avatarUrl}
-              alt={`${wallet.firstName} ${wallet.lastName}`}
-              className="h-12 w-12 shrink-0 rounded-full object-cover"
-            />
-          ) : (
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary-100 text-sm font-semibold text-primary-700">
-              {getInitials(wallet.firstName, wallet.lastName)}
+      {/* ── Top zone: gradient header ── */}
+      <div className="relative px-4 pb-4 pt-4" style={{ background: gradient }}>
+        {/* Noise texture overlay */}
+        <div
+          className="pointer-events-none absolute inset-0 opacity-[0.04]"
+          style={{ backgroundImage: `url("${NOISE_SVG}")` }}
+        />
+
+        {/* Identity row */}
+        <div className="relative flex items-start justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-3">
+            {wallet.avatarUrl ? (
+              <img
+                src={wallet.avatarUrl}
+                alt={`${wallet.firstName} ${wallet.lastName}`}
+                className="h-14 w-14 shrink-0 rounded-full object-cover ring-2 ring-white/20"
+              />
+            ) : (
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-white/15 text-base font-bold text-white ring-2 ring-white/20">
+                {getInitials(wallet.firstName, wallet.lastName)}
+              </div>
+            )}
+            <div className="min-w-0">
+              <p className="truncate font-bold text-white leading-snug">
+                {wallet.firstName} {wallet.lastName}
+              </p>
+              <p className="mt-0.5 truncate font-mono text-[11px] text-white/50">
+                {wallet.userKey}
+              </p>
             </div>
-          )}
-          <div className="min-w-0">
-            <p className="truncate font-semibold text-gray-900">
-              {wallet.firstName} {wallet.lastName}
-            </p>
-            <p className="mt-0.5 truncate font-mono text-xs text-gray-400">{wallet.userKey}</p>
           </div>
+
+          {wallet.isSuspended && (
+            <span className="shrink-0 rounded-full bg-red-500/80 px-2 py-0.5 text-[10px] font-semibold text-white">
+              Suspended
+            </span>
+          )}
         </div>
-        {wallet.isSuspended && (
-          <span className="shrink-0 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
-            Suspended
-          </span>
-        )}
+
+        {/* Balance */}
+        <div className="relative mt-4">
+          <p className="text-[10px] font-medium uppercase tracking-widest text-white/50">
+            Balance
+          </p>
+          <p className="mt-0.5 text-2xl font-extrabold tabular-nums text-white">
+            {formatCurrency(wallet.balance)}
+          </p>
+        </div>
       </div>
 
-      {/* Balance */}
-      <div className="mt-3 border-t border-gray-100 pt-3">
-        <p className="text-[10px] font-medium uppercase tracking-wider text-gray-400">Balance</p>
-        <p className="mt-0.5 text-2xl font-bold tabular-nums text-gray-900">
-          {formatCurrency(wallet.balance)}
-        </p>
-      </div>
-
-      {/* Earned / Spent row */}
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        <div className="flex items-center gap-1.5 rounded-lg bg-green-50 px-2.5 py-2">
-          <TrendingUp className="h-3.5 w-3.5 shrink-0 text-green-600" />
+      {/* ── Bottom zone: stats ── */}
+      <div className="grid grid-cols-2 divide-x divide-gray-100 bg-white">
+        {/* Earned */}
+        <div className="flex items-center gap-2 px-4 py-3">
+          <TrendingUp className="h-4 w-4 shrink-0 text-green-500" />
           <div className="min-w-0">
-            <p className="text-[10px] font-medium uppercase tracking-wider text-green-700">Earned</p>
-            <p className="truncate text-xs font-bold tabular-nums text-green-800">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-gray-400">
+              Earned
+            </p>
+            <p className="truncate text-sm font-bold tabular-nums text-green-600">
               {formatCurrency(wallet.totalEarned)}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-1.5 rounded-lg bg-red-50 px-2.5 py-2">
-          <TrendingDown className="h-3.5 w-3.5 shrink-0 text-red-600" />
+
+        {/* Spent */}
+        <div className="flex items-center gap-2 px-4 py-3">
+          <TrendingDown className="h-4 w-4 shrink-0 text-red-400" />
           <div className="min-w-0">
-            <p className="text-[10px] font-medium uppercase tracking-wider text-red-700">Spent</p>
-            <p className="truncate text-xs font-bold tabular-nums text-red-800">
+            <p className="text-[10px] font-medium uppercase tracking-wider text-gray-400">
+              Spent
+            </p>
+            <p className="truncate text-sm font-bold tabular-nums text-red-500">
               {formatCurrency(wallet.totalSpent)}
             </p>
           </div>
