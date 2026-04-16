@@ -1,6 +1,8 @@
 export interface TokenPayWallet {
   balance: number;
   cardId: number;
+  totalEarned: number;
+  totalSpent: number;
 }
 
 export interface TokenTransaction {

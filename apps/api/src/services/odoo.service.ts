@@ -3179,3 +3179,19 @@ export async function getTokenPayHistory(
 export async function getTokenPayHistoryCount(cardId: number): Promise<number> {
   return (await callOdooKw('loyalty.history', 'search_count', [[['card_id', '=', cardId]]])) as number;
 }
+
+/**
+ * Get lifetime totals (sum of all issued and used) for a loyalty card.
+ */
+export async function getTokenPayTotals(cardId: number): Promise<{ totalEarned: number; totalSpent: number }> {
+  const rows = (await callOdooKw('loyalty.history', 'read_group', [
+    [['card_id', '=', cardId]],
+    ['issued', 'used'],
+    [],
+  ])) as Array<{ issued: number; used: number }>;
+  const row = rows[0];
+  return {
+    totalEarned: row?.issued ?? 0,
+    totalSpent: row?.used ?? 0,
+  };
+}

@@ -71,7 +71,21 @@ const rowVariant: Variants = {
   visible: { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' } },
 };
 
-export function TokenBalanceCard({ balance, isLoading = false }: { balance: number; isLoading?: boolean }) {
+function formatStat(value: number): string {
+  return value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+export function TokenBalanceCard({
+  balance,
+  totalEarned,
+  totalSpent,
+  isLoading = false,
+}: {
+  balance: number;
+  totalEarned: number;
+  totalSpent: number;
+  isLoading?: boolean;
+}) {
   const formattedBalance = new Intl.NumberFormat('en-PH', {
     style: 'decimal',
     minimumFractionDigits: 2,
@@ -117,7 +131,32 @@ export function TokenBalanceCard({ balance, isLoading = false }: { balance: numb
           )}
         </motion.div>
 
-        {/* Stats row — Total Earned / Total Spent will be added once backend aggregates are available */}
+        {/* Divider */}
+        <motion.div variants={rowVariant} className="my-6 h-px bg-white/10" />
+
+        {/* Stats row */}
+        <motion.div variants={rowVariant} className="flex gap-3 sm:gap-4">
+          <div className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-3 backdrop-blur-sm sm:px-4 sm:py-3.5">
+            <p className="text-[9px] font-bold uppercase tracking-widest text-white/45 sm:text-[10px]">
+              Total Earned
+            </p>
+            {isLoading ? (
+              <p className="mt-1.5 text-base font-bold tracking-tight text-white/30 sm:mt-2 sm:text-lg">—</p>
+            ) : (
+              <p className="mt-1.5 text-base font-bold tracking-tight text-[#4ade80] sm:mt-2 sm:text-lg">+ {formatStat(totalEarned)}</p>
+            )}
+          </div>
+          <div className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-3 backdrop-blur-sm sm:px-4 sm:py-3.5">
+            <p className="text-[9px] font-bold uppercase tracking-widest text-white/45 sm:text-[10px]">
+              Total Spent
+            </p>
+            {isLoading ? (
+              <p className="mt-1.5 text-base font-bold tracking-tight text-white/30 sm:mt-2 sm:text-lg">—</p>
+            ) : (
+              <p className="mt-1.5 text-base font-bold tracking-tight text-[#fca5a5] sm:mt-2 sm:text-lg">− {formatStat(totalSpent)}</p>
+            )}
+          </div>
+        </motion.div>
       </motion.div>
     </motion.div>
   );

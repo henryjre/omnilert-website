@@ -72,6 +72,8 @@ export function TokenPayPageContent({
       <motion.div variants={sectionVariant}>
         <TokenBalanceCard
           balance={walletQuery.data?.balance ?? 0}
+          totalEarned={walletQuery.data?.totalEarned ?? 0}
+          totalSpent={walletQuery.data?.totalSpent ?? 0}
           isLoading={walletQuery.isLoading}
         />
       </motion.div>

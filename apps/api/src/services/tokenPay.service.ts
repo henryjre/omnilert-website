@@ -93,13 +93,14 @@ async function getUserKey(userId: string): Promise<string | null> {
 export async function getWallet(userId: string): Promise<TokenPayWallet> {
   const userKey = await getUserKey(userId);
   if (!userKey) {
-    return { balance: 0, cardId: 0 };
+    return { balance: 0, cardId: 0, totalEarned: 0, totalSpent: 0 };
   }
   const card = await odoo.getTokenPayCard(userKey);
   if (!card) {
-    return { balance: 0, cardId: 0 };
+    return { balance: 0, cardId: 0, totalEarned: 0, totalSpent: 0 };
   }
-  return { balance: card.points, cardId: card.id };
+  const totals = await odoo.getTokenPayTotals(card.id);
+  return { balance: card.points, cardId: card.id, ...totals };
 }
 
 export async function getTransactions(
