@@ -64,6 +64,12 @@ export const PERMISSIONS = {
   CASH_REQUESTS_VIEW: 'cash_requests.view',
   CASH_REQUESTS_MANAGE: 'cash_requests.manage',
 
+  // Token Pay Management (4)
+  TOKEN_PAY_VIEW: 'token_pay.view',
+  TOKEN_PAY_ISSUE: 'token_pay.issue',
+  TOKEN_PAY_MANAGE: 'token_pay.manage',
+  TOKEN_PAY_ACCOUNT_MANAGE: 'token_pay.account_manage',
+
   // Analytics (4)
   ANALYTICS_VIEW_EMPLOYEE_ANALYTICS: 'analytics.view_employee_analytics',
   ANALYTICS_VIEW_PROFITABILITY_ANALYTICS: 'analytics.view_profitability_analytics',
@@ -176,6 +182,15 @@ export const PERMISSION_CATEGORIES: Record<string, { label: string; permissions:
       PERMISSIONS.CASH_REQUESTS_MANAGE,
     ],
   },
+  token_pay: {
+    label: 'Token Pay',
+    permissions: [
+      PERMISSIONS.TOKEN_PAY_VIEW,
+      PERMISSIONS.TOKEN_PAY_ISSUE,
+      PERMISSIONS.TOKEN_PAY_MANAGE,
+      PERMISSIONS.TOKEN_PAY_ACCOUNT_MANAGE,
+    ],
+  },
   analytics: {
     label: 'Analytics',
     permissions: [
@@ -208,6 +223,9 @@ export const PERMISSION_PREREQUISITES: Partial<Record<PermissionKey, PermissionK
   [PERMISSIONS.SCHEDULE_END_SHIFT]: PERMISSIONS.SCHEDULE_VIEW,
   [PERMISSIONS.VIOLATION_NOTICE_MANAGE]: PERMISSIONS.VIOLATION_NOTICE_VIEW,
   [PERMISSIONS.CASH_REQUESTS_MANAGE]: PERMISSIONS.CASH_REQUESTS_VIEW,
+  [PERMISSIONS.TOKEN_PAY_ISSUE]: PERMISSIONS.TOKEN_PAY_VIEW,
+  [PERMISSIONS.TOKEN_PAY_MANAGE]: PERMISSIONS.TOKEN_PAY_VIEW,
+  [PERMISSIONS.TOKEN_PAY_ACCOUNT_MANAGE]: PERMISSIONS.TOKEN_PAY_VIEW,
   [PERMISSIONS.ACCOUNT_MANAGE_SCHEDULE]: PERMISSIONS.ACCOUNT_VIEW_SCHEDULE,
 };
 
@@ -252,6 +270,10 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
   [PERMISSIONS.WORKPLACE_RELATIONS_VIEW]: 'Access the Workplace Relations page and view peer evaluations',
   [PERMISSIONS.CASH_REQUESTS_VIEW]: 'Access the Cash Requests management page',
   [PERMISSIONS.CASH_REQUESTS_MANAGE]: 'Approve, reject, and disburse cash requests',
+  [PERMISSIONS.TOKEN_PAY_VIEW]: 'Access the Token Pay management page',
+  [PERMISSIONS.TOKEN_PAY_ISSUE]: 'Submit token issuance and deduction requests',
+  [PERMISSIONS.TOKEN_PAY_MANAGE]: 'Approve and reject token issuance and deduction requests',
+  [PERMISSIONS.TOKEN_PAY_ACCOUNT_MANAGE]: 'Suspend and unsuspend loyalty accounts',
   [PERMISSIONS.ANALYTICS_VIEW_EMPLOYEE_ANALYTICS]: 'Access the Employee Analytics page and view performance metrics',
   [PERMISSIONS.ANALYTICS_VIEW_PROFITABILITY_ANALYTICS]: 'Access the Profitability Analytics page and view P&L metrics',
   [PERMISSIONS.ANALYTICS_VIEW_POS_ANALYTICS]: 'Access the POS Analytics page and view session metrics',
