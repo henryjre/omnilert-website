@@ -143,7 +143,7 @@ export function TokenBalanceCard({
             {isLoading ? (
               <p className="mt-1.5 text-base font-bold tracking-tight text-white/30 sm:mt-2 sm:text-lg">—</p>
             ) : (
-              <p className="mt-1.5 text-base font-bold tracking-tight text-[#4ade80] sm:mt-2 sm:text-lg">+ {formatStat(totalEarned)}</p>
+              <p className="mt-1.5 text-base font-bold tracking-tight text-[#4ade80] sm:mt-2 sm:text-lg">+ ₱{formatStat(totalEarned)}</p>
             )}
           </div>
           <div className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-3 backdrop-blur-sm sm:px-4 sm:py-3.5">
@@ -153,7 +153,7 @@ export function TokenBalanceCard({
             {isLoading ? (
               <p className="mt-1.5 text-base font-bold tracking-tight text-white/30 sm:mt-2 sm:text-lg">—</p>
             ) : (
-              <p className="mt-1.5 text-base font-bold tracking-tight text-[#fca5a5] sm:mt-2 sm:text-lg">− {formatStat(totalSpent)}</p>
+              <p className="mt-1.5 text-base font-bold tracking-tight text-[#fca5a5] sm:mt-2 sm:text-lg">− ₱{formatStat(totalSpent)}</p>
             )}
           </div>
         </motion.div>

@@ -88,7 +88,7 @@ export function TokenTransactionFeed({
                   </div>
                   <div className="mt-1">
                     <p className="text-xs font-medium text-gray-500">
-                      {new Date(tx.date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                      {new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(tx.date))}
                     </p>
                   </div>
                 </div>

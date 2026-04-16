@@ -29,12 +29,14 @@ export function TokenPayPage() {
   }, [currentPage, setSearchParams]);
 
   // Sync URL to page (for back/forward navigation)
+  // Note: currentPage intentionally excluded — this effect only reacts to external URL changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const pageFromUrl = Number(searchParams.get('page')) || 1;
     if (pageFromUrl !== currentPage) {
       setCurrentPage(pageFromUrl);
     }
-  }, [searchParams, currentPage]);
+  }, [searchParams]);
 
   const handleClosePanel = () => setSelectedTx(null);
 
@@ -80,7 +82,7 @@ export function TokenPayPage() {
                   <div>
                     <h2 className="text-base font-bold text-gray-900">Transaction Detail</h2>
                     <p className="mt-0.5 text-xs text-gray-400">
-                      {selectedTx.id}
+                      {selectedTx.reference || selectedTx.id}
                     </p>
                   </div>
                   <button

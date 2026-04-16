@@ -47,7 +47,7 @@ function normalizeOdooHistory(record: OdooLoyaltyHistory): TokenTransaction {
     title: record.x_order_type,
     category: mapOdooCategory(record.x_order_type),
     amount: Math.abs(isCredit ? record.issued : record.used),
-    date: new Date(record.create_date).toISOString(),
+    date: new Date(record.create_date.replace(' ', 'T') + 'Z').toISOString(),
     reference: record.x_order_reference || null,
     status: 'completed',
     issuedBy: record.x_issuer || null,

@@ -23,7 +23,18 @@
       "Bash(grep -E \"\\\\.ts$\")",
       "Bash(find /e/Github/omnilert-website/apps/web/src/shared/components -type f -name \"*.tsx\" -exec grep -l \"DrawerPanel\\\\|Drawer\" {} \\\\;)",
       "Bash(rtk find *)",
-      "Bash(rtk ls *)"
+      "Bash(rtk ls *)",
+      "Bash(rtk wc *)",
+      "Bash(rtk grep *)",
+      "Bash(rtk read *)",
+      "Bash(pnpm --filter @omnilert/api test)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(pnpm --filter @omnilert/api test -- --reporter=verbose)",
+      "Bash(pnpm test *)",
+      "Bash(ls /home/phaeton/Projects/omnilert-website/vitest*)",
+      "Bash(ls /home/phaeton/Projects/omnilert-website/*.config.*)",
+      "Bash(node --import tsx/esm --test src/**/*.test.ts)",
+      "Bash(tsx --test src/**/*.test.ts)"
     ]
   }
 }

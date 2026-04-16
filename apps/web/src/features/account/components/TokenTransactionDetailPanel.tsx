@@ -40,7 +40,6 @@ function formatTimeOnly(iso: string): string {
     timeZone: 'Asia/Manila',
     hour: 'numeric',
     minute: '2-digit',
-    second: '2-digit',
     hour12: true,
   }).format(new Date(iso));
 }
@@ -52,11 +51,11 @@ function formatTimeOnly(iso: string): string {
 const categoryMeta: Record<TokenTransaction['category'], { label: string; note: string }> = {
   reward: {
     label: 'Reward & Incentive',
-    note: 'Credited by HR or management as a performance incentive.',
+    note: 'Credited by Omnilert System as incentive for reaching the target daily sales..',
   },
   purchase: {
     label: 'Store Purchase',
-    note: 'Deducted for a company store item or service request.',
+    note: 'Deducted for a company store item.',
   },
   transfer: {
     label: 'Token Transfer',
@@ -64,7 +63,7 @@ const categoryMeta: Record<TokenTransaction['category'], { label: string; note: 
   },
   adjustment: {
     label: 'Manual Adjustment',
-    note: 'Applied by Finance or HR to correct a balance discrepancy.',
+    note: 'Applied by Finance Department to correct a balance discrepancy.',
   },
 };
 
