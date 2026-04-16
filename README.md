@@ -126,16 +126,15 @@ pnpm -C apps/web preview -- --host
   - Tenant migrations must run across all active tenant databases.
 - Secrets:
   - Never commit real `.env` files or credentials.
-  - Keep placeholders only in `apps/api/.env.example`.
+  - Keep placeholders only in tracked example files such as `apps/api/.env.example` and `apps/web/.env.example`.
 - Queue behavior:
   - Early check-in authorization creation is delayed through a persistent `pg-boss` queue (`early-checkin-auth`), so scheduled jobs survive API restarts.
 - Web API base:
   - The web app proxies `/api` to `http://localhost:3002` in Vite dev.
-  - `VITE_API_URL` is used for some absolute file URLs (for attachments).
+  - `VITE_API_URL` is used for some absolute file URLs (for attachments); see `apps/web/.env.example`.
 
 ## Additional Context
 
 For implementation-level details and AI handoff context, read:
 
 - `docs/PROJECT_CONTEXT.md`
-
