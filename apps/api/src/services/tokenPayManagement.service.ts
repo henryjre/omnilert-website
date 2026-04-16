@@ -412,7 +412,7 @@ export async function getGroupedUsers(companyId: string): Promise<GroupedUsersRe
   const { getGroupedUsersForVN } = await import('./violationNotice.service.js');
   const [grouped, wallets] = await Promise.all([
     getGroupedUsersForVN({ companyId }),
-    getAllWallets(companyId),
+    getAllWallets(),
   ]);
   const suspended_user_ids = wallets
     .filter((w) => w.isSuspended)
