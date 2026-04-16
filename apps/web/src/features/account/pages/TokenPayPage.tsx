@@ -5,7 +5,7 @@ import { useSearchParams } from 'react-router-dom';
 import { X } from 'lucide-react';
 import { TokenPayPageContent } from '../components/TokenPayPageContent';
 import { TokenTransactionDetailPanel } from '../components/TokenTransactionDetailPanel';
-import type { TokenTransaction } from '../components/TokenTransactionFeed';
+import type { TokenTransaction } from '@omnilert/shared';
 
 export function TokenPayPage() {
   const [searchParams, setSearchParams] = useSearchParams();

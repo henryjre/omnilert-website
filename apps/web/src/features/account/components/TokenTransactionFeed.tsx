@@ -1,20 +1,8 @@
 import { motion, type Variants } from 'framer-motion';
 import { Clock } from 'lucide-react';
+import type { TokenTransaction } from '@omnilert/shared';
 
 import { Pagination } from '../../../shared/components/ui/Pagination';
-
-export type TransactionType = 'credit' | 'debit';
-
-export interface TokenTransaction {
-  id: string;
-  type: TransactionType;
-  title: string;
-  category: 'reward' | 'purchase' | 'transfer' | 'adjustment';
-  amount: number;
-  date: string;
-  reference?: string;
-  status: 'completed' | 'pending' | 'failed';
-}
 
 interface TokenTransactionFeedProps {
   items: TokenTransaction[];

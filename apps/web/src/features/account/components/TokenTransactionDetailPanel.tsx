@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { motion, type Variants } from 'framer-motion';
-import { CheckCircle2, Clock, XCircle } from 'lucide-react';
-import type { TokenTransaction } from './TokenTransactionFeed';
+import { CheckCircle2, Clock, XCircle, Copy, Check } from 'lucide-react';
+import type { TokenTransaction } from '@omnilert/shared';
 
 /* ------------------------------------------------------------------ */
 /*  Formatters                                                          */
@@ -134,27 +135,61 @@ function StatusBar({ status }: { status: TokenTransaction['status'] }) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Copy button                                                         */
+/* ------------------------------------------------------------------ */
+
+function CopyButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(value).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      className="ml-1.5 shrink-0 rounded p-0.5 text-gray-300 transition-colors hover:bg-gray-100 hover:text-gray-500"
+      aria-label={copied ? 'Copied' : 'Copy to clipboard'}
+    >
+      {copied ? (
+        <Check className="h-3.5 w-3.5 text-emerald-500" />
+      ) : (
+        <Copy className="h-3.5 w-3.5" />
+      )}
+    </button>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Detail row                                                          */
 /* ------------------------------------------------------------------ */
 
-function DetailRow({ label, value, mono = false, accent = false }: {
+function DetailRow({ label, value, mono = false, accent = false, copyable = false }: {
   label: string;
   value: string;
   mono?: boolean;
   accent?: boolean;
+  copyable?: boolean;
 }) {
   return (
-    <div className="flex items-start justify-between gap-6 py-3">
+    <div className="flex items-center justify-between gap-6 py-3">
       <span className="shrink-0 text-xs font-medium text-gray-400">{label}</span>
-      <span
-        className={`text-right text-sm ${
-          mono ? 'font-mono text-xs tracking-wide text-gray-500' :
-          accent ? 'font-bold text-gray-900' :
-          'font-medium text-gray-700'
-        }`}
-      >
-        {value}
-      </span>
+      <div className="flex min-w-0 items-center">
+        <span
+          className={`truncate text-right text-sm ${
+            mono ? 'font-mono text-xs tracking-wide text-gray-500' :
+            accent ? 'font-bold text-gray-900' :
+            'font-medium text-gray-700'
+          }`}
+        >
+          {value}
+        </span>
+        {copyable && <CopyButton value={value} />}
+      </div>
     </div>
   );
 }
@@ -247,8 +282,9 @@ export function TokenTransactionDetailPanel({ tx }: { tx: TokenTransaction }) {
         <div className="divide-y divide-gray-100 rounded-xl border border-gray-100 bg-white px-4">
           <DetailRow label="Date" value={formatDateOnly(tx.date)} />
           <DetailRow label="Time" value={formatTimeOnly(tx.date)} />
-          {tx.reference && <DetailRow label="Reference" value={tx.reference} mono />}
-          <DetailRow label="Transaction ID" value={tx.id} mono />
+          <DetailRow label="Issued By" value={tx.issuedBy ?? 'Unknown'} />
+          {tx.reference && <DetailRow label="Reference" value={tx.reference} mono copyable />}
+          <DetailRow label="Transaction ID" value={tx.id} mono copyable />
           <DetailRow label="Type" value={isCredit ? 'Credit' : 'Debit'} />
           <DetailRow label="Category" value={meta.label} />
         </div>

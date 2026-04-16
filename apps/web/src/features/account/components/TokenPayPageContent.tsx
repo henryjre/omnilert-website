@@ -1,46 +1,18 @@
-import { useMemo } from 'react';
 import { Wallet, ReceiptText } from 'lucide-react';
 import { motion, type Variants } from 'framer-motion';
+import { useQuery } from '@tanstack/react-query';
+import type { TokenTransaction } from '@omnilert/shared';
 import { Card, CardHeader, CardBody } from '@/shared/components/ui/Card';
 import { TokenBalanceCard } from './TokenBalanceCard';
-import { TokenTransactionFeed, type TokenTransaction } from './TokenTransactionFeed';
+import { TokenTransactionFeed } from './TokenTransactionFeed';
+import { fetchTokenPayWallet, fetchTokenPayTransactions } from '../services/tokenPay.api';
 
 interface TokenPayPageContentProps {
   currentPage: number;
   onPageChange: (page: number) => void;
   selectedTransactionId?: string | null;
-  onSelectTransaction?: (tx: import('./TokenTransactionFeed').TokenTransaction) => void;
+  onSelectTransaction?: (tx: TokenTransaction) => void;
 }
-
-// Generate some realistic mock data until the backend is integrated
-const MOCK_TRANSACTIONS: TokenTransaction[] = Array.from({ length: 34 }).map((_, i) => {
-  const isCredit = Math.random() > 0.4;
-  const amount = isCredit ? Math.floor(Math.random() * 5000) + 100 : Math.floor(Math.random() * 2000) + 50;
-
-  const creditTitles = ['EPI Performance Bonus', 'Shift Overtime Reward', 'Peer Evaluation Credit', 'Employee Milestone Bonus'];
-  const debitTitles = ['Company Store Purchase', 'Lunch Deductions', 'Equipment Request Fee', 'Uniform deduction'];
-
-  const title = isCredit
-    ? creditTitles[Math.floor(Math.random() * creditTitles.length)]
-    : debitTitles[Math.floor(Math.random() * debitTitles.length)];
-
-  const date = new Date();
-  date.setDate(date.getDate() - Math.floor(Math.random() * 60));
-  date.setHours(Math.floor(Math.random() * 24), Math.floor(Math.random() * 60));
-
-  return {
-    id: `tx-${1000 + i}`,
-    type: (isCredit ? 'credit' : 'debit') as TokenTransaction['type'],
-    title,
-    category: (isCredit ? 'reward' : 'purchase') as TokenTransaction['category'],
-    amount,
-    date: date.toISOString(),
-    reference: Math.random() > 0.3 ? `REF-${Math.floor(Math.random() * 90000) + 10000}` : undefined,
-    status: (i < 2 ? 'pending' : 'completed') as TokenTransaction['status'],
-  };
-}).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-const PAGE_SIZE = 10;
 
 const pageVariants: Variants = {
   hidden: {},
@@ -64,11 +36,18 @@ export function TokenPayPageContent({
   selectedTransactionId,
   onSelectTransaction,
 }: TokenPayPageContentProps) {
-  const totalPages = Math.ceil(MOCK_TRANSACTIONS.length / PAGE_SIZE);
-  const currentItems = useMemo(() => {
-    const start = (currentPage - 1) * PAGE_SIZE;
-    return MOCK_TRANSACTIONS.slice(start, start + PAGE_SIZE);
-  }, [currentPage]);
+  const walletQuery = useQuery({
+    queryKey: ['token-pay-wallet'],
+    queryFn: fetchTokenPayWallet,
+  });
+
+  const transactionsQuery = useQuery({
+    queryKey: ['token-pay-transactions', currentPage],
+    queryFn: () => fetchTokenPayTransactions(currentPage, 10),
+  });
+
+  const totalPages = transactionsQuery.data?.pagination.totalPages ?? 1;
+  const currentItems: TokenTransaction[] = transactionsQuery.data?.data ?? [];
 
   return (
     <motion.div
@@ -91,7 +70,10 @@ export function TokenPayPageContent({
 
       {/* Balance card — has its own entrance animation internally */}
       <motion.div variants={sectionVariant}>
-        <TokenBalanceCard balance={12543.50} />
+        <TokenBalanceCard
+          balance={walletQuery.data?.balance ?? 0}
+          isLoading={walletQuery.isLoading}
+        />
       </motion.div>
 
       {/* Transaction history */}

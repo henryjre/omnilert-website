@@ -71,7 +71,7 @@ const rowVariant: Variants = {
   visible: { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' } },
 };
 
-export function TokenBalanceCard({ balance }: { balance: number }) {
+export function TokenBalanceCard({ balance, isLoading = false }: { balance: number; isLoading?: boolean }) {
   const formattedBalance = new Intl.NumberFormat('en-PH', {
     style: 'decimal',
     minimumFractionDigits: 2,
@@ -108,9 +108,13 @@ export function TokenBalanceCard({ balance }: { balance: number }) {
         {/* Balance — ₱ prefix, no PHP suffix */}
         <motion.div variants={rowVariant} className="mt-4 flex items-baseline gap-1">
           <span className="text-xl font-semibold text-white/60 sm:text-2xl">₱</span>
-          <span className="text-4xl font-extrabold tracking-tight text-white drop-shadow-sm sm:text-5xl md:text-6xl">
-            {formattedBalance}
-          </span>
+          {isLoading ? (
+            <span className="text-4xl font-extrabold tracking-tight text-white/40 drop-shadow-sm sm:text-5xl md:text-6xl">—</span>
+          ) : (
+            <span className="text-4xl font-extrabold tracking-tight text-white drop-shadow-sm sm:text-5xl md:text-6xl">
+              {formattedBalance}
+            </span>
+          )}
         </motion.div>
 
         {/* Divider */}
