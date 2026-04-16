@@ -3124,6 +3124,7 @@ export async function getOrCreatePendingPayslipDetail(
 export interface OdooLoyaltyCard {
   id: number;
   points: number;
+  partnerId: number;
 }
 
 /**
@@ -3139,10 +3140,23 @@ const TOKEN_PAY_PROGRAM_ID = 13;
 export async function getTokenPayCard(userKey: string): Promise<OdooLoyaltyCard | null> {
   const results = (await callOdooKw('loyalty.card', 'search_read', [], {
     domain: ['&', ['partner_id.x_website_key', '=', userKey], ['program_id', 'in', [TOKEN_PAY_PROGRAM_ID]]],
-    fields: ['id', 'points'],
+    fields: ['id', 'points', 'partner_id'],
     limit: 1,
-  })) as OdooLoyaltyCard[];
-  return results.length > 0 ? results[0] : null;
+  })) as Array<{ id: number; points: number; partner_id: [number, string] }>;
+  if (results.length === 0) return null;
+  const r = results[0];
+  return { id: r.id, points: r.points, partnerId: r.partner_id[0] };
+}
+
+/**
+ * Create a new Token Pay loyalty card for an Odoo partner.
+ * Called when a user has no existing card.
+ */
+export async function createTokenPayCard(partnerId: number, code: string): Promise<OdooLoyaltyCard> {
+  const cardId = (await callOdooKw('loyalty.card', 'create', [
+    [{ program_id: TOKEN_PAY_PROGRAM_ID, partner_id: partnerId, points: 0, code }],
+  ])) as number;
+  return { id: cardId, points: 0, partnerId };
 }
 
 export interface OdooLoyaltyHistory {
@@ -3191,7 +3205,7 @@ export async function getTokenPayTotals(cardId: number): Promise<{ totalEarned: 
   ])) as Array<{ issued: number; used: number }>;
   const row = rows[0];
   return {
-    totalEarned: row?.issued ?? 0,
-    totalSpent: row?.used ?? 0,
+    totalEarned: row?.issued || 0,
+    totalSpent: row?.used || 0,
   };
 }
