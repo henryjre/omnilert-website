@@ -11,7 +11,7 @@ export const PERMISSIONS = {
   POS_MANAGE_VERIFICATIONS: 'pos.manage_verifications',
   POS_MANAGE_AUDITS: 'pos.manage_audits',
 
-  // Account (7)
+  // Account (8)
   ACCOUNT_VIEW_SCHEDULE: 'account.view_schedule',
   ACCOUNT_MANAGE_SCHEDULE: 'account.manage_schedule',
   ACCOUNT_MANAGE_AUTH_REQUEST: 'account.manage_auth_request',
@@ -19,6 +19,7 @@ export const PERMISSIONS = {
   ACCOUNT_MANAGE_CASH_REQUEST: 'account.manage_cash_request',
   ACCOUNT_MANAGE_EMPLOYEE_REQUIREMENTS: 'account.manage_employee_requirements',
   ACCOUNT_VIEW_AUDIT_RESULTS: 'account.view_audit_results',
+  ACCOUNT_VIEW_TOKEN_PAY: 'account.view_token_pay',
 
   // Authorization Requests (5)
   AUTH_REQUEST_VIEW_PAGE: 'auth_request.view_page',
@@ -103,6 +104,7 @@ export const PERMISSION_CATEGORIES: Record<string, { label: string; permissions:
       PERMISSIONS.ACCOUNT_MANAGE_CASH_REQUEST,
       PERMISSIONS.ACCOUNT_MANAGE_EMPLOYEE_REQUIREMENTS,
       PERMISSIONS.ACCOUNT_VIEW_AUDIT_RESULTS,
+      PERMISSIONS.ACCOUNT_VIEW_TOKEN_PAY,
     ],
   },
   auth_request: {
@@ -225,6 +227,7 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
   [PERMISSIONS.ACCOUNT_MANAGE_CASH_REQUEST]: 'View and submit personal cash requests',
   [PERMISSIONS.ACCOUNT_MANAGE_EMPLOYEE_REQUIREMENTS]: 'View and submit employee requirement documents',
   [PERMISSIONS.ACCOUNT_VIEW_AUDIT_RESULTS]: 'View own audit results',
+  [PERMISSIONS.ACCOUNT_VIEW_TOKEN_PAY]: 'View own token pay wallet balance and transaction history',
   [PERMISSIONS.AUTH_REQUEST_VIEW_PAGE]: 'Access the Authorization Requests page in the sidebar',
   [PERMISSIONS.AUTH_REQUEST_VIEW_PRIVATE]: 'View the management (private) section of Authorization Requests',
   [PERMISSIONS.AUTH_REQUEST_VIEW_PUBLIC]: 'View the service crew (public) section of Authorization Requests',

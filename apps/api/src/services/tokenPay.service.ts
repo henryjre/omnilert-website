@@ -73,13 +73,17 @@ function normalizePending(row: PendingTransactionRow): TokenTransaction {
 // Helpers
 // ---------------------------------------------------------------------------
 
-async function getUserKey(userId: string): Promise<string> {
+/**
+ * Returns the user's Odoo website key, or null if the user has no Odoo link.
+ * Throws 404 only if the user record itself does not exist.
+ */
+async function getUserKey(userId: string): Promise<string | null> {
   const knex = db.getDb();
   const user = await knex('users').select('user_key').where('id', userId).first();
-  if (!user || !user.user_key) {
+  if (!user) {
     throw new AppError(404, 'User not found');
   }
-  return user.user_key;
+  return user.user_key ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -88,6 +92,9 @@ async function getUserKey(userId: string): Promise<string> {
 
 export async function getWallet(userId: string): Promise<TokenPayWallet> {
   const userKey = await getUserKey(userId);
+  if (!userKey) {
+    return { balance: 0, cardId: 0 };
+  }
   const card = await odoo.getTokenPayCard(userKey);
   if (!card) {
     return { balance: 0, cardId: 0 };
@@ -105,6 +112,12 @@ export async function getTransactions(
   pagination: { page: number; limit: number; total: number; totalPages: number };
 }> {
   const userKey = await getUserKey(userId);
+  if (!userKey) {
+    return {
+      items: [],
+      pagination: { page, limit, total: 0, totalPages: 0 },
+    };
+  }
 
   const card = await odoo.getTokenPayCard(userKey);
   if (!card) {
@@ -116,10 +129,11 @@ export async function getTransactions(
 
   const knex = db.getDb();
 
-  // Count pending local transactions and Odoo history in parallel
+  // Count only status='pending' local transactions — completed/failed/cancelled local rows
+  // have already been reflected in Odoo and would duplicate history entries.
   const [pendingCountResult, odooCount] = await Promise.all([
     knex('pending_transactions')
-      .where({ user_id: userId, company_id: companyId })
+      .where({ user_id: userId, company_id: companyId, status: 'pending' })
       .count<{ count: string }>('* as count')
       .first(),
     odoo.getTokenPayHistoryCount(card.id),
@@ -134,7 +148,7 @@ export async function getTransactions(
   let odooHistory: OdooLoyaltyHistory[] = [];
 
   if (globalOffset < pendingCount) {
-    // Fetch pending rows first
+    // Fetch pending rows first (only status='pending' for consistency with count)
     pendingRows = await knex('pending_transactions')
       .select<PendingTransactionRow[]>([
         'id',
@@ -147,7 +161,7 @@ export async function getTransactions(
         'issued_by',
         'created_at',
       ])
-      .where({ user_id: userId, company_id: companyId })
+      .where({ user_id: userId, company_id: companyId, status: 'pending' })
       .orderBy('created_at', 'desc')
       .offset(globalOffset)
       .limit(limit);

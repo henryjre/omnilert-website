@@ -155,8 +155,8 @@ router.post('/push/subscriptions', accountController.upsertPushSubscription);
 router.delete('/push/subscriptions', accountController.removePushSubscription);
 
 // Token Pay wallet and transaction history
-router.get('/token-pay/wallet', tokenPayController.getWallet);
-router.get('/token-pay/transactions', tokenPayController.getTransactions);
+router.get('/token-pay/wallet', requirePermission(PERMISSIONS.ACCOUNT_VIEW_TOKEN_PAY), tokenPayController.getWallet);
+router.get('/token-pay/transactions', requirePermission(PERMISSIONS.ACCOUNT_VIEW_TOKEN_PAY), tokenPayController.getTransactions);
 
 // Token pay verification — customer fetches their own verification details
 router.get('/token-pay/:id', accountController.getTokenPayVerification);

@@ -123,6 +123,17 @@ function StatusBar({ status }: { status: TokenTransaction['status'] }) {
       </div>
     );
   }
+  if (status === 'cancelled') {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3.5 py-2.5">
+        <XCircle className="h-4 w-4 shrink-0 text-gray-400" />
+        <div>
+          <p className="text-sm font-bold text-gray-700">Transaction Cancelled</p>
+          <p className="text-xs text-gray-500">This transaction was cancelled and will not affect your balance.</p>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="flex items-center gap-2 rounded-lg border border-red-100 bg-red-50 px-3.5 py-2.5">
       <XCircle className="h-4 w-4 shrink-0 text-red-600" />

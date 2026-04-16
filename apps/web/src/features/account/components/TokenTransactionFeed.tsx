@@ -9,6 +9,7 @@ interface TokenTransactionFeedProps {
   currentPage: number;
   totalPages: number;
   selectedId?: string | null;
+  isLoading?: boolean;
   onPageChange: (page: number) => void;
   onSelect?: (tx: TokenTransaction) => void;
 }
@@ -35,6 +36,7 @@ export function TokenTransactionFeed({
   currentPage,
   totalPages,
   selectedId,
+  isLoading = false,
   onPageChange,
   onSelect,
 }: TokenTransactionFeedProps) {
@@ -105,9 +107,14 @@ export function TokenTransactionFeed({
           );
         })}
 
-        {items.length === 0 && (
+        {items.length === 0 && !isLoading && (
           <div className="py-12 text-center text-sm font-medium text-gray-500">
             No transactions found.
+          </div>
+        )}
+        {isLoading && items.length === 0 && (
+          <div className="py-12 text-center text-sm font-medium text-gray-400">
+            Loading transactions…
           </div>
         )}
       </motion.div>

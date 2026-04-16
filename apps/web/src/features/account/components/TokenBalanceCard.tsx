@@ -117,24 +117,7 @@ export function TokenBalanceCard({ balance, isLoading = false }: { balance: numb
           )}
         </motion.div>
 
-        {/* Divider */}
-        <motion.div variants={rowVariant} className="my-6 h-px bg-white/10" />
-
-        {/* Stats row */}
-        <motion.div variants={rowVariant} className="flex gap-3 sm:gap-4">
-          <div className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-3 backdrop-blur-sm sm:px-4 sm:py-3.5">
-            <p className="text-[9px] font-bold uppercase tracking-widest text-white/45 sm:text-[10px]">
-              Total Earned
-            </p>
-            <p className="mt-1.5 text-base font-bold tracking-tight text-[#4ade80] sm:mt-2 sm:text-lg">+ 4,200.00</p>
-          </div>
-          <div className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-3 backdrop-blur-sm sm:px-4 sm:py-3.5">
-            <p className="text-[9px] font-bold uppercase tracking-widest text-white/45 sm:text-[10px]">
-              Total Spent
-            </p>
-            <p className="mt-1.5 text-base font-bold tracking-tight text-[#fca5a5] sm:mt-2 sm:text-lg">− 1,850.50</p>
-          </div>
-        </motion.div>
+        {/* Stats row — Total Earned / Total Spent will be added once backend aggregates are available */}
       </motion.div>
     </motion.div>
   );

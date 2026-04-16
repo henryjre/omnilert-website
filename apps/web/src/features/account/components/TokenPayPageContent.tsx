@@ -92,6 +92,7 @@ export function TokenPayPageContent({
               currentPage={currentPage}
               totalPages={totalPages}
               selectedId={selectedTransactionId}
+              isLoading={transactionsQuery.isLoading}
               onPageChange={onPageChange}
               onSelect={onSelectTransaction}
             />

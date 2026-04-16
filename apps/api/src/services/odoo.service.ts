@@ -3127,12 +3127,18 @@ export interface OdooLoyaltyCard {
 }
 
 /**
+ * Odoo loyalty program ID for the Token Pay wallet.
+ * This is hardcoded per a product decision — program 13 is the only Token Pay program.
+ */
+const TOKEN_PAY_PROGRAM_ID = 13;
+
+/**
  * Get the Token Pay loyalty card for a user.
  * Returns null if no card is found.
  */
 export async function getTokenPayCard(userKey: string): Promise<OdooLoyaltyCard | null> {
   const results = (await callOdooKw('loyalty.card', 'search_read', [], {
-    domain: ['&', ['partner_id.x_website_key', '=', userKey], ['program_id', 'in', [13]]],
+    domain: ['&', ['partner_id.x_website_key', '=', userKey], ['program_id', 'in', [TOKEN_PAY_PROGRAM_ID]]],
     fields: ['id', 'points'],
     limit: 1,
   })) as OdooLoyaltyCard[];
