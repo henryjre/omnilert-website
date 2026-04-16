@@ -3139,13 +3139,14 @@ const TOKEN_PAY_PROGRAM_ID = 13;
  */
 export async function getTokenPayCard(userKey: string): Promise<OdooLoyaltyCard | null> {
   const results = (await callOdooKw('loyalty.card', 'search_read', [], {
-    domain: ['&', ['partner_id.x_website_key', '=', userKey], ['program_id', 'in', [TOKEN_PAY_PROGRAM_ID]]],
-    fields: ['id', 'points', 'partner_id'],
+    domain: ['&', ['code', '=', userKey], ['program_id', 'in', [TOKEN_PAY_PROGRAM_ID]]],
+    fields: ['id', 'points', 'partner_id', 'active'],
     limit: 1,
-  })) as Array<{ id: number; points: number; partner_id: [number, string] }>;
+    context: { active_test: false },
+  })) as Array<{ id: number; points: number; partner_id: [number, string] | false; active: boolean }>;
   if (results.length === 0) return null;
   const r = results[0];
-  return { id: r.id, points: r.points, partnerId: r.partner_id[0] };
+  return { id: r.id, points: r.points, partnerId: r.partner_id ? r.partner_id[0] : 0 };
 }
 
 /**
