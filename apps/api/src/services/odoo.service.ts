@@ -3120,3 +3120,56 @@ export async function getOrCreatePendingPayslipDetail(
   }
   return createViewOnlyPayslip(employeeId, companyId, employeeName, cutoff, dateFrom);
 }
+
+export interface OdooLoyaltyCard {
+  id: number;
+  points: number;
+}
+
+/**
+ * Get the Token Pay loyalty card for a user.
+ * Returns null if no card is found.
+ */
+export async function getTokenPayCard(userKey: string): Promise<OdooLoyaltyCard | null> {
+  const results = (await callOdooKw('loyalty.card', 'search_read', [], {
+    domain: ['&', ['partner_id.x_website_key', '=', userKey], ['program_id', 'in', [13]]],
+    fields: ['id', 'points'],
+    limit: 1,
+  })) as OdooLoyaltyCard[];
+  return results.length > 0 ? results[0] : null;
+}
+
+export interface OdooLoyaltyHistory {
+  id: number;
+  order_id: [number, string] | false;
+  create_date: string;
+  x_order_type: string;
+  issued: number;
+  used: number;
+  x_order_reference: string | false;
+  x_issuer: string | false;
+}
+
+/**
+ * Get paginated transaction history for a loyalty card, newest first.
+ */
+export async function getTokenPayHistory(
+  cardId: number,
+  offset: number,
+  limit: number,
+): Promise<OdooLoyaltyHistory[]> {
+  return (await callOdooKw('loyalty.history', 'search_read', [], {
+    domain: [['card_id', '=', cardId]],
+    fields: ['id', 'order_id', 'create_date', 'x_order_type', 'issued', 'used', 'x_order_reference', 'x_issuer'],
+    order: 'create_date desc',
+    offset,
+    limit,
+  })) as OdooLoyaltyHistory[];
+}
+
+/**
+ * Count total transaction history entries for a loyalty card.
+ */
+export async function getTokenPayHistoryCount(cardId: number): Promise<number> {
+  return (await callOdooKw('loyalty.history', 'search_count', [[['card_id', '=', cardId]]])) as number;
+}
