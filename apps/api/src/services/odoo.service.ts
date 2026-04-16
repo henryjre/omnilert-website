@@ -3124,6 +3124,7 @@ export async function getOrCreatePendingPayslipDetail(
 export interface OdooLoyaltyCard {
   id: number;
   points: number;
+  partnerId: number;
 }
 
 /**
@@ -3138,11 +3139,25 @@ const TOKEN_PAY_PROGRAM_ID = 13;
  */
 export async function getTokenPayCard(userKey: string): Promise<OdooLoyaltyCard | null> {
   const results = (await callOdooKw('loyalty.card', 'search_read', [], {
-    domain: ['&', ['partner_id.x_website_key', '=', userKey], ['program_id', 'in', [TOKEN_PAY_PROGRAM_ID]]],
-    fields: ['id', 'points'],
+    domain: ['&', ['code', '=', userKey], ['program_id', 'in', [TOKEN_PAY_PROGRAM_ID]]],
+    fields: ['id', 'points', 'partner_id', 'active'],
     limit: 1,
-  })) as OdooLoyaltyCard[];
-  return results.length > 0 ? results[0] : null;
+    context: { active_test: false },
+  })) as Array<{ id: number; points: number; partner_id: [number, string] | false; active: boolean }>;
+  if (results.length === 0) return null;
+  const r = results[0];
+  return { id: r.id, points: r.points, partnerId: r.partner_id ? r.partner_id[0] : 0 };
+}
+
+/**
+ * Create a new Token Pay loyalty card for an Odoo partner.
+ * Called when a user has no existing card.
+ */
+export async function createTokenPayCard(partnerId: number, code: string): Promise<OdooLoyaltyCard> {
+  const cardId = (await callOdooKw('loyalty.card', 'create', [
+    [{ program_id: TOKEN_PAY_PROGRAM_ID, partner_id: partnerId, points: 0, code }],
+  ])) as number;
+  return { id: cardId, points: 0, partnerId };
 }
 
 export interface OdooLoyaltyHistory {
@@ -3160,12 +3175,12 @@ export interface OdooLoyaltyHistory {
  * Get paginated transaction history for a loyalty card, newest first.
  */
 export async function getTokenPayHistory(
-  cardId: number,
+  userKey: string,
   offset: number,
   limit: number,
 ): Promise<OdooLoyaltyHistory[]> {
   return (await callOdooKw('loyalty.history', 'search_read', [], {
-    domain: [['card_id', '=', cardId]],
+    domain: [['x_loyalty_program_id', '=', TOKEN_PAY_PROGRAM_ID], ['x_loyalty_card_code', '=', userKey]],
     fields: ['id', 'order_id', 'create_date', 'x_order_type', 'issued', 'used', 'x_order_reference', 'x_issuer'],
     order: 'create_date desc',
     offset,
@@ -3176,22 +3191,125 @@ export async function getTokenPayHistory(
 /**
  * Count total transaction history entries for a loyalty card.
  */
-export async function getTokenPayHistoryCount(cardId: number): Promise<number> {
-  return (await callOdooKw('loyalty.history', 'search_count', [[['card_id', '=', cardId]]])) as number;
+export async function getTokenPayHistoryCount(userKey: string): Promise<number> {
+  return (await callOdooKw('loyalty.history', 'search_count', [[['x_loyalty_program_id', '=', TOKEN_PAY_PROGRAM_ID], ['x_loyalty_card_code', '=', userKey]]])) as number;
 }
 
 /**
  * Get lifetime totals (sum of all issued and used) for a loyalty card.
  */
-export async function getTokenPayTotals(cardId: number): Promise<{ totalEarned: number; totalSpent: number }> {
-  const rows = (await callOdooKw('loyalty.history', 'read_group', [
-    [['card_id', '=', cardId]],
-    ['issued', 'used'],
-    [],
-  ])) as Array<{ issued: number; used: number }>;
-  const row = rows[0];
+export async function getTokenPayTotals(userKey: string): Promise<{ totalEarned: number; totalSpent: number; totalDeducted: number }> {
+  const [allRows, deductedRows] = await Promise.all([
+    callOdooKw('loyalty.history', 'read_group', [
+      [['x_loyalty_program_id', '=', TOKEN_PAY_PROGRAM_ID], ['x_loyalty_card_code', '=', userKey]],
+      ['issued', 'used'],
+      [],
+    ]) as Promise<Array<{ issued: number; used: number }>>,
+    callOdooKw('loyalty.history', 'read_group', [
+      [['x_loyalty_program_id', '=', TOKEN_PAY_PROGRAM_ID], ['x_loyalty_card_code', '=', userKey], ['x_order_type', '=', 'Manual Adjustment'], ['used', '>', 0]],
+      ['used'],
+      [],
+    ]) as Promise<Array<{ used: number }>>,
+  ]);
+  const all = (allRows as Array<{ issued: number; used: number }>)[0];
+  const deducted = (deductedRows as Array<{ used: number }>)[0];
   return {
-    totalEarned: row?.issued ?? 0,
-    totalSpent: row?.used ?? 0,
+    totalEarned: all?.issued || 0,
+    totalSpent: all?.used || 0,
+    totalDeducted: deducted?.used || 0,
   };
+}
+
+/**
+ * Batch-fetch earned/spent totals for all Token Pay loyalty cards in one Odoo call.
+ * Returns a map of cardId → { totalEarned, totalSpent }.
+ */
+export async function getAllTokenPayTotals(): Promise<Map<string, { totalEarned: number; totalSpent: number; totalDeducted: number }>> {
+  const [allRows, deductedRows] = await Promise.all([
+    callOdooKw('loyalty.history', 'read_group', [
+      [['x_loyalty_program_id', '=', TOKEN_PAY_PROGRAM_ID]],
+      ['x_loyalty_card_code', 'issued', 'used'],
+      ['x_loyalty_card_code'],
+    ]) as Promise<Array<{ x_loyalty_card_code: string; issued: number; used: number }>>,
+    callOdooKw('loyalty.history', 'read_group', [
+      [['x_loyalty_program_id', '=', TOKEN_PAY_PROGRAM_ID], ['x_order_type', '=', 'Manual Adjustment'], ['used', '>', 0]],
+      ['x_loyalty_card_code', 'used'],
+      ['x_loyalty_card_code'],
+    ]) as Promise<Array<{ x_loyalty_card_code: string; used: number }>>,
+  ]);
+  const deductedMap = new Map<string, number>();
+  for (const row of deductedRows as Array<{ x_loyalty_card_code: string; used: number }>) {
+    deductedMap.set(row.x_loyalty_card_code, row.used || 0);
+  }
+  const map = new Map<string, { totalEarned: number; totalSpent: number; totalDeducted: number }>();
+  for (const row of allRows as Array<{ x_loyalty_card_code: string; issued: number; used: number }>) {
+    map.set(row.x_loyalty_card_code, {
+      totalEarned: row.issued || 0,
+      totalSpent: row.used || 0,
+      totalDeducted: deductedMap.get(row.x_loyalty_card_code) || 0,
+    });
+  }
+  return map;
+}
+
+/**
+ * Get all Token Pay loyalty cards (admin view).
+ * Includes suspended/inactive cards; bypasses active_test filter.
+ */
+export async function getAllTokenPayCards(): Promise<Array<{ id: number; points: number; partnerId: number | null; code: string; active: boolean }>> {
+  const results = (await callOdooKw('loyalty.card', 'search_read', [], {
+    domain: [['program_id', 'in', [TOKEN_PAY_PROGRAM_ID]]],
+    fields: ['id', 'points', 'partner_id', 'code', 'active'],
+    context: { active_test: false },
+  })) as Array<{ id: number; points: number; partner_id: [number, string] | false; code: string; active: boolean }>;
+  return results.map((r) => ({
+    id: r.id,
+    points: r.points,
+    partnerId: r.partner_id ? r.partner_id[0] : null,
+    code: r.code,
+    active: r.active,
+  }));
+}
+
+/**
+ * Update the points balance on a loyalty card.
+ */
+export async function updateTokenPayCardPoints(cardId: number, points: number): Promise<void> {
+  await callOdooKw('loyalty.card', 'write', [[cardId], { points }]);
+}
+
+/**
+ * Suspend a Token Pay loyalty card by disassociating partner and deactivating.
+ */
+export async function suspendTokenPayCard(cardId: number): Promise<void> {
+  await callOdooKw('loyalty.card', 'write', [[cardId], { partner_id: false, active: false }]);
+}
+
+/**
+ * Unsuspend a Token Pay loyalty card by reassociating partner and reactivating.
+ */
+export async function unsuspendTokenPayCard(cardId: number, partnerId: number): Promise<void> {
+  await callOdooKw('loyalty.card', 'write', [[cardId], { partner_id: partnerId, active: true }]);
+}
+
+/**
+ * Create a Token Pay history entry (transaction record).
+ * Returns the created history record ID.
+ */
+export async function createTokenPayHistoryEntry(
+  cardId: number,
+  params: { issued: number; used: number; issuerName: string; orderReference: string; orderType: string; description: string },
+): Promise<number> {
+  const result = (await callOdooKw('loyalty.history', 'create', [
+    {
+      card_id: cardId,
+      description: params.description,
+      issued: params.issued,
+      used: params.used,
+      x_issuer: params.issuerName,
+      x_order_reference: params.orderReference,
+      x_order_type: params.orderType,
+    },
+  ])) as number | number[];
+  return Array.isArray(result) ? result[0] : result;
 }

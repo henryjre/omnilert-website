@@ -74,6 +74,7 @@ export function TokenPayPageContent({
           balance={walletQuery.data?.balance ?? 0}
           totalEarned={walletQuery.data?.totalEarned ?? 0}
           totalSpent={walletQuery.data?.totalSpent ?? 0}
+          totalDeducted={walletQuery.data?.totalDeducted ?? 0}
           isLoading={walletQuery.isLoading}
         />
       </motion.div>

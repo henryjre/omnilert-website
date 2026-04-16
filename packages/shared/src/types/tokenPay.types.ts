@@ -3,6 +3,7 @@ export interface TokenPayWallet {
   cardId: number;
   totalEarned: number;
   totalSpent: number;
+  totalDeducted: number;
 }
 
 export interface TokenTransaction {
@@ -16,4 +17,37 @@ export interface TokenTransaction {
   reference: string | null;
   status: 'completed' | 'pending' | 'failed' | 'cancelled';
   issuedBy: string | null;
+}
+
+export interface TokenPayCardSummary {
+  userId: string;
+  firstName: string;
+  lastName: string;
+  avatarUrl: string | null;
+  userKey: string;
+  cardId: number;
+  balance: number;
+  totalEarned: number;
+  totalSpent: number;
+  totalDeducted: number;
+  isSuspended: boolean;
+}
+
+export interface TokenPayIssuanceRequest {
+  id: string;
+  companyId: string;
+  userId: string;
+  userName: string;
+  userAvatarUrl: string | null;
+  type: 'credit' | 'debit';
+  amount: number;
+  reason: string;
+  status: 'pending' | 'completed' | 'rejected';
+  rejectionReason: string | null;
+  issuedByUserId: string;
+  issuedByName: string;
+  reviewedByUserId: string | null;
+  reviewedByName: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
 }

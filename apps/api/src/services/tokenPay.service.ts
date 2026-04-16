@@ -90,16 +90,32 @@ async function getUserKey(userId: string): Promise<string | null> {
 // Public API
 // ---------------------------------------------------------------------------
 
+async function resolveOrCreateCard(userKey: string): Promise<odoo.OdooLoyaltyCard | null> {
+  let card = await odoo.getTokenPayCard(userKey);
+  if (card) return card;
+
+  const partners = (await odoo.callOdooKw('res.partner', 'search_read', [], {
+    domain: [['x_website_key', '=', userKey], ['active', '=', true]],
+    fields: ['id'],
+    limit: 1,
+  })) as Array<{ id: number }>;
+  if (partners.length === 0) return null;
+
+  return odoo.createTokenPayCard(partners[0].id, userKey);
+}
+
 export async function getWallet(userId: string): Promise<TokenPayWallet> {
   const userKey = await getUserKey(userId);
   if (!userKey) {
-    return { balance: 0, cardId: 0, totalEarned: 0, totalSpent: 0 };
+    return { balance: 0, cardId: 0, totalEarned: 0, totalSpent: 0, totalDeducted: 0 };
   }
-  const card = await odoo.getTokenPayCard(userKey);
+  const [card, totals] = await Promise.all([
+    resolveOrCreateCard(userKey),
+    odoo.getTokenPayTotals(userKey),
+  ]);
   if (!card) {
-    return { balance: 0, cardId: 0, totalEarned: 0, totalSpent: 0 };
+    return { balance: 0, cardId: 0, totalEarned: 0, totalSpent: 0, totalDeducted: 0 };
   }
-  const totals = await odoo.getTokenPayTotals(card.id);
   return { balance: card.points, cardId: card.id, ...totals };
 }
 
@@ -120,14 +136,6 @@ export async function getTransactions(
     };
   }
 
-  const card = await odoo.getTokenPayCard(userKey);
-  if (!card) {
-    return {
-      items: [],
-      pagination: { page, limit, total: 0, totalPages: 0 },
-    };
-  }
-
   const knex = db.getDb();
 
   // Count only status='pending' local transactions — completed/failed/cancelled local rows
@@ -137,7 +145,7 @@ export async function getTransactions(
       .where({ user_id: userId, company_id: companyId, status: 'pending' })
       .count<{ count: string }>('* as count')
       .first(),
-    odoo.getTokenPayHistoryCount(card.id),
+    odoo.getTokenPayHistoryCount(userKey),
   ]);
 
   const pendingCount = Number(pendingCountResult?.count ?? 0);
@@ -169,12 +177,12 @@ export async function getTransactions(
 
     const remaining = limit - pendingRows.length;
     if (remaining > 0) {
-      odooHistory = await odoo.getTokenPayHistory(card.id, 0, remaining);
+      odooHistory = await odoo.getTokenPayHistory(userKey, 0, remaining);
     }
   } else {
     // Only Odoo rows needed
     const odooOffset = globalOffset - pendingCount;
-    odooHistory = await odoo.getTokenPayHistory(card.id, odooOffset, limit);
+    odooHistory = await odoo.getTokenPayHistory(userKey, odooOffset, limit);
   }
 
   const items: TokenTransaction[] = [

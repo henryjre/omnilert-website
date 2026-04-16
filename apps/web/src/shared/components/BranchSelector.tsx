@@ -278,16 +278,16 @@ export function BranchSelector() {
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="group flex items-center gap-2.5 rounded-xl border border-gray-200 bg-white px-3 py-2 shadow-sm transition-colors hover:border-primary-200 hover:bg-primary-50/30 focus:outline-none focus:ring-2 focus:ring-primary-200 md:px-3.5 md:py-2.5"
+        className="group flex items-center gap-2 rounded-full border border-gray-200 bg-white px-2 py-1 shadow-sm transition-colors hover:border-primary-200 hover:bg-primary-50/30 focus:outline-none focus:ring-2 focus:ring-primary-200"
       >
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-600">
-          <GitBranch className="h-4 w-4" />
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary-100 text-primary-600">
+          <GitBranch className="h-3.5 w-3.5" />
         </span>
-        <span className="min-w-0 max-w-[8rem] truncate text-sm font-semibold text-gray-700 sm:max-w-[12rem] lg:max-w-[16rem]">
+        <span className="min-w-0 max-w-[8rem] truncate text-sm font-medium text-gray-700 sm:max-w-[12rem] lg:max-w-[16rem]">
           {label}
         </span>
         <ChevronDown
-          className={`h-4 w-4 shrink-0 text-gray-400 transition-transform duration-200 ${
+          className={`h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform duration-200 ${
             open ? 'rotate-180' : ''
           }`}
         />
@@ -336,7 +336,7 @@ export function BranchSelector() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 8 }}
               transition={{ duration: 0.15, ease: [0.2, 0, 0, 1] }}
-              className="absolute right-0 top-[calc(100%+0.5rem)] z-50 hidden w-[26rem] md:block lg:w-[30rem]"
+              className="absolute right-0 top-[calc(100%+0.5rem)] z-50 hidden w-80 md:block"
             >
               <BranchSelectorContent
                 companyBranchGroups={companyBranchGroups}

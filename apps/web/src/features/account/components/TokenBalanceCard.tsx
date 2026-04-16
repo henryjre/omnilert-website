@@ -1,5 +1,5 @@
 import { motion, type Variants } from 'framer-motion';
-import { Coins } from 'lucide-react';
+import { Coins, TrendingUp, TrendingDown } from 'lucide-react';
 
 function AnimatedBackground() {
   return (
@@ -79,11 +79,13 @@ export function TokenBalanceCard({
   balance,
   totalEarned,
   totalSpent,
+  totalDeducted,
   isLoading = false,
 }: {
   balance: number;
   totalEarned: number;
   totalSpent: number;
+  totalDeducted: number;
   isLoading?: boolean;
 }) {
   const formattedBalance = new Intl.NumberFormat('en-PH', {
@@ -137,9 +139,10 @@ export function TokenBalanceCard({
         {/* Stats row */}
         <motion.div variants={rowVariant} className="flex gap-3 sm:gap-4">
           <div className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-3 backdrop-blur-sm sm:px-4 sm:py-3.5">
-            <p className="text-[9px] font-bold uppercase tracking-widest text-white/45 sm:text-[10px]">
-              Total Earned
-            </p>
+            <div className="flex items-center gap-1.5">
+              <TrendingUp className="h-3.5 w-3.5 text-[#4ade80]" />
+              <p className="text-[9px] font-bold uppercase tracking-widest text-white/45 sm:text-[10px]">Earned</p>
+            </div>
             {isLoading ? (
               <p className="mt-1.5 text-base font-bold tracking-tight text-white/30 sm:mt-2 sm:text-lg">—</p>
             ) : (
@@ -147,13 +150,25 @@ export function TokenBalanceCard({
             )}
           </div>
           <div className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-3 backdrop-blur-sm sm:px-4 sm:py-3.5">
-            <p className="text-[9px] font-bold uppercase tracking-widest text-white/45 sm:text-[10px]">
-              Total Spent
-            </p>
+            <div className="flex items-center gap-1.5">
+              <TrendingDown className="h-3.5 w-3.5 text-[#fca5a5]" />
+              <p className="text-[9px] font-bold uppercase tracking-widest text-white/45 sm:text-[10px]">Spent</p>
+            </div>
             {isLoading ? (
               <p className="mt-1.5 text-base font-bold tracking-tight text-white/30 sm:mt-2 sm:text-lg">—</p>
             ) : (
               <p className="mt-1.5 text-base font-bold tracking-tight text-[#fca5a5] sm:mt-2 sm:text-lg">− ₱{formatStat(totalSpent)}</p>
+            )}
+          </div>
+          <div className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-3 backdrop-blur-sm sm:px-4 sm:py-3.5">
+            <div className="flex items-center gap-1.5">
+              <TrendingDown className="h-3.5 w-3.5 text-[#fdba74]" />
+              <p className="text-[9px] font-bold uppercase tracking-widest text-white/45 sm:text-[10px]">Deducted</p>
+            </div>
+            {isLoading ? (
+              <p className="mt-1.5 text-base font-bold tracking-tight text-white/30 sm:mt-2 sm:text-lg">—</p>
+            ) : (
+              <p className="mt-1.5 text-base font-bold tracking-tight text-[#fdba74] sm:mt-2 sm:text-lg">− ₱{formatStat(totalDeducted)}</p>
             )}
           </div>
         </motion.div>
