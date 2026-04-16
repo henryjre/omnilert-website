@@ -3209,3 +3209,57 @@ export async function getTokenPayTotals(cardId: number): Promise<{ totalEarned: 
     totalSpent: row?.used || 0,
   };
 }
+
+/**
+ * Get all Token Pay loyalty cards (admin view).
+ * Includes suspended/inactive cards; bypasses active_test filter.
+ */
+export async function getAllTokenPayCards(): Promise<Array<{ id: number; points: number; partnerId: number | null; code: string; active: boolean }>> {
+  const results = (await callOdooKw('loyalty.card', 'search_read', [], {
+    domain: [['program_id', 'in', [TOKEN_PAY_PROGRAM_ID]]],
+    fields: ['id', 'points', 'partner_id', 'code', 'active'],
+    context: { active_test: false },
+  })) as Array<{ id: number; points: number; partner_id: [number, string] | false; code: string; active: boolean }>;
+  return results.map((r) => ({
+    id: r.id,
+    points: r.points,
+    partnerId: r.partner_id ? r.partner_id[0] : null,
+    code: r.code,
+    active: r.active,
+  }));
+}
+
+/**
+ * Suspend a Token Pay loyalty card by disassociating partner and deactivating.
+ */
+export async function suspendTokenPayCard(cardId: number): Promise<void> {
+  await callOdooKw('loyalty.card', 'write', [[cardId], { partner_id: false, active: false }]);
+}
+
+/**
+ * Unsuspend a Token Pay loyalty card by reassociating partner and reactivating.
+ */
+export async function unsuspendTokenPayCard(cardId: number, partnerId: number): Promise<void> {
+  await callOdooKw('loyalty.card', 'write', [[cardId], { partner_id: partnerId, active: true }]);
+}
+
+/**
+ * Create a Token Pay history entry (transaction record).
+ * Returns the created history record ID.
+ */
+export async function createTokenPayHistoryEntry(
+  cardId: number,
+  params: { issued: number; used: number; issuerName: string; orderReference: string; orderType: string },
+): Promise<number> {
+  const historyId = (await callOdooKw('loyalty.history', 'create', [
+    [{
+      card_id: cardId,
+      issued: params.issued,
+      used: params.used,
+      x_issuer: params.issuerName,
+      x_order_reference: params.orderReference,
+      x_order_type: params.orderType,
+    }],
+  ])) as number;
+  return historyId;
+}
