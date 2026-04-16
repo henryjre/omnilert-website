@@ -3175,12 +3175,12 @@ export interface OdooLoyaltyHistory {
  * Get paginated transaction history for a loyalty card, newest first.
  */
 export async function getTokenPayHistory(
-  cardId: number,
+  userKey: string,
   offset: number,
   limit: number,
 ): Promise<OdooLoyaltyHistory[]> {
   return (await callOdooKw('loyalty.history', 'search_read', [], {
-    domain: [['card_id', '=', cardId]],
+    domain: [['x_loyalty_program_id', '=', TOKEN_PAY_PROGRAM_ID], ['x_loyalty_card_code', '=', userKey]],
     fields: ['id', 'order_id', 'create_date', 'x_order_type', 'issued', 'used', 'x_order_reference', 'x_issuer'],
     order: 'create_date desc',
     offset,
@@ -3191,24 +3191,65 @@ export async function getTokenPayHistory(
 /**
  * Count total transaction history entries for a loyalty card.
  */
-export async function getTokenPayHistoryCount(cardId: number): Promise<number> {
-  return (await callOdooKw('loyalty.history', 'search_count', [[['card_id', '=', cardId]]])) as number;
+export async function getTokenPayHistoryCount(userKey: string): Promise<number> {
+  return (await callOdooKw('loyalty.history', 'search_count', [[['x_loyalty_program_id', '=', TOKEN_PAY_PROGRAM_ID], ['x_loyalty_card_code', '=', userKey]]])) as number;
 }
 
 /**
  * Get lifetime totals (sum of all issued and used) for a loyalty card.
  */
-export async function getTokenPayTotals(cardId: number): Promise<{ totalEarned: number; totalSpent: number }> {
-  const rows = (await callOdooKw('loyalty.history', 'read_group', [
-    [['card_id', '=', cardId]],
-    ['issued', 'used'],
-    [],
-  ])) as Array<{ issued: number; used: number }>;
-  const row = rows[0];
+export async function getTokenPayTotals(userKey: string): Promise<{ totalEarned: number; totalSpent: number; totalDeducted: number }> {
+  const [allRows, deductedRows] = await Promise.all([
+    callOdooKw('loyalty.history', 'read_group', [
+      [['x_loyalty_program_id', '=', TOKEN_PAY_PROGRAM_ID], ['x_loyalty_card_code', '=', userKey]],
+      ['issued', 'used'],
+      [],
+    ]) as Promise<Array<{ issued: number; used: number }>>,
+    callOdooKw('loyalty.history', 'read_group', [
+      [['x_loyalty_program_id', '=', TOKEN_PAY_PROGRAM_ID], ['x_loyalty_card_code', '=', userKey], ['x_order_type', '=', 'Manual Adjustment'], ['used', '>', 0]],
+      ['used'],
+      [],
+    ]) as Promise<Array<{ used: number }>>,
+  ]);
+  const all = (allRows as Array<{ issued: number; used: number }>)[0];
+  const deducted = (deductedRows as Array<{ used: number }>)[0];
   return {
-    totalEarned: row?.issued || 0,
-    totalSpent: row?.used || 0,
+    totalEarned: all?.issued || 0,
+    totalSpent: all?.used || 0,
+    totalDeducted: deducted?.used || 0,
   };
+}
+
+/**
+ * Batch-fetch earned/spent totals for all Token Pay loyalty cards in one Odoo call.
+ * Returns a map of cardId → { totalEarned, totalSpent }.
+ */
+export async function getAllTokenPayTotals(): Promise<Map<string, { totalEarned: number; totalSpent: number; totalDeducted: number }>> {
+  const [allRows, deductedRows] = await Promise.all([
+    callOdooKw('loyalty.history', 'read_group', [
+      [['x_loyalty_program_id', '=', TOKEN_PAY_PROGRAM_ID]],
+      ['x_loyalty_card_code', 'issued', 'used'],
+      ['x_loyalty_card_code'],
+    ]) as Promise<Array<{ x_loyalty_card_code: string; issued: number; used: number }>>,
+    callOdooKw('loyalty.history', 'read_group', [
+      [['x_loyalty_program_id', '=', TOKEN_PAY_PROGRAM_ID], ['x_order_type', '=', 'Manual Adjustment'], ['used', '>', 0]],
+      ['x_loyalty_card_code', 'used'],
+      ['x_loyalty_card_code'],
+    ]) as Promise<Array<{ x_loyalty_card_code: string; used: number }>>,
+  ]);
+  const deductedMap = new Map<string, number>();
+  for (const row of deductedRows as Array<{ x_loyalty_card_code: string; used: number }>) {
+    deductedMap.set(row.x_loyalty_card_code, row.used || 0);
+  }
+  const map = new Map<string, { totalEarned: number; totalSpent: number; totalDeducted: number }>();
+  for (const row of allRows as Array<{ x_loyalty_card_code: string; issued: number; used: number }>) {
+    map.set(row.x_loyalty_card_code, {
+      totalEarned: row.issued || 0,
+      totalSpent: row.used || 0,
+      totalDeducted: deductedMap.get(row.x_loyalty_card_code) || 0,
+    });
+  }
+  return map;
 }
 
 /**
@@ -3231,6 +3272,13 @@ export async function getAllTokenPayCards(): Promise<Array<{ id: number; points:
 }
 
 /**
+ * Update the points balance on a loyalty card.
+ */
+export async function updateTokenPayCardPoints(cardId: number, points: number): Promise<void> {
+  await callOdooKw('loyalty.card', 'write', [[cardId], { points }]);
+}
+
+/**
  * Suspend a Token Pay loyalty card by disassociating partner and deactivating.
  */
 export async function suspendTokenPayCard(cardId: number): Promise<void> {
@@ -3250,17 +3298,18 @@ export async function unsuspendTokenPayCard(cardId: number, partnerId: number): 
  */
 export async function createTokenPayHistoryEntry(
   cardId: number,
-  params: { issued: number; used: number; issuerName: string; orderReference: string; orderType: string },
+  params: { issued: number; used: number; issuerName: string; orderReference: string; orderType: string; description: string },
 ): Promise<number> {
-  const historyId = (await callOdooKw('loyalty.history', 'create', [
-    [{
+  const result = (await callOdooKw('loyalty.history', 'create', [
+    {
       card_id: cardId,
+      description: params.description,
       issued: params.issued,
       used: params.used,
       x_issuer: params.issuerName,
       x_order_reference: params.orderReference,
       x_order_type: params.orderType,
-    }],
-  ])) as number;
-  return historyId;
+    },
+  ])) as number | number[];
+  return Array.isArray(result) ? result[0] : result;
 }

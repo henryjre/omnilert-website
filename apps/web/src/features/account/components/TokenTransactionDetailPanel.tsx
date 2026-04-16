@@ -117,7 +117,7 @@ function StatusBar({ status }: { status: TokenTransaction['status'] }) {
         <Clock className="h-4 w-4 shrink-0 text-amber-600" />
         <div>
           <p className="text-sm font-bold text-amber-800">Processing</p>
-          <p className="text-xs text-amber-600">May take 1–2 business days to settle.</p>
+          <p className="text-xs text-amber-600">This transaction is pending for approval.</p>
         </div>
       </div>
     );

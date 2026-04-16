@@ -40,6 +40,7 @@ export interface GroupedUserSelectProps {
   disabled?: boolean;
   placeholder?: string;
   singleSelect?: boolean;
+  suspendedUserIds?: string[];
 }
 
 // ── Avatar atom ────────────────────────────────────────────────────────────────
@@ -75,6 +76,7 @@ export function GroupedUserSelect({
   disabled = false,
   placeholder = 'Select employees...',
   singleSelect = false,
+  suspendedUserIds = [],
 }: GroupedUserSelectProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -104,6 +106,7 @@ export function GroupedUserSelect({
   const selectedUsers = allUsers.filter((u) => selectedUserIds.includes(u.id));
 
   function toggleUser(userId: string) {
+    if (suspendedUserIds.includes(userId)) return;
     if (singleSelect) {
       onChange(selectedUserIds.includes(userId) ? [] : [userId]);
       setOpen(false);
@@ -223,22 +226,32 @@ export function GroupedUserSelect({
                   </p>
                   {group.users.map((user) => {
                     const selected = selectedUserIds.includes(user.id);
+                    const isSuspended = suspendedUserIds.includes(user.id);
                     return (
                       <button
                         key={user.id}
                         type="button"
                         onClick={() => toggleUser(user.id)}
-                        className={`flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-sm transition-colors hover:bg-gray-50 ${
-                          selected ? 'bg-primary-50 text-primary-700' : 'text-gray-800'
+                        disabled={isSuspended}
+                        className={`flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-sm transition-colors ${
+                          isSuspended
+                            ? 'cursor-not-allowed opacity-50'
+                            : selected
+                              ? 'bg-primary-50 text-primary-700 hover:bg-primary-50'
+                              : 'text-gray-800 hover:bg-gray-50'
                         }`}
                       >
                         <UserAvatar user={user} size="sm" />
                         <span className="flex-1 truncate">{user.name}</span>
-                        {selected && !singleSelect && (
+                        {isSuspended ? (
+                          <span className="shrink-0 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-600">
+                            Wallet Suspended
+                          </span>
+                        ) : selected && !singleSelect ? (
                           <span className="h-4 w-4 shrink-0 rounded-full bg-primary-600 text-[10px] font-bold text-white flex items-center justify-center">
                             ✓
                           </span>
-                        )}
+                        ) : null}
                       </button>
                     );
                   })}

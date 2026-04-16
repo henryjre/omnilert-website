@@ -126,104 +126,87 @@ export function TokenPayIssuanceDetailPanel({
       </div>
 
       {/* Scrollable body */}
-      <div className="flex flex-1 flex-col overflow-y-auto">
-        {/* Hero: target user + amount */}
-        <div
-          className="px-6 py-5"
-          style={{
-            background: isCredit
-              ? 'linear-gradient(145deg, #14532d 0%, #166534 50%, #15803d 100%)'
-              : 'linear-gradient(145deg, #450a0a 0%, #7f1d1d 50%, #991b1b 100%)',
-          }}
-        >
-          <div className="flex items-center gap-3">
+      <div className="flex flex-1 flex-col overflow-y-auto bg-gray-50">
+        {/* Receipt */}
+        <div className="mx-4 my-4 rounded-2xl bg-white shadow-sm ring-1 ring-gray-100">
+
+          {/* Receipt top: avatar + name + amount */}
+          <div className="flex flex-col items-center px-6 pb-5 pt-6 text-center">
             {request.userAvatarUrl ? (
               <img
                 src={request.userAvatarUrl}
                 alt={request.userName}
-                className="h-14 w-14 shrink-0 rounded-full object-cover ring-2 ring-white/20"
+                className="h-16 w-16 rounded-full object-cover ring-4 ring-gray-100"
               />
             ) : (
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-white/20 text-base font-bold text-white ring-2 ring-white/20">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary-100 text-lg font-bold text-primary-700 ring-4 ring-gray-100">
                 {getInitials(request.userName)}
               </div>
             )}
-            <div className="min-w-0">
-              <p className="truncate font-semibold text-white/80 text-sm">Target Employee</p>
-              <p className="truncate text-lg font-bold text-white">{request.userName}</p>
+            <p className="mt-3 text-xs font-medium uppercase tracking-widest text-gray-400">Target Employee</p>
+            <p className="mt-0.5 text-lg font-bold text-gray-900">{request.userName}</p>
+
+            {/* Amount */}
+            <div className="mt-4 flex items-baseline gap-1">
+              {isCredit
+                ? <ArrowUpCircle className="mb-0.5 h-5 w-5 text-green-500" />
+                : <ArrowDownCircle className="mb-0.5 h-5 w-5 text-red-500" />}
+              <span className={`text-4xl font-extrabold tabular-nums ${isCredit ? 'text-green-600' : 'text-red-600'}`}>
+                {isCredit ? '+' : '−'}{formatCurrency(request.amount)}
+              </span>
             </div>
-          </div>
-
-          <div className="mt-4 flex items-baseline gap-1.5">
-            <span className="text-lg font-semibold" style={{ color: isCredit ? 'rgba(134,239,172,0.7)' : 'rgba(252,165,165,0.7)' }}>
-              {isCredit ? '+' : '−'}
-            </span>
-            <span
-              className="text-4xl font-extrabold tabular-nums leading-none"
-              style={{ color: isCredit ? '#86efac' : '#fca5a5' }}
-            >
-              {formatCurrency(request.amount)}
-            </span>
-          </div>
-
-          <div className="mt-2 flex items-center gap-2">
-            {isCredit ? (
-              <ArrowUpCircle className="h-4 w-4 shrink-0 text-green-300" />
-            ) : (
-              <ArrowDownCircle className="h-4 w-4 shrink-0 text-red-300" />
-            )}
-            <p className="text-sm" style={{ color: isCredit ? 'rgba(134,239,172,0.75)' : 'rgba(252,165,165,0.75)' }}>
-              {isCredit ? 'Will be added to wallet' : 'Will be deducted from wallet'}
+            <p className="mt-1 text-xs text-gray-400">
+              {isCredit ? 'Will be added to token pay wallet' : 'Will be deducted from token pay wallet'}
             </p>
           </div>
-        </div>
 
-        {/* Details */}
-        <div className="px-6 py-5 space-y-4">
-          {/* Reason */}
-          <div>
-            <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-gray-400">Reason</p>
-            <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
-              <p className="text-sm text-gray-700 leading-relaxed">{request.reason}</p>
-            </div>
+          {/* Dashed tear */}
+          <div className="relative flex items-center px-4">
+            <div className="absolute -left-3 h-6 w-6 rounded-full bg-gray-50 ring-1 ring-gray-100" />
+            <div className="absolute -right-3 h-6 w-6 rounded-full bg-gray-50 ring-1 ring-gray-100" />
+            <div className="w-full border-t-2 border-dashed border-gray-100" />
           </div>
 
-          {/* Detail rows */}
-          <div>
-            <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-gray-400">Details</p>
-            <div className="divide-y divide-gray-100 rounded-xl border border-gray-100 bg-white px-4">
-              <div className="flex items-center justify-between gap-4 py-3">
-                <span className="shrink-0 text-xs font-medium text-gray-400">Requested By</span>
-                <span className="truncate text-right text-sm font-medium text-gray-700">{request.issuedByName}</span>
-              </div>
-              <div className="flex items-center justify-between gap-4 py-3">
-                <span className="shrink-0 text-xs font-medium text-gray-400">Date Submitted</span>
-                <span className="truncate text-right text-sm font-medium text-gray-700">{formatDate(request.createdAt)}</span>
-              </div>
-              <div className="flex items-center justify-between gap-4 py-3">
-                <span className="shrink-0 text-xs font-medium text-gray-400">Status</span>
-                <Badge variant={statusVariant(request.status)}>{statusLabel(request.status)}</Badge>
-              </div>
-              {request.reviewedByName && (
-                <div className="flex items-center justify-between gap-4 py-3">
-                  <span className="shrink-0 text-xs font-medium text-gray-400">Reviewed By</span>
-                  <span className="truncate text-right text-sm font-medium text-gray-700">{request.reviewedByName}</span>
-                </div>
-              )}
-              {request.reviewedAt && (
-                <div className="flex items-center justify-between gap-4 py-3">
-                  <span className="shrink-0 text-xs font-medium text-gray-400">Reviewed At</span>
-                  <span className="truncate text-right text-sm font-medium text-gray-700">{formatDate(request.reviewedAt)}</span>
-                </div>
-              )}
-              {request.rejectionReason && (
-                <div className="flex items-start justify-between gap-4 py-3">
-                  <span className="shrink-0 text-xs font-medium text-gray-400">Rejection Reason</span>
-                  <span className="text-right text-sm font-medium text-red-600">{request.rejectionReason}</span>
-                </div>
-              )}
+          {/* Receipt rows */}
+          <div className="divide-y divide-dashed divide-gray-100 px-6 py-2">
+            <div className="flex items-start justify-between gap-4 py-2.5">
+              <span className="text-xs text-gray-400">Reason</span>
+              <span className="max-w-[60%] text-right text-xs font-medium text-gray-700">{request.reason}</span>
             </div>
+            <div className="flex items-center justify-between gap-4 py-2.5">
+              <span className="text-xs text-gray-400">Requested By</span>
+              <span className="truncate text-right text-xs font-medium text-gray-700">{request.issuedByName}</span>
+            </div>
+            <div className="flex items-center justify-between gap-4 py-2.5">
+              <span className="text-xs text-gray-400">Date Submitted</span>
+              <span className="text-right text-xs font-medium text-gray-700">{formatDate(request.createdAt)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-4 py-2.5">
+              <span className="text-xs text-gray-400">Status</span>
+              <Badge variant={statusVariant(request.status)}>{statusLabel(request.status)}</Badge>
+            </div>
+            {request.reviewedByName && (
+              <div className="flex items-center justify-between gap-4 py-2.5">
+                <span className="text-xs text-gray-400">Reviewed By</span>
+                <span className="truncate text-right text-xs font-medium text-gray-700">{request.reviewedByName}</span>
+              </div>
+            )}
+            {request.reviewedAt && (
+              <div className="flex items-center justify-between gap-4 py-2.5">
+                <span className="text-xs text-gray-400">Reviewed At</span>
+                <span className="text-right text-xs font-medium text-gray-700">{formatDate(request.reviewedAt)}</span>
+              </div>
+            )}
+            {request.rejectionReason && (
+              <div className="flex items-start justify-between gap-4 py-2.5">
+                <span className="shrink-0 text-xs text-gray-400">Rejection Reason</span>
+                <span className="text-right text-xs font-medium text-red-600">{request.rejectionReason}</span>
+              </div>
+            )}
           </div>
+
+          {/* Receipt bottom fade */}
+          <div className="h-4" />
         </div>
       </div>
 

@@ -3,6 +3,7 @@ export interface TokenPayWallet {
   cardId: number;
   totalEarned: number;
   totalSpent: number;
+  totalDeducted: number;
 }
 
 export interface TokenTransaction {
@@ -28,6 +29,7 @@ export interface TokenPayCardSummary {
   balance: number;
   totalEarned: number;
   totalSpent: number;
+  totalDeducted: number;
   isSuspended: boolean;
 }
 

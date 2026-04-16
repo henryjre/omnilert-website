@@ -49,7 +49,10 @@ export async function getAllWallets(): Promise<TokenPayCardSummary[]> {
       }>
     >('id', 'first_name', 'last_name', 'avatar_url', 'user_key');
 
-  const allCards = await odoo.getAllTokenPayCards();
+  const [allCards, totalsMap] = await Promise.all([
+    odoo.getAllTokenPayCards(),
+    odoo.getAllTokenPayTotals(),
+  ]);
   const cardByUserKey = new Map<string, (typeof allCards)[number]>();
   for (const card of allCards) {
     cardByUserKey.set(card.code, card);
@@ -58,6 +61,7 @@ export async function getAllWallets(): Promise<TokenPayCardSummary[]> {
   const summaries: TokenPayCardSummary[] = users.map((user) => {
     const card = cardByUserKey.get(user.user_key);
     if (card) {
+      const totals = totalsMap.get(user.user_key) ?? { totalEarned: 0, totalSpent: 0, totalDeducted: 0 };
       return {
         userId: user.id,
         firstName: user.first_name ?? '',
@@ -66,8 +70,9 @@ export async function getAllWallets(): Promise<TokenPayCardSummary[]> {
         userKey: user.user_key,
         cardId: card.id,
         balance: card.points,
-        totalEarned: 0,
-        totalSpent: 0,
+        totalEarned: totals.totalEarned,
+        totalSpent: totals.totalSpent,
+        totalDeducted: totals.totalDeducted,
         isSuspended: !card.active,
       };
     }
@@ -81,6 +86,7 @@ export async function getAllWallets(): Promise<TokenPayCardSummary[]> {
       balance: 0,
       totalEarned: 0,
       totalSpent: 0,
+      totalDeducted: 0,
       isSuspended: false,
     };
   });
@@ -306,13 +312,19 @@ export async function approveIssuanceRequest(
   }
 
   const amount = parseFloat(String(row.amount));
+  const newPoints = row.type === 'credit'
+    ? card.points + amount
+    : card.points - amount;
+
   const historyId = await odoo.createTokenPayHistoryEntry(card.id, {
     issued: row.type === 'credit' ? amount : 0,
     used: row.type === 'debit' ? amount : 0,
+    description: row.reason ?? 'Manual Adjustment',
     issuerName: row.issued_by ?? '',
     orderReference: requestId,
     orderType: 'Manual Adjustment',
   });
+  await odoo.updateTokenPayCardPoints(card.id, newPoints);
 
   const now = new Date();
   await knex('pending_transactions').where('id', requestId).update({
@@ -398,5 +410,12 @@ export async function rejectIssuanceRequest(
 
 export async function getGroupedUsers(companyId: string): Promise<GroupedUsersResponse> {
   const { getGroupedUsersForVN } = await import('./violationNotice.service.js');
-  return getGroupedUsersForVN({ companyId });
+  const [grouped, wallets] = await Promise.all([
+    getGroupedUsersForVN({ companyId }),
+    getAllWallets(companyId),
+  ]);
+  const suspended_user_ids = wallets
+    .filter((w) => w.isSuspended)
+    .map((w) => w.userId);
+  return { ...grouped, suspended_user_ids };
 }

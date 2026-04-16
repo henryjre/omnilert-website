@@ -111,4 +111,5 @@ export interface GroupedUsersResponse {
   management: Array<{ id: string; name: string; avatar_url: string | null }>;
   service_crew: Array<{ id: string; name: string; avatar_url: string | null }>;
   other: Array<{ id: string; name: string; avatar_url: string | null }>;
+  suspended_user_ids?: string[];
 }

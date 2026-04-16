@@ -41,13 +41,15 @@ export function TokenPayWalletDetailPanel({
   const [liveBalance, setLiveBalance] = useState(wallet.balance);
   const [liveTotalEarned, setLiveTotalEarned] = useState(wallet.totalEarned);
   const [liveTotalSpent, setLiveTotalSpent] = useState(wallet.totalSpent);
+  const [liveTotalDeducted, setLiveTotalDeducted] = useState(wallet.totalDeducted);
 
   // Sync if parent re-renders with updated wallet prop
   useEffect(() => {
     setLiveBalance(wallet.balance);
     setLiveTotalEarned(wallet.totalEarned);
     setLiveTotalSpent(wallet.totalSpent);
-  }, [wallet.balance, wallet.totalEarned, wallet.totalSpent]);
+    setLiveTotalDeducted(wallet.totalDeducted);
+  }, [wallet.balance, wallet.totalEarned, wallet.totalSpent, wallet.totalDeducted]);
 
   const [transactions, setTransactions] = useState<TokenTransaction[]>([]);
   const [txPage, setTxPage] = useState(1);
@@ -67,6 +69,7 @@ export function TokenPayWalletDetailPanel({
         setLiveBalance(result.wallet.balance);
         setLiveTotalEarned(result.wallet.totalEarned);
         setLiveTotalSpent(result.wallet.totalSpent);
+        setLiveTotalDeducted(result.wallet.totalDeducted);
       } catch (err: unknown) {
         const message =
           err instanceof Error ? err.message : 'Failed to load transactions';
@@ -114,13 +117,8 @@ export function TokenPayWalletDetailPanel({
   return (
     <div className="flex h-full flex-col bg-white">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-        <div>
-          <p className="text-xs uppercase tracking-wide text-gray-500">Wallet Detail</p>
-          <p className="font-semibold text-gray-900">
-            {wallet.firstName} {wallet.lastName}
-          </p>
-        </div>
+      <div className="flex items-center justify-between border-b border-gray-200 px-6 py-3">
+        <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Wallet Detail</p>
         <button
           type="button"
           onClick={onClose}
@@ -133,64 +131,74 @@ export function TokenPayWalletDetailPanel({
 
       {/* Scrollable body */}
       <div className="flex flex-1 flex-col overflow-y-auto">
-        {/* User + balance header */}
-        <div className="flex items-start gap-4 border-b border-gray-200 px-6 py-5">
-          {wallet.avatarUrl ? (
-            <img
-              src={wallet.avatarUrl}
-              alt={`${wallet.firstName} ${wallet.lastName}`}
-              className="h-[72px] w-[72px] shrink-0 rounded-full object-cover ring-2 ring-gray-100"
-            />
-          ) : (
-            <div className="flex h-[72px] w-[72px] shrink-0 items-center justify-center rounded-full bg-primary-100 text-xl font-bold text-primary-700 ring-2 ring-gray-100">
-              {getInitials(wallet.firstName, wallet.lastName)}
-            </div>
-          )}
-
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-xl font-bold leading-tight text-gray-900">
-                {wallet.firstName} {wallet.lastName}
-              </p>
-              {wallet.isSuspended && (
-                <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
-                  Suspended
-                </span>
-              )}
-            </div>
-            <p className="mt-0.5 font-mono text-xs text-gray-400">{wallet.userKey}</p>
-
-            <div className="mt-3">
-              <p className="text-[10px] font-medium uppercase tracking-wider text-gray-400">
-                Balance
-              </p>
-              <p className="mt-0.5 text-3xl font-bold tabular-nums text-gray-900">
-                {formatCurrency(liveBalance)}
-              </p>
-            </div>
-
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <div className="flex items-center gap-1.5 rounded-lg bg-green-50 px-2.5 py-2">
-                <TrendingUp className="h-3.5 w-3.5 shrink-0 text-green-600" />
-                <div className="min-w-0">
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-green-700">
-                    Earned
-                  </p>
-                  <p className="truncate text-xs font-bold tabular-nums text-green-800">
-                    {formatCurrency(liveTotalEarned)}
-                  </p>
-                </div>
+        {/* Hero: gradient profile header */}
+        <div
+          className="relative px-6 pb-6 pt-8 text-center"
+          style={{
+            background: wallet.isSuspended
+              ? 'linear-gradient(135deg, #374151 0%, #6b7280 100%)'
+              : 'linear-gradient(135deg, rgb(30 64 175) 0%, rgb(37 99 235) 100%)',
+          }}
+        >
+          {/* Avatar — large, centered */}
+          <div className="flex justify-center">
+            {wallet.avatarUrl ? (
+              <img
+                src={wallet.avatarUrl}
+                alt={`${wallet.firstName} ${wallet.lastName}`}
+                className="h-20 w-20 rounded-full object-cover ring-4 ring-white/20"
+              />
+            ) : (
+              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-white/15 text-2xl font-bold text-white ring-4 ring-white/20">
+                {getInitials(wallet.firstName, wallet.lastName)}
               </div>
-              <div className="flex items-center gap-1.5 rounded-lg bg-red-50 px-2.5 py-2">
-                <TrendingDown className="h-3.5 w-3.5 shrink-0 text-red-600" />
-                <div className="min-w-0">
-                  <p className="text-[10px] font-medium uppercase tracking-wider text-red-700">
-                    Spent
-                  </p>
-                  <p className="truncate text-xs font-bold tabular-nums text-red-800">
-                    {formatCurrency(liveTotalSpent)}
-                  </p>
-                </div>
+            )}
+          </div>
+
+          {/* Name + suspended pill */}
+          <div className="mt-3 flex flex-col items-center gap-1.5">
+            <p className="text-xl font-bold text-white">
+              {wallet.firstName} {wallet.lastName}
+            </p>
+            <p className="font-mono text-xs text-white/50">{wallet.userKey}</p>
+            {wallet.isSuspended && (
+              <span className="mt-0.5 rounded-full bg-red-500/80 px-2.5 py-0.5 text-[10px] font-semibold text-white">
+                Suspended
+              </span>
+            )}
+          </div>
+
+          {/* Balance — centered, prominent */}
+          <div className="mt-5 rounded-xl bg-white/10 px-4 py-3">
+            <p className="text-[10px] font-medium uppercase tracking-widest text-white/60">
+              Current Balance
+            </p>
+            <p className="mt-1 text-4xl font-extrabold tabular-nums text-white">
+              {formatCurrency(liveBalance)}
+            </p>
+          </div>
+
+          {/* Earned / Spent / Deducted — inline within gradient */}
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            <div className="flex items-center justify-center gap-1.5 rounded-lg bg-white/10 px-2 py-2">
+              <TrendingUp className="h-3.5 w-3.5 shrink-0 text-green-300" />
+              <div className="text-left">
+                <p className="text-[10px] font-medium uppercase tracking-wider text-white/50">Earned</p>
+                <p className="text-sm font-bold tabular-nums text-white">{formatCurrency(liveTotalEarned)}</p>
+              </div>
+            </div>
+            <div className="flex items-center justify-center gap-1.5 rounded-lg bg-white/10 px-2 py-2">
+              <TrendingDown className="h-3.5 w-3.5 shrink-0 text-red-300" />
+              <div className="text-left">
+                <p className="text-[10px] font-medium uppercase tracking-wider text-white/50">Spent</p>
+                <p className="text-sm font-bold tabular-nums text-white">{formatCurrency(liveTotalSpent)}</p>
+              </div>
+            </div>
+            <div className="flex items-center justify-center gap-1.5 rounded-lg bg-white/10 px-2 py-2">
+              <TrendingDown className="h-3.5 w-3.5 shrink-0 text-orange-300" />
+              <div className="text-left">
+                <p className="text-[10px] font-medium uppercase tracking-wider text-white/50">Deducted</p>
+                <p className="text-sm font-bold tabular-nums text-white">{formatCurrency(liveTotalDeducted)}</p>
               </div>
             </div>
           </div>
@@ -233,7 +241,7 @@ export function TokenPayWalletDetailPanel({
           ) : (
             <Button
               type="button"
-              variant="outline-danger"
+              variant="danger"
               className="w-full"
               disabled={suspendLoading}
               onClick={() => setShowConfirm(true)}

@@ -172,6 +172,7 @@ export function TokenPayIssueModal({ open, onClose, onSubmitted }: TokenPayIssue
                 disabled={submitting}
                 placeholder="Select employee…"
                 singleSelect
+                suspendedUserIds={groupedUsers?.suspended_user_ids}
               />
             </div>
 

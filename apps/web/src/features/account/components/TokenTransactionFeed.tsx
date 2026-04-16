@@ -100,7 +100,7 @@ export function TokenTransactionFeed({
                   {formattedAmount}
                 </p>
                 <p className={`mt-0.5 text-[10px] font-semibold uppercase tracking-widest ${isCredit ? 'text-[#16a34a]' : 'text-[#dc2626]'}`}>
-                  {isCredit ? 'Received' : 'Spent'}
+                  {isCredit ? 'Received' : tx.category === 'adjustment' ? 'Deducted' : 'Spent'}
                 </p>
               </div>
             </motion.div>

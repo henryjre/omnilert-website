@@ -58,52 +58,46 @@ export const TokenPayIssuanceCard = memo(function TokenPayIssuanceCard({
           : 'border-gray-200 hover:border-primary-200 hover:bg-primary-50/30'
       }`}
     >
-      <div className="flex items-center justify-between gap-3">
-        {/* Left: user, type, date */}
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2.5">
-            {/* Type icon */}
-            {isCredit ? (
-              <ArrowUpCircle className="h-4 w-4 shrink-0 text-green-500" />
+      {/* Top: identity + status badge */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <div className="relative shrink-0">
+            {request.userAvatarUrl ? (
+              <img
+                src={request.userAvatarUrl}
+                alt={request.userName}
+                className="h-9 w-9 rounded-full object-cover"
+              />
             ) : (
-              <ArrowDownCircle className="h-4 w-4 shrink-0 text-red-500" />
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-100 text-xs font-semibold text-primary-700">
+                {getInitials(request.userName)}
+              </div>
             )}
-
-            {/* Target user avatar + name */}
-            <div className="flex min-w-0 items-center gap-2">
-              {request.userAvatarUrl ? (
-                <img
-                  src={request.userAvatarUrl}
-                  alt={request.userName}
-                  className="h-6 w-6 shrink-0 rounded-full object-cover"
-                />
-              ) : (
-                <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary-100 text-[10px] font-semibold text-primary-700">
-                  {getInitials(request.userName)}
-                </div>
-              )}
-              <p className="truncate font-medium text-gray-900">{request.userName}</p>
-            </div>
+            <span className={`absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full ring-2 ring-white ${isCredit ? 'bg-green-100' : 'bg-red-100'}`}>
+              {isCredit
+                ? <ArrowUpCircle className="h-3 w-3 text-green-600" />
+                : <ArrowDownCircle className="h-3 w-3 text-red-600" />}
+            </span>
           </div>
-
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-            <p className={`text-xs font-semibold ${isCredit ? 'text-green-600' : 'text-red-600'}`}>
-              {isCredit ? 'Issuance' : 'Deduction'}
-            </p>
-            <p className="text-xs text-gray-400">{formatDate(request.createdAt)}</p>
+          <div className="min-w-0">
+            <p className="truncate font-semibold text-gray-900">{request.userName}</p>
+            <p className="truncate text-xs text-gray-400">by {request.issuedByName}</p>
           </div>
-          <p className="mt-0.5 truncate text-xs text-gray-500">by {request.issuedByName}</p>
         </div>
+        <Badge variant={statusVariant(request.status)} className="shrink-0">
+          {statusLabel(request.status)}
+        </Badge>
+      </div>
 
-        {/* Right: amount + status */}
-        <div className="flex shrink-0 flex-col items-end gap-1.5">
+      {/* Footer: date — amount + chevron */}
+      <div className="mt-3 flex items-center justify-between gap-2 border-t border-gray-100 pt-2.5">
+        <p className="text-xs text-gray-400">{formatDate(request.createdAt)}</p>
+        <div className="flex shrink-0 items-center gap-2">
           <p className={`text-sm font-bold tabular-nums ${isCredit ? 'text-green-700' : 'text-red-700'}`}>
             {isCredit ? '+' : '−'}{formatCurrency(request.amount)}
           </p>
-          <Badge variant={statusVariant(request.status)}>{statusLabel(request.status)}</Badge>
+          <ChevronRight className="h-4 w-4 text-gray-300" />
         </div>
-
-        <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" />
       </div>
     </button>
   );
