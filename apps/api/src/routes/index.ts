@@ -82,7 +82,7 @@ router.use('/user/assigned-branches', assignedBranchRoutes);
 router.use('/profitability-analytics', profitabilityAnalyticsRoutes);
 router.use('/pos-analytics', posAnalyticsRoutes);
 router.use('/account', accountRoutes);
-router.use('/token-pay-management', tokenPayManagementRoutes);
+router.use('/token-pay', tokenPayManagementRoutes);
 router.use('/dashboard', dashboardRoutes);
 
 // Webhooks (no JWT)
