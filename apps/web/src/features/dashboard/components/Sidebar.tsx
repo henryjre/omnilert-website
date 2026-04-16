@@ -19,6 +19,7 @@ import {
   FileWarning,
   BarChart2,
   ShoppingBag,
+  Coins,
 } from 'lucide-react';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { usePosVerificationStore } from '@/shared/store/posVerificationStore';
@@ -35,7 +36,7 @@ interface SidebarProps {
 }
 
 const HR_PATHS = ['/employee-profiles', '/employee-schedule', '/violation-notices', '/workplace-relations'];
-const FINANCE_PATHS = ['/cash-requests'];
+const FINANCE_PATHS = ['/cash-requests', '/token-pay'];
 const AUDIT_PATHS = ['/store-audits'];
 
 function SubCategory({
@@ -160,6 +161,7 @@ export function Sidebar({ className = '' }: SidebarProps) {
         {hasAnyPermission(
           PERMISSIONS.AUTH_REQUEST_VIEW_PAGE,
           PERMISSIONS.CASH_REQUESTS_VIEW,
+          PERMISSIONS.TOKEN_PAY_VIEW,
           PERMISSIONS.EMPLOYEE_VERIFICATION_VIEW_PAGE,
           PERMISSIONS.EMPLOYEE_PROFILES_VIEW,
           PERMISSIONS.SCHEDULE_VIEW,
@@ -239,16 +241,24 @@ export function Sidebar({ className = '' }: SidebarProps) {
               </SubCategory>
             )}
 
-            {hasPermission(PERMISSIONS.CASH_REQUESTS_VIEW) && (
+            {(hasPermission(PERMISSIONS.CASH_REQUESTS_VIEW) || hasPermission(PERMISSIONS.TOKEN_PAY_VIEW)) && (
               <SubCategory
                 label="Accounting and Finance"
                 expanded={financeExpanded}
                 onToggle={() => setFinanceExpanded((value) => !value)}
               >
-                <AnimatedNavLink to="/cash-requests" className={linkClass}>
-                  <DollarSign className="h-5 w-5" />
-                  Cash Requests
-                </AnimatedNavLink>
+                {hasPermission(PERMISSIONS.CASH_REQUESTS_VIEW) && (
+                  <AnimatedNavLink to="/cash-requests" className={linkClass}>
+                    <DollarSign className="h-5 w-5" />
+                    Cash Requests
+                  </AnimatedNavLink>
+                )}
+                {hasPermission(PERMISSIONS.TOKEN_PAY_VIEW) && (
+                  <AnimatedNavLink to="/token-pay" className={linkClass}>
+                    <Coins className="h-5 w-5" />
+                    Token Pay
+                  </AnimatedNavLink>
+                )}
               </SubCategory>
             )}
           </>

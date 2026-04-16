@@ -22,6 +22,7 @@ import { CompanyPage } from '@/features/company/pages/CompanyPage';
 import { DepartmentManagementPage } from '@/features/company/pages/DepartmentManagementPage';
 import { AuthorizationRequestsPage } from '@/features/authorization-requests/pages/AuthorizationRequestsPage';
 import { CashRequestsPage } from '@/features/cash-requests/pages/CashRequestsPage';
+import { TokenPayManagementPage } from '@/features/token-pay/pages/TokenPayManagementPage';
 import { EmployeeVerificationsPage } from '@/features/employee-verifications/pages/EmployeeVerificationsPage';
 import { EmployeeProfilesPage } from '@/features/employee-profiles/pages/EmployeeProfilesPage';
 import { StoreAuditsPage } from '@/features/store-audits/pages/StoreAuditsPage';
@@ -151,6 +152,14 @@ export const router = createBrowserRouter([
             element: (
               <PermissionGuard permission={PERMISSIONS.CASH_REQUESTS_VIEW}>
                 <CashRequestsPage />
+              </PermissionGuard>
+            ),
+          },
+          {
+            path: 'token-pay',
+            element: (
+              <PermissionGuard permission={PERMISSIONS.TOKEN_PAY_VIEW}>
+                <TokenPayManagementPage />
               </PermissionGuard>
             ),
           },
