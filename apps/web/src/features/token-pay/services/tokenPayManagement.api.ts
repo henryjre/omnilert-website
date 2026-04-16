@@ -7,7 +7,7 @@ export async function fetchAllWallets(): Promise<TokenPayCardSummary[]> {
 }
 
 export async function fetchWalletDetail(userId: string, page = 1, limit = 10): Promise<{
-  wallet: { balance: number; cardId: number; totalEarned: number; totalSpent: number };
+  wallet: { balance: number; cardId: number; totalEarned: number; totalSpent: number; totalDeducted: number };
   transactions: { items: any[]; pagination: { page: number; limit: number; total: number; totalPages: number } };
 }> {
   const res = await api.get(`/token-pay/${userId}`, { params: { page, limit } });
