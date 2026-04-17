@@ -2,6 +2,8 @@ import type { Request, Response, NextFunction } from 'express';
 import * as companyService from '../services/company.service.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
+import { uploadFile, buildTenantStoragePrefix, deleteFolder, getCompanyStorageRoot } from '../services/storage.service.js';
+import { db } from '../config/database.js';
 
 const ADMIN_ROLE_NAME = 'Administrator';
 
@@ -25,6 +27,7 @@ function mapCompany(company: any) {
     odooApiKey: company.odoo_api_key,
     themeColor: company.theme_color ?? '#2563EB',
     companyCode: company.company_code ?? null,
+    logoUrl: company.logo_url ?? null,
     canDeleteCompany: company.canDeleteCompany ?? false,
     createdAt: company.created_at,
     updatedAt: company.updated_at,
@@ -210,6 +213,45 @@ export async function deleteById(req: Request, res: Response, next: NextFunction
     );
 
     res.json({ success: true, data: result });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function uploadLogo(req: Request, res: Response, next: NextFunction) {
+  try {
+    const superAdmin = req.superAdmin;
+    if (!superAdmin) throw new AppError(401, 'Unauthorized');
+
+    const file = req.file as Express.Multer.File | undefined;
+    if (!file) throw new AppError(400, 'No file uploaded');
+
+    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!allowed.includes(file.mimetype)) {
+      throw new AppError(400, 'Only JPEG, PNG, WebP, or GIF images are allowed');
+    }
+
+    const companyId = req.params.id as string;
+    const company = await db.getDb()('companies').where({ id: companyId }).first();
+    if (!company) throw new AppError(404, 'Company not found');
+
+    const companyStorageRoot = getCompanyStorageRoot(company.slug);
+    const folderPath = buildTenantStoragePrefix(companyStorageRoot, 'Company Logos', companyId);
+
+    if (company.logo_url) {
+      const deleted = await deleteFolder(folderPath);
+      if (!deleted) logger.warn({ companyId }, 'Failed to delete old logo folder before replacement');
+    }
+
+    const logoUrl = await uploadFile(file.buffer, file.originalname, file.mimetype, folderPath);
+    if (!logoUrl) throw new AppError(500, 'Failed to upload logo');
+
+    const [updated] = await db.getDb()('companies')
+      .where({ id: companyId })
+      .update({ logo_url: logoUrl, updated_at: new Date() })
+      .returning('*');
+
+    res.json({ success: true, data: mapCompany(updated) });
   } catch (err) {
     next(err);
   }
