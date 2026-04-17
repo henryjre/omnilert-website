@@ -311,13 +311,13 @@ export async function syncShiftAuthorizationWithOdoo(
       .where({ 'employee_shifts.id': auth.shift_id })
       .join('users', 'users.id', 'employee_shifts.user_id')
       .select(
-        'employee_shifts.started_at',
+        'employee_shifts.shift_start',
         'users.user_key',
         'employee_shifts.branch_id',
       )
-      .first() as { started_at: Date; user_key: string; branch_id: string } | null;
+      .first() as { shift_start: Date; user_key: string; branch_id: string } | null;
 
-    if (shift?.user_key && shift.started_at) {
+    if (shift?.user_key && shift.shift_start) {
       try {
         const branch = await tenantDb('branches')
           .where({ id: shift.branch_id })
@@ -328,7 +328,7 @@ export async function syncShiftAuthorizationWithOdoo(
         if (odooCompanyId) {
           const employee = await getEmployeeByWebsiteUserKey(shift.user_key, odooCompanyId);
           if (employee?.id) {
-            const shiftDate = new Date(shift.started_at).toISOString().split('T')[0];
+            const shiftDate = new Date(shift.shift_start).toISOString().split('T')[0];
             await upsertBreakWorkEntry({
               employeeId: employee.id,
               date: shiftDate,
