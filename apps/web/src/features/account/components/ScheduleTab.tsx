@@ -200,6 +200,28 @@ const STATUS_LABEL: Record<string, string> = {
   no_approval_needed: 'No Approval Needed',
 };
 
+// ─── Overtime blocker utility ─────────────────────────────────────────────────
+
+function deriveOvertimeBlockState(auths: Array<{ auth_type: string; status: string }>): {
+  blocked: boolean;
+  blockerLabels: string[];
+} {
+  const BLOCKER_TYPES = new Set(['tardiness', 'early_check_out', 'late_check_out', 'underbreak']);
+  const AUTH_LABELS: Record<string, string> = {
+    tardiness: 'Tardiness',
+    early_check_out: 'Early Check Out',
+    late_check_out: 'Late Check Out',
+    underbreak: 'Underbreak',
+  };
+  const pendingBlockers = auths.filter(
+    (a) => BLOCKER_TYPES.has(a.auth_type) && a.status === 'pending',
+  );
+  return {
+    blocked: pendingBlockers.length > 0,
+    blockerLabels: pendingBlockers.map((a) => AUTH_LABELS[a.auth_type] ?? a.auth_type),
+  };
+}
+
 // ─── Authorization Card ───────────────────────────────────────────────────────
 
 const AuthorizationCard = memo(
@@ -208,6 +230,7 @@ const AuthorizationCard = memo(
     currentUserId,
     canApprove,
     canSubmitPublicAuthRequest,
+    siblingAuths,
     onReasonSubmit,
     onApprove,
     onReject,
@@ -216,6 +239,7 @@ const AuthorizationCard = memo(
     currentUserId: string;
     canApprove: boolean;
     canSubmitPublicAuthRequest: boolean;
+    siblingAuths: Array<{ auth_type: string; status: string }>;
     onReasonSubmit: (id: string, reason: string) => Promise<void>;
     onApprove: (
       id: string,
@@ -254,6 +278,10 @@ const AuthorizationCard = memo(
       auth.status === 'pending' && isOwner && needsReason && canSubmitPublicAuthRequest;
     const showSubmitReasonPermissionHint =
       auth.status === 'pending' && isOwner && needsReason && !canSubmitPublicAuthRequest;
+    const isOvertime = auth.auth_type === 'overtime';
+    const { blocked: overtimeBlocked, blockerLabels } = isOvertime
+      ? deriveOvertimeBlockState(siblingAuths)
+      : { blocked: false, blockerLabels: [] };
 
     const iconColorCls: Record<string, string> = {
       blue: 'bg-blue-100 text-blue-600',
@@ -348,17 +376,34 @@ const AuthorizationCard = memo(
         )}
 
         {canManagerAct && auth.auth_type === 'overtime' && !rejectMode && (
-          <div className="flex gap-2">
-            <Button size="sm" variant="success" onClick={() => setShowOvertimeModal(true)}>
-              <span className="flex items-center gap-1">
-                <CheckCircle className="h-3.5 w-3.5" /> Approve
-              </span>
-            </Button>
-            <Button size="sm" variant="danger" onClick={() => setRejectMode(true)}>
-              <span className="flex items-center gap-1">
-                <XCircle className="h-3.5 w-3.5" /> Reject
-              </span>
-            </Button>
+          <div className="space-y-1">
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="success"
+                disabled={overtimeBlocked}
+                onClick={() => setShowOvertimeModal(true)}
+              >
+                <span className="flex items-center gap-1">
+                  <CheckCircle className="h-3.5 w-3.5" /> Approve
+                </span>
+              </Button>
+              <Button
+                size="sm"
+                variant="danger"
+                disabled={overtimeBlocked}
+                onClick={() => setRejectMode(true)}
+              >
+                <span className="flex items-center gap-1">
+                  <XCircle className="h-3.5 w-3.5" /> Reject
+                </span>
+              </Button>
+            </div>
+            {overtimeBlocked && (
+              <p className="text-xs text-amber-600 mt-1">
+                Resolve {blockerLabels.join(' and ')} before reviewing overtime.
+              </p>
+            )}
           </div>
         )}
 
@@ -1247,6 +1292,7 @@ const ShiftDetailPanel = memo(
                         currentUserId={currentUserId}
                         canApprove={canApprove}
                         canSubmitPublicAuthRequest={canSubmitPublicAuthRequest}
+                        siblingAuths={authorizations.filter((a: any) => a.auth_type !== 'overtime')}
                         onReasonSubmit={handleReasonSubmit}
                         onApprove={handleApprove}
                         onReject={handleReject}
