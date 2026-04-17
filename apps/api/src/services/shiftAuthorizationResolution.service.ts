@@ -13,6 +13,7 @@ import {
   updateAttendanceCheckIn,
   updateAttendanceCheckOut,
 } from './odoo.service.js';
+import { OVERTIME_BLOCKER_AUTH_TYPES, computeOvertimeBlockerState, deriveOvertimeMinutes } from './overtimeDependency.service.js';
 
 export const INTERIM_DUTY_AUTH_TYPE = 'interim_duty';
 export const MANUAL_REJECT_REQUIRES_EMPLOYEE_REASON_AUTH_TYPES = new Set([
@@ -20,6 +21,7 @@ export const MANUAL_REJECT_REQUIRES_EMPLOYEE_REASON_AUTH_TYPES = new Set([
   'early_check_out',
   'overtime',
   INTERIM_DUTY_AUTH_TYPE,
+  'underbreak',
 ]);
 export const EXPIRING_EMPLOYEE_REASON_AUTH_TYPES = new Set([
   'early_check_in',
@@ -28,6 +30,7 @@ export const EXPIRING_EMPLOYEE_REASON_AUTH_TYPES = new Set([
   INTERIM_DUTY_AUTH_TYPE,
   'tardiness',
   'late_check_out',
+  'underbreak',
 ]);
 
 const REGULAR_WORK_ENTRY_TYPE_ID = 1;
