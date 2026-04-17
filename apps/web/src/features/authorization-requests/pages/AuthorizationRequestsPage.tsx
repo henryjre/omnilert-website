@@ -36,6 +36,7 @@ import {
   Briefcase,
   ArrowLeftRight,
   ChevronDown,
+  Coffee,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -53,6 +54,7 @@ const AUTH_TYPE_CONFIG: Record<string, { label: string; color: string; Icon: Rea
   late_check_out: { label: 'Late Check Out', color: 'purple', Icon: Clock, diffLabel: 'after shift end' },
   overtime: { label: 'Overtime', color: 'red', Icon: Clock, diffLabel: 'overtime' },
   interim_duty: { label: 'Interim Duty', color: 'indigo', Icon: Briefcase, diffLabel: 'interim duty duration' },
+  underbreak: { label: 'Underbreak', color: 'amber', Icon: Coffee, diffLabel: 'underbreak duration' },
 };
 
 const OVERTIME_TYPE_LABELS: Record<string, string> = {
@@ -475,13 +477,20 @@ function ServiceCrewDetailPanel({
 
   const canAct = canActNormally || canForceReject;
 
+  const isOvertimeBlocked = isOvertime && auth.overtime_blocked === true;
+  const blockerLabels = isOvertimeBlocked && Array.isArray(auth.overtime_blocker_auth_types)
+    ? (auth.overtime_blocker_auth_types as string[]).map((t) => AUTH_TYPE_CONFIG[t]?.label ?? t)
+    : [];
+
   const iconColorCls: Record<string, string> = {
-    blue: 'bg-blue-100 text-blue-600',
+    blue:   'bg-blue-100 text-blue-600',
     orange: 'bg-orange-100 text-orange-600',
     yellow: 'bg-yellow-100 text-yellow-600',
     purple: 'bg-purple-100 text-purple-600',
-    red: 'bg-red-100 text-red-600',
-    gray: 'bg-gray-100 text-gray-600',
+    red:    'bg-red-100 text-red-600',
+    indigo: 'bg-indigo-100 text-indigo-600',
+    amber:  'bg-amber-100 text-amber-600',
+    gray:   'bg-gray-100 text-gray-600',
   };
 
   async function handleApprove() {
@@ -690,6 +699,14 @@ function ServiceCrewDetailPanel({
       {/* Footer actions */}
       {canAct && (
         <div className="border-t border-gray-200 px-6 py-4">
+          {isOvertimeBlocked && (
+            <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+              <p className="text-xs text-amber-700">
+                Resolve {blockerLabels.join(' and ')} before reviewing overtime.
+              </p>
+            </div>
+          )}
           {!rejectMode ? (
             <div className="space-y-3">
               <div className="flex gap-3">
@@ -697,6 +714,7 @@ function ServiceCrewDetailPanel({
                   <Button
                     className="flex-1"
                     variant="success"
+                    disabled={isOvertimeBlocked}
                     onClick={() => {
                       if (isOvertime) {
                         setShowOvertimeModal(true);
@@ -715,7 +733,12 @@ function ServiceCrewDetailPanel({
                     </span>
                   </Button>
                 )}
-                <Button className="flex-1" variant="danger" onClick={() => setRejectMode(true)}>
+                <Button
+                  className="flex-1"
+                  variant="danger"
+                  disabled={isOvertimeBlocked}
+                  onClick={() => setRejectMode(true)}
+                >
                   <span className="flex items-center justify-center gap-1.5">
                     <XCircle className="h-4 w-4" /> Reject
                   </span>
@@ -972,6 +995,7 @@ const ICON_COLOR_CLS: Record<string, string> = {
   purple: 'bg-purple-100 text-purple-600',
   red:    'bg-red-100 text-red-600',
   indigo: 'bg-indigo-100 text-indigo-600',
+  amber:  'bg-amber-100 text-amber-600',
   gray:   'bg-gray-100 text-gray-600',
 };
 
@@ -1234,6 +1258,10 @@ export function AuthorizationRequestsPage() {
         ? { type: 'service_crew', data: { ...prev.data, ...updated } }
         : prev,
     );
+    // Re-fetch the full service-crew list so overtime rows reflect updated
+    // overtime_blocked / overtime_blocker_auth_types metadata after a blocker
+    // auth (e.g. underbreak) is resolved.
+    void fetchRequests();
   }
 
   const mgmtPendingCount = managementRequests.filter((r) => r.status === 'pending').length;
