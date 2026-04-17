@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Building2, Check, ChevronDown, GitBranch, X } from 'lucide-react';
+import { Check, ChevronDown, GitBranch, X } from 'lucide-react';
+import { CompanyAvatar } from '@/features/company/components/CompanyAvatar';
 import { useBranchStore } from '@/shared/store/branchStore';
 import {
   clearAllBranchesToFirst,
@@ -22,6 +23,48 @@ function SelectionIndicator({ selected }: { selected: boolean }) {
     >
       <Check className="h-3 w-3" strokeWidth={3} />
     </span>
+  );
+}
+
+function CompanyAvatarStack({ groups, selectedBranchIds }: {
+  groups: SelectorCompanyGroup[];
+  selectedBranchIds: string[];
+}) {
+  const activeCompanies = groups.filter((g) =>
+    g.branches.some((b) => selectedBranchIds.includes(b.id))
+  );
+
+  if (activeCompanies.length === 0 && groups.length > 0) {
+    const first = groups[0];
+    return (
+      <CompanyAvatar name={first.name} logoUrl={first.logoUrl} themeColor="#2563EB" size={20} />
+    );
+  }
+
+  const visible = activeCompanies.slice(0, 3);
+  const overflow = activeCompanies.length > 3 ? activeCompanies.length - 3 : 0;
+
+  return (
+    <div className="flex items-center">
+      {visible.map((company, i) => (
+        <div
+          key={company.id}
+          className={`ring-2 ring-white rounded-full ${i > 0 ? '-ml-1.5' : ''}`}
+        >
+          <CompanyAvatar
+            name={company.name}
+            logoUrl={company.logoUrl ?? null}
+            themeColor="#2563EB"
+            size={20}
+          />
+        </div>
+      ))}
+      {overflow > 0 && (
+        <div className="-ml-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-gray-200 ring-2 ring-white text-[9px] font-semibold text-gray-600">
+          +{overflow}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -114,7 +157,13 @@ function BranchSelectorContent({
               <section key={company.id} className="space-y-1">
                 {/* Company header with inline select-all */}
                 <div className="flex items-center gap-2 px-1 py-1">
-                  <Building2 className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+                  <CompanyAvatar
+                    name={company.name}
+                    logoUrl={company.logoUrl ?? null}
+                    themeColor="#2563EB"
+                    size={16}
+                    className="shrink-0"
+                  />
                   <span className="truncate text-xs font-semibold uppercase tracking-wide text-gray-400">
                     {company.name}
                   </span>
@@ -280,8 +329,8 @@ export function BranchSelector() {
         aria-expanded={open}
         className="group flex items-center gap-2 rounded-full border border-gray-200 bg-white px-2 py-1 shadow-sm transition-colors hover:border-primary-200 hover:bg-primary-50/30 focus:outline-none focus:ring-2 focus:ring-primary-200"
       >
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary-100 text-primary-600">
-          <GitBranch className="h-3.5 w-3.5" />
+        <span className="flex shrink-0 items-center justify-center">
+          <CompanyAvatarStack groups={companyBranchGroups} selectedBranchIds={selectedBranchIds} />
         </span>
         <span className="min-w-0 max-w-[8rem] truncate text-sm font-medium text-gray-700 sm:max-w-[12rem] lg:max-w-[16rem]">
           {label}
