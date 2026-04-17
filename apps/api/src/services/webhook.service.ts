@@ -1854,6 +1854,20 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
               });
             }
           }
+          // Void any underbreak auth from the previous checkout — employee is back, more breaks may occur
+          if (shift?.id) {
+            const voidedUnderbreak = await deps.deleteUnderbreakAuthByShiftId(shift.id as string);
+            if (voidedUnderbreak) {
+              logger.info(
+                { attendanceId: payload.id, shiftId: shift.id },
+                'Voided underbreak authorization on re-check-in',
+              );
+              deps.emitSocketEvent('shift:authorization-voided', {
+                shift_id: shift.id,
+                branch_id: branch.id,
+              });
+            }
+          }
         } else {
           const diffMs = shiftStart.getTime() - eventTime.getTime();
           const diffMinutes = Math.round(diffMs / 60_000);
