@@ -8,6 +8,7 @@ export type * from './types/company.types.js';
 export type * from './types/discordIntegration.types.js';
 export type * from './types/pos.types.js';
 export type * from './types/role.types.js';
+export type * from './types/shiftAuthorization.types.js';
 export type * from './types/socket.types.js';
 export type * from './types/storeAudit.types.js';
 export type * from './types/user.types.js';
