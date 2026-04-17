@@ -14,7 +14,7 @@ import {
   reconcileOvertimeForShift,
   syncShiftAuthorizationWithOdoo,
 } from '../services/shiftAuthorizationResolution.service.js';
-import { OVERTIME_BLOCKER_AUTH_TYPES } from '../services/overtimeDependency.service.js';
+import { OVERTIME_BLOCKER_AUTH_TYPES, computeOvertimeBlockerState } from '../services/overtimeDependency.service.js';
 
 export {
   cleanupInterimDutyOdooArtifacts,
@@ -93,6 +93,24 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
     }
     if (auth.needs_employee_reason && !hasSubmittedEmployeeReason(auth)) {
       throw new AppError(400, 'Employee has not submitted a reason yet');
+    }
+
+    // Enforce blocker check — overtime cannot be reviewed while blocker auths are pending
+    if (auth.auth_type === 'overtime') {
+      const siblingAuths = await db.getDb()('shift_authorizations')
+        .where({ shift_id: auth.shift_id })
+        .whereNot({ id: auth.id })
+        .select('auth_type', 'status');
+
+      const { blocked, blockerAuthTypes } = computeOvertimeBlockerState(siblingAuths);
+      if (blocked) {
+        return res.status(409).json({
+          success: false,
+          error: 'overtime_blocked',
+          message: `Resolve ${blockerAuthTypes.join(', ')} before reviewing overtime.`,
+          data: { overtime_blocked: true, overtime_blocker_auth_types: blockerAuthTypes },
+        });
+      }
     }
 
     const { overtimeType, hours, minutes } = req.body as {
@@ -211,6 +229,24 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
     }
 
     assertEmployeeReasonSubmittedForManualReject(auth);
+
+    // Enforce blocker check — overtime cannot be reviewed while blocker auths are pending
+    if (auth.auth_type === 'overtime') {
+      const siblingAuths = await db.getDb()('shift_authorizations')
+        .where({ shift_id: auth.shift_id })
+        .whereNot({ id: auth.id })
+        .select('auth_type', 'status');
+
+      const { blocked, blockerAuthTypes } = computeOvertimeBlockerState(siblingAuths);
+      if (blocked) {
+        return res.status(409).json({
+          success: false,
+          error: 'overtime_blocked',
+          message: `Resolve ${blockerAuthTypes.join(', ')} before reviewing overtime.`,
+          data: { overtime_blocked: true, overtime_blocker_auth_types: blockerAuthTypes },
+        });
+      }
+    }
 
     const managerName = await getManagerDisplayName(managerId);
     const resolvedAt = new Date();
