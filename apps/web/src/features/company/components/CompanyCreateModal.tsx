@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Button } from '@/shared/components/ui/Button';
 import { Input } from '@/shared/components/ui/Input';
 import { isValidHexColor } from '@/shared/utils/theme';
 import type { Company } from './CompanyCard';
+import { CompanyAvatar } from './CompanyAvatar';
 
 const PRESET_COLORS = ['#2563EB', '#16A34A', '#DC2626', '#EA580C', '#7C3AED', '#0D9488'];
 const COMPANY_CODE_RE = /^[A-Z0-9]{2,10}$/;
@@ -34,17 +35,34 @@ export function CompanyCreateModal({ isOpen, onClose, onCreated }: CompanyCreate
   const [authPassword, setAuthPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
 
-  function handleClose() {
-    if (submitting) return;
+  function handleLogoFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null;
+    if (logoPreviewUrl) URL.revokeObjectURL(logoPreviewUrl);
+    setLogoFile(file);
+    setLogoPreviewUrl(file ? URL.createObjectURL(file) : null);
+  }
+
+  function resetAndClose() {
     setStep('form');
     setForm({ name: '', companyCode: '', odooApiKey: '', themeColor: '#2563EB' });
     setAuthEmail('');
     setAuthPassword('');
     setError('');
+    if (logoPreviewUrl) URL.revokeObjectURL(logoPreviewUrl);
+    setLogoFile(null);
+    setLogoPreviewUrl(null);
     onClose();
+  }
+
+  function handleClose() {
+    if (submitting) return;
+    resetAndClose();
   }
 
   function handleFormNext() {
@@ -102,8 +120,34 @@ export function CompanyCreateModal({ isOpen, onClose, onCreated }: CompanyCreate
         return;
       }
 
-      onCreated(createData.data as Company);
-      handleClose();
+      let createdCompany = createData.data as Company;
+
+      let logoUploadFailed = false;
+
+      if (logoFile) {
+        try {
+          const formData = new FormData();
+          formData.append('logo', logoFile);
+          const logoRes = await fetch(`/api/v1/super/companies/${createdCompany.id}/logo`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${authData.data.accessToken}` },
+            body: formData,
+          });
+          if (logoRes.ok) {
+            const logoData = await logoRes.json();
+            createdCompany = logoData.data as Company;
+          } else {
+            logoUploadFailed = true;
+            setError('Company created, but logo upload failed. You can upload it from the detail panel.');
+          }
+        } catch {
+          logoUploadFailed = true;
+          setError('Company created, but logo upload failed. You can upload it from the detail panel.');
+        }
+      }
+
+      onCreated(createdCompany);
+      if (!logoUploadFailed) resetAndClose();
     } catch {
       setError('An unexpected error occurred. Please try again.');
     } finally {
@@ -123,6 +167,38 @@ export function CompanyCreateModal({ isOpen, onClose, onCreated }: CompanyCreate
         <div className="space-y-4 px-6 py-5">
           {step === 'form' ? (
             <>
+              {/* Logo preview + upload */}
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                  Company Logo <span className="font-normal text-gray-400">(optional)</span>
+                </label>
+                <div className="flex items-center gap-4">
+                  <CompanyAvatar
+                    name={form.name || 'N'}
+                    logoUrl={logoPreviewUrl}
+                    themeColor={isValidHexColor(form.themeColor) ? form.themeColor : '#2563EB'}
+                    size={80}
+                    className="rounded-xl"
+                  />
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => logoInputRef.current?.click()}
+                      className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    >
+                      {logoFile ? 'Change' : 'Upload'}
+                    </button>
+                    <p className="mt-1 text-xs text-gray-400">JPEG, PNG, WebP or GIF · max 5 MB</p>
+                  </div>
+                </div>
+                <input
+                  ref={logoInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  className="hidden"
+                  onChange={handleLogoFileChange}
+                />
+              </div>
               <Input
                 label="Company Name"
                 value={form.name}
