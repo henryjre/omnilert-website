@@ -26,6 +26,7 @@ export const createCompanyBySuperAdminSchema = z.object({
     .max(255, 'Company name must not exceed 255 characters'),
   odooApiKey: z.string().optional(),
   companyCode: companyCodeSchema.optional(),
+  themeColor: hexColorSchema.optional(),
 });
 
 export const updateCompanySchema = z.object({

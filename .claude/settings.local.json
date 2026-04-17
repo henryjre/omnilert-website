@@ -36,7 +36,11 @@
       "Bash(node --import tsx/esm --test src/**/*.test.ts)",
       "Bash(tsx --test src/**/*.test.ts)",
       "Bash(grep -rn \"primary\" /home/phaeton/Projects/omnilert-website/apps/web/tailwind.config.*)",
-      "Bash(rtk json *)"
+      "Bash(rtk json *)",
+      "Bash(pnpm migrate:status)",
+      "Bash(rtk proxy *)",
+      "Bash(pnpm exec *)",
+      "Bash(pnpm build *)"
     ]
   }
 }

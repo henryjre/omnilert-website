@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { Button } from '@/shared/components/ui/Button';
 import { Input } from '@/shared/components/ui/Input';
 import { isValidHexColor } from '@/shared/utils/theme';
+import { useAuthStore } from '@/features/auth/store/authSlice';
 import type { Company } from './CompanyCard';
 import { CompanyAvatar } from './CompanyAvatar';
 
@@ -24,6 +25,7 @@ interface FormState {
 }
 
 export function CompanyCreateModal({ isOpen, onClose, onCreated }: CompanyCreateModalProps) {
+  const userAccessToken = useAuthStore((s) => s.accessToken);
   const [step, setStep] = useState<Step>('form');
   const [form, setForm] = useState<FormState>({
     name: '',
@@ -130,7 +132,7 @@ export function CompanyCreateModal({ isOpen, onClose, onCreated }: CompanyCreate
           formData.append('logo', logoFile);
           const logoRes = await fetch(`/api/v1/super/companies/${createdCompany.id}/logo`, {
             method: 'POST',
-            headers: { Authorization: `Bearer ${authData.data.accessToken}` },
+            headers: { Authorization: `Bearer ${userAccessToken}` },
             body: formData,
           });
           if (logoRes.ok) {
