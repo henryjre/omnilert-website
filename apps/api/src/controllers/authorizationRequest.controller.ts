@@ -4,6 +4,7 @@ import { AppError } from '../middleware/errorHandler.js';
 import { db } from '../config/database.js';
 import { createAndDispatchNotification } from '../services/notification.service.js';
 import { listShiftExchangeRequestsForAuthorization } from '../services/shiftExchange.service.js';
+import { computeOvertimeBlockerState } from '../services/overtimeDependency.service.js';
 
 /**
  * GET /authorization-requests
@@ -102,11 +103,36 @@ export async function list(req: Request, res: Response, next: NextFunction) {
     }));
 
     if (canViewServiceCrewRequests) {
-      const mappedAuthRows = authRows.map((row: any) => ({
-        ...row,
-        employee_name: namesById[row.user_id] || row.shift_employee_name || null,
-        resolved_by_name: row.resolved_by ? (namesById[row.resolved_by] ?? null) : null,
-      }));
+      // Group all authRows by shift_id so we can derive siblings for overtime rows
+      const authsByShiftId = new Map<string, Array<{ auth_type: string; status: string; id: string }>>();
+      for (const row of authRows) {
+        const key = String(row.shift_id);
+        if (!authsByShiftId.has(key)) authsByShiftId.set(key, []);
+        authsByShiftId.get(key)!.push({ auth_type: row.auth_type, status: row.status, id: row.id });
+      }
+
+      const mappedAuthRows = authRows.map((row: any) => {
+        const base = {
+          ...row,
+          employee_name: namesById[row.user_id] || row.shift_employee_name || null,
+          resolved_by_name: row.resolved_by ? (namesById[row.resolved_by] ?? null) : null,
+        };
+        if (row.auth_type === 'overtime') {
+          const shiftAuths = authsByShiftId.get(String(row.shift_id)) ?? [];
+          const siblingAuths = shiftAuths.filter((a) => a.id !== String(row.id));
+          const { blocked, blockerAuthTypes } = computeOvertimeBlockerState(siblingAuths);
+          return {
+            ...base,
+            overtime_blocked: blocked,
+            overtime_blocker_auth_types: blockerAuthTypes,
+          };
+        }
+        return {
+          ...base,
+          overtime_blocked: false,
+          overtime_blocker_auth_types: [],
+        };
+      });
 
       const shiftExchangeRows = await listShiftExchangeRequestsForAuthorization({
         currentCompanyId,

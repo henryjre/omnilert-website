@@ -200,7 +200,15 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
       }
     }
 
-    res.json({ success: true, data: { ...updated, resolved_by_name: managerName } });
+    res.json({
+      success: true,
+      data: {
+        ...updated,
+        resolved_by_name: managerName,
+        overtime_blocked: false,
+        overtime_blocker_auth_types: [],
+      },
+    });
   } catch (err) {
     next(err);
   }
@@ -267,7 +275,15 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
       }
     }
 
-    res.json({ success: true, data: { ...updated, resolved_by_name: managerName } });
+    res.json({
+      success: true,
+      data: {
+        ...updated,
+        resolved_by_name: managerName,
+        overtime_blocked: false,
+        overtime_blocker_auth_types: [],
+      },
+    });
   } catch (err) {
     next(err);
   }
