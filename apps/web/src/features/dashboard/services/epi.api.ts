@@ -81,6 +81,8 @@ export interface DashboardCheckInStatus {
   roleType: 'Management' | 'Service Crew' | null;
   companyName: string | null;
   branchName: string | null;
+  branchId: string | null;
+  branchOdooId: string | null;
   checkInTimeUtc: string | null;
   shiftId?: string | null;
   activeActivity?: {
@@ -340,6 +342,8 @@ export async function fetchDashboardCheckInStatus(): Promise<DashboardCheckInSta
     roleType: null,
     companyName: null,
     branchName: null,
+    branchId: null,
+    branchOdooId: null,
     checkInTimeUtc: null,
   };
 }

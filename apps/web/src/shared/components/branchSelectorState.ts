@@ -4,6 +4,7 @@ export interface SelectorBranch {
   companyId: string;
   companyName: string;
   odoo_branch_id?: string | null;
+  is_main_branch?: boolean;
 }
 
 export interface SelectorCompanyGroup {
@@ -25,6 +26,7 @@ export interface SelectorCompanySnapshot {
     id: string;
     name: string;
     odoo_branch_id?: string | null;
+    is_main_branch?: boolean;
   }>;
 }
 
@@ -63,6 +65,7 @@ export function buildSelectorCompanyGroupsFromSnapshots(
           id: branch.id,
           name: branch.name,
           odoo_branch_id: branch.odoo_branch_id ?? null,
+          is_main_branch: Boolean(branch.is_main_branch),
           companyId: snapshot.id,
           companyName: snapshot.name,
         })),

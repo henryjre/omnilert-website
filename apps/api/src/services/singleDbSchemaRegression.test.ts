@@ -18,9 +18,11 @@ const registrationServicePath = path.join(srcDir, 'services', 'registration.serv
 const accountAuditResultServicePath = path.join(srcDir, 'services', 'accountAuditResult.service.ts');
 const employeeRequirementServicePath = path.join(srcDir, 'services', 'employeeRequirement.service.ts');
 const employeeVerificationServicePath = path.join(srcDir, 'services', 'employeeVerification.service.ts');
+const assignedBranchServicePath = path.join(srcDir, 'services', 'assignedBranch.service.ts');
 const caseReportServicePath = path.join(srcDir, 'services', 'caseReport.service.ts');
 const violationNoticeServicePath = path.join(srcDir, 'services', 'violationNotice.service.ts');
 const webhookServicePath = path.join(srcDir, 'services', 'webhook.service.ts');
+const dashboardControllerPath = path.join(srcDir, 'controllers', 'dashboard.controller.ts');
 const posSessionControllerPath = path.join(srcDir, 'controllers', 'posSession.controller.ts');
 const branchControllerPath = path.join(srcDir, 'controllers', 'branch.controller.ts');
 const employeeShiftControllerPath = path.join(srcDir, 'controllers', 'employeeShift.controller.ts');
@@ -99,6 +101,51 @@ test('branch summary queries resolve branch names from branches table', () => {
     globalUserManagementSource,
     /'branches\.name as branch_name'/,
     'globalUserManagement.service should select branches.name as branch_name',
+  );
+});
+
+test('assigned branch service exposes is_main_branch on branch payloads', () => {
+  const source = fs.readFileSync(assignedBranchServicePath, 'utf8');
+
+  assert.match(
+    source,
+    /'b\.is_main_branch'/,
+    'assignedBranch.service should select branches.is_main_branch',
+  );
+  assert.match(
+    source,
+    /is_main_branch:\s*Boolean\(row\.is_main_branch\)/,
+    'assignedBranch.service should expose is_main_branch on each branch payload',
+  );
+});
+
+test('dashboard check-in status exposes concrete branch identifiers', () => {
+  const source = fs.readFileSync(dashboardControllerPath, 'utf8');
+
+  assert.match(
+    source,
+    /branchId:\s*null,\s*branchOdooId:\s*null/s,
+    'checked-out dashboard status should include null branch identifiers',
+  );
+  assert.match(
+    source,
+    /'b\.id as branch_id'/,
+    'dashboard controller should select branch_id for check-in status',
+  );
+  assert.match(
+    source,
+    /'b\.odoo_branch_id as branch_odoo_id'/,
+    'dashboard controller should select branch_odoo_id for check-in status',
+  );
+  assert.match(
+    source,
+    /branchId:\s*latestAttendanceEvent\.branchId \?\? null/,
+    'dashboard controller should return branchId in check-in status',
+  );
+  assert.match(
+    source,
+    /branchOdooId:\s*latestAttendanceEvent\.branchOdooId \?\? null/,
+    'dashboard controller should return branchOdooId in check-in status',
   );
 });
 

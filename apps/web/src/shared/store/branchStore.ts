@@ -65,10 +65,11 @@ function persistBranchSelection(ids: string[]): void {
   }
 }
 
-interface Branch {
+export interface Branch {
   id: string;
   name: string;
   odoo_branch_id?: string | null;
+  is_main_branch?: boolean;
   companyId: string;
   companyName: string;
   companySlug?: string | null;
@@ -101,7 +102,12 @@ export const useBranchStore = create<BranchState>()((set, get) => ({
         companySlug: string;
         logoUrl: string | null;
         themeColor: string;
-        branches: Array<{ id: string; name: string; odoo_branch_id: string | null }>;
+        branches: Array<{
+          id: string;
+          name: string;
+          odoo_branch_id: string | null;
+          is_main_branch: boolean;
+        }>;
       }> = res.data.data || [];
 
       const snapshots = groups.map((g) => ({

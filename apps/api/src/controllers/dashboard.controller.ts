@@ -349,6 +349,8 @@ function buildCheckedOutStatus() {
     roleType: null,
     companyName: null,
     branchName: null,
+    branchId: null,
+    branchOdooId: null,
     checkInTimeUtc: null,
   };
 }
@@ -357,6 +359,8 @@ interface LatestAttendanceWebhookEventRow {
   log_type: 'check_in' | 'check_out' | string;
   company_id: string;
   odoo_payload: unknown;
+  branch_id: string | null;
+  branch_odoo_id: string | null;
   branch_name: string | null;
   company_name: string | null;
 }
@@ -365,6 +369,8 @@ interface ParsedAttendanceWebhookEvent {
   checkedIn: boolean;
   checkInTimeUtc: string | null;
   activeCompanyId: number | null;
+  branchId: string | null;
+  branchOdooId: string | null;
   branchName: string | null;
   companyName: string | null;
 }
@@ -408,6 +414,8 @@ function parseLatestAttendanceWebhookEvent(
     checkedIn: row.log_type === 'check_in',
     checkInTimeUtc,
     activeCompanyId,
+    branchId: row.branch_id,
+    branchOdooId: row.branch_odoo_id,
     branchName: row.branch_name,
     companyName: row.company_name,
   };
@@ -423,7 +431,15 @@ async function getLatestAttendanceWebhookEventForWebsiteUserKey(
     .whereRaw(`sl.odoo_payload->>'x_website_key' = ?`, [websiteUserKey])
     .orderBy('sl.event_time', 'desc')
     .orderBy('sl.created_at', 'desc')
-    .first('sl.log_type', 'sl.company_id', 'sl.odoo_payload', 'b.name as branch_name', 'c.name as company_name');
+    .first(
+      'sl.log_type',
+      'sl.company_id',
+      'sl.odoo_payload',
+      'b.id as branch_id',
+      'b.odoo_branch_id as branch_odoo_id',
+      'b.name as branch_name',
+      'c.name as company_name',
+    );
 
   if (!row) return null;
   return parseLatestAttendanceWebhookEvent(row as LatestAttendanceWebhookEventRow);
@@ -553,6 +569,8 @@ export async function getCheckInStatus(req: Request, res: Response, next: NextFu
             : 'Service Crew',
         companyName: latestAttendanceEvent.companyName ?? null,
         branchName: latestAttendanceEvent.branchName ?? null,
+        branchId: latestAttendanceEvent.branchId ?? null,
+        branchOdooId: latestAttendanceEvent.branchOdooId ?? null,
         checkInTimeUtc: latestAttendanceEvent.checkInTimeUtc,
         shiftId: activeShift?.id ?? null,
         activeActivity: activeActivity

@@ -10,6 +10,7 @@ export interface AssignedBranchGroup {
     id: string;
     name: string;
     odoo_branch_id: string | null;
+    is_main_branch: boolean;
   }>;
 }
 
@@ -27,6 +28,7 @@ export async function getAssignedBranches(
     branch_id: string;
     branch_name: string;
     odoo_branch_id: string | null;
+    is_main_branch: boolean;
   }>;
 
   if (isSuperAdmin) {
@@ -44,6 +46,7 @@ export async function getAssignedBranches(
         'b.id as branch_id',
         'b.name as branch_name',
         'b.odoo_branch_id',
+        'b.is_main_branch',
       )
       .orderBy('c.name', 'asc')
       .orderBy('b.name', 'asc');
@@ -65,6 +68,7 @@ export async function getAssignedBranches(
         'b.id as branch_id',
         'b.name as branch_name',
         'b.odoo_branch_id',
+        'b.is_main_branch',
       )
       .orderBy('c.name', 'asc')
       .orderBy('b.name', 'asc');
@@ -85,6 +89,7 @@ export async function getAssignedBranches(
         'b.id as branch_id',
         'b.name as branch_name',
         'b.odoo_branch_id',
+        'b.is_main_branch',
       )
       .orderBy('c.name', 'asc')
       .orderBy('b.name', 'asc');
@@ -111,6 +116,7 @@ export async function getAssignedBranches(
         id: String(row.branch_id),
         name: String(row.branch_name),
         odoo_branch_id: row.odoo_branch_id ? String(row.odoo_branch_id) : null,
+        is_main_branch: Boolean(row.is_main_branch),
       });
     }
   }

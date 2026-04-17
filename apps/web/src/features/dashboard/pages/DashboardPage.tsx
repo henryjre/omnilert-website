@@ -4,16 +4,15 @@ import { RefreshCw } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '@/features/auth/store/authSlice';
 import { useAppToast } from '@/shared/hooks/useAppToast';
-import { useSocket } from '@/shared/hooks/useSocket';
 import { Button } from '@/shared/components/ui/Button';
 import { EpiDashboard } from '../components/epi/EpiDashboard';
 import { DashboardPageSkeleton } from '../components/epi/EpiSkeletons';
 import {
-  fetchDashboardCheckInStatus,
   fetchEpiDashboard,
   fetchEpiLeaderboardSummary,
   getCurrentManilaMonthKey,
 } from '../services/epi.api';
+import { useLiveDashboardCheckInStatus } from '../hooks/useLiveDashboardCheckInStatus';
 import {
   resolveDashboardPullMetrics,
 } from '../services/dashboardPullRefresh';
@@ -30,10 +29,8 @@ export function DashboardPage() {
   const user = useAuthStore((s) => s.user);
   const queryClient = useQueryClient();
   const { error: showErrorToast } = useAppToast();
-  const userEventsSocket = useSocket('/user-events');
   const canViewPerformanceIndex = true;
   const pullRefreshFrameRef = useRef<number | null>(null);
-  const checkInSyncTimeoutRef = useRef<number | null>(null);
   const touchStartYRef = useRef<number | null>(null);
   const touchStartXRef = useRef<number | null>(null);
   const isPullTrackingRef = useRef(false);
@@ -82,12 +79,12 @@ export function DashboardPage() {
     ...refreshPolicy,
     gcTime: Number.POSITIVE_INFINITY,
   });
-  const checkInStatusQuery = useQuery({
-    queryKey: ['dashboard-check-in-status'],
-    queryFn: fetchDashboardCheckInStatus,
+  const checkInStatusQuery = useLiveDashboardCheckInStatus({
     enabled: canViewPerformanceIndex,
-    ...refreshPolicy,
-    gcTime: Number.POSITIVE_INFINITY,
+    queryConfig: {
+      ...refreshPolicy,
+      gcTime: Number.POSITIVE_INFINITY,
+    },
   });
 
   const leaderboardDetailFetchCount = useIsFetching({
@@ -133,36 +130,6 @@ export function DashboardPage() {
       }
     };
   }, []);
-
-  useEffect(() => {
-    if (!userEventsSocket || !canViewPerformanceIndex) return;
-
-    const syncCheckInStatus = () => {
-      // Realtime updates can arrive slightly before the read model reflects checkout.
-      // Do an immediate refetch plus a short delayed refetch to converge quickly.
-      void checkInStatusQuery.refetch({ cancelRefetch: false });
-      if (checkInSyncTimeoutRef.current !== null) {
-        window.clearTimeout(checkInSyncTimeoutRef.current);
-      }
-      checkInSyncTimeoutRef.current = window.setTimeout(() => {
-        void checkInStatusQuery.refetch({ cancelRefetch: false });
-      }, 1200);
-    };
-
-    userEventsSocket.on('user:check-in-status-updated', syncCheckInStatus);
-    userEventsSocket.on('user:auth-scope-updated', syncCheckInStatus);
-    userEventsSocket.on('connect', syncCheckInStatus);
-
-    return () => {
-      userEventsSocket.off('user:check-in-status-updated', syncCheckInStatus);
-      userEventsSocket.off('user:auth-scope-updated', syncCheckInStatus);
-      userEventsSocket.off('connect', syncCheckInStatus);
-      if (checkInSyncTimeoutRef.current !== null) {
-        window.clearTimeout(checkInSyncTimeoutRef.current);
-        checkInSyncTimeoutRef.current = null;
-      }
-    };
-  }, [canViewPerformanceIndex, userEventsSocket, checkInStatusQuery]);
 
   const handleRefresh = useCallback(async ({ showSkeleton = false }: { showSkeleton?: boolean } = {}) => {
     if (showSkeleton) {
