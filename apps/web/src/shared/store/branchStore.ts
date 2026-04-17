@@ -100,6 +100,7 @@ export const useBranchStore = create<BranchState>()((set, get) => ({
         companyName: string;
         companySlug: string;
         logoUrl: string | null;
+        themeColor: string;
         branches: Array<{ id: string; name: string; odoo_branch_id: string | null }>;
       }> = res.data.data || [];
 
@@ -108,6 +109,7 @@ export const useBranchStore = create<BranchState>()((set, get) => ({
         name: g.companyName,
         slug: g.companySlug,
         logoUrl: g.logoUrl ?? null,
+        themeColor: g.themeColor ?? '#2563EB',
         branches: g.branches,
       }));
 

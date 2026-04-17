@@ -37,7 +37,7 @@ function CompanyAvatarStack({ groups, selectedBranchIds }: {
   if (activeCompanies.length === 0 && groups.length > 0) {
     const first = groups[0];
     return (
-      <CompanyAvatar name={first.name} logoUrl={first.logoUrl} themeColor="#2563EB" size={20} />
+      <CompanyAvatar name={first.name} logoUrl={first.logoUrl} themeColor={first.themeColor ?? '#2563EB'} size={20} />
     );
   }
 
@@ -54,7 +54,7 @@ function CompanyAvatarStack({ groups, selectedBranchIds }: {
           <CompanyAvatar
             name={company.name}
             logoUrl={company.logoUrl ?? null}
-            themeColor="#2563EB"
+            themeColor={company.themeColor ?? '#2563EB'}
             size={20}
           />
         </div>
@@ -160,7 +160,7 @@ function BranchSelectorContent({
                   <CompanyAvatar
                     name={company.name}
                     logoUrl={company.logoUrl ?? null}
-                    themeColor="#2563EB"
+                    themeColor={company.themeColor ?? '#2563EB'}
                     size={16}
                     className="shrink-0"
                   />

@@ -11,6 +11,7 @@ export interface SelectorCompanyGroup {
   name: string;
   slug?: string | null;
   logoUrl?: string | null;
+  themeColor?: string | null;
   branches: SelectorBranch[];
 }
 
@@ -19,6 +20,7 @@ export interface SelectorCompanySnapshot {
   name: string;
   slug?: string | null;
   logoUrl?: string | null;
+  themeColor?: string | null;
   branches: Array<{
     id: string;
     name: string;
@@ -55,6 +57,7 @@ export function buildSelectorCompanyGroupsFromSnapshots(
       name: snapshot.name,
       slug: snapshot.slug ?? null,
       logoUrl: snapshot.logoUrl ?? null,
+      themeColor: snapshot.themeColor ?? null,
       branches: sortSelectorBranches(
         snapshot.branches.map((branch) => ({
           id: branch.id,

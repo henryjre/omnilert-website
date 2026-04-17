@@ -5,6 +5,7 @@ export interface AssignedBranchGroup {
   companyName: string;
   companySlug: string;
   logoUrl: string | null;
+  themeColor: string;
   branches: Array<{
     id: string;
     name: string;
@@ -22,6 +23,7 @@ export async function getAssignedBranches(
     company_name: string;
     company_slug: string;
     company_logo_url: string | null;
+    company_theme_color: string;
     branch_id: string;
     branch_name: string;
     odoo_branch_id: string | null;
@@ -38,6 +40,7 @@ export async function getAssignedBranches(
         'c.name as company_name',
         'c.slug as company_slug',
         'c.logo_url as company_logo_url',
+        'c.theme_color as company_theme_color',
         'b.id as branch_id',
         'b.name as branch_name',
         'b.odoo_branch_id',
@@ -58,6 +61,7 @@ export async function getAssignedBranches(
         'c.name as company_name',
         'c.slug as company_slug',
         'c.logo_url as company_logo_url',
+        'c.theme_color as company_theme_color',
         'b.id as branch_id',
         'b.name as branch_name',
         'b.odoo_branch_id',
@@ -77,6 +81,7 @@ export async function getAssignedBranches(
         'c.name as company_name',
         'c.slug as company_slug',
         'c.logo_url as company_logo_url',
+        'c.theme_color as company_theme_color',
         'b.id as branch_id',
         'b.name as branch_name',
         'b.odoo_branch_id',
@@ -95,6 +100,7 @@ export async function getAssignedBranches(
         companyName: String(row.company_name),
         companySlug: String(row.company_slug),
         logoUrl: row.company_logo_url ?? null,
+        themeColor: String(row.company_theme_color ?? '#2563EB'),
         branches: [],
       };
       groupMap.set(row.company_id, group);
