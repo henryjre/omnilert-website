@@ -55,6 +55,7 @@ const DUTY_COLORS: Record<number, string> = {
   7: '#89E1DB',
   8: '#97A6F9',
 };
+const ALLOCATED_BREAK_HOURS = 1;
 
 const ACCOUNT_SHIFT_STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
   open: { label: 'Upcoming', cls: 'bg-blue-100 text-blue-700' },
@@ -991,6 +992,11 @@ const ShiftDetailPanel = memo(
       [logs],
     );
 
+    const allocatedBreakHours = ALLOCATED_BREAK_HOURS;
+    const effectiveAllocatedHours = Math.max(
+      0,
+      Number(shift.allocated_hours || 0) - allocatedBreakHours,
+    );
     const totalBreakHours = totalBreakMinutes / 60;
     const totalWorkedHours = Number(shift.total_worked_hours || 0);
     const netWorkedHours = Math.max(0, totalWorkedHours - totalBreakHours);
@@ -1121,7 +1127,15 @@ const ShiftDetailPanel = memo(
                     Allocated Hours
                   </p>
                   <p className="mt-0.5 text-sm font-medium text-gray-800">
-                    {formatDuration(shift.allocated_hours)}
+                    {formatDuration(effectiveAllocatedHours)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-gray-400">
+                    Allocated Breaks
+                  </p>
+                  <p className="mt-0.5 text-sm font-medium text-gray-800">
+                    {formatDuration(allocatedBreakHours)}
                   </p>
                 </div>
                 <div>

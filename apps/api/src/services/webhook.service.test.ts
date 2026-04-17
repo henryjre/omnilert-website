@@ -166,6 +166,7 @@ function createAttendanceHarness(options?: {
   const workEntries = [...(options?.workEntries ?? [])];
   const auths: Array<Record<string, unknown>> = [];
   const queuedJobs: Array<{ payload: Record<string, unknown>; runAt: Date }> = [];
+  const peerEvaluationJobs: Array<Record<string, unknown>> = [];
   const notifications: Array<Record<string, unknown>> = [];
   const socketEvents: Array<{ event: string; payload: Record<string, unknown> }> = [];
   const branchAssignments: Array<{ userId: string; branchId: string }> = [];
@@ -246,6 +247,7 @@ function createAttendanceHarness(options?: {
     workEntries,
     auths,
     queuedJobs,
+    peerEvaluationJobs,
     notifications,
     socketEvents,
     branchAssignments,
@@ -467,6 +469,13 @@ function createAttendanceHarness(options?: {
       },
       listOpenShiftActivitiesByShiftId: async (shiftId: string) =>
         activities.filter((activity) => activity.shift_id === shiftId && activity.end_time == null),
+      listEndedBreakActivitiesByShiftId: async (shiftId: string) =>
+        activities.filter(
+          (activity) =>
+            activity.shift_id === shiftId &&
+            activity.activity_type === 'break' &&
+            activity.end_time != null,
+        ),
       autoEndShiftActivityOnCheckOut: async (input: Record<string, unknown>) => {
         const activity = activities.find(
           (row) => row.id === input.activityId && row.shift_id === input.shiftId && row.end_time == null,
@@ -615,6 +624,9 @@ function createAttendanceHarness(options?: {
       },
       enqueueEarlyCheckInAuthJob: async (payload: Record<string, unknown>, runAt: Date) => {
         queuedJobs.push({ payload, runAt });
+      },
+      enqueuePeerEvaluationJob: async (payload: Record<string, unknown>) => {
+        peerEvaluationJobs.push(payload);
       },
       createAndDispatchNotification: async (input: Record<string, unknown>) => {
         notifications.push(input);
@@ -1489,7 +1501,7 @@ test('createAttendanceProcessor checkout creates a type-129 break work entry for
   assert.equal(harness.activities[0]?.is_calculated, true);
 });
 
-test('createAttendanceProcessor creates overtime authorization with needs_employee_reason true when total worked time exceeds allocated hours', async (t) => {
+test('createAttendanceProcessor creates overtime authorization and peer evaluation when net worked time exceeds effective allocated hours', async (t) => {
   const shift = createShift({
     id: 'shift-overtime-1',
     odoo_shift_id: 2501,
@@ -1526,6 +1538,58 @@ test('createAttendanceProcessor creates overtime authorization with needs_employ
   assert.ok(overtimeAuth, 'overtime authorization should be created');
   assert.equal(overtimeAuth?.needs_employee_reason, true);
   assert.equal(overtimeAuth?.status, 'pending');
+  assert.equal(overtimeAuth?.diff_minutes, 120);
+  assert.equal(harness.peerEvaluationJobs.length, 1, 'peer evaluation should be enqueued');
+  assert.equal(harness.peerEvaluationJobs[0]?.shiftId, shift.id);
+});
+
+test('createAttendanceProcessor does not create overtime authorization or peer evaluation when net worked time equals effective allocated hours', async (t) => {
+  const shift = createShift({
+    id: 'shift-overtime-boundary-1',
+    odoo_shift_id: 2502,
+    branch_id: 'branch-main',
+    user_id: 'user-1',
+    shift_start: '2026-04-02T00:00:00.000Z',
+    shift_end: '2026-04-02T09:00:00.000Z',
+    allocated_hours: 8,
+    total_worked_hours: 0,
+    status: 'active',
+    check_in_status: 'checked_in',
+  });
+  const harness = createAttendanceHarness({
+    shifts: [shift],
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+    activities: [
+      createActivity({
+        id: 'activity-overtime-boundary-break',
+        user_id: 'user-1',
+        shift_id: shift.id,
+        activity_type: 'break',
+        start_time: '2026-04-02T04:00:00.000Z',
+        end_time: '2026-04-02T05:00:00.000Z',
+        duration_minutes: 60,
+      }),
+    ],
+  });
+  installHarnessDb(harness, (cleanup) => t.after(cleanup));
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  await processAttendance({
+    id: 12502,
+    check_in: '2026-04-02 01:00:00',
+    check_out: '2026-04-02 09:00:00',
+    worked_hours: 8,
+    x_company_id: 12,
+    x_cumulative_minutes: 480,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: 2502,
+    x_website_key: 'website-user-1',
+  });
+
+  const overtimeAuth = harness.auths.find((auth) => auth.auth_type === 'overtime');
+  assert.equal(overtimeAuth, undefined, 'overtime authorization should not be created at the boundary');
+  assert.equal(harness.peerEvaluationJobs.length, 0, 'peer evaluation should not be enqueued at the boundary');
 });
 
 test('createAttendanceProcessor checkout updates the existing type-129 break work entry using only newly uncalculated management-interrupt break minutes', async (t) => {

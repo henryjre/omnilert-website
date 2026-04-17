@@ -24,6 +24,7 @@ const SHIFT_ENDED_LOG_TYPE = 'shift_ended';
 const INTERIM_DUTY_AUTH_TYPE = 'interim_duty';
 const PRESERVED_INTERIM_DUTY_STATUSES = new Set(['pending', 'approved', 'rejected']);
 const MANAGEMENT_INTERRUPT_BREAK_SOURCE = 'management_interrupt';
+const ALLOCATED_BREAK_HOURS = 1;
 
 export function shouldPreserveInterimDutyPlanningSlotDelete(statuses: string[]): boolean {
   return statuses.some((status) => PRESERVED_INTERIM_DUTY_STATUSES.has(status));
@@ -732,6 +733,7 @@ interface AttendanceProcessorDeps {
     managementAttendanceId: number,
   ) => Promise<ShiftActivityRow[]>;
   listOpenShiftActivitiesByShiftId: (shiftId: string) => Promise<ShiftActivityRow[]>;
+  listEndedBreakActivitiesByShiftId: (shiftId: string) => Promise<ShiftActivityRow[]>;
   autoEndShiftActivityOnCheckOut: (input: {
     activityId: string;
     shiftId: string;
@@ -764,6 +766,9 @@ interface AttendanceProcessorDeps {
     payload: Parameters<typeof enqueueEarlyCheckInAuthJob>[0],
     runAt: Date,
   ) => ReturnType<typeof enqueueEarlyCheckInAuthJob>;
+  enqueuePeerEvaluationJob: (
+    payload: Parameters<typeof enqueuePeerEvaluationJob>[0],
+  ) => ReturnType<typeof enqueuePeerEvaluationJob>;
   createAndDispatchNotification: (
     input: Parameters<typeof createAndDispatchNotification>[0],
   ) => ReturnType<typeof createAndDispatchNotification>;
@@ -822,6 +827,35 @@ function parseOdooUtcDateTime(value: string): Date {
 
 function roundHoursFromMs(ms: number): number {
   return Math.round((ms / 3_600_000) * 100) / 100;
+}
+
+type CheckoutCompletionMetrics = {
+  allocatedHours: number;
+  effectiveAllocatedHours: number;
+  grossWorkedHours: number;
+  netWorkedHours: number;
+  totalBreakHours: number;
+};
+
+async function resolveCheckoutCompletionMetrics(input: {
+  deps: Pick<AttendanceProcessorDeps, 'listEndedBreakActivitiesByShiftId'>;
+  shiftId: string;
+  allocatedHours: number;
+  grossWorkedHours: number;
+}): Promise<CheckoutCompletionMetrics> {
+  const allBreaks = await input.deps.listEndedBreakActivitiesByShiftId(input.shiftId);
+
+  const totalBreakHours =
+    allBreaks.reduce((sum, activity) => sum + (Number(activity.duration_minutes) || 0), 0) / 60;
+  const netWorkedHours = Math.max(0, input.grossWorkedHours - totalBreakHours);
+
+  return {
+    allocatedHours: input.allocatedHours,
+    effectiveAllocatedHours: Math.max(0, input.allocatedHours - ALLOCATED_BREAK_HOURS),
+    grossWorkedHours: input.grossWorkedHours,
+    netWorkedHours,
+    totalBreakHours,
+  };
 }
 
 function hasPositiveWindowOverlap(
@@ -1043,6 +1077,12 @@ const defaultAttendanceProcessorDeps: AttendanceProcessorDeps = {
       .getDb()('shift_activities')
       .where({ shift_id: shiftId, end_time: null })
       .select('*')) as ShiftActivityRow[],
+  listEndedBreakActivitiesByShiftId: async (shiftId) =>
+    (await db
+      .getDb()('shift_activities')
+      .where({ shift_id: shiftId, activity_type: 'break' })
+      .whereNotNull('end_time')
+      .select('*')) as ShiftActivityRow[],
   autoEndShiftActivityOnCheckOut: async (input) => {
     const tenantDb = db.getDb();
     const activity = (await tenantDb('shift_activities')
@@ -1145,6 +1185,7 @@ const defaultAttendanceProcessorDeps: AttendanceProcessorDeps = {
   reassignUserToSingleCheckedInBranch: (userId, branchId) =>
     reassignUserToSingleCheckedInBranch(userId, branchId),
   enqueueEarlyCheckInAuthJob: (payload, runAt) => enqueueEarlyCheckInAuthJob(payload, runAt),
+  enqueuePeerEvaluationJob: (payload) => enqueuePeerEvaluationJob(payload),
   createAndDispatchNotification: (input) => createAndDispatchNotification(input),
   emitSocketEvent: (event, payload) => {
     try {
@@ -1503,6 +1544,7 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
     const eventTime = isCheckOut
       ? parseOdooUtcDateTime(payload.check_out!)
       : parseOdooUtcDateTime(payload.check_in);
+    let checkoutCompletionMetrics: CheckoutCompletionMetrics | null = null;
     const resolvedIdentity = await deps.resolveAttendanceIdentity(payload);
     const logPayload =
       resolvedIdentity.websiteUserKey && !payload.x_website_key
@@ -1715,18 +1757,26 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
       });
 
       // 3. Threshold check for Overtime Authorization and Peer Evaluation
-      const checkInTime = parseOdooUtcDateTime(payload.check_in);
-      const totalShiftWorkedHours = Number(activeShift.total_worked_hours || 0);
+      const grossWorkedHours = updatedTotalWorkedHours ?? Number(activeShift.total_worked_hours || 0);
       const allocatedHours = Number(activeShift.allocated_hours || 0);
+      checkoutCompletionMetrics = await resolveCheckoutCompletionMetrics({
+        deps,
+        shiftId: String(activeShift.id),
+        allocatedHours,
+        grossWorkedHours,
+      });
 
-      if (totalShiftWorkedHours >= (allocatedHours - 1)) {
-        // Generate Overtime Authorization if not already exists for this check-out
+      if (checkoutCompletionMetrics.netWorkedHours > checkoutCompletionMetrics.effectiveAllocatedHours) {
         const existingOT = await tenantDb('shift_authorizations')
           .where({ shift_id: activeShift.id, auth_type: 'overtime', shift_log_id: log.id })
           .first();
-        
-        if (!existingOT && totalShiftWorkedHours > allocatedHours) {
-          const overtimeMinutes = Math.round((totalShiftWorkedHours - allocatedHours) * 60);
+
+        if (!existingOT) {
+          const overtimeMinutes = Math.round(
+            (checkoutCompletionMetrics.netWorkedHours -
+              checkoutCompletionMetrics.effectiveAllocatedHours) *
+              60,
+          );
           const [auth] = await tenantDb('shift_authorizations')
             .insert({
               company_id: branch.company_id,
@@ -1985,19 +2035,17 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
     }
 
     if (isCheckOut && activeShift?.id && activeShift.user_id && branch.odoo_branch_id) {
-      // Only trigger peer evaluation if the shift is substantially complete (net hours >= allocated - 1)
-      const allBreaks = await tenantDb('shift_activities')
-        .where({ shift_id: activeShift.id, activity_type: 'break' })
-        .whereNotNull('end_time')
-        .select('duration_minutes');
-      
-      const totalBreakHours = allBreaks.reduce((sum, b) => sum + (Number(b.duration_minutes) || 0), 0) / 60;
-      const grossWorkedHours = updatedTotalWorkedHours ?? Number(activeShift.total_worked_hours || 0);
-      const netWorkedHours = grossWorkedHours - totalBreakHours;
-      const allocatedHours = Number(activeShift.allocated_hours || 0);
+      const completionMetrics =
+        checkoutCompletionMetrics ??
+        (await resolveCheckoutCompletionMetrics({
+          deps,
+          shiftId: String(activeShift.id),
+          allocatedHours: Number(activeShift.allocated_hours || 0),
+          grossWorkedHours: updatedTotalWorkedHours ?? Number(activeShift.total_worked_hours || 0),
+        }));
 
-      if (netWorkedHours >= (allocatedHours - 1)) {
-        enqueuePeerEvaluationJob({
+      if (completionMetrics.netWorkedHours > completionMetrics.effectiveAllocatedHours) {
+        deps.enqueuePeerEvaluationJob({
           companyId: String(branch.company_id),
           shiftId: activeShift.id,
           branchId: branch.id,
@@ -2010,11 +2058,12 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
         );
       } else {
         logger.info(
-          { 
-            shiftId: activeShift.id, 
-            netWorkedHours, 
-            allocatedHours, 
-            threshold: allocatedHours - 1 
+          {
+            shiftId: activeShift.id,
+            netWorkedHours: completionMetrics.netWorkedHours,
+            allocatedHours: completionMetrics.allocatedHours,
+            effectiveAllocatedHours: completionMetrics.effectiveAllocatedHours,
+            threshold: completionMetrics.effectiveAllocatedHours,
           },
           'Skipping peer evaluation: shift not yet substantially complete'
         );
