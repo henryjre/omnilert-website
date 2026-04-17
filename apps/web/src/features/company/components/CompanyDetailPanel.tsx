@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '@/shared/components/ui/Button';
 import { Input } from '@/shared/components/ui/Input';
@@ -7,6 +7,8 @@ import { isValidHexColor } from '@/shared/utils/theme';
 import { useAppToast } from '@/shared/hooks/useAppToast';
 import type { Company } from './CompanyCard';
 import { BranchSection } from './BranchSection';
+import { CompanyAvatar } from './CompanyAvatar';
+import { Spinner } from '@/shared/components/ui/Spinner';
 
 const PRESET_COLORS = ['#2563EB', '#16A34A', '#DC2626', '#EA580C', '#7C3AED', '#0D9488'];
 const COMPANY_CODE_RE = /^[A-Z0-9]{2,10}$/;
@@ -31,6 +33,9 @@ export function CompanyDetailPanel({
   const [odooApiKey, setOdooApiKey] = useState('');
   const [themeColor, setThemeColor] = useState('#2563EB');
   const [saving, setSaving] = useState(false);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (company) {
@@ -38,8 +43,30 @@ export function CompanyDetailPanel({
       setCompanyCode(company.companyCode ?? '');
       setOdooApiKey(company.odooApiKey ?? '');
       setThemeColor(company.themeColor);
+      setLogoUrl(company.logoUrl ?? null);
     }
   }, [company]);
+
+  async function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !company) return;
+
+    setLogoUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('logo', file);
+      const res = await api.post(`/super/companies/${company.id}/logo`, formData);
+      const updated = res.data.data as Company;
+      setLogoUrl(updated.logoUrl ?? null);
+      onSaved(updated);
+      showSuccess('Logo updated.');
+    } catch (err: any) {
+      showError(err.response?.data?.error || 'Failed to upload logo.');
+    } finally {
+      setLogoUploading(false);
+      if (logoInputRef.current) logoInputRef.current.value = '';
+    }
+  }
 
   async function handleSave() {
     if (!company) return;
@@ -110,6 +137,45 @@ export function CompanyDetailPanel({
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto px-6 py-5">
           <div className="space-y-4">
+            {/* Logo */}
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-gray-700">Company Logo</label>
+              <div className="flex items-center gap-4">
+                <div className="relative">
+                  <CompanyAvatar
+                    name={name || company?.name || '?'}
+                    logoUrl={logoUrl}
+                    themeColor={isValidHexColor(themeColor) ? themeColor : '#2563EB'}
+                    size={80}
+                    className="rounded-xl"
+                  />
+                  {logoUploading && (
+                    <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/40">
+                      <Spinner size="sm" />
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => logoInputRef.current?.click()}
+                    disabled={logoUploading}
+                    className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    {logoUrl ? 'Change Logo' : 'Upload Logo'}
+                  </button>
+                  <p className="mt-1 text-xs text-gray-400">JPEG, PNG, WebP or GIF · max 5 MB</p>
+                </div>
+              </div>
+              <input
+                ref={logoInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                className="hidden"
+                onChange={handleLogoChange}
+              />
+            </div>
+
             <Input
               id="edit-company-name"
               label="Company Name"
