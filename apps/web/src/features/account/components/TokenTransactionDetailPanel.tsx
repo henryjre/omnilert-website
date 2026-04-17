@@ -293,7 +293,14 @@ export function TokenTransactionDetailPanel({ tx }: { tx: TokenTransaction }) {
           <DetailRow label="Date" value={formatDateOnly(tx.date)} />
           <DetailRow label="Time" value={formatTimeOnly(tx.date)} />
           <DetailRow label="Issued By" value={tx.issuedBy ?? 'Unknown'} />
-          {tx.reference && <DetailRow label="Reference" value={tx.reference} mono copyable />}
+          {tx.reference && (
+            <DetailRow
+              label={tx.category === 'adjustment' ? 'Adjustment Reason' : 'Reference'}
+              value={tx.reference}
+              mono={tx.category !== 'adjustment'}
+              copyable={tx.category !== 'adjustment'}
+            />
+          )}
           <DetailRow label="Transaction ID" value={tx.id} mono copyable />
           <DetailRow label="Type" value={isCredit ? 'Credit' : 'Debit'} />
           <DetailRow label="Category" value={meta.label} />

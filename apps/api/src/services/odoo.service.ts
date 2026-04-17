@@ -3165,6 +3165,7 @@ export interface OdooLoyaltyHistory {
   order_id: [number, string] | false;
   create_date: string;
   x_order_type: string;
+  description: string | false;
   issued: number;
   used: number;
   x_order_reference: string | false;
@@ -3181,7 +3182,7 @@ export async function getTokenPayHistory(
 ): Promise<OdooLoyaltyHistory[]> {
   return (await callOdooKw('loyalty.history', 'search_read', [], {
     domain: [['x_loyalty_program_id', '=', TOKEN_PAY_PROGRAM_ID], ['x_loyalty_card_code', '=', userKey]],
-    fields: ['id', 'order_id', 'create_date', 'x_order_type', 'issued', 'used', 'x_order_reference', 'x_issuer'],
+    fields: ['id', 'order_id', 'create_date', 'x_order_type', 'description', 'issued', 'used', 'x_order_reference', 'x_issuer'],
     order: 'create_date desc',
     offset,
     limit,
