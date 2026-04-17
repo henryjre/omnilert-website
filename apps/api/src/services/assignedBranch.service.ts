@@ -4,6 +4,7 @@ export interface AssignedBranchGroup {
   companyId: string;
   companyName: string;
   companySlug: string;
+  logoUrl: string | null;
   branches: Array<{
     id: string;
     name: string;
@@ -20,6 +21,7 @@ export async function getAssignedBranches(
     company_id: string;
     company_name: string;
     company_slug: string;
+    company_logo_url: string | null;
     branch_id: string;
     branch_name: string;
     odoo_branch_id: string | null;
@@ -35,6 +37,7 @@ export async function getAssignedBranches(
         'c.id as company_id',
         'c.name as company_name',
         'c.slug as company_slug',
+        'c.logo_url as company_logo_url',
         'b.id as branch_id',
         'b.name as branch_name',
         'b.odoo_branch_id',
@@ -54,6 +57,7 @@ export async function getAssignedBranches(
         'c.id as company_id',
         'c.name as company_name',
         'c.slug as company_slug',
+        'c.logo_url as company_logo_url',
         'b.id as branch_id',
         'b.name as branch_name',
         'b.odoo_branch_id',
@@ -72,6 +76,7 @@ export async function getAssignedBranches(
         'c.id as company_id',
         'c.name as company_name',
         'c.slug as company_slug',
+        'c.logo_url as company_logo_url',
         'b.id as branch_id',
         'b.name as branch_name',
         'b.odoo_branch_id',
@@ -89,6 +94,7 @@ export async function getAssignedBranches(
         companyId: String(row.company_id),
         companyName: String(row.company_name),
         companySlug: String(row.company_slug),
+        logoUrl: row.company_logo_url ?? null,
         branches: [],
       };
       groupMap.set(row.company_id, group);
