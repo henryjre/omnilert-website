@@ -111,6 +111,30 @@ The `GitBranch` icon in `BranchSelectorContent` header stays — it's decorative
 
 ---
 
+## Section 7 — CompanyCreateModal (optional logo on creation)
+
+File: `apps/web/src/features/company/components/CompanyCreateModal.tsx`
+
+Add an optional logo upload field to the **form step** (step 1):
+
+- Same 80×80px avatar preview above the Company Name field
+  - If a file is selected: show a preview using `URL.createObjectURL(file)`
+  - If no file: show first letter of the typed company name (updates live as user types) with the selected theme color as background
+  - `onError` fallback to initial circle if object URL fails
+- "Upload Logo (optional)" label with a small "Change" / "Upload" button below the preview triggering a hidden `<input type="file" accept="image/jpeg,image/png,image/webp,image/gif">`
+- The selected file is stored in local state (`logoFile: File | null`) — not uploaded yet
+- No validation required for the logo field (it's optional)
+
+**On submit (auth step → Create Company):**
+1. Create company via existing JSON flow — unchanged
+2. If `logoFile` is set: immediately fire `POST /super/companies/:id/logo` using the super-admin `accessToken` obtained in step 1, as `multipart/form-data` with field `logo`
+3. If logo upload fails: do **not** block `onCreated` — company is already created; show a warning toast "Company created, but logo upload failed. You can upload it from the detail panel."
+4. Call `onCreated` with the company data (updated with `logoUrl` if upload succeeded, original otherwise)
+
+**Reset on close:** clear `logoFile` state alongside the existing form reset.
+
+---
+
 ## Files to Create / Modify
 
 ### New
@@ -124,6 +148,7 @@ The `GitBranch` icon in `BranchSelectorContent` header stays — it's decorative
 ### Modified — Frontend
 - `apps/web/src/features/company/components/CompanyCard.tsx` — avatar replaces dot
 - `apps/web/src/features/company/components/CompanyDetailPanel.tsx` — logo upload section
+- `apps/web/src/features/company/components/CompanyCreateModal.tsx` — optional logo file picker + post-create upload
 - `apps/web/src/shared/components/branchSelectorState.ts` — add `logoUrl` to interfaces
 - `apps/web/src/shared/store/branchStore.ts` — map `logoUrl` from API response
 - `apps/web/src/shared/components/BranchSelector.tsx` — stacked avatars on trigger + company group headers
