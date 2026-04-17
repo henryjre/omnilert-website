@@ -12,6 +12,7 @@ import {
   getEmployeeByWebsiteUserKey,
   updateAttendanceCheckIn,
   updateAttendanceCheckOut,
+  upsertBreakWorkEntry,
 } from './odoo.service.js';
 import { OVERTIME_BLOCKER_AUTH_TYPES, computeOvertimeBlockerState, deriveOvertimeMinutes } from './overtimeDependency.service.js';
 
@@ -304,6 +305,52 @@ export async function syncShiftAuthorizationWithOdoo(
   }
 
   const tenantDb = db.getDb();
+
+  if (auth.auth_type === 'underbreak' && action === 'reject') {
+    const shift = await tenantDb('employee_shifts')
+      .where({ 'employee_shifts.id': auth.shift_id })
+      .join('users', 'users.id', 'employee_shifts.user_id')
+      .select(
+        'employee_shifts.started_at',
+        'users.user_key',
+        'employee_shifts.branch_id',
+      )
+      .first() as { started_at: Date; user_key: string; branch_id: string } | null;
+
+    if (shift?.user_key && shift.started_at) {
+      try {
+        const branch = await tenantDb('branches')
+          .where({ id: shift.branch_id })
+          .select('odoo_branch_id')
+          .first();
+        const odooCompanyId = Number(branch?.odoo_branch_id ?? 0);
+
+        if (odooCompanyId) {
+          const employee = await getEmployeeByWebsiteUserKey(shift.user_key, odooCompanyId);
+          if (employee?.id) {
+            const shiftDate = new Date(shift.started_at).toISOString().split('T')[0];
+            await upsertBreakWorkEntry({
+              employeeId: employee.id,
+              date: shiftDate,
+              durationMinutes: 60,
+            });
+            logger.info(
+              `Underbreak rejection: upserted 60-min break work entry for employee ${employee.id} on ${shiftDate} (auth ${auth.id}).`,
+            );
+          } else {
+            logger.warn(`Underbreak rejection: no Odoo employee found for user_key ${shift.user_key}, odooCompanyId ${odooCompanyId}`);
+          }
+        } else {
+          logger.warn(`Underbreak rejection: no odoo_branch_id for branch ${shift.branch_id}`);
+        }
+      } catch (err) {
+        logger.error(`Failed to upsert Odoo break work entry for underbreak auth ${auth.id}: ${err}`);
+      }
+    } else {
+      logger.warn(`Underbreak rejection: no shift data for shift_id ${auth.shift_id}`);
+    }
+    return;
+  }
 
   if (auth.auth_type === 'overtime') {
     const shift = await tenantDb('employee_shifts').where({ id: auth.shift_id }).first();
