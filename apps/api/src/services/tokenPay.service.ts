@@ -15,6 +15,7 @@ interface PendingTransactionRow {
   category: 'reward' | 'purchase' | 'transfer' | 'adjustment';
   amount: string; // knex returns DECIMAL as string
   reference: string | null;
+  reason: string | null;
   status: 'pending' | 'completed' | 'failed' | 'cancelled';
   issued_by: string | null;
   created_at: Date;
@@ -40,15 +41,18 @@ function mapOdooCategory(orderType: string): TokenTransaction['category'] {
 function normalizeOdooHistory(record: OdooLoyaltyHistory): TokenTransaction {
   // When both issued and used are 0 (voided entry), treat as a zero-value debit
   const isCredit = record.issued > 0;
+  const category = mapOdooCategory(record.x_order_type);
   return {
     id: `odoo-${record.id}`,
     source: 'odoo',
     type: isCredit ? 'credit' : 'debit',
     title: record.x_order_type,
-    category: mapOdooCategory(record.x_order_type),
+    category,
     amount: Math.abs(isCredit ? record.issued : record.used),
     date: new Date(record.create_date.replace(' ', 'T') + 'Z').toISOString(),
-    reference: record.x_order_reference || null,
+    reference: category === 'adjustment'
+      ? (record.description || null)
+      : (record.x_order_reference || null),
     status: 'completed',
     issuedBy: record.x_issuer || null,
   };
@@ -63,7 +67,7 @@ function normalizePending(row: PendingTransactionRow): TokenTransaction {
     category: row.category,
     amount: parseFloat(row.amount),
     date: row.created_at.toISOString(),
-    reference: row.reference,
+    reference: row.category === 'adjustment' ? (row.reason ?? null) : row.reference,
     status: row.status,
     issuedBy: row.issued_by,
   };
@@ -166,6 +170,7 @@ export async function getTransactions(
         'category',
         'amount',
         'reference',
+        'reason',
         'status',
         'issued_by',
         'created_at',

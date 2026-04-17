@@ -96,6 +96,7 @@ export function TokenPayPageContent({
               totalPages={totalPages}
               selectedId={selectedTransactionId}
               isLoading={transactionsQuery.isLoading}
+              disableAccordion
               onPageChange={onPageChange}
               onSelect={onSelectTransaction}
             />
