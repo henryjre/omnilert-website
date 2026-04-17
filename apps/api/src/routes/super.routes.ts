@@ -82,10 +82,10 @@ router.post(
   companyController.deleteById,
 );
 
-// Super admin logo upload
+// Admin-accessible logo upload
 router.post(
   '/companies/:id/logo',
-  authenticateSuperAdmin,
+  authenticate,
   logoUpload.single('logo'),
   companyController.uploadLogo,
 );

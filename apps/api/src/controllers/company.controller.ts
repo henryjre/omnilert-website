@@ -220,8 +220,7 @@ export async function deleteById(req: Request, res: Response, next: NextFunction
 
 export async function uploadLogo(req: Request, res: Response, next: NextFunction) {
   try {
-    const superAdmin = req.superAdmin;
-    if (!superAdmin) throw new AppError(401, 'Unauthorized');
+    if (!req.user) throw new AppError(401, 'Unauthorized');
 
     const file = req.file as Express.Multer.File | undefined;
     if (!file) throw new AppError(400, 'No file uploaded');
