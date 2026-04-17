@@ -489,3 +489,128 @@ function toShiftDateYmd(dateInput: unknown): string {
   const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
+
+/**
+ * After a blocker auth (tardiness, early_check_out, late_check_out, underbreak) is
+ * approved or rejected, recalculate the shift's overtime diff_minutes and upsert
+ * the overtime shift_authorization accordingly.
+ *
+ * Rules:
+ * - If other blockers are still pending: update diff_minutes provisionally but do NOT
+ *   change the overtime auth status (leave it pending, keep it non-actionable).
+ * - If all blockers are resolved AND derived overtime > 0: upsert overtime auth as
+ *   pending with new diff_minutes; if it was no_approval_needed, move it back to pending.
+ * - If all blockers are resolved AND derived overtime <= 0: set overtime auth to
+ *   no_approval_needed and clear resolution fields.
+ * - Always preserve employee_reason — never null it out.
+ */
+export async function reconcileOvertimeForShift(shiftId: string): Promise<void> {
+  const tenantDb = db.getDb();
+
+  // 1. Fetch shift row
+  const shift = await tenantDb('employee_shifts')
+    .where({ id: shiftId })
+    .select('total_worked_hours', 'allocated_hours')
+    .first();
+  if (!shift) {
+    logger.warn(`reconcileOvertimeForShift: no shift found for id ${shiftId}`);
+    return;
+  }
+
+  // 2. Sum ended break durations
+  const breakActivities = await tenantDb('shift_activities')
+    .where({ shift_id: shiftId, activity_type: 'break' })
+    .whereNotNull('end_time')
+    .select('duration_minutes');
+  const totalBreakHours =
+    breakActivities.reduce((sum: number, a: { duration_minutes: number | null }) => sum + (Number(a.duration_minutes) || 0), 0) / 60;
+
+  // 3. Fetch all non-overtime shift_authorizations for the shift
+  const allNonOvertimeAuths = await tenantDb('shift_authorizations')
+    .where({ shift_id: shiftId })
+    .whereNot({ auth_type: 'overtime' })
+    .select('auth_type', 'status', 'diff_minutes');
+
+  // 4. Check blocker state
+  const blockerState = computeOvertimeBlockerState(allNonOvertimeAuths);
+
+  // 5. Derive overtime minutes
+  const resolvedAdjustments = allNonOvertimeAuths.map((a: { auth_type: string; status: string; diff_minutes: unknown }) => ({
+    auth_type: a.auth_type,
+    status: a.status,
+    diff_minutes: Number(a.diff_minutes) || 0,
+  }));
+  const derivedMinutes = deriveOvertimeMinutes({
+    totalWorkedHours: Number(shift.total_worked_hours) || 0,
+    totalBreakHours,
+    allocatedHours: Number(shift.allocated_hours) || 0,
+    resolvedAdjustments,
+  });
+
+  // 6. Fetch existing overtime auth (any status)
+  const existingOvertime = await tenantDb('shift_authorizations')
+    .where({ shift_id: shiftId, auth_type: 'overtime' })
+    .select('id', 'status', 'employee_reason')
+    .first();
+
+  if (blockerState.blocked) {
+    // Blockers still pending — update diff_minutes provisionally; do NOT change status
+    if (existingOvertime) {
+      await tenantDb('shift_authorizations')
+        .where({ id: existingOvertime.id })
+        .update({ diff_minutes: derivedMinutes });
+    }
+    // If no existing overtime auth, nothing to do yet — we'll create it once blockers resolve
+    return;
+  }
+
+  // All blockers resolved
+  if (derivedMinutes > 0) {
+    if (existingOvertime) {
+      // Update existing overtime auth; move no_approval_needed back to pending
+      const newStatus =
+        existingOvertime.status === 'no_approval_needed' ? 'pending' : existingOvertime.status;
+      await tenantDb('shift_authorizations')
+        .where({ id: existingOvertime.id })
+        .update({
+          diff_minutes: derivedMinutes,
+          status: newStatus,
+        });
+    } else {
+      // No overtime auth yet — fetch parent data needed to create one
+      const shiftFull = await tenantDb('employee_shifts')
+        .where({ id: shiftId })
+        .select('company_id', 'branch_id', 'user_id')
+        .first();
+      if (!shiftFull) {
+        logger.warn(`reconcileOvertimeForShift: shift ${shiftId} not found when creating overtime auth`);
+        return;
+      }
+      await tenantDb('shift_authorizations').insert({
+        company_id: shiftFull.company_id,
+        branch_id: shiftFull.branch_id,
+        shift_id: shiftId,
+        user_id: shiftFull.user_id,
+        auth_type: 'overtime',
+        status: 'pending',
+        diff_minutes: derivedMinutes,
+      });
+    }
+  } else {
+    // Derived overtime <= 0 — set to no_approval_needed and clear resolution fields
+    if (existingOvertime) {
+      await tenantDb('shift_authorizations')
+        .where({ id: existingOvertime.id })
+        .update({
+          diff_minutes: derivedMinutes,
+          status: 'no_approval_needed',
+          resolved_by: null,
+          resolved_at: null,
+          rejection_reason: null,
+          overtime_type: null,
+          // employee_reason is intentionally preserved (not touched)
+        });
+    }
+    // If no existing overtime auth and derived <= 0, nothing to create
+  }
+}

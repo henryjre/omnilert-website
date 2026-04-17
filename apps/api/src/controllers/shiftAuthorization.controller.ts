@@ -11,8 +11,10 @@ import {
   assertEmployeeReasonSubmittedForManualReject,
   createShiftAuthorizationRejectResolver,
   hasSubmittedEmployeeReason,
+  reconcileOvertimeForShift,
   syncShiftAuthorizationWithOdoo,
 } from '../services/shiftAuthorizationResolution.service.js';
+import { OVERTIME_BLOCKER_AUTH_TYPES } from '../services/overtimeDependency.service.js';
 
 export {
   cleanupInterimDutyOdooArtifacts,
@@ -172,6 +174,14 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
       });
     }
 
+    if (OVERTIME_BLOCKER_AUTH_TYPES.has(auth.auth_type as any)) {
+      try {
+        await reconcileOvertimeForShift(String(auth.shift_id));
+      } catch (err) {
+        logger.error(`Failed to reconcile overtime for shift ${auth.shift_id} after approve: ${err}`);
+      }
+    }
+
     res.json({ success: true, data: { ...updated, resolved_by_name: managerName } });
   } catch (err) {
     next(err);
@@ -212,6 +222,14 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
       resolvedByName: managerName,
       companyId,
     });
+
+    if (OVERTIME_BLOCKER_AUTH_TYPES.has(auth.auth_type as any)) {
+      try {
+        await reconcileOvertimeForShift(String(auth.shift_id));
+      } catch (err) {
+        logger.error(`Failed to reconcile overtime for shift ${auth.shift_id} after reject: ${err}`);
+      }
+    }
 
     res.json({ success: true, data: { ...updated, resolved_by_name: managerName } });
   } catch (err) {
