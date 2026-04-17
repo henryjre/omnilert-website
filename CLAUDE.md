@@ -2,15 +2,35 @@
 
 Internal ops platform for branch-based PH businesses. Monorepo: `pnpm` + Turbo. Single PostgreSQL database — all companies share one DB with `company_id` scoping.
 
+## Stack
+
+| Layer | Tech |
+|---|---|
+| Backend | Express 4, TypeScript, Node.js (tsx in dev) |
+| Database | PostgreSQL 14+ via Knex 3 |
+| Jobs | pg-boss 12 |
+| Auth | JWT (jsonwebtoken) + bcryptjs |
+| Storage | AWS S3 (`@aws-sdk/client-s3`) |
+| Realtime | Socket.io 4 |
+| Frontend | React 18, React Router 7, Vite 6 |
+| State | Zustand 5 (persisted) + TanStack React Query 5 |
+| UI | Tailwind CSS 3, Headless UI 2, Lucide icons, Framer Motion |
+| Validation | Zod (shared across API + web) |
+| Shared | `@omnilert/shared` — types, permission keys, Zod schemas |
+
 ## Commands
 
 ```bash
-pnpm install && pnpm dev       # install + run all dev servers (from root)
-pnpm build                     # build all
-# from apps/api/ — run migrations
-pnpm migrate             # run pending migrations
-pnpm migrate:rollback    # rollback last batch
-pnpm migrate:status      # check migration status
+pnpm install && pnpm dev          # install + run all dev servers (from root)
+pnpm up:dev                        # migrate + run web + api dev servers
+pnpm build                         # build all
+# from apps/api/ — migrations
+pnpm migrate                       # run pending migrations
+pnpm migrate:rollback              # rollback last batch
+pnpm migrate:status                # check migration status
+pnpm seed                          # run seed files
+# permission debugging
+pnpm permissions:verify            # audit + runtime probe
 ```
 
 ## Architecture
@@ -20,29 +40,46 @@ pnpm migrate:status      # check migration status
 - **`db.getDb()`**: Single knex instance for all queries. `db.getMasterDb()` and `db.getTenantDb()` are removed.
 - **`req.companyContext`**: Contains `companyId`, `companySlug`, `companyName`, `companyStorageRoot`. No more `req.tenantDb`.
 - **Migrations**: Single directory `apps/api/src/migrations/`. One migration runner.
+- **API base**: `/api/v1`. Response format: `{ success, data?, error?, message?, pagination? }`.
+- **Monorepo**: `apps/api` (Express), `apps/web` (React SPA), `packages/shared` (types + constants + Zod).
+
+## Feature Folders
+
+Frontend features live under `apps/web/src/features/`:
+
+```
+account, auth, authorization-requests, case-reports, cash-requests, company,
+dashboard, employee-analytics, employee-profiles, employee-shifts,
+employee-verifications, peer-evaluations, pos-analytics, pos-session,
+pos-verification, product-analytics, profitability-analytics,
+registration-requests, roles, shift-exchange, store-audits, token-pay,
+violation-notices
+```
+
+Each feature: `pages/`, `components/`, `services/`, `hooks/`, `store/` (as needed).
 
 ## Skills — read before working in these areas
 
-| Area                   | File                                       |
-| ---------------------- | ------------------------------------------ |
-| Auth & RBAC            | `.claude/skills/auth-rbac.md`              |
-| Odoo provisioning      | `.claude/skills/odoo-provisioning.md`      |
-| Verification workflows | `.claude/skills/verification-workflows.md` |
-| Migrations             | `.claude/skills/migrations.md`             |
-| Frontend patterns      | `.claude/skills/frontend-patterns.md`      |
-| Database schema        | `.claude/skills/database-schema/SKILL.md`  |
+| Area | File |
+|---|---|
+| Auth & RBAC | `.claude/skills/auth-rbac/SKILL.md` |
+| Database schema | `.claude/skills/database-schema/SKILL.md` |
+| Migrations | `.claude/skills/migrations/SKILL.md` |
+| Odoo provisioning | `.claude/skills/odoo-provisioning/SKILL.md` |
+| Verification workflows | `.claude/skills/verification-workflows/SKILL.md` |
+| Frontend patterns | `.claude/skills/frontend-patterns/SKILL.md` |
 
 Read the relevant skill file at the start of any task touching that domain. When in doubt, read it.
 
 ## Plans
 
-Always save the plans as markdown files inside `.claude/plans/` folder.
+Always save plans as markdown files inside `.claude/plans/` folder.
 
-### Debugging Approach
+## Debugging Approach
 
-- **When stuck on a bug, stop speculating and gather real information first**
-- If a root cause isn't obvious from reading the code, add logging/instrumentation and ask the user to run it — don't keep re-theorising without data
-- Avoid the "wait, actually the real issue is..." loop: form one clear hypothesis, test it, then reassess based on evidence
+- **When stuck on a bug, stop speculating and gather real information first.**
+- If a root cause isn't obvious from reading the code, add logging/instrumentation and ask the user to run it — don't keep re-theorising without data.
+- Avoid the "wait, actually the real issue is..." loop: form one clear hypothesis, test it, then reassess based on evidence.
 
 <!-- rtk-instructions v2 -->
 

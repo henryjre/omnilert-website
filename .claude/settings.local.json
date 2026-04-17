@@ -35,7 +35,8 @@
       "Bash(ls /home/phaeton/Projects/omnilert-website/*.config.*)",
       "Bash(node --import tsx/esm --test src/**/*.test.ts)",
       "Bash(tsx --test src/**/*.test.ts)",
-      "Bash(grep -rn \"primary\" /home/phaeton/Projects/omnilert-website/apps/web/tailwind.config.*)"
+      "Bash(grep -rn \"primary\" /home/phaeton/Projects/omnilert-website/apps/web/tailwind.config.*)",
+      "Bash(rtk json *)"
     ]
   }
 }

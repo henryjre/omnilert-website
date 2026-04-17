@@ -120,6 +120,18 @@ Tables grouped by domain. All live in a single PostgreSQL database; company scop
 | `employment_requirement_submissions` | Document submissions (NBI, PSA, etc.); one pending per `(company_id, user_id, requirement_code)` |
 | `employment_requirement_types` | Lookup table for document types; **VARCHAR `code` PK** (not UUID) — the only non-UUID PK in the schema |
 
+### Token Pay
+
+| Table | Purpose |
+|---|---|
+| `pending_transactions` | Token Pay issuance/deduction requests; `company_id` scoped; two-stage flow: `pending → completed/failed/cancelled`; `type` is `credit` or `debit`; `category` is `reward/purchase/transfer/adjustment`; reviewer columns added in migration 036 |
+
+### Analytics
+
+| Table | Purpose |
+|---|---|
+| `employee_metric_daily_snapshots` | Daily per-employee performance metrics snapshot; `company_id` scoped; used for Employee Analytics page |
+
 ### Notifications & Push
 
 | Table | Purpose |
@@ -141,7 +153,8 @@ shift_logs, shift_authorizations, authorization_requests, cash_requests,
 store_audits, case_reports, violation_notices,
 personal_information_verifications, bank_information_verifications,
 employment_requirement_submissions, peer_evaluations, company_sequences,
-user_company_access, user_branches, user_company_branches
+user_company_access, user_branches, user_company_branches,
+pending_transactions, employee_metric_daily_snapshots
 ```
 
 Special cases with `company_id`:
