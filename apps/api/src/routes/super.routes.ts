@@ -15,6 +15,12 @@ import { requirePermission } from '../middleware/rbac.js';
 import * as companyController from '../controllers/company.controller.js';
 import * as superAdminController from '../controllers/superAdmin.controller.js';
 import * as branchController from '../controllers/branch.controller.js';
+import multer from 'multer';
+
+const logoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+});
 
 const router = Router();
 
@@ -74,6 +80,14 @@ router.post(
   authenticateSuperAdmin,
   validateBody(deleteCompanyByIdSchema),
   companyController.deleteById,
+);
+
+// Super admin logo upload
+router.post(
+  '/companies/:id/logo',
+  authenticateSuperAdmin,
+  logoUpload.single('logo'),
+  companyController.uploadLogo,
 );
 
 // Admin-accessible branch management per company
