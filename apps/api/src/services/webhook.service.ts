@@ -759,6 +759,7 @@ interface AttendanceProcessorDeps {
     endedAt?: Date;
   }) => Promise<{ activity: ShiftActivityRow; log: AttendanceShiftLogRow }>;
   deleteEarlyCheckOutAuthByShiftLogId: (shiftLogId: string) => Promise<boolean>;
+  deleteUnderbreakAuthByShiftId: (shiftId: string) => Promise<boolean>;
   deleteShiftLog: (input: { odooAttendanceId?: number; shiftId?: string; logType: string }) => Promise<number>;
   checkOutAttendancesByIds: (attendanceIds: number[], checkOutTime: Date) => Promise<void>;
   reassignUserToSingleCheckedInBranch: (userId: string, branchId: string) => Promise<void>;
@@ -1177,6 +1178,22 @@ const defaultAttendanceProcessorDeps: AttendanceProcessorDeps = {
         .decrement('pending_approvals', 1);
     }
 
+    return true;
+  },
+  deleteUnderbreakAuthByShiftId: async (shiftId) => {
+    const tenantDb = db.getDb();
+    const auth = (await tenantDb('shift_authorizations')
+      .where({ shift_id: shiftId, auth_type: 'underbreak' })
+      .first()) as AttendanceShiftAuthorizationRow | null;
+    if (!auth) {
+      return false;
+    }
+    await tenantDb('shift_authorizations').where({ id: auth.id }).delete();
+    if (auth.status === 'pending' && typeof auth.shift_id === 'string' && auth.shift_id.trim()) {
+      await tenantDb('employee_shifts')
+        .where({ id: auth.shift_id })
+        .decrement('pending_approvals', 1);
+    }
     return true;
   },
   checkOutAttendancesByIds: async (attendanceIds, checkOutTime) => {
@@ -1931,6 +1948,38 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
             });
           }
           deps.emitSocketEvent('shift:authorization-new', auth as Record<string, unknown>);
+        }
+
+        // Underbreak: generate if total ended break time < 60 minutes
+        const breakActivities = await deps.listEndedBreakActivitiesByShiftId(shift.id as string);
+        const totalBreakMinutes = breakActivities.reduce(
+          (sum, a) => sum + (Number(a.duration_minutes) || 0),
+          0,
+        );
+        if (totalBreakMinutes < 60) {
+          const underbreakDiffMinutes = 60 - totalBreakMinutes;
+          const underbreakAuth = await deps.createShiftAuthorization({
+            company_id: branch.company_id,
+            shift_id: shift.id as string,
+            shift_log_id: log.id,
+            branch_id: branch.id,
+            user_id: (shift.user_id as string) ?? null,
+            auth_type: 'underbreak',
+            diff_minutes: underbreakDiffMinutes,
+            needs_employee_reason: true,
+            status: 'pending',
+          });
+          await deps.incrementShiftPendingApprovals(shift.id as string);
+          if (shift.user_id) {
+            await deps.createAndDispatchNotification({
+              userId: shift.user_id as string,
+              title: 'Underbreak - Reason Required',
+              message: `Your recorded break time is ${totalBreakMinutes} min, which is less than the required 1 hour. Please submit a reason in the Authorization Requests tab.`,
+              type: 'warning',
+              linkUrl: '/account/schedule',
+            });
+          }
+          deps.emitSocketEvent('shift:authorization-new', underbreakAuth as Record<string, unknown>);
         }
       }
     }
