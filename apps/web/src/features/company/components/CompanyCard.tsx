@@ -1,5 +1,6 @@
 import { Badge } from '@/shared/components/ui/Badge';
 import { Card, CardBody } from '@/shared/components/ui/Card';
+import { CompanyAvatar } from './CompanyAvatar';
 
 export interface Company {
   id: string;
@@ -10,6 +11,7 @@ export interface Company {
   themeColor: string;
   companyCode: string | null;
   odooApiKey: string | null;
+  logoUrl: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -38,9 +40,12 @@ export function CompanyCard({ company, onSelect }: CompanyCardProps) {
         <CardBody>
           <div className="flex items-start justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
-              <span
-                className="mt-0.5 h-4 w-4 flex-shrink-0 rounded-full border border-black/10"
-                style={{ backgroundColor: company.themeColor }}
+              <CompanyAvatar
+                name={company.name}
+                logoUrl={company.logoUrl}
+                themeColor={company.themeColor}
+                size={16}
+                className="mt-0.5 shrink-0"
               />
               <span className="truncate font-semibold text-gray-900">{company.name}</span>
             </div>
