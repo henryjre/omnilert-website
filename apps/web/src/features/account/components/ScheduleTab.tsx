@@ -179,7 +179,7 @@ const AUTH_TYPE_CONFIG: Record<
     diffLabel: 'interim duty duration',
   },
   shift_exchange: { label: 'Shift Exchange', color: 'indigo', Icon: RefreshCw, diffLabel: '' },
-  underbreak: { label: 'Underbreak', color: 'amber', Icon: Coffee, diffLabel: 'underbreak duration' },
+  underbreak: { label: 'Underbreak', color: 'amber', Icon: Coffee, diffLabel: '' },
 };
 
 const OVERTIME_TYPE_LABELS: Record<string, string> = {
@@ -291,6 +291,7 @@ const AuthorizationCard = memo(
       indigo: 'bg-indigo-100 text-indigo-600',
       purple: 'bg-purple-100 text-purple-600',
       red: 'bg-red-100 text-red-600',
+      amber: 'bg-amber-100 text-amber-600',
       gray: 'bg-gray-100 text-gray-600',
     };
 
