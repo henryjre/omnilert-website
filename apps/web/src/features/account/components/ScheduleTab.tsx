@@ -179,6 +179,7 @@ const AUTH_TYPE_CONFIG: Record<
     diffLabel: 'interim duty duration',
   },
   shift_exchange: { label: 'Shift Exchange', color: 'indigo', Icon: RefreshCw, diffLabel: '' },
+  underbreak: { label: 'Underbreak', color: 'amber', Icon: Coffee, diffLabel: 'underbreak duration' },
 };
 
 const OVERTIME_TYPE_LABELS: Record<string, string> = {
