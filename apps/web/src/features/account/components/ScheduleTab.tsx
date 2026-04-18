@@ -1155,10 +1155,38 @@ const ShiftDetailPanel = memo(
       0,
       Number(shift.allocated_hours || 0) - allocatedBreakHours,
     );
-    const totalBreakHours = totalBreakMinutes / 60;
-    const totalFieldTaskHours = totalFieldTaskMinutes / 60;
-    const totalWorkedHours = Number(shift.total_worked_hours || 0);
-    const netWorkedHours = Math.max(0, totalWorkedHours - totalBreakHours);
+
+    const isActive = shift.status === 'active';
+    const checkInTime = useMemo(
+      () => {
+        const log = [...logs].reverse().find((l: any) => l.log_type === 'check_in');
+        return log ? new Date(log.event_time).getTime() : null;
+      },
+      [logs],
+    );
+    const activeActivityStartMs = activeActivity?.start_time
+      ? new Date(activeActivity.start_time).getTime()
+      : null;
+
+    const [now, setNow] = useState(() => Date.now());
+    useEffect(() => {
+      if (!isActive) return;
+      const id = setInterval(() => setNow(Date.now()), 1000);
+      return () => clearInterval(id);
+    }, [isActive]);
+
+    const liveBreakHours = isActive && activeActivity?.activity_type === 'break' && activeActivityStartMs
+      ? totalBreakMinutes / 60 + (now - activeActivityStartMs) / 3_600_000
+      : totalBreakMinutes / 60;
+    const liveFieldTaskHours = isActive && activeActivity?.activity_type === 'field_task' && activeActivityStartMs
+      ? totalFieldTaskMinutes / 60 + (now - activeActivityStartMs) / 3_600_000
+      : totalFieldTaskMinutes / 60;
+    const totalBreakHours = liveBreakHours;
+    const totalFieldTaskHours = liveFieldTaskHours;
+    const totalWorkedHours = isActive && checkInTime
+      ? (now - checkInTime) / 3_600_000
+      : Number(shift.total_worked_hours || 0);
+    const netWorkedHours = Math.max(0, totalWorkedHours - totalBreakHours - totalFieldTaskHours);
 
     const highlightIdx = useMemo(() => {
       if (!highlightLog) return -1;
