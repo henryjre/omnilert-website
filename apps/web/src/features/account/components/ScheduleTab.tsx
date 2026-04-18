@@ -1142,12 +1142,21 @@ const ShiftDetailPanel = memo(
       [logs],
     );
 
+    const totalFieldTaskMinutes = useMemo(
+      () =>
+        logs
+          .filter((l) => l.log_type === 'field_task_end')
+          .reduce((sum, l) => sum + (Number((l.changes as any)?.duration_minutes) || 0), 0),
+      [logs],
+    );
+
     const allocatedBreakHours = ALLOCATED_BREAK_HOURS;
     const effectiveAllocatedHours = Math.max(
       0,
       Number(shift.allocated_hours || 0) - allocatedBreakHours,
     );
     const totalBreakHours = totalBreakMinutes / 60;
+    const totalFieldTaskHours = totalFieldTaskMinutes / 60;
     const totalWorkedHours = Number(shift.total_worked_hours || 0);
     const netWorkedHours = Math.max(0, totalWorkedHours - totalBreakHours);
 
