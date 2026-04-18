@@ -975,6 +975,113 @@ const LogEntry = memo(
   },
 );
 
+// ─── Shift Progress Bar ───────────────────────────────────────────────────────
+
+function ShiftProgressBar({
+  label,
+  value,
+  max,
+  color,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  color: 'blue' | 'amber';
+}) {
+  const isOverflow = value > max && max > 0;
+  const displayMax = isOverflow ? value : max;
+  const normalPct = max > 0 ? Math.min((max / displayMax) * 100, 100) : 0;
+  const fillPct = displayMax > 0 ? Math.min((value / displayMax) * 100, 100) : 0;
+
+  const trackCls = 'h-2 w-full overflow-hidden rounded-full bg-gray-100 relative';
+  const normalFillCls =
+    color === 'blue'
+      ? 'h-full rounded-full bg-blue-500'
+      : 'h-full rounded-full bg-amber-400';
+  const overflowFillCls = 'h-full rounded-full bg-red-400';
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-[11px]">
+        <span className="font-medium text-gray-600 uppercase tracking-wide">{label}</span>
+        <span className="text-gray-500 tabular-nums">
+          {formatDuration(value)} / {formatDuration(max)}
+        </span>
+      </div>
+      <div className={trackCls}>
+        {isOverflow ? (
+          <>
+            <div className={normalFillCls} style={{ width: `${normalPct}%`, position: 'absolute', top: 0, left: 0 }} />
+            <div className={overflowFillCls} style={{ width: `${fillPct}%`, position: 'absolute', top: 0, left: 0 }} />
+            <div
+              style={{
+                position: 'absolute',
+                top: 0,
+                bottom: 0,
+                left: `${normalPct}%`,
+                width: '2px',
+                backgroundColor: 'white',
+                transform: 'translateX(-50%)',
+              }}
+            />
+          </>
+        ) : (
+          <div className={normalFillCls} style={{ width: `${fillPct}%` }} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Shift Stacked Bar ────────────────────────────────────────────────────────
+
+function ShiftStackedBar({
+  segments,
+  total,
+}: {
+  segments: { label: string; value: number; color: 'blue' | 'amber' | 'purple' }[];
+  total: number;
+}) {
+  const colorCls: Record<string, string> = {
+    blue: 'bg-blue-500',
+    amber: 'bg-amber-400',
+    purple: 'bg-purple-500',
+  };
+  const dotCls: Record<string, string> = {
+    blue: 'bg-blue-500',
+    amber: 'bg-amber-400',
+    purple: 'bg-purple-500',
+  };
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-[11px]">
+        <span className="font-medium text-gray-600 uppercase tracking-wide">Total Active Hours</span>
+        <span className="text-gray-500 tabular-nums">{formatDuration(total)} total</span>
+      </div>
+      <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100 flex">
+        {total > 0
+          ? segments.map((seg) => (
+              <div
+                key={seg.label}
+                className={colorCls[seg.color]}
+                style={{ width: `${(seg.value / total) * 100}%` }}
+              />
+            ))
+          : null}
+      </div>
+      <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+        {segments.map((seg) => (
+          <span key={seg.label} className="flex items-center gap-1 text-[11px] text-gray-500">
+            <span className={`h-1.5 w-1.5 rounded-full ${dotCls[seg.color]}`} />
+            {formatDuration(seg.value)} {seg.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Shift Detail Panel ───────────────────────────────────────────────────────
 
 const ShiftDetailPanel = memo(
