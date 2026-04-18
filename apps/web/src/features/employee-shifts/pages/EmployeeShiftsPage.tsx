@@ -1512,86 +1512,70 @@ const ShiftDetailPanel = memo(
                   Shift Summary
                 </span>
               </div>
-              <div className="grid grid-cols-2 gap-x-6 gap-y-3 px-4 py-3">
-                <div>
-                  <p className="text-[11px] uppercase tracking-wide text-gray-400">Shift Start</p>
-                  <p className="mt-0.5 text-sm font-medium text-gray-800">
-                    {fmtShift(shift.shift_start)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[11px] uppercase tracking-wide text-gray-400">Shift End</p>
-                  <p className="mt-0.5 text-sm font-medium text-gray-800">
-                    {fmtShift(shift.shift_end)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[11px] uppercase tracking-wide text-gray-400">
-                    Allocated Hours
-                  </p>
-                  <p className="mt-0.5 text-sm font-medium text-gray-800">
-                    {formatDuration(effectiveAllocatedHours)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[11px] uppercase tracking-wide text-gray-400">
-                    Allocated Breaks
-                  </p>
-                  <p className="mt-0.5 text-sm font-medium text-gray-800">
-                    {formatDuration(allocatedBreakHours)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[11px] uppercase tracking-wide text-gray-400 text-blue-600">
-                    Net Worked Hours
-                  </p>
-                  <p className="mt-0.5 text-sm font-bold text-blue-700">
-                    {formatDuration(netWorkedHours)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[11px] uppercase tracking-wide text-gray-400">
-                    Total Active Hours
-                  </p>
-                  <p className="mt-0.5 text-sm font-medium text-gray-800">
-                    {formatDuration(totalWorkedHours)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[11px] uppercase tracking-wide text-gray-400">
-                    Total Break Hours
-                  </p>
-                  <p className="mt-0.5 text-sm font-medium text-gray-800">
-                    {formatDuration(totalBreakHours)}
-                  </p>
-                </div>
-                {shift.check_in_status && (
+              <div className="px-4 py-3 space-y-3">
+                <div className="grid grid-cols-2 gap-x-6 gap-y-2">
                   <div>
-                    <p className="text-[11px] uppercase tracking-wide text-gray-400">Attendance</p>
-                    <p className="mt-0.5 text-sm font-medium">
-                      {shift.check_in_status === 'checked_in' ? (
-                        <span className="inline-flex items-center gap-1 text-green-700">
-                          <span className="h-2 w-2 rounded-full bg-green-500" /> Checked In
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-gray-500">
-                          <span className="h-2 w-2 rounded-full bg-gray-400" /> Checked Out
-                        </span>
-                      )}
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400">Shift Start</p>
+                    <p className="mt-0.5 text-sm font-medium text-gray-800">
+                      {fmtShift(shift.shift_start)}
                     </p>
                   </div>
-                )}
-                {shift.pending_approvals > 0 && (
                   <div>
-                    <p className="text-[11px] uppercase tracking-wide text-gray-400">
-                      Pending Approvals
-                    </p>
-                    <p className="mt-0.5 text-sm font-medium text-amber-700 font-bold flex items-center gap-1">
-                      <AlertTriangle className="h-3.5 w-3.5" />
-                      {shift.pending_approvals}
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400">Shift End</p>
+                    <p className="mt-0.5 text-sm font-medium text-gray-800">
+                      {fmtShift(shift.shift_end)}
                     </p>
                   </div>
-                )}
+                  {shift.check_in_status && (
+                    <div className="col-span-2">
+                      <p className="text-[11px] uppercase tracking-wide text-gray-400">Attendance</p>
+                      <p className="mt-0.5 text-sm font-medium">
+                        {shift.check_in_status === 'checked_in' ? (
+                          <span className="inline-flex items-center gap-1 text-green-700">
+                            <span className="h-2 w-2 rounded-full bg-green-500" /> Checked In
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-gray-500">
+                            <span className="h-2 w-2 rounded-full bg-gray-400" /> Checked Out
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  )}
+                  {shift.pending_approvals > 0 && (
+                    <div className="col-span-2">
+                      <p className="text-[11px] uppercase tracking-wide text-gray-400">
+                        Pending Approvals
+                      </p>
+                      <p className="mt-0.5 text-sm font-bold text-amber-700 flex items-center gap-1">
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        {shift.pending_approvals}
+                      </p>
+                    </div>
+                  )}
+                </div>
+                <div className="border-t border-gray-100 pt-3 space-y-3">
+                  <ShiftProgressBar
+                    label="Worked Hours"
+                    value={netWorkedHours}
+                    max={effectiveAllocatedHours}
+                    color="blue"
+                  />
+                  <ShiftProgressBar
+                    label="Break Hours"
+                    value={totalBreakHours}
+                    max={allocatedBreakHours}
+                    color="amber"
+                  />
+                  <ShiftStackedBar
+                    total={totalWorkedHours}
+                    segments={[
+                      { label: 'worked', value: netWorkedHours, color: 'blue' },
+                      { label: 'break', value: totalBreakHours, color: 'amber' },
+                      { label: 'field task', value: totalFieldTaskHours, color: 'purple' },
+                    ]}
+                  />
+                </div>
               </div>
 
               {shift.status === 'active' && (
