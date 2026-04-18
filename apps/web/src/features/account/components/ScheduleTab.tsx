@@ -1011,7 +1011,10 @@ function ShiftProgressBar({
       <div className={trackCls}>
         {isOverflow ? (
           <>
-            <div className={normalFillCls} style={{ width: `${normalPct}%`, position: 'absolute', top: 0, left: 0 }} />
+            <div
+              className={color === 'blue' ? 'h-full bg-blue-500' : 'h-full bg-amber-400'}
+              style={{ width: `${normalPct}%`, position: 'absolute', top: 0, left: 0 }}
+            />
             <div className={overflowFillCls} style={{ width: `${fillPct}%`, position: 'absolute', top: 0, left: 0 }} />
             <div
               style={{
@@ -1047,11 +1050,6 @@ function ShiftStackedBar({
     amber: 'bg-amber-400',
     purple: 'bg-purple-500',
   };
-  const dotCls: Record<string, string> = {
-    blue: 'bg-blue-500',
-    amber: 'bg-amber-400',
-    purple: 'bg-purple-500',
-  };
 
   return (
     <div className="space-y-1">
@@ -1073,7 +1071,7 @@ function ShiftStackedBar({
       <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
         {segments.map((seg) => (
           <span key={seg.label} className="flex items-center gap-1 text-[11px] text-gray-500">
-            <span className={`h-1.5 w-1.5 rounded-full ${dotCls[seg.color]}`} />
+            <span className={`h-1.5 w-1.5 rounded-full ${colorCls[seg.color]}`} />
             {formatDuration(seg.value)} {seg.label}
           </span>
         ))}
