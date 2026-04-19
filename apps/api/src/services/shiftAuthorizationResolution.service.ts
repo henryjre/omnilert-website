@@ -10,30 +10,56 @@ import {
   deletePlanningSlotById,
   findWorkEntryByEmployeeAndDate,
   getEmployeeByWebsiteUserKey,
+  setBreakWorkEntryDuration,
   updateAttendanceCheckIn,
   updateAttendanceCheckOut,
 } from './odoo.service.js';
+import { getTotalEndedBreakMinutesByUserAndDate, toUtcDateBucket } from './breakDuration.service.js';
+import { computeOvertimeBlockerState, deriveOvertimeMinutes } from './overtimeDependency.service.js';
 
 export const INTERIM_DUTY_AUTH_TYPE = 'interim_duty';
 export const MANUAL_REJECT_REQUIRES_EMPLOYEE_REASON_AUTH_TYPES = new Set([
   'early_check_in',
   'early_check_out',
-  'overtime',
   INTERIM_DUTY_AUTH_TYPE,
+  'underbreak',
 ]);
 export const EXPIRING_EMPLOYEE_REASON_AUTH_TYPES = new Set([
   'early_check_in',
   'early_check_out',
-  'overtime',
   INTERIM_DUTY_AUTH_TYPE,
   'tardiness',
   'late_check_out',
+  'underbreak',
 ]);
 
 const REGULAR_WORK_ENTRY_TYPE_ID = 1;
 const OVERTIME_WORK_ENTRY_TYPE_ID: Record<string, number> = {
   normal_overtime: 2,
   overtime_premium: 118,
+};
+const MANAGED_OVERTIME_MUTABLE_STATUSES = new Set(['pending', 'locked', 'no_approval_needed']);
+const PENDING_APPROVAL_STATUSES = new Set(['pending', 'locked']);
+
+type ManagedOvertimeAuthStatus = 'pending' | 'locked';
+
+type ReconcileOvertimeForShiftDeps = {
+  getDbFn: typeof db.getDb;
+  emitSocketEvent: (event: string, payload: Record<string, unknown>) => void;
+};
+
+const defaultReconcileOvertimeForShiftDeps: ReconcileOvertimeForShiftDeps = {
+  getDbFn: db.getDb.bind(db),
+  emitSocketEvent: (event, payload) => {
+    try {
+      getIO()
+        .of('/employee-shifts')
+        .to(`branch:${String(payload.branch_id ?? '')}`)
+        .emit(event as any, payload as any);
+    } catch {
+      logger.warn('Socket.IO unavailable for managed overtime emit');
+    }
+  },
 };
 
 type InterimDutyCleanupTargets = {
@@ -131,6 +157,14 @@ const defaultShiftAuthorizationRejectResolverDeps: ShiftAuthorizationRejectResol
 
 function getTrimmedString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function isPendingApprovalStatus(status: unknown): boolean {
+  return PENDING_APPROVAL_STATUSES.has(getTrimmedString(status));
+}
+
+export function shouldReconcileManagedOvertimeForAuthType(authType: unknown): boolean {
+  return getTrimmedString(authType) !== 'overtime';
 }
 
 export function hasSubmittedEmployeeReason(auth: Record<string, unknown>): boolean {
@@ -295,12 +329,73 @@ export async function syncShiftAuthorizationWithOdoo(
   auth: Record<string, unknown>,
   action: 'approve' | 'reject',
   overtimeParams?: { overtimeType?: string; hours?: number; minutes?: number; managerName?: string },
+  deps: {
+    getDbFn?: typeof db.getDb;
+    getEmployeeByWebsiteUserKeyFn?: typeof getEmployeeByWebsiteUserKey;
+    getTotalEndedBreakMinutesByUserAndDateFn?: typeof getTotalEndedBreakMinutesByUserAndDate;
+    setBreakWorkEntryDurationFn?: typeof setBreakWorkEntryDuration;
+  } = {},
 ): Promise<void> {
   if (auth.auth_type === 'early_check_out') {
     return;
   }
 
-  const tenantDb = db.getDb();
+  const tenantDb = deps.getDbFn?.() ?? db.getDb();
+
+  if (auth.auth_type === 'underbreak' && action === 'reject') {
+    const shift = await tenantDb('employee_shifts')
+      .where({ id: auth.shift_id })
+      .select('shift_start', 'user_id', 'branch_id')
+      .first() as { shift_start: Date; user_id: string | null; branch_id: string } | null;
+
+    if (shift?.shift_start && shift.user_id) {
+      try {
+        const user = await tenantDb('users')
+          .where({ id: shift.user_id })
+          .select('user_key')
+          .first() as { user_key: string | null } | null;
+        const branch = await tenantDb('branches')
+          .where({ id: shift.branch_id })
+          .select('odoo_branch_id')
+          .first();
+        const odooCompanyId = Number(branch?.odoo_branch_id ?? 0);
+        const userKey = getTrimmedString(user?.user_key);
+
+        if (odooCompanyId && userKey) {
+          const employee = await (deps.getEmployeeByWebsiteUserKeyFn ?? getEmployeeByWebsiteUserKey)(
+            userKey,
+            odooCompanyId,
+          );
+          if (employee?.id) {
+            const shiftDate = toUtcDateBucket(shift.shift_start);
+            const localBreakMinutes = await (
+              deps.getTotalEndedBreakMinutesByUserAndDateFn ?? getTotalEndedBreakMinutesByUserAndDate
+            )(String(shift.user_id), shiftDate);
+            const targetBreakMinutes = Math.max(localBreakMinutes, 60);
+            await (deps.setBreakWorkEntryDurationFn ?? setBreakWorkEntryDuration)({
+              employeeId: employee.id,
+              date: shiftDate,
+              durationMinutes: targetBreakMinutes,
+            });
+            logger.info(
+              `Underbreak rejection: set break work entry to ${targetBreakMinutes} min for employee ${employee.id} on ${shiftDate} (auth ${auth.id}).`,
+            );
+          } else {
+            logger.warn(`Underbreak rejection: no Odoo employee found for user_key ${userKey}, odooCompanyId ${odooCompanyId}`);
+          }
+        } else if (!userKey) {
+          logger.warn(`Underbreak rejection: no user_key for user ${shift.user_id}`);
+        } else {
+          logger.warn(`Underbreak rejection: no odoo_branch_id for branch ${shift.branch_id}`);
+        }
+      } catch (err) {
+        logger.error(`Failed to set Odoo break work entry for underbreak auth ${auth.id}: ${err}`);
+      }
+    } else {
+      logger.warn(`Underbreak rejection: no shift data for shift_id ${auth.shift_id}`);
+    }
+    return;
+  }
 
   if (auth.auth_type === 'overtime') {
     const shift = await tenantDb('employee_shifts').where({ id: auth.shift_id }).first();
@@ -335,14 +430,18 @@ export async function syncShiftAuthorizationWithOdoo(
 
   const odooAttendanceId = shiftLog.odoo_attendance_id as number;
 
+  let attendanceWasModified = false;
+
   try {
     if (action === 'approve') {
       if (auth.auth_type === 'tardiness') {
         await updateAttendanceCheckIn(odooAttendanceId, shift.shift_start);
+        attendanceWasModified = true;
       }
     } else if (action === 'reject') {
       if (auth.auth_type === 'early_check_in') {
         await updateAttendanceCheckIn(odooAttendanceId, shift.shift_start);
+        attendanceWasModified = true;
       }
       if (auth.auth_type === 'late_check_out') {
         const checkInLog = await tenantDb('shift_logs')
@@ -359,11 +458,56 @@ export async function syncShiftAuthorizationWithOdoo(
           );
         } else {
           await updateAttendanceCheckOut(odooAttendanceId, shiftEndTime);
+          attendanceWasModified = true;
         }
       }
     }
   } catch (err) {
     logger.error(`Failed to sync Odoo attendance for authorization ${auth.id}: ${err}`);
+  }
+
+  // Odoo regenerates hr.work.entry when hr.attendance is written, which removes 3rd-party break
+  // entries. Re-sync the break work entry after any attendance modification.
+  if (attendanceWasModified) {
+    try {
+      const shiftDate = toUtcDateBucket(shift.shift_start);
+      const user = await tenantDb('users')
+        .where({ id: shift.user_id })
+        .select('user_key')
+        .first() as { user_key: string | null } | null;
+      const userKey = getTrimmedString(user?.user_key);
+      const branch = await tenantDb('branches')
+        .where({ id: shift.branch_id })
+        .select('odoo_branch_id')
+        .first();
+      const odooCompanyId = Number(branch?.odoo_branch_id ?? 0);
+
+      if (userKey && odooCompanyId) {
+        const employee = await (deps.getEmployeeByWebsiteUserKeyFn ?? getEmployeeByWebsiteUserKey)(
+          userKey,
+          odooCompanyId,
+        );
+        if (employee?.id) {
+          const localBreakMinutes = await (
+            deps.getTotalEndedBreakMinutesByUserAndDateFn ?? getTotalEndedBreakMinutesByUserAndDate
+          )(String(shift.user_id), shiftDate);
+          if (localBreakMinutes > 0) {
+            await (deps.setBreakWorkEntryDurationFn ?? setBreakWorkEntryDuration)({
+              employeeId: employee.id,
+              date: shiftDate,
+              durationMinutes: localBreakMinutes,
+            });
+            logger.info(
+              `Re-synced break work entry (${localBreakMinutes}min) for employee ${employee.id} on ${shiftDate} after attendance update (auth ${String(auth.id)}).`,
+            );
+          }
+        } else {
+          logger.warn(`Break re-sync skipped: no Odoo employee for user_key ${userKey}, company ${odooCompanyId}`);
+        }
+      }
+    } catch (err) {
+      logger.error(`Failed to re-sync break work entry after attendance update for auth ${String(auth.id)}: ${err}`);
+    }
   }
 }
 
@@ -485,4 +629,185 @@ function toShiftDateYmd(dateInput: unknown): string {
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+/**
+ * Reconcile the shift's managed overtime authorization after any non-overtime
+ * authorization is resolved.
+ *
+ * Rules:
+ * - Managed overtime eligibility uses netWorkedHours > allocatedHours.
+ * - Any other pending non-overtime authorization keeps overtime in locked status.
+ * - Locked overtime counts toward pending approvals immediately.
+ * - Managed overtime is created, updated, or deleted in place and never mutates
+ *   approved/rejected overtime history rows.
+ */
+export async function reconcileOvertimeForShift(
+  input: {
+    shiftId: string;
+    triggeringAuth?: Record<string, unknown> | null;
+  },
+  overrides: Partial<ReconcileOvertimeForShiftDeps> = {},
+): Promise<void> {
+  const deps: ReconcileOvertimeForShiftDeps = {
+    ...defaultReconcileOvertimeForShiftDeps,
+    ...overrides,
+  };
+  const tenantDb = deps.getDbFn();
+
+  const shift = await tenantDb('employee_shifts')
+    .where({ id: input.shiftId })
+    .select('id', 'company_id', 'branch_id', 'user_id', 'total_worked_hours', 'allocated_hours')
+    .first() as {
+    id: string;
+    company_id: string;
+    branch_id: string;
+    user_id: string | null;
+    total_worked_hours: number | null;
+    allocated_hours: number | null;
+  } | null;
+  if (!shift) {
+    logger.warn(`reconcileOvertimeForShift: no shift found for id ${input.shiftId}`);
+    return;
+  }
+
+  const breakActivities = await tenantDb('shift_activities')
+    .where({ shift_id: input.shiftId, activity_type: 'break' })
+    .whereNotNull('end_time')
+    .select('duration_minutes') as Array<{ duration_minutes: number | null }>;
+  const totalBreakHours =
+    breakActivities.reduce(
+      (sum, activity) => sum + (Number(activity.duration_minutes) || 0),
+      0,
+    ) / 60;
+
+  const allNonOvertimeAuths = await tenantDb('shift_authorizations')
+    .where({ shift_id: input.shiftId })
+    .whereNot({ auth_type: 'overtime' })
+    .select('id', 'shift_log_id', 'auth_type', 'status', 'diff_minutes') as Array<{
+    id: string;
+    shift_log_id: string | null;
+    auth_type: string;
+    status: string;
+    diff_minutes: number | null;
+  }>;
+
+  const blockerState = computeOvertimeBlockerState(allNonOvertimeAuths);
+  const resolvedAdjustments = allNonOvertimeAuths.map((auth) => ({
+    auth_type: auth.auth_type,
+    status: auth.status,
+    diff_minutes: Number(auth.diff_minutes) || 0,
+  }));
+  const derivedMinutes = deriveOvertimeMinutes({
+    totalWorkedHours: Number(shift.total_worked_hours) || 0,
+    totalBreakHours,
+    allocatedHours: Number(shift.allocated_hours) || 0,
+    resolvedAdjustments,
+  });
+
+  const overtimeAuths = await tenantDb('shift_authorizations')
+    .where({ shift_id: input.shiftId, auth_type: 'overtime' })
+    .select(
+      'id',
+      'company_id',
+      'shift_id',
+      'shift_log_id',
+      'branch_id',
+      'user_id',
+      'auth_type',
+      'diff_minutes',
+      'needs_employee_reason',
+      'status',
+      'employee_reason',
+      'rejection_reason',
+      'overtime_type',
+      'resolved_by',
+      'resolved_at',
+      'created_at',
+    ) as Array<Record<string, unknown>>;
+
+  const existingManagedOvertime =
+    overtimeAuths.find((auth) => MANAGED_OVERTIME_MUTABLE_STATUSES.has(getTrimmedString(auth.status))) ??
+    null;
+
+  if (derivedMinutes <= 0) {
+    if (!existingManagedOvertime) {
+      return;
+    }
+
+    await tenantDb('shift_authorizations').where({ id: existingManagedOvertime.id }).delete();
+    if (isPendingApprovalStatus(existingManagedOvertime.status)) {
+      await tenantDb('employee_shifts').where({ id: input.shiftId }).decrement('pending_approvals', 1);
+    }
+    deps.emitSocketEvent('shift:authorization-deleted', existingManagedOvertime);
+    return;
+  }
+
+  const nextStatus: ManagedOvertimeAuthStatus = blockerState.blocked ? 'locked' : 'pending';
+  const fallbackShiftLogId =
+    getTrimmedString(input.triggeringAuth?.shift_log_id) ||
+    getTrimmedString(allNonOvertimeAuths.find((auth) => getTrimmedString(auth.shift_log_id))?.shift_log_id);
+
+  if (existingManagedOvertime) {
+    const previousStatus = getTrimmedString(existingManagedOvertime.status);
+    const [updated] = await tenantDb('shift_authorizations')
+      .where({ id: existingManagedOvertime.id })
+      .update({
+        diff_minutes: derivedMinutes,
+        status: nextStatus,
+        needs_employee_reason: false,
+        resolved_by: null,
+        resolved_at: null,
+        rejection_reason: null,
+        overtime_type: null,
+        ...(getTrimmedString(existingManagedOvertime.shift_log_id) ? {} : fallbackShiftLogId ? { shift_log_id: fallbackShiftLogId } : {}),
+      })
+      .returning('*');
+
+    if (!updated) {
+      logger.warn(`reconcileOvertimeForShift: failed to update overtime auth for shift ${input.shiftId}`);
+      return;
+    }
+
+    if (!isPendingApprovalStatus(previousStatus) && isPendingApprovalStatus(nextStatus)) {
+      await tenantDb('employee_shifts').where({ id: input.shiftId }).increment('pending_approvals', 1);
+    } else if (isPendingApprovalStatus(previousStatus) && !isPendingApprovalStatus(nextStatus)) {
+      await tenantDb('employee_shifts').where({ id: input.shiftId }).decrement('pending_approvals', 1);
+    }
+
+    deps.emitSocketEvent('shift:authorization-updated', {
+      ...(updated as Record<string, unknown>),
+      previous_status: previousStatus,
+    });
+    return;
+  }
+
+  if (!fallbackShiftLogId) {
+    logger.warn(`reconcileOvertimeForShift: no shift_log_id available to create overtime auth for shift ${input.shiftId}`);
+    return;
+  }
+
+  const [created] = await tenantDb('shift_authorizations')
+    .insert({
+      company_id: shift.company_id,
+      shift_id: input.shiftId,
+      shift_log_id: fallbackShiftLogId,
+      branch_id: shift.branch_id,
+      user_id: shift.user_id,
+      auth_type: 'overtime',
+      diff_minutes: derivedMinutes,
+      needs_employee_reason: false,
+      status: nextStatus,
+    })
+    .returning('*');
+
+  if (!created) {
+    logger.warn(`reconcileOvertimeForShift: failed to create overtime auth for shift ${input.shiftId}`);
+    return;
+  }
+
+  if (isPendingApprovalStatus(nextStatus)) {
+    await tenantDb('employee_shifts').where({ id: input.shiftId }).increment('pending_approvals', 1);
+  }
+  deps.emitSocketEvent('shift:authorization-new', created as Record<string, unknown>);
 }

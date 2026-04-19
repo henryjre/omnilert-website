@@ -20,8 +20,9 @@ import { ShiftExchangeFlowModal } from '@/features/shift-exchange/components/Shi
 import { ShiftExchangeDetailModal } from '@/features/shift-exchange/components/ShiftExchangeDetailModal';
 import { PeerEvaluationModal } from '@/features/peer-evaluations/components/PeerEvaluationModal';
 import { PERMISSIONS } from '@omnilert/shared';
-import { formatDuration } from '@/shared/utils/duration';
+import { formatCompactDuration, formatDuration } from '@/shared/utils/duration';
 import { formatDateTimeInManila } from '@/shared/utils/dateTime';
+import { deriveAdjustedShiftSummary } from '@/shared/utils/shiftSummaryAdjustments';
 import { type ComponentType } from 'react';
 import {
   AlertTriangle,
@@ -164,11 +165,11 @@ const AUTH_TYPE_CONFIG: Record<
     diffLabel: 'before shift start',
   },
   tardiness: { label: 'Tardiness', color: 'orange', Icon: AlertTriangle, diffLabel: 'late' },
-  early_check_out: { label: 'Early Check Out', color: 'yellow', Icon: LogOut, diffLabel: 'early' },
+  early_check_out: { label: 'Early Check Out', color: 'red', Icon: LogOut, diffLabel: 'early' },
   late_check_out: {
     label: 'Late Check Out',
-    color: 'purple',
-    Icon: Clock,
+    color: 'red',
+    Icon: LogOut,
     diffLabel: 'after shift end',
   },
   overtime: { label: 'Overtime', color: 'red', Icon: Clock, diffLabel: 'overtime' },
@@ -179,6 +180,7 @@ const AUTH_TYPE_CONFIG: Record<
     diffLabel: 'interim duty duration',
   },
   shift_exchange: { label: 'Shift Exchange', color: 'indigo', Icon: RefreshCw, diffLabel: '' },
+  underbreak: { label: 'Underbreak', color: 'amber', Icon: Coffee, diffLabel: '' },
 };
 
 const OVERTIME_TYPE_LABELS: Record<string, string> = {
@@ -188,6 +190,7 @@ const OVERTIME_TYPE_LABELS: Record<string, string> = {
 
 const STATUS_VARIANT: Record<string, 'warning' | 'success' | 'danger' | 'default'> = {
   pending: 'warning',
+  locked: 'warning',
   approved: 'success',
   rejected: 'danger',
   no_approval_needed: 'default',
@@ -195,10 +198,46 @@ const STATUS_VARIANT: Record<string, 'warning' | 'success' | 'danger' | 'default
 
 const STATUS_LABEL: Record<string, string> = {
   pending: 'Pending',
+  locked: 'Locked',
   approved: 'Approved',
   rejected: 'Rejected',
   no_approval_needed: 'No Approval Needed',
 };
+
+function isPendingApprovalStatus(status: string | null | undefined): boolean {
+  return status === 'pending' || status === 'locked';
+}
+
+// ─── Overtime blocker utility ─────────────────────────────────────────────────
+
+function deriveOvertimeBlockState(auths: Array<{ auth_type: string; status: string }>): {
+  blocked: boolean;
+  blockerLabels: string[];
+} {
+  const BLOCKER_TYPES = new Set([
+    'early_check_in',
+    'tardiness',
+    'early_check_out',
+    'late_check_out',
+    'interim_duty',
+    'underbreak',
+  ]);
+  const AUTH_LABELS: Record<string, string> = {
+    early_check_in: 'Early Check In',
+    tardiness: 'Tardiness',
+    early_check_out: 'Early Check Out',
+    late_check_out: 'Late Check Out',
+    interim_duty: 'Interim Duty',
+    underbreak: 'Underbreak',
+  };
+  const pendingBlockers = auths.filter(
+    (a) => BLOCKER_TYPES.has(a.auth_type) && a.status === 'pending',
+  );
+  return {
+    blocked: pendingBlockers.length > 0,
+    blockerLabels: pendingBlockers.map((a) => AUTH_LABELS[a.auth_type] ?? a.auth_type),
+  };
+}
 
 // ─── Authorization Card ───────────────────────────────────────────────────────
 
@@ -208,6 +247,7 @@ const AuthorizationCard = memo(
     currentUserId,
     canApprove,
     canSubmitPublicAuthRequest,
+    siblingAuths,
     onReasonSubmit,
     onApprove,
     onReject,
@@ -216,6 +256,7 @@ const AuthorizationCard = memo(
     currentUserId: string;
     canApprove: boolean;
     canSubmitPublicAuthRequest: boolean;
+    siblingAuths: Array<{ auth_type: string; status: string }>;
     onReasonSubmit: (id: string, reason: string) => Promise<void>;
     onApprove: (
       id: string,
@@ -254,6 +295,10 @@ const AuthorizationCard = memo(
       auth.status === 'pending' && isOwner && needsReason && canSubmitPublicAuthRequest;
     const showSubmitReasonPermissionHint =
       auth.status === 'pending' && isOwner && needsReason && !canSubmitPublicAuthRequest;
+    const isOvertime = auth.auth_type === 'overtime';
+    const { blocked: overtimeBlocked, blockerLabels } = isOvertime
+      ? deriveOvertimeBlockState(siblingAuths)
+      : { blocked: false, blockerLabels: [] };
 
     const iconColorCls: Record<string, string> = {
       blue: 'bg-blue-100 text-blue-600',
@@ -262,6 +307,7 @@ const AuthorizationCard = memo(
       indigo: 'bg-indigo-100 text-indigo-600',
       purple: 'bg-purple-100 text-purple-600',
       red: 'bg-red-100 text-red-600',
+      amber: 'bg-amber-100 text-amber-600',
       gray: 'bg-gray-100 text-gray-600',
     };
 
@@ -327,6 +373,14 @@ const AuthorizationCard = memo(
           </div>
         )}
 
+        {auth.auth_type === 'overtime' && auth.status === 'locked' && (
+          <div className="rounded bg-amber-50 p-2 text-xs text-amber-700">
+            {blockerLabels.length > 0
+              ? `Resolve ${blockerLabels.join(' and ')} before reviewing overtime.`
+              : 'Resolve the remaining shift authorizations before reviewing overtime.'}
+          </div>
+        )}
+
         {auth.status === 'rejected' && auth.rejection_reason && (
           <div className="rounded bg-red-50 p-2 text-xs text-red-700">
             <span className="font-medium">Rejection reason: </span>
@@ -348,17 +402,34 @@ const AuthorizationCard = memo(
         )}
 
         {canManagerAct && auth.auth_type === 'overtime' && !rejectMode && (
-          <div className="flex gap-2">
-            <Button size="sm" variant="success" onClick={() => setShowOvertimeModal(true)}>
-              <span className="flex items-center gap-1">
-                <CheckCircle className="h-3.5 w-3.5" /> Approve
-              </span>
-            </Button>
-            <Button size="sm" variant="danger" onClick={() => setRejectMode(true)}>
-              <span className="flex items-center gap-1">
-                <XCircle className="h-3.5 w-3.5" /> Reject
-              </span>
-            </Button>
+          <div className="space-y-1">
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="success"
+                disabled={overtimeBlocked}
+                onClick={() => setShowOvertimeModal(true)}
+              >
+                <span className="flex items-center gap-1">
+                  <CheckCircle className="h-3.5 w-3.5" /> Approve
+                </span>
+              </Button>
+              <Button
+                size="sm"
+                variant="danger"
+                disabled={overtimeBlocked}
+                onClick={() => setRejectMode(true)}
+              >
+                <span className="flex items-center gap-1">
+                  <XCircle className="h-3.5 w-3.5" /> Reject
+                </span>
+              </Button>
+            </div>
+            {overtimeBlocked && (
+              <p className="text-xs text-amber-600 mt-1">
+                Resolve {blockerLabels.join(' and ')} before reviewing overtime.
+              </p>
+            )}
           </div>
         )}
 
@@ -930,6 +1001,130 @@ const LogEntry = memo(
   },
 );
 
+// ─── Shift Progress Bar ───────────────────────────────────────────────────────
+
+function ShiftProgressBar({
+  label,
+  value,
+  max,
+  color,
+  adjusted = false,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  color: 'blue' | 'amber';
+  adjusted?: boolean;
+}) {
+  const isOverflow = value > max && max > 0;
+  const displayMax = isOverflow ? value : max;
+  const normalPct = max > 0 ? Math.min((max / displayMax) * 100, 100) : 0;
+  const fillPct = displayMax > 0 ? Math.min((value / displayMax) * 100, 100) : 0;
+
+  const trackCls = 'h-2 w-full overflow-hidden rounded-full bg-gray-100 relative';
+  const normalFillCls =
+    color === 'blue'
+      ? 'h-full rounded-full bg-blue-500'
+      : 'h-full rounded-full bg-amber-400';
+  const overflowFillCls = 'h-full rounded-full bg-red-400';
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-[11px]">
+        <span className="font-medium text-gray-600 uppercase tracking-wide">
+          {label}
+          {adjusted ? ' (ADJUSTED)' : ''}
+        </span>
+        <span className="text-gray-500 tabular-nums">
+          <span className="sm:hidden">
+            {formatCompactDuration(value)} / {formatCompactDuration(max)}
+          </span>
+          <span className="hidden sm:inline">
+            {formatDuration(value)} / {formatDuration(max)}
+          </span>
+        </span>
+      </div>
+      <div className={trackCls}>
+        {isOverflow ? (
+          <>
+            <div
+              className={color === 'blue' ? 'h-full bg-blue-500' : 'h-full bg-amber-400'}
+              style={{ width: `${normalPct}%`, position: 'absolute', top: 0, left: 0 }}
+            />
+            <div className={overflowFillCls} style={{ width: `${fillPct}%`, position: 'absolute', top: 0, left: 0 }} />
+            <div
+              style={{
+                position: 'absolute',
+                top: 0,
+                bottom: 0,
+                left: `${normalPct}%`,
+                width: '2px',
+                backgroundColor: 'white',
+                transform: 'translateX(-50%)',
+              }}
+            />
+          </>
+        ) : (
+          <div className={normalFillCls} style={{ width: `${fillPct}%` }} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Shift Stacked Bar ────────────────────────────────────────────────────────
+
+function ShiftStackedBar({
+  segments,
+  total,
+  adjusted = false,
+}: {
+  segments: { label: string; value: number; color: 'blue' | 'amber' | 'purple' }[];
+  total: number;
+  adjusted?: boolean;
+}) {
+  const colorCls: Record<string, string> = {
+    blue: 'bg-blue-500',
+    amber: 'bg-amber-400',
+    purple: 'bg-purple-500',
+  };
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-[11px]">
+        <span className="font-medium text-gray-600 uppercase tracking-wide">
+          Total Active Hours
+          {adjusted ? ' (ADJUSTED)' : ''}
+        </span>
+        <span className="text-gray-500 tabular-nums">
+          <span className="sm:hidden">{formatCompactDuration(total)} total</span>
+          <span className="hidden sm:inline">{formatDuration(total)} total</span>
+        </span>
+      </div>
+      <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100 flex">
+        {total > 0
+          ? segments.map((seg) => (
+              <div
+                key={seg.label}
+                className={colorCls[seg.color]}
+                style={{ width: `${(seg.value / total) * 100}%` }}
+              />
+            ))
+          : null}
+      </div>
+      <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
+        {segments.map((seg) => (
+          <span key={seg.label} className="flex items-center gap-1 text-[11px] text-gray-500">
+            <span className={`h-1.5 w-1.5 rounded-full ${colorCls[seg.color]}`} />
+            <span className="sm:hidden">{formatCompactDuration(seg.value)} {seg.label}</span>
+            <span className="hidden sm:inline">{formatDuration(seg.value)} {seg.label}</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Shift Detail Panel ───────────────────────────────────────────────────────
 
 const ShiftDetailPanel = memo(
@@ -992,14 +1187,64 @@ const ShiftDetailPanel = memo(
       [logs],
     );
 
+    const totalFieldTaskMinutes = useMemo(
+      () =>
+        logs
+          .filter((l) => l.log_type === 'field_task_end')
+          .reduce((sum, l) => sum + (Number((l.changes as any)?.duration_minutes) || 0), 0),
+      [logs],
+    );
+
     const allocatedBreakHours = ALLOCATED_BREAK_HOURS;
     const effectiveAllocatedHours = Math.max(
       0,
       Number(shift.allocated_hours || 0) - allocatedBreakHours,
     );
-    const totalBreakHours = totalBreakMinutes / 60;
-    const totalWorkedHours = Number(shift.total_worked_hours || 0);
-    const netWorkedHours = Math.max(0, totalWorkedHours - totalBreakHours);
+
+    const isActive = shift.status === 'active';
+    const checkInTime = useMemo(
+      () => {
+        const log = [...logs].reverse().find((l: any) => l.log_type === 'check_in');
+        return log ? new Date(log.event_time).getTime() : null;
+      },
+      [logs],
+    );
+    const activeActivityStartMs = activeActivity?.start_time
+      ? new Date(activeActivity.start_time).getTime()
+      : null;
+
+    const [now, setNow] = useState(() => Date.now());
+    useEffect(() => {
+      if (!isActive) return;
+      const id = setInterval(() => setNow(Date.now()), 1000);
+      return () => clearInterval(id);
+    }, [isActive]);
+
+    const liveBreakHours = isActive && activeActivity?.activity_type === 'break' && activeActivityStartMs
+      ? totalBreakMinutes / 60 + (now - activeActivityStartMs) / 3_600_000
+      : totalBreakMinutes / 60;
+    const liveFieldTaskHours = isActive && activeActivity?.activity_type === 'field_task' && activeActivityStartMs
+      ? totalFieldTaskMinutes / 60 + (now - activeActivityStartMs) / 3_600_000
+      : totalFieldTaskMinutes / 60;
+    const totalBreakHours = liveBreakHours;
+    const totalFieldTaskHours = liveFieldTaskHours;
+    const totalWorkedHours = isActive && checkInTime
+      ? (now - checkInTime) / 3_600_000
+      : Number(shift.total_worked_hours || 0);
+    const adjustedSummary = useMemo(
+      () =>
+        deriveAdjustedShiftSummary({
+          totalWorkedHours,
+          totalBreakHours,
+          totalFieldTaskHours,
+          authorizations,
+        }),
+      [authorizations, totalBreakHours, totalFieldTaskHours, totalWorkedHours],
+    );
+    const adjustedWorkedHours = adjustedSummary.adjusted.workedMinutes / 60;
+    const adjustedBreakHours = adjustedSummary.adjusted.breakMinutes / 60;
+    const adjustedFieldTaskHours = adjustedSummary.adjusted.fieldTaskMinutes / 60;
+    const adjustedTotalActiveHours = adjustedSummary.adjusted.totalActiveMinutes / 60;
 
     const highlightIdx = useMemo(() => {
       if (!highlightLog) return -1;
@@ -1109,70 +1354,57 @@ const ShiftDetailPanel = memo(
                   Shift Summary
                 </span>
               </div>
-              <div className="grid grid-cols-2 gap-x-6 gap-y-3 px-4 py-3">
-                <div>
-                  <p className="text-[11px] uppercase tracking-wide text-gray-400">Shift Start</p>
-                  <p className="mt-0.5 text-sm font-medium text-gray-800">
-                    {fmtShift(shift.shift_start)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[11px] uppercase tracking-wide text-gray-400">Shift End</p>
-                  <p className="mt-0.5 text-sm font-medium text-gray-800">
-                    {fmtShift(shift.shift_end)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[11px] uppercase tracking-wide text-gray-400">
-                    Allocated Hours
-                  </p>
-                  <p className="mt-0.5 text-sm font-medium text-gray-800">
-                    {formatDuration(effectiveAllocatedHours)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[11px] uppercase tracking-wide text-gray-400">
-                    Allocated Breaks
-                  </p>
-                  <p className="mt-0.5 text-sm font-medium text-gray-800">
-                    {formatDuration(allocatedBreakHours)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[11px] uppercase tracking-wide text-gray-400 text-blue-600">
-                    Net Worked Hours
-                  </p>
-                  <p className="mt-0.5 text-sm font-bold text-blue-700">
-                    {formatDuration(netWorkedHours)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[11px] uppercase tracking-wide text-gray-400">
-                    Total Active Hours
-                  </p>
-                  <p className="mt-0.5 text-sm font-medium text-gray-800">
-                    {formatDuration(totalWorkedHours)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[11px] uppercase tracking-wide text-gray-400">
-                    Total Break Hours
-                  </p>
-                  <p className="mt-0.5 text-sm font-medium text-gray-800">
-                    {formatDuration(totalBreakHours)}
-                  </p>
-                </div>
-                {shift.pending_approvals > 0 && (
+              <div className="px-4 py-3 space-y-3">
+                <div className="grid grid-cols-2 gap-x-6 gap-y-2">
                   <div>
-                    <p className="text-[11px] uppercase tracking-wide text-gray-400">
-                      Pending Approvals
-                    </p>
-                    <p className="mt-0.5 text-sm font-medium text-amber-700 font-bold flex items-center gap-1">
-                      <AlertTriangle className="h-3.5 w-3.5" />
-                      {shift.pending_approvals}
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400">Shift Start</p>
+                    <p className="mt-0.5 text-sm font-medium text-gray-800">
+                      {fmtShift(shift.shift_start)}
                     </p>
                   </div>
-                )}
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wide text-gray-400">Shift End</p>
+                    <p className="mt-0.5 text-sm font-medium text-gray-800">
+                      {fmtShift(shift.shift_end)}
+                    </p>
+                  </div>
+                  {shift.pending_approvals > 0 && (
+                    <div className="col-span-2">
+                      <p className="text-[11px] uppercase tracking-wide text-gray-400">
+                        Pending Approvals
+                      </p>
+                      <p className="mt-0.5 text-sm font-bold text-amber-700 flex items-center gap-1">
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                        {shift.pending_approvals}
+                      </p>
+                    </div>
+                  )}
+                </div>
+                <div className="border-t border-gray-100 pt-3 space-y-3">
+                  <ShiftProgressBar
+                    label="Worked Hours"
+                    value={adjustedWorkedHours}
+                    max={effectiveAllocatedHours}
+                    color="blue"
+                    adjusted={adjustedSummary.flags.workedAdjusted}
+                  />
+                  <ShiftProgressBar
+                    label="Break Hours"
+                    value={adjustedBreakHours}
+                    max={allocatedBreakHours}
+                    color="amber"
+                    adjusted={adjustedSummary.flags.breakAdjusted}
+                  />
+                  <ShiftStackedBar
+                    total={adjustedTotalActiveHours}
+                    segments={[
+                      { label: 'worked', value: adjustedWorkedHours, color: 'blue' },
+                      { label: 'break', value: adjustedBreakHours, color: 'amber' },
+                      { label: 'field task', value: adjustedFieldTaskHours, color: 'purple' },
+                    ]}
+                    adjusted={adjustedSummary.flags.totalAdjusted}
+                  />
+                </div>
               </div>
               {shift.status === 'active' && (
                 <div className="border-t border-gray-100 bg-gray-50/50 px-4 py-3 space-y-3">
@@ -1247,6 +1479,7 @@ const ShiftDetailPanel = memo(
                         currentUserId={currentUserId}
                         canApprove={canApprove}
                         canSubmitPublicAuthRequest={canSubmitPublicAuthRequest}
+                        siblingAuths={authorizations.filter((a: any) => a.auth_type !== 'overtime')}
                         onReasonSubmit={handleReasonSubmit}
                         onApprove={handleApprove}
                         onReject={handleReject}
@@ -1823,7 +2056,7 @@ export function ScheduleTab() {
         if (!prev || prev.id !== data.shift_id) return prev;
         return { ...prev, authorizations: [...(prev.authorizations || []), data] };
       });
-      if (data.status === 'pending') {
+      if (selectedShift?.id !== data.shift_id && isPendingApprovalStatus(data.status)) {
         setShifts((prev) =>
           prev.map((s) =>
             s.id === data.shift_id
@@ -1837,13 +2070,67 @@ export function ScheduleTab() {
     socket.on('shift:authorization-updated', (data: any) => {
       setSelectedShift((prev: any) => {
         if (!prev || prev.id !== data.shift_id) return prev;
+        const updatedAuths = (prev.authorizations || []).map((a: any) =>
+          a.id === data.id ? data : a,
+        );
+        const newPending = updatedAuths.filter((a: any) => isPendingApprovalStatus(a.status)).length;
+        setShifts((prevShifts) =>
+          prevShifts.map((s) =>
+            s.id === prev.id ? { ...s, pending_approvals: newPending } : s,
+          ),
+        );
         return {
           ...prev,
-          authorizations: (prev.authorizations || []).map((a: any) =>
-            a.id === data.id ? data : a,
-          ),
+          authorizations: updatedAuths,
+          pending_approvals: newPending,
         };
       });
+      if (selectedShift?.id !== data.shift_id) {
+        const wasPending = isPendingApprovalStatus(data.previous_status);
+        const isPending = isPendingApprovalStatus(data.status);
+        if (wasPending !== isPending) {
+          setShifts((prev) =>
+            prev.map((s) =>
+              s.id === data.shift_id
+                ? {
+                    ...s,
+                    pending_approvals: Math.max(
+                      0,
+                      (s.pending_approvals ?? 0) + (isPending ? 1 : -1),
+                    ),
+                  }
+                : s,
+            ),
+          );
+        }
+      }
+    });
+
+    socket.on('shift:authorization-deleted', (data: any) => {
+      setSelectedShift((prev: any) => {
+        if (!prev || prev.id !== data.shift_id) return prev;
+        const remainingAuths = (prev.authorizations || []).filter((a: any) => a.id !== data.id);
+        const newPending = remainingAuths.filter((a: any) => isPendingApprovalStatus(a.status)).length;
+        setShifts((prevShifts) =>
+          prevShifts.map((s) =>
+            s.id === prev.id ? { ...s, pending_approvals: newPending } : s,
+          ),
+        );
+        return {
+          ...prev,
+          authorizations: remainingAuths,
+          pending_approvals: newPending,
+        };
+      });
+      if (selectedShift?.id !== data.shift_id && isPendingApprovalStatus(data.status)) {
+        setShifts((prev) =>
+          prev.map((s) =>
+            s.id === data.shift_id
+              ? { ...s, pending_approvals: Math.max(0, (s.pending_approvals ?? 0) - 1) }
+              : s,
+          ),
+        );
+      }
     });
 
     return () => {
@@ -1852,8 +2139,9 @@ export function ScheduleTab() {
       socket.off('shift:log-new');
       socket.off('shift:authorization-new');
       socket.off('shift:authorization-updated');
+      socket.off('shift:authorization-deleted');
     };
-  }, [socket]);
+  }, [selectedShift?.id, socket]);
 
   useEffect(() => {
     if (!socket) return;
@@ -2435,11 +2723,19 @@ export function ScheduleTab() {
                     onAuthorizationUpdate={(updatedAuth) => {
                       setSelectedShift((prev: any) => {
                         if (!prev) return prev;
+                        const updatedAuths = (prev.authorizations || []).map((a: any) =>
+                          a.id === updatedAuth.id ? updatedAuth : a,
+                        );
+                        const newPending = updatedAuths.filter((a: any) => isPendingApprovalStatus(a.status)).length;
+                        setShifts((prevShifts) =>
+                          prevShifts.map((s) =>
+                            s.id === prev.id ? { ...s, pending_approvals: newPending } : s,
+                          ),
+                        );
                         return {
                           ...prev,
-                          authorizations: (prev.authorizations || []).map((a: any) =>
-                            a.id === updatedAuth.id ? updatedAuth : a,
-                          ),
+                          authorizations: updatedAuths,
+                          pending_approvals: newPending,
                         };
                       });
                     }}

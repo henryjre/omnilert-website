@@ -14,8 +14,12 @@ import {
   getActiveAttendancesForWebsiteUserKey,
   getAttendanceIdentityByAttendanceId,
   getEmployeeByWebsiteUserKey,
-  upsertBreakWorkEntry as upsertBreakWorkEntryRecord,
+  setBreakWorkEntryDuration as setBreakWorkEntryDurationRecord,
 } from './odoo.service.js';
+import {
+  getTotalEndedBreakMinutesByUserAndDate,
+  toUtcDateBucket,
+} from './breakDuration.service.js';
 import { emitStoreAuditEvent } from './storeAuditRealtime.service.js';
 import { SYSTEM_ROLES } from '@omnilert/shared';
 
@@ -677,7 +681,7 @@ interface ShiftActivityRow {
   [key: string]: unknown;
 }
 
-interface BreakWorkEntryUpsertResult {
+interface BreakWorkEntrySetResult {
   id: number;
   action: 'created' | 'updated';
   durationHours: number;
@@ -743,15 +747,19 @@ interface AttendanceProcessorDeps {
   }) => Promise<{ activity: ShiftActivityRow; log: AttendanceShiftLogRow }>;
   listEndedUncalculatedBreakActivities: (shiftId: string) => Promise<ShiftActivityRow[]>;
   markShiftActivitiesCalculated: (activityIds: string[]) => Promise<number>;
+  getTotalEndedBreakMinutesByUserAndDate: (input: {
+    userId: string;
+    date: string;
+  }) => Promise<number>;
   findOdooEmployeeByWebsiteUserKey: (
     websiteUserKey: string,
     companyId: number,
   ) => Promise<{ id: number; name: string } | null>;
-  upsertBreakWorkEntry: (input: {
+  setBreakWorkEntryDuration: (input: {
     employeeId: number;
     date: string;
     durationMinutes: number;
-  }) => Promise<BreakWorkEntryUpsertResult | null>;
+  }) => Promise<BreakWorkEntrySetResult | null>;
   endShiftActivity: (input: {
     userId: string;
     shiftId: string;
@@ -759,6 +767,7 @@ interface AttendanceProcessorDeps {
     endedAt?: Date;
   }) => Promise<{ activity: ShiftActivityRow; log: AttendanceShiftLogRow }>;
   deleteEarlyCheckOutAuthByShiftLogId: (shiftLogId: string) => Promise<boolean>;
+  deleteUnderbreakAuthByShiftId: (shiftId: string) => Promise<boolean>;
   deleteShiftLog: (input: { odooAttendanceId?: number; shiftId?: string; logType: string }) => Promise<number>;
   checkOutAttendancesByIds: (attendanceIds: number[], checkOutTime: Date) => Promise<void>;
   reassignUserToSingleCheckedInBranch: (userId: string, branchId: string) => Promise<void>;
@@ -1138,9 +1147,11 @@ const defaultAttendanceProcessorDeps: AttendanceProcessorDeps = {
       await db.getDb()('shift_activities').whereIn('id', activityIds).update({ is_calculated: true }),
     );
   },
+  getTotalEndedBreakMinutesByUserAndDate: async (input) =>
+    getTotalEndedBreakMinutesByUserAndDate(input.userId, input.date),
   findOdooEmployeeByWebsiteUserKey: async (websiteUserKey, companyId) =>
     getEmployeeByWebsiteUserKey(websiteUserKey, companyId),
-  upsertBreakWorkEntry: async (input) => upsertBreakWorkEntryRecord(input),
+  setBreakWorkEntryDuration: async (input) => setBreakWorkEntryDurationRecord(input),
   endShiftActivity: async (input) => {
     const result = await endShiftActivityRecord({
       userId: input.userId,
@@ -1177,6 +1188,22 @@ const defaultAttendanceProcessorDeps: AttendanceProcessorDeps = {
         .decrement('pending_approvals', 1);
     }
 
+    return true;
+  },
+  deleteUnderbreakAuthByShiftId: async (shiftId) => {
+    const tenantDb = db.getDb();
+    const auth = (await tenantDb('shift_authorizations')
+      .where({ shift_id: shiftId, auth_type: 'underbreak' })
+      .first()) as AttendanceShiftAuthorizationRow | null;
+    if (!auth) {
+      return false;
+    }
+    await tenantDb('shift_authorizations').where({ id: auth.id }).delete();
+    if (auth.status === 'pending' && typeof auth.shift_id === 'string' && auth.shift_id.trim()) {
+      await tenantDb('employee_shifts')
+        .where({ id: auth.shift_id })
+        .decrement('pending_approvals', 1);
+    }
     return true;
   },
   checkOutAttendancesByIds: async (attendanceIds, checkOutTime) => {
@@ -1340,7 +1367,7 @@ async function autoEndOpenShiftActivitiesOnCheckOut(input: {
   }
 }
 
-async function syncUncalculatedBreaksToWorkEntry(input: {
+async function syncBreakWorkEntryToDateTotal(input: {
   deps: AttendanceProcessorDeps;
   activeShift: AttendanceShiftRow;
   branch: AttendanceBranchRow;
@@ -1349,21 +1376,11 @@ async function syncUncalculatedBreaksToWorkEntry(input: {
   const { deps, activeShift, branch, resolvedIdentity } = input;
   const websiteUserKey = String(resolvedIdentity.websiteUserKey ?? '').trim();
   const odooBranchId = Number(branch.odoo_branch_id ?? 0);
-
-  if (!websiteUserKey || !Number.isFinite(odooBranchId) || odooBranchId <= 0) {
-    return;
-  }
-
+  const userId = String(activeShift.user_id ?? '').trim();
+  const shiftDate = toUtcDateBucket(activeShift.shift_start as string | Date);
   const uncalculatedBreaks = await deps.listEndedUncalculatedBreakActivities(String(activeShift.id));
-  if (uncalculatedBreaks.length === 0) {
-    return;
-  }
 
-  const totalBreakMinutes = uncalculatedBreaks.reduce(
-    (sum, activity) => sum + (Number(activity.duration_minutes) || 0),
-    0,
-  );
-  if (totalBreakMinutes <= 0) {
+  if (!websiteUserKey || !userId || !Number.isFinite(odooBranchId) || odooBranchId <= 0) {
     return;
   }
 
@@ -1373,13 +1390,22 @@ async function syncUncalculatedBreaksToWorkEntry(input: {
   }
 
   try {
-    const shiftDate = new Date(activeShift.shift_start as string | Date).toISOString().split('T')[0];
-    await deps.upsertBreakWorkEntry({
-      employeeId: odooEmployee.id,
+    const totalBreakMinutes = await deps.getTotalEndedBreakMinutesByUserAndDate({
+      userId,
       date: shiftDate,
-      durationMinutes: totalBreakMinutes,
     });
-    await deps.markShiftActivitiesCalculated(uncalculatedBreaks.map((activity) => String(activity.id)));
+
+    if (totalBreakMinutes > 0) {
+      await deps.setBreakWorkEntryDuration({
+        employeeId: odooEmployee.id,
+        date: shiftDate,
+        durationMinutes: totalBreakMinutes,
+      });
+    }
+
+    if (uncalculatedBreaks.length > 0) {
+      await deps.markShiftActivitiesCalculated(uncalculatedBreaks.map((activity) => String(activity.id)));
+    }
   } catch (err) {
     logger.error(
       {
@@ -1748,15 +1774,15 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
         endedAt: eventTime,
       });
 
-      // 2. Sync newly completed break time into the Odoo break work entry
-      await syncUncalculatedBreaksToWorkEntry({
+      // 2. Reconcile the Odoo break work entry to the employee's total break minutes for that date
+      await syncBreakWorkEntryToDateTotal({
         deps,
         activeShift,
         branch,
         resolvedIdentity,
       });
 
-      // 3. Threshold check for Overtime Authorization and Peer Evaluation
+      // 3. Threshold check for Peer Evaluation
       const grossWorkedHours = updatedTotalWorkedHours ?? Number(activeShift.total_worked_hours || 0);
       const allocatedHours = Number(activeShift.allocated_hours || 0);
       checkoutCompletionMetrics = await resolveCheckoutCompletionMetrics({
@@ -1765,41 +1791,6 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
         allocatedHours,
         grossWorkedHours,
       });
-
-      if (checkoutCompletionMetrics.netWorkedHours > checkoutCompletionMetrics.effectiveAllocatedHours) {
-        const existingOT = await tenantDb('shift_authorizations')
-          .where({ shift_id: activeShift.id, auth_type: 'overtime', shift_log_id: log.id })
-          .first();
-
-        if (!existingOT) {
-          const overtimeMinutes = Math.round(
-            (checkoutCompletionMetrics.netWorkedHours -
-              checkoutCompletionMetrics.effectiveAllocatedHours) *
-              60,
-          );
-          const [auth] = await tenantDb('shift_authorizations')
-            .insert({
-              company_id: branch.company_id,
-              shift_id: activeShift.id,
-              shift_log_id: log.id,
-              branch_id: branch.id,
-              user_id: activeShift.user_id ?? null,
-              auth_type: 'overtime',
-              diff_minutes: overtimeMinutes,
-              needs_employee_reason: true,
-              status: 'pending',
-            })
-            .returning('*');
-          
-          await tenantDb('employee_shifts')
-            .where({ id: activeShift.id })
-            .increment('pending_approvals', 1);
-
-          deps.emitSocketEvent('shift:authorization-new', auth as Record<string, unknown>);
-        }
-
-        // Trigger Peer Evaluation (Already handled by existing check below, but we ensure conditions are met)
-      }
     }
 
     if (shift && !skipStandardAuthorizationFlow) {
@@ -1833,6 +1824,20 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
               );
               deps.emitSocketEvent('shift:authorization-voided', {
                 shift_id: prevCheckOutLog.shift_id ?? shift?.id ?? null,
+                branch_id: branch.id,
+              });
+            }
+          }
+          // Void any underbreak auth from the previous checkout — employee is back, more breaks may occur
+          if (shift?.id) {
+            const voidedUnderbreak = await deps.deleteUnderbreakAuthByShiftId(shift.id as string);
+            if (voidedUnderbreak) {
+              logger.info(
+                { attendanceId: payload.id, shiftId: shift.id },
+                'Voided underbreak authorization on re-check-in',
+              );
+              deps.emitSocketEvent('shift:authorization-voided', {
+                shift_id: shift.id,
                 branch_id: branch.id,
               });
             }
@@ -1931,6 +1936,38 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
             });
           }
           deps.emitSocketEvent('shift:authorization-new', auth as Record<string, unknown>);
+        }
+
+        // Underbreak: generate if total ended break time < 60 minutes
+        const breakActivities = await deps.listEndedBreakActivitiesByShiftId(shift.id as string);
+        const totalBreakMinutes = breakActivities.reduce(
+          (sum, a) => sum + (Number(a.duration_minutes) || 0),
+          0,
+        );
+        if (totalBreakMinutes < 60) {
+          const underbreakDiffMinutes = 60 - totalBreakMinutes;
+          const underbreakAuth = await deps.createShiftAuthorization({
+            company_id: branch.company_id,
+            shift_id: shift.id as string,
+            shift_log_id: log.id,
+            branch_id: branch.id,
+            user_id: (shift.user_id as string) ?? null,
+            auth_type: 'underbreak',
+            diff_minutes: underbreakDiffMinutes,
+            needs_employee_reason: true,
+            status: 'pending',
+          });
+          await deps.incrementShiftPendingApprovals(shift.id as string);
+          if (shift.user_id) {
+            await deps.createAndDispatchNotification({
+              userId: shift.user_id as string,
+              title: 'Underbreak - Reason Required',
+              message: `Your recorded break time is ${totalBreakMinutes} min, which is less than the required 1 hour. Please submit a reason in the Authorization Requests tab.`,
+              type: 'warning',
+              linkUrl: '/account/schedule',
+            });
+          }
+          deps.emitSocketEvent('shift:authorization-new', underbreakAuth as Record<string, unknown>);
         }
       }
     }

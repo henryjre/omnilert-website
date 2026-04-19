@@ -25,6 +25,7 @@ test('createShiftAuthorizationExpiryRunner auto-rejects expired missing-reason a
     resolvedByName: string;
     companyId?: string | null;
   }> = [];
+  const reconciliations: Array<{ shiftId: string; triggeringAuthId: string }> = [];
   const cronRuns: Array<Record<string, unknown>> = [];
 
   const runExpiry = createShiftAuthorizationExpiryRunner({
@@ -36,6 +37,7 @@ test('createShiftAuthorizationExpiryRunner auto-rejects expired missing-reason a
         needs_employee_reason: true,
         employee_reason: '',
         status: 'pending',
+        shift_id: 'shift-early',
         created_at: '2026-04-10T10:00:00.000Z',
       },
       {
@@ -44,6 +46,7 @@ test('createShiftAuthorizationExpiryRunner auto-rejects expired missing-reason a
         needs_employee_reason: true,
         employee_reason: '   ',
         status: 'pending',
+        shift_id: 'shift-ot',
         created_at: '2026-04-10T10:00:00.000Z',
       },
       {
@@ -52,6 +55,7 @@ test('createShiftAuthorizationExpiryRunner auto-rejects expired missing-reason a
         needs_employee_reason: true,
         employee_reason: null,
         status: 'pending',
+        shift_id: 'shift-interim',
         created_at: '2026-04-10T10:00:00.000Z',
       },
       {
@@ -60,6 +64,7 @@ test('createShiftAuthorizationExpiryRunner auto-rejects expired missing-reason a
         needs_employee_reason: true,
         employee_reason: null,
         status: 'pending',
+        shift_id: 'shift-late',
         created_at: '2026-04-10T10:00:00.000Z',
       },
       {
@@ -68,6 +73,7 @@ test('createShiftAuthorizationExpiryRunner auto-rejects expired missing-reason a
         needs_employee_reason: true,
         employee_reason: '',
         status: 'pending',
+        shift_id: 'shift-tardy',
         created_at: '2026-04-10T10:00:00.000Z',
       },
       {
@@ -76,6 +82,7 @@ test('createShiftAuthorizationExpiryRunner auto-rejects expired missing-reason a
         needs_employee_reason: true,
         employee_reason: 'Traffic and approval note',
         status: 'pending',
+        shift_id: 'shift-ot-reason',
         created_at: '2026-04-10T10:00:00.000Z',
       },
       {
@@ -84,6 +91,7 @@ test('createShiftAuthorizationExpiryRunner auto-rejects expired missing-reason a
         needs_employee_reason: true,
         employee_reason: '',
         status: 'pending',
+        shift_id: 'shift-fresh',
         created_at: '2026-04-11T11:30:00.000Z',
       },
       {
@@ -92,6 +100,7 @@ test('createShiftAuthorizationExpiryRunner auto-rejects expired missing-reason a
         needs_employee_reason: true,
         employee_reason: '',
         status: 'pending',
+        shift_id: 'shift-ignored',
         created_at: '2026-04-10T10:00:00.000Z',
       },
     ],
@@ -108,6 +117,12 @@ test('createShiftAuthorizationExpiryRunner auto-rejects expired missing-reason a
     notifyCronJobRun: async (input: Record<string, unknown>) => {
       cronRuns.push(input);
     },
+    reconcileManagedOvertime: async (input: { shiftId: string; triggeringAuth?: Record<string, unknown> | null }) => {
+      reconciliations.push({
+        shiftId: input.shiftId,
+        triggeringAuthId: String(input.triggeringAuth?.id ?? ''),
+      });
+    },
     logInfo: () => undefined,
     logError: () => undefined,
   } as any);
@@ -116,7 +131,7 @@ test('createShiftAuthorizationExpiryRunner auto-rejects expired missing-reason a
 
   assert.deepEqual(
     rejections.map((entry) => String(entry.auth.id)),
-    ['auth-early', 'auth-ot', 'auth-interim', 'auth-late', 'auth-tardy', 'auth-ignored'],
+    ['auth-early', 'auth-interim', 'auth-late', 'auth-tardy', 'auth-ignored'],
   );
   for (const entry of rejections) {
     assert.equal(
@@ -126,12 +141,19 @@ test('createShiftAuthorizationExpiryRunner auto-rejects expired missing-reason a
     assert.equal(entry.resolvedBy, null);
     assert.equal(entry.resolvedByName, 'System');
   }
+  assert.deepEqual(reconciliations, [
+    { shiftId: 'shift-early', triggeringAuthId: 'auth-early' },
+    { shiftId: 'shift-interim', triggeringAuthId: 'auth-interim' },
+    { shiftId: 'shift-late', triggeringAuthId: 'auth-late' },
+    { shiftId: 'shift-tardy', triggeringAuthId: 'auth-tardy' },
+    { shiftId: 'shift-ignored', triggeringAuthId: 'auth-ignored' },
+  ]);
 
   assert.equal(cronRuns.length, 1);
   assert.equal(cronRuns[0]?.status, 'success');
   assert.deepEqual(cronRuns[0]?.stats, {
-    processed: 6,
-    succeeded: 6,
+    processed: 5,
+    succeeded: 5,
     failed: 0,
     skipped: 0,
   });

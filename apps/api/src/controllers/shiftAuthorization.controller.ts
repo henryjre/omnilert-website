@@ -11,8 +11,11 @@ import {
   assertEmployeeReasonSubmittedForManualReject,
   createShiftAuthorizationRejectResolver,
   hasSubmittedEmployeeReason,
+  reconcileOvertimeForShift,
+  shouldReconcileManagedOvertimeForAuthType,
   syncShiftAuthorizationWithOdoo,
 } from '../services/shiftAuthorizationResolution.service.js';
+import { computeOvertimeBlockerState } from '../services/overtimeDependency.service.js';
 
 export {
   cleanupInterimDutyOdooArtifacts,
@@ -20,6 +23,23 @@ export {
 } from '../services/shiftAuthorizationResolution.service.js';
 
 const rejectShiftAuthorization = createShiftAuthorizationRejectResolver();
+
+function sendOvertimeBlockedResponse(
+  res: Response,
+  blockerAuthTypes: string[],
+) {
+  const blockerMessage =
+    blockerAuthTypes.length > 0
+      ? `Resolve ${blockerAuthTypes.join(', ')} before reviewing overtime.`
+      : 'Resolve the remaining shift authorizations before reviewing overtime.';
+
+  return res.status(409).json({
+    success: false,
+    error: 'overtime_blocked',
+    message: blockerMessage,
+    data: { overtime_blocked: true, overtime_blocker_auth_types: blockerAuthTypes },
+  });
+}
 
 async function getManagerDisplayName(managerId: string): Promise<string> {
   const managerUser = await db
@@ -85,6 +105,18 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
     if (!auth) throw new AppError(404, 'Authorization not found');
     if (!canReviewSubmittedRequest({ actingUserId: managerId, requestUserId: auth.user_id })) {
       throw new AppError(403, 'You cannot review your own shift authorization');
+    }
+
+    if (auth.auth_type === 'overtime') {
+      const siblingAuths = await db.getDb()('shift_authorizations')
+        .where({ shift_id: auth.shift_id })
+        .whereNot({ id: auth.id })
+        .select('auth_type', 'status');
+
+      const { blocked, blockerAuthTypes } = computeOvertimeBlockerState(siblingAuths);
+      if (auth.status === 'locked' || (auth.status === 'pending' && blocked)) {
+        return sendOvertimeBlockedResponse(res, blockerAuthTypes);
+      }
     }
     if (auth.status !== 'pending') {
       throw new AppError(400, 'Authorization is already resolved');
@@ -172,7 +204,26 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
       });
     }
 
-    res.json({ success: true, data: { ...updated, resolved_by_name: managerName } });
+    if (shouldReconcileManagedOvertimeForAuthType(auth.auth_type)) {
+      try {
+        await reconcileOvertimeForShift({
+          shiftId: String(auth.shift_id),
+          triggeringAuth: auth,
+        });
+      } catch (err) {
+        logger.error(`Failed to reconcile overtime for shift ${auth.shift_id} after approve: ${err}`);
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        ...updated,
+        resolved_by_name: managerName,
+        overtime_blocked: false,
+        overtime_blocker_auth_types: [],
+      },
+    });
   } catch (err) {
     next(err);
   }
@@ -196,6 +247,18 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
     if (!canReviewSubmittedRequest({ actingUserId: managerId, requestUserId: auth.user_id })) {
       throw new AppError(403, 'You cannot review your own shift authorization');
     }
+
+    if (auth.auth_type === 'overtime') {
+      const siblingAuths = await db.getDb()('shift_authorizations')
+        .where({ shift_id: auth.shift_id })
+        .whereNot({ id: auth.id })
+        .select('auth_type', 'status');
+
+      const { blocked, blockerAuthTypes } = computeOvertimeBlockerState(siblingAuths);
+      if (auth.status === 'locked' || (auth.status === 'pending' && blocked)) {
+        return sendOvertimeBlockedResponse(res, blockerAuthTypes);
+      }
+    }
     if (auth.status !== 'pending') {
       throw new AppError(400, 'Authorization is already resolved');
     }
@@ -213,7 +276,26 @@ export async function reject(req: Request, res: Response, next: NextFunction) {
       companyId,
     });
 
-    res.json({ success: true, data: { ...updated, resolved_by_name: managerName } });
+    if (shouldReconcileManagedOvertimeForAuthType(auth.auth_type)) {
+      try {
+        await reconcileOvertimeForShift({
+          shiftId: String(auth.shift_id),
+          triggeringAuth: auth,
+        });
+      } catch (err) {
+        logger.error(`Failed to reconcile overtime for shift ${auth.shift_id} after reject: ${err}`);
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        ...updated,
+        resolved_by_name: managerName,
+        overtime_blocked: false,
+        overtime_blocker_auth_types: [],
+      },
+    });
   } catch (err) {
     next(err);
   }

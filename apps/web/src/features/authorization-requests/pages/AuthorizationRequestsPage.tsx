@@ -36,6 +36,7 @@ import {
   Briefcase,
   ArrowLeftRight,
   ChevronDown,
+  Coffee,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -53,6 +54,7 @@ const AUTH_TYPE_CONFIG: Record<string, { label: string; color: string; Icon: Rea
   late_check_out: { label: 'Late Check Out', color: 'purple', Icon: Clock, diffLabel: 'after shift end' },
   overtime: { label: 'Overtime', color: 'red', Icon: Clock, diffLabel: 'overtime' },
   interim_duty: { label: 'Interim Duty', color: 'indigo', Icon: Briefcase, diffLabel: 'interim duty duration' },
+  underbreak: { label: 'Underbreak', color: 'amber', Icon: Coffee, diffLabel: 'underbreak duration' },
 };
 
 const OVERTIME_TYPE_LABELS: Record<string, string> = {
@@ -64,7 +66,16 @@ const STATUS_VARIANT: Record<string, 'success' | 'danger' | 'warning' | 'default
   approved: 'success',
   rejected: 'danger',
   pending: 'warning',
+  locked: 'warning',
   no_approval_needed: 'default',
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  approved: 'Approved',
+  rejected: 'Rejected',
+  pending: 'Pending',
+  locked: 'Locked',
+  no_approval_needed: 'No Approval Needed',
 };
 
 type StatusTab = 'all' | 'pending' | 'approved' | 'rejected';
@@ -75,6 +86,14 @@ const STATUS_TABS: { id: StatusTab; label: string; icon: LucideIcon }[] = [
   { id: 'approved', label: 'Approved', icon: CheckCircle },
   { id: 'rejected', label: 'Rejected', icon: XCircle },
 ];
+
+function isPendingCrewStatus(status: string | null | undefined): boolean {
+  return status === 'pending' || status === 'locked';
+}
+
+function formatStatusLabel(status: string): string {
+  return STATUS_LABEL[status] ?? (status.charAt(0).toUpperCase() + status.slice(1));
+}
 
 function fmtAmount(amount: string | number | null) {
   if (amount == null) return '—';
@@ -200,7 +219,7 @@ function ManagementDetailPanel({
         </div>
         <div className="flex items-center gap-2">
           <Badge variant={STATUS_VARIANT[request.status] ?? 'warning'}>
-            {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
+            {formatStatusLabel(request.status)}
           </Badge>
           <button
             type="button"
@@ -475,13 +494,20 @@ function ServiceCrewDetailPanel({
 
   const canAct = canActNormally || canForceReject;
 
+  const isOvertimeBlocked = isOvertime && auth.overtime_blocked === true;
+  const blockerLabels = isOvertimeBlocked && Array.isArray(auth.overtime_blocker_auth_types)
+    ? (auth.overtime_blocker_auth_types as string[]).map((t) => AUTH_TYPE_CONFIG[t]?.label ?? t)
+    : [];
+
   const iconColorCls: Record<string, string> = {
-    blue: 'bg-blue-100 text-blue-600',
+    blue:   'bg-blue-100 text-blue-600',
     orange: 'bg-orange-100 text-orange-600',
     yellow: 'bg-yellow-100 text-yellow-600',
     purple: 'bg-purple-100 text-purple-600',
-    red: 'bg-red-100 text-red-600',
-    gray: 'bg-gray-100 text-gray-600',
+    red:    'bg-red-100 text-red-600',
+    indigo: 'bg-indigo-100 text-indigo-600',
+    amber:  'bg-amber-100 text-amber-600',
+    gray:   'bg-gray-100 text-gray-600',
   };
 
   async function handleApprove() {
@@ -536,7 +562,7 @@ function ServiceCrewDetailPanel({
         </div>
         <div className="flex items-center gap-2">
           <Badge variant={STATUS_VARIANT[auth.status] ?? 'warning'}>
-            {auth.status.charAt(0).toUpperCase() + auth.status.slice(1)}
+            {formatStatusLabel(auth.status)}
           </Badge>
           <button
             type="button"
@@ -577,6 +603,17 @@ function ServiceCrewDetailPanel({
               <p className="text-xs font-semibold text-gray-600">Employee Reason</p>
               <p className="mt-0.5 text-sm text-gray-700">{auth.employee_reason}</p>
             </div>
+          </div>
+        )}
+
+        {auth.auth_type === 'overtime' && auth.status === 'locked' && (
+          <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+            <p className="text-sm text-amber-700">
+              {blockerLabels.length > 0
+                ? `Resolve ${blockerLabels.join(', ')} before reviewing overtime.`
+                : 'Resolve the remaining shift authorizations before reviewing overtime.'}
+            </p>
           </div>
         )}
 
@@ -690,6 +727,14 @@ function ServiceCrewDetailPanel({
       {/* Footer actions */}
       {canAct && (
         <div className="border-t border-gray-200 px-6 py-4">
+          {isOvertimeBlocked && (
+            <div className="mb-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+              <p className="text-xs text-amber-700">
+                Resolve {blockerLabels.join(' and ')} before reviewing overtime.
+              </p>
+            </div>
+          )}
           {!rejectMode ? (
             <div className="space-y-3">
               <div className="flex gap-3">
@@ -697,6 +742,7 @@ function ServiceCrewDetailPanel({
                   <Button
                     className="flex-1"
                     variant="success"
+                    disabled={isOvertimeBlocked}
                     onClick={() => {
                       if (isOvertime) {
                         setShowOvertimeModal(true);
@@ -715,7 +761,12 @@ function ServiceCrewDetailPanel({
                     </span>
                   </Button>
                 )}
-                <Button className="flex-1" variant="danger" onClick={() => setRejectMode(true)}>
+                <Button
+                  className="flex-1"
+                  variant="danger"
+                  disabled={isOvertimeBlocked}
+                  onClick={() => setRejectMode(true)}
+                >
                   <span className="flex items-center justify-center gap-1.5">
                     <XCircle className="h-4 w-4" /> Reject
                   </span>
@@ -918,7 +969,7 @@ function ManagementRequestCard({ request, onClick }: { request: any; onClick: ()
           {REQUEST_TYPE_LABELS[request.request_type] ?? request.request_type}
         </p>
         <Badge variant={STATUS_VARIANT[request.status] ?? 'warning'}>
-          {request.status.charAt(0).toUpperCase() + request.status.slice(1)}
+          {formatStatusLabel(request.status)}
         </Badge>
       </div>
 
@@ -972,6 +1023,7 @@ const ICON_COLOR_CLS: Record<string, string> = {
   purple: 'bg-purple-100 text-purple-600',
   red:    'bg-red-100 text-red-600',
   indigo: 'bg-indigo-100 text-indigo-600',
+  amber:  'bg-amber-100 text-amber-600',
   gray:   'bg-gray-100 text-gray-600',
 };
 
@@ -1041,7 +1093,7 @@ function ServiceCrewRequestCard({ auth, onClick }: { auth: any; onClick: () => v
           <p className="font-medium text-gray-900">{config.label}</p>
         </div>
         <Badge variant={STATUS_VARIANT[auth.status] ?? 'warning'}>
-          {auth.status.charAt(0).toUpperCase() + auth.status.slice(1)}
+          {formatStatusLabel(auth.status)}
         </Badge>
       </div>
 
@@ -1135,7 +1187,11 @@ export function AuthorizationRequestsPage() {
   });
 
   const filteredManagement = mgmtTab === 'all' ? managementRequests : managementRequests.filter((r) => r.status === mgmtTab);
-  const filteredServiceCrew = crewTab === 'all' ? serviceCrewRequests : serviceCrewRequests.filter((r) => r.status === crewTab);
+  const filteredServiceCrew = crewTab === 'all'
+    ? serviceCrewRequests
+    : serviceCrewRequests.filter((r) =>
+        crewTab === 'pending' ? isPendingCrewStatus(r.status) : r.status === crewTab,
+      );
   const pageSize = isMobile ? 6 : 12;
   const totalMgmtPages = Math.max(1, Math.ceil(filteredManagement.length / pageSize));
   const totalCrewPages = Math.max(1, Math.ceil(filteredServiceCrew.length / pageSize));
@@ -1234,10 +1290,14 @@ export function AuthorizationRequestsPage() {
         ? { type: 'service_crew', data: { ...prev.data, ...updated } }
         : prev,
     );
+    // Re-fetch the full service-crew list so overtime rows reflect updated
+    // overtime_blocked / overtime_blocker_auth_types metadata after a blocker
+    // auth (e.g. underbreak) is resolved.
+    void fetchRequests();
   }
 
   const mgmtPendingCount = managementRequests.filter((r) => r.status === 'pending').length;
-  const crewPendingCount = serviceCrewRequests.filter((r) => r.status === 'pending').length;
+  const crewPendingCount = serviceCrewRequests.filter((r) => isPendingCrewStatus(r.status)).length;
 
   return (
     <>

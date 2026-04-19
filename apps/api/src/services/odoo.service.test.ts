@@ -17,7 +17,7 @@ const {
   createOdooRpcClient,
   archiveEmployeesByWebsiteUserKey,
   unarchiveEmployeesByWebsiteUserKey,
-  upsertBreakWorkEntry,
+  setBreakWorkEntryDuration,
 } = await import('./odoo.service.js');
 
 type Deferred<T> = {
@@ -235,7 +235,7 @@ test('unarchiveEmployeesByWebsiteUserKey includes inactive employees in lookup a
   assert.deepEqual(calls[1]?.args, [[11], { active: true }]);
 });
 
-test('upsertBreakWorkEntry creates a type-129 break work entry when none exists for the employee and date', async () => {
+test('setBreakWorkEntryDuration creates a type-129 break work entry when none exists for the employee and date', async () => {
   const calls: Array<{
     model: string;
     method: string;
@@ -243,7 +243,7 @@ test('upsertBreakWorkEntry creates a type-129 break work entry when none exists 
     kwargs?: Record<string, unknown>;
   }> = [];
 
-  const result = await upsertBreakWorkEntry(
+  const result = await setBreakWorkEntryDuration(
     {
       employeeId: 501,
       date: '2026-04-02',
@@ -288,7 +288,7 @@ test('upsertBreakWorkEntry creates a type-129 break work entry when none exists 
   ]);
 });
 
-test('upsertBreakWorkEntry increases the existing type-129 break work entry duration by the new break minutes', async () => {
+test('setBreakWorkEntryDuration overwrites the existing type-129 break work entry duration to the exact target', async () => {
   const calls: Array<{
     model: string;
     method: string;
@@ -296,7 +296,7 @@ test('upsertBreakWorkEntry increases the existing type-129 break work entry dura
     kwargs?: Record<string, unknown>;
   }> = [];
 
-  const result = await upsertBreakWorkEntry(
+  const result = await setBreakWorkEntryDuration(
     {
       employeeId: 502,
       date: '2026-04-03',
@@ -324,13 +324,13 @@ test('upsertBreakWorkEntry increases the existing type-129 break work entry dura
     },
   );
 
-  assert.deepEqual(result, { id: 321, action: 'updated', durationHours: 0.75 });
+  assert.deepEqual(result, { id: 321, action: 'updated', durationHours: 0.25 });
   assert.equal(calls.length, 2);
   assert.equal(calls[0]?.model, 'hr.work.entry');
   assert.equal(calls[0]?.method, 'search_read');
   assert.equal(calls[1]?.model, 'hr.work.entry');
   assert.equal(calls[1]?.method, 'write');
-  assert.deepEqual(calls[1]?.args, [[321], { duration: 0.75, name: 'Break - Synced from Omnilert' }]);
+  assert.deepEqual(calls[1]?.args, [[321], { duration: 0.25, name: 'Break - Synced from Omnilert' }]);
 });
 
 test('unarchiveEmployeesByWebsiteUserKey skips calls when website key is blank', async () => {
