@@ -11,6 +11,7 @@ import { useSocket } from '@/shared/hooks/useSocket';
 import { api } from '@/shared/services/api.client';
 import { applyCompanyThemeFromHex, DEFAULT_THEME_COLOR } from '@/shared/utils/theme';
 import { PERMISSIONS } from '@omnilert/shared';
+import { ShiftAuthReasonModal } from '@/features/account/components/ShiftAuthReasonModal';
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -32,6 +33,12 @@ function getShiftExchangeId(linkUrl: string | null | undefined): string | null {
 function getShiftId(linkUrl: string | null | undefined): string | null {
   if (!linkUrl) return null;
   const match = linkUrl.match(/[?&]shiftId=([0-9a-f-]{36})/i);
+  return match?.[1] ?? null;
+}
+
+function getAuthId(linkUrl: string | null | undefined): string | null {
+  if (!linkUrl) return null;
+  const match = linkUrl.match(/[?&]authId=([0-9a-f-]{36})/i);
   return match?.[1] ?? null;
 }
 
@@ -61,6 +68,7 @@ export function TopBar({ onOpenSidebar, onOpenAccountSidebar, accountSidebarOpen
   const { unreadCount, setUnreadCount, increment, decrement, reset, pushNotification } = useNotificationStore();
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<any[]>([]);
+  const [reasonModalAuthId, setReasonModalAuthId] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -192,6 +200,12 @@ export function TopBar({ onOpenSidebar, onOpenAccountSidebar, accountSidebarOpen
       api.put(`/account/notifications/${n.id}/read`).catch(() => {});
       setNotifications((prev) => prev.map((x) => (x.id === n.id ? { ...x, is_read: true } : x)));
       decrement();
+    }
+    const authId = getAuthId(n.link_url);
+    if (authId) {
+      setOpen(false);
+      setReasonModalAuthId(authId);
+      return;
     }
     setOpen(false);
     if (typeof n.link_url === "string" && (n.link_url.startsWith("/account/authorization-requests") || n.link_url.startsWith("/account/cash-requests"))) {
@@ -460,6 +474,14 @@ export function TopBar({ onOpenSidebar, onOpenAccountSidebar, accountSidebarOpen
           </span>
         </motion.button>
       </div>
+      <AnimatePresence>
+        {reasonModalAuthId && (
+          <ShiftAuthReasonModal
+            authId={reasonModalAuthId}
+            onClose={() => setReasonModalAuthId(null)}
+          />
+        )}
+      </AnimatePresence>
     </header>
   );
 }
