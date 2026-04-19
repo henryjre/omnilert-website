@@ -83,6 +83,7 @@ test('createEarlyCheckInJobProcessor creates an early check-in authorization tha
     },
     incrementShiftPendingApprovals: async () => undefined,
     emitSocketEvent: () => undefined,
+    dispatchNotification: async () => undefined,
     logInfo: () => undefined,
   } as any);
 
@@ -102,4 +103,51 @@ test('createEarlyCheckInJobProcessor creates an early check-in authorization tha
   assert.equal(auths[0]?.auth_type, 'early_check_in');
   assert.equal(auths[0]?.needs_employee_reason, true);
   assert.equal(auths[0]?.status, 'pending');
+});
+
+test('createEarlyCheckInJobProcessor dispatches a notification to the employee after creating an early_check_in authorization', async () => {
+  const notifications: Array<Record<string, unknown>> = [];
+  const processJob = createEarlyCheckInJobProcessor({
+    findShiftById: async () => ({
+      id: 'shift-scheduled',
+      user_id: 'user-1',
+      shift_start: '2026-03-20T09:00:00.000Z',
+    }),
+    findShiftLogById: async () => ({
+      id: 'log-check-in',
+      branch_id: 'branch-main',
+      shift_id: 'shift-scheduled',
+      log_type: 'check_in',
+      event_time: '2026-03-20T07:30:00.000Z',
+    }),
+    findExistingAuthorization: async () => null,
+    createShiftAuthorization: async (input: Record<string, unknown>) => ({
+      id: 'auth-1',
+      shift_id: 'shift-scheduled',
+      ...input,
+    }),
+    incrementShiftPendingApprovals: async () => undefined,
+    emitSocketEvent: () => undefined,
+    dispatchNotification: async (input: Record<string, unknown>) => {
+      notifications.push(input);
+    },
+    logInfo: () => undefined,
+  } as any);
+
+  await processJob({
+    id: 'job-3',
+    data: {
+      companyId: 'company-a',
+      branchId: 'branch-main',
+      shiftId: 'shift-scheduled',
+      shiftLogId: 'log-check-in',
+      userId: 'user-1',
+      checkInEventTime: '2026-03-20T07:30:00.000Z',
+    },
+  });
+
+  assert.equal(notifications.length, 1);
+  assert.equal(notifications[0]?.userId, 'user-1');
+  assert.equal(notifications[0]?.title, 'Early Check In - Reason Required');
+  assert.equal(notifications[0]?.type, 'warning');
 });

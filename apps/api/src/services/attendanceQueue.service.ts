@@ -3,6 +3,7 @@ import { getIO } from '../config/socket.js';
 import { db } from '../config/database.js';
 import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
+import { createAndDispatchNotification } from './notification.service.js';
 
 export interface EarlyCheckInAuthJobPayload {
   companyId: string;
@@ -32,6 +33,13 @@ interface EarlyCheckInJobProcessorDeps {
   createShiftAuthorization: (input: Record<string, unknown>) => Promise<Record<string, unknown>>;
   incrementShiftPendingApprovals: (shiftId: string) => Promise<void>;
   emitSocketEvent: (event: string, payload: Record<string, unknown>) => void;
+  dispatchNotification: (input: {
+    userId: string;
+    title: string;
+    message: string;
+    type: 'info' | 'success' | 'danger' | 'warning';
+    linkUrl: string;
+  }) => Promise<void>;
   logInfo: (context: Record<string, unknown>, message: string) => void;
 }
 
@@ -66,6 +74,9 @@ const defaultEarlyCheckInJobProcessorDeps: EarlyCheckInJobProcessorDeps = {
     } catch {
       logger.warn('Socket.IO not available for delayed early check-in authorization emit');
     }
+  },
+  dispatchNotification: async (input) => {
+    await createAndDispatchNotification(input);
   },
   logInfo: (context, message) => {
     logger.info(context, message);
@@ -171,6 +182,16 @@ export function createEarlyCheckInJobProcessor(
 
     await deps.incrementShiftPendingApprovals(shift.id as string);
     deps.emitSocketEvent('shift:authorization-new', auth);
+
+    if (payload.userId) {
+      await deps.dispatchNotification({
+        userId: payload.userId,
+        title: 'Early Check In - Reason Required',
+        message: `You checked in early for your shift. Please submit a reason in the Authorization Requests tab.`,
+        type: 'warning',
+        linkUrl: `/account/schedule?shiftId=${String(auth.shift_id)}&authId=${String(auth.id)}`,
+      });
+    }
 
     deps.logInfo(
       {
