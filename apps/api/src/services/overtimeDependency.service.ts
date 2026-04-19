@@ -36,9 +36,8 @@ export function deriveOvertimeMinutes(input: {
   allocatedHours: number;
   resolvedAdjustments: ResolvedAdjustment[];
 }): number {
-  const ALLOCATED_BREAK_HOURS = 1;
   const netWorkedMinutes = Math.max(0, input.totalWorkedHours - input.totalBreakHours) * 60;
-  const effectiveAllocatedMinutes = Math.max(0, input.allocatedHours - ALLOCATED_BREAK_HOURS) * 60;
+  const allocatedMinutes = Math.max(0, input.allocatedHours) * 60;
 
   let paidMinutes = netWorkedMinutes;
   for (const adj of input.resolvedAdjustments) {
@@ -51,5 +50,5 @@ export function deriveOvertimeMinutes(input: {
     }
   }
 
-  return Math.max(0, paidMinutes - effectiveAllocatedMinutes);
+  return Math.max(0, paidMinutes - allocatedMinutes);
 }

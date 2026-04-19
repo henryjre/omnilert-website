@@ -14,8 +14,12 @@ import {
   getActiveAttendancesForWebsiteUserKey,
   getAttendanceIdentityByAttendanceId,
   getEmployeeByWebsiteUserKey,
-  upsertBreakWorkEntry as upsertBreakWorkEntryRecord,
+  setBreakWorkEntryDuration as setBreakWorkEntryDurationRecord,
 } from './odoo.service.js';
+import {
+  getTotalEndedBreakMinutesByUserAndDate,
+  toUtcDateBucket,
+} from './breakDuration.service.js';
 import { emitStoreAuditEvent } from './storeAuditRealtime.service.js';
 import { SYSTEM_ROLES } from '@omnilert/shared';
 
@@ -677,7 +681,7 @@ interface ShiftActivityRow {
   [key: string]: unknown;
 }
 
-interface BreakWorkEntryUpsertResult {
+interface BreakWorkEntrySetResult {
   id: number;
   action: 'created' | 'updated';
   durationHours: number;
@@ -743,15 +747,19 @@ interface AttendanceProcessorDeps {
   }) => Promise<{ activity: ShiftActivityRow; log: AttendanceShiftLogRow }>;
   listEndedUncalculatedBreakActivities: (shiftId: string) => Promise<ShiftActivityRow[]>;
   markShiftActivitiesCalculated: (activityIds: string[]) => Promise<number>;
+  getTotalEndedBreakMinutesByUserAndDate: (input: {
+    userId: string;
+    date: string;
+  }) => Promise<number>;
   findOdooEmployeeByWebsiteUserKey: (
     websiteUserKey: string,
     companyId: number,
   ) => Promise<{ id: number; name: string } | null>;
-  upsertBreakWorkEntry: (input: {
+  setBreakWorkEntryDuration: (input: {
     employeeId: number;
     date: string;
     durationMinutes: number;
-  }) => Promise<BreakWorkEntryUpsertResult | null>;
+  }) => Promise<BreakWorkEntrySetResult | null>;
   endShiftActivity: (input: {
     userId: string;
     shiftId: string;
@@ -1139,9 +1147,11 @@ const defaultAttendanceProcessorDeps: AttendanceProcessorDeps = {
       await db.getDb()('shift_activities').whereIn('id', activityIds).update({ is_calculated: true }),
     );
   },
+  getTotalEndedBreakMinutesByUserAndDate: async (input) =>
+    getTotalEndedBreakMinutesByUserAndDate(input.userId, input.date),
   findOdooEmployeeByWebsiteUserKey: async (websiteUserKey, companyId) =>
     getEmployeeByWebsiteUserKey(websiteUserKey, companyId),
-  upsertBreakWorkEntry: async (input) => upsertBreakWorkEntryRecord(input),
+  setBreakWorkEntryDuration: async (input) => setBreakWorkEntryDurationRecord(input),
   endShiftActivity: async (input) => {
     const result = await endShiftActivityRecord({
       userId: input.userId,
@@ -1357,7 +1367,7 @@ async function autoEndOpenShiftActivitiesOnCheckOut(input: {
   }
 }
 
-async function syncUncalculatedBreaksToWorkEntry(input: {
+async function syncBreakWorkEntryToDateTotal(input: {
   deps: AttendanceProcessorDeps;
   activeShift: AttendanceShiftRow;
   branch: AttendanceBranchRow;
@@ -1366,21 +1376,11 @@ async function syncUncalculatedBreaksToWorkEntry(input: {
   const { deps, activeShift, branch, resolvedIdentity } = input;
   const websiteUserKey = String(resolvedIdentity.websiteUserKey ?? '').trim();
   const odooBranchId = Number(branch.odoo_branch_id ?? 0);
-
-  if (!websiteUserKey || !Number.isFinite(odooBranchId) || odooBranchId <= 0) {
-    return;
-  }
-
+  const userId = String(activeShift.user_id ?? '').trim();
+  const shiftDate = toUtcDateBucket(activeShift.shift_start as string | Date);
   const uncalculatedBreaks = await deps.listEndedUncalculatedBreakActivities(String(activeShift.id));
-  if (uncalculatedBreaks.length === 0) {
-    return;
-  }
 
-  const totalBreakMinutes = uncalculatedBreaks.reduce(
-    (sum, activity) => sum + (Number(activity.duration_minutes) || 0),
-    0,
-  );
-  if (totalBreakMinutes <= 0) {
+  if (!websiteUserKey || !userId || !Number.isFinite(odooBranchId) || odooBranchId <= 0) {
     return;
   }
 
@@ -1390,13 +1390,22 @@ async function syncUncalculatedBreaksToWorkEntry(input: {
   }
 
   try {
-    const shiftDate = new Date(activeShift.shift_start as string | Date).toISOString().split('T')[0];
-    await deps.upsertBreakWorkEntry({
-      employeeId: odooEmployee.id,
+    const totalBreakMinutes = await deps.getTotalEndedBreakMinutesByUserAndDate({
+      userId,
       date: shiftDate,
-      durationMinutes: totalBreakMinutes,
     });
-    await deps.markShiftActivitiesCalculated(uncalculatedBreaks.map((activity) => String(activity.id)));
+
+    if (totalBreakMinutes > 0) {
+      await deps.setBreakWorkEntryDuration({
+        employeeId: odooEmployee.id,
+        date: shiftDate,
+        durationMinutes: totalBreakMinutes,
+      });
+    }
+
+    if (uncalculatedBreaks.length > 0) {
+      await deps.markShiftActivitiesCalculated(uncalculatedBreaks.map((activity) => String(activity.id)));
+    }
   } catch (err) {
     logger.error(
       {
@@ -1765,8 +1774,8 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
         endedAt: eventTime,
       });
 
-      // 2. Sync newly completed break time into the Odoo break work entry
-      await syncUncalculatedBreaksToWorkEntry({
+      // 2. Reconcile the Odoo break work entry to the employee's total break minutes for that date
+      await syncBreakWorkEntryToDateTotal({
         deps,
         activeShift,
         branch,
@@ -1783,7 +1792,7 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
         grossWorkedHours,
       });
 
-      if (checkoutCompletionMetrics.netWorkedHours > checkoutCompletionMetrics.effectiveAllocatedHours) {
+      if (checkoutCompletionMetrics.netWorkedHours > checkoutCompletionMetrics.allocatedHours) {
         const existingOT = await tenantDb('shift_authorizations')
           .where({ shift_id: activeShift.id, auth_type: 'overtime', shift_log_id: log.id })
           .first();
@@ -1791,7 +1800,7 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
         if (!existingOT) {
           const overtimeMinutes = Math.round(
             (checkoutCompletionMetrics.netWorkedHours -
-              checkoutCompletionMetrics.effectiveAllocatedHours) *
+              checkoutCompletionMetrics.allocatedHours) *
               60,
           );
           const [auth] = await tenantDb('shift_authorizations')

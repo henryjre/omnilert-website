@@ -10,10 +10,11 @@ import {
   deletePlanningSlotById,
   findWorkEntryByEmployeeAndDate,
   getEmployeeByWebsiteUserKey,
+  setBreakWorkEntryDuration,
   updateAttendanceCheckIn,
   updateAttendanceCheckOut,
-  upsertBreakWorkEntry,
 } from './odoo.service.js';
+import { getTotalEndedBreakMinutesByUserAndDate, toUtcDateBucket } from './breakDuration.service.js';
 import { OVERTIME_BLOCKER_AUTH_TYPES, computeOvertimeBlockerState, deriveOvertimeMinutes } from './overtimeDependency.service.js';
 
 export const INTERIM_DUTY_AUTH_TYPE = 'interim_duty';
@@ -299,52 +300,67 @@ export async function syncShiftAuthorizationWithOdoo(
   auth: Record<string, unknown>,
   action: 'approve' | 'reject',
   overtimeParams?: { overtimeType?: string; hours?: number; minutes?: number; managerName?: string },
+  deps: {
+    getDbFn?: typeof db.getDb;
+    getEmployeeByWebsiteUserKeyFn?: typeof getEmployeeByWebsiteUserKey;
+    getTotalEndedBreakMinutesByUserAndDateFn?: typeof getTotalEndedBreakMinutesByUserAndDate;
+    setBreakWorkEntryDurationFn?: typeof setBreakWorkEntryDuration;
+  } = {},
 ): Promise<void> {
   if (auth.auth_type === 'early_check_out') {
     return;
   }
 
-  const tenantDb = db.getDb();
+  const tenantDb = deps.getDbFn?.() ?? db.getDb();
 
   if (auth.auth_type === 'underbreak' && action === 'reject') {
     const shift = await tenantDb('employee_shifts')
-      .where({ 'employee_shifts.id': auth.shift_id })
-      .join('users', 'users.id', 'employee_shifts.user_id')
-      .select(
-        'employee_shifts.shift_start',
-        'users.user_key',
-        'employee_shifts.branch_id',
-      )
-      .first() as { shift_start: Date; user_key: string; branch_id: string } | null;
+      .where({ id: auth.shift_id })
+      .select('shift_start', 'user_id', 'branch_id')
+      .first() as { shift_start: Date; user_id: string | null; branch_id: string } | null;
 
-    if (shift?.user_key && shift.shift_start) {
+    if (shift?.shift_start && shift.user_id) {
       try {
+        const user = await tenantDb('users')
+          .where({ id: shift.user_id })
+          .select('user_key')
+          .first() as { user_key: string | null } | null;
         const branch = await tenantDb('branches')
           .where({ id: shift.branch_id })
           .select('odoo_branch_id')
           .first();
         const odooCompanyId = Number(branch?.odoo_branch_id ?? 0);
+        const userKey = getTrimmedString(user?.user_key);
 
-        if (odooCompanyId) {
-          const employee = await getEmployeeByWebsiteUserKey(shift.user_key, odooCompanyId);
+        if (odooCompanyId && userKey) {
+          const employee = await (deps.getEmployeeByWebsiteUserKeyFn ?? getEmployeeByWebsiteUserKey)(
+            userKey,
+            odooCompanyId,
+          );
           if (employee?.id) {
-            const shiftDate = new Date(shift.shift_start).toISOString().split('T')[0];
-            await upsertBreakWorkEntry({
+            const shiftDate = toUtcDateBucket(shift.shift_start);
+            const localBreakMinutes = await (
+              deps.getTotalEndedBreakMinutesByUserAndDateFn ?? getTotalEndedBreakMinutesByUserAndDate
+            )(String(shift.user_id), shiftDate);
+            const targetBreakMinutes = Math.max(localBreakMinutes, 60);
+            await (deps.setBreakWorkEntryDurationFn ?? setBreakWorkEntryDuration)({
               employeeId: employee.id,
               date: shiftDate,
-              durationMinutes: 60,
+              durationMinutes: targetBreakMinutes,
             });
             logger.info(
-              `Underbreak rejection: upserted 60-min break work entry for employee ${employee.id} on ${shiftDate} (auth ${auth.id}).`,
+              `Underbreak rejection: set break work entry to ${targetBreakMinutes} min for employee ${employee.id} on ${shiftDate} (auth ${auth.id}).`,
             );
           } else {
-            logger.warn(`Underbreak rejection: no Odoo employee found for user_key ${shift.user_key}, odooCompanyId ${odooCompanyId}`);
+            logger.warn(`Underbreak rejection: no Odoo employee found for user_key ${userKey}, odooCompanyId ${odooCompanyId}`);
           }
+        } else if (!userKey) {
+          logger.warn(`Underbreak rejection: no user_key for user ${shift.user_id}`);
         } else {
           logger.warn(`Underbreak rejection: no odoo_branch_id for branch ${shift.branch_id}`);
         }
       } catch (err) {
-        logger.error(`Failed to upsert Odoo break work entry for underbreak auth ${auth.id}: ${err}`);
+        logger.error(`Failed to set Odoo break work entry for underbreak auth ${auth.id}: ${err}`);
       }
     } else {
       logger.warn(`Underbreak rejection: no shift data for shift_id ${auth.shift_id}`);

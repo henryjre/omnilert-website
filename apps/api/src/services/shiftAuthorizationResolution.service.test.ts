@@ -20,6 +20,54 @@ const {
 } = await import('./shiftAuthorizationResolution.service.js');
 const { db } = await import('../config/database.js');
 
+function createSelectQueryStub(rows: Array<Record<string, unknown>>) {
+  let matchedRows = rows;
+
+  const query: Record<string, any> = {
+    where(condition: Record<string, unknown>) {
+      matchedRows = matchedRows.filter((row) =>
+        Object.entries(condition).every(([key, value]) => row[key] === value),
+      );
+      return query;
+    },
+    select(...fields: string[]) {
+      const pickedRows = matchedRows.map((row) => {
+        const selected: Record<string, unknown> = {};
+        for (const field of fields) {
+          selected[field] = row[field];
+        }
+        return selected;
+      });
+
+      return {
+        first: async () => pickedRows[0] ?? null,
+      };
+    },
+    first: async () => matchedRows[0] ?? null,
+  };
+
+  return query;
+}
+
+function createUnderbreakDbStub(input: {
+  shift: { id: string; shift_start: Date; user_id: string; branch_id: string };
+  user: { id: string; user_key: string };
+  branch: { id: string; odoo_branch_id: string };
+}) {
+  return ((tableName: string) => {
+    switch (tableName) {
+      case 'employee_shifts':
+        return createSelectQueryStub([input.shift as Record<string, unknown>]);
+      case 'users':
+        return createSelectQueryStub([input.user as Record<string, unknown>]);
+      case 'branches':
+        return createSelectQueryStub([input.branch as Record<string, unknown>]);
+      default:
+        return createSelectQueryStub([]);
+    }
+  }) as any;
+}
+
 test('assertEmployeeReasonSubmittedForManualReject blocks early check in, early check out, overtime, and interim duty without an employee reason', () => {
   for (const authType of ['early_check_in', 'early_check_out', 'overtime', 'interim_duty']) {
     assert.throws(
@@ -141,4 +189,78 @@ test('syncShiftAuthorizationWithOdoo skips all DB and Odoo work for early check 
   } finally {
     (db as any).getDb = originalGetDb;
   }
+});
+
+test('syncShiftAuthorizationWithOdoo sets underbreak rejection to at least 60 minutes of break for the employee date', async () => {
+  const breakWorkEntryCalls: Array<Record<string, unknown>> = [];
+
+  await syncShiftAuthorizationWithOdoo(
+    { id: 'auth-underbreak-1', auth_type: 'underbreak', shift_id: 'shift-1' },
+    'reject',
+    undefined,
+    {
+      getDbFn: () =>
+        createUnderbreakDbStub({
+          shift: {
+            id: 'shift-1',
+            shift_start: new Date('2026-04-18T04:00:00.000Z'),
+            user_id: 'user-1',
+            branch_id: 'branch-1',
+          },
+          user: { id: 'user-1', user_key: 'website-user-1' },
+          branch: { id: 'branch-1', odoo_branch_id: '12' },
+        }),
+      getEmployeeByWebsiteUserKeyFn: async () => ({ id: 7001, name: '001 - Alex Crew' }),
+      getTotalEndedBreakMinutesByUserAndDateFn: async () => 5,
+      setBreakWorkEntryDurationFn: async (input) => {
+        breakWorkEntryCalls.push(input as Record<string, unknown>);
+        return { id: 12901, action: 'created', durationHours: Number(input.durationMinutes) / 60 };
+      },
+    },
+  );
+
+  assert.deepEqual(breakWorkEntryCalls, [
+    {
+      employeeId: 7001,
+      date: '2026-04-18',
+      durationMinutes: 60,
+    },
+  ]);
+});
+
+test('syncShiftAuthorizationWithOdoo preserves a higher employee-date local break total on underbreak rejection', async () => {
+  const breakWorkEntryCalls: Array<Record<string, unknown>> = [];
+
+  await syncShiftAuthorizationWithOdoo(
+    { id: 'auth-underbreak-2', auth_type: 'underbreak', shift_id: 'shift-2' },
+    'reject',
+    undefined,
+    {
+      getDbFn: () =>
+        createUnderbreakDbStub({
+          shift: {
+            id: 'shift-2',
+            shift_start: new Date('2026-04-18T04:00:00.000Z'),
+            user_id: 'user-2',
+            branch_id: 'branch-2',
+          },
+          user: { id: 'user-2', user_key: 'website-user-2' },
+          branch: { id: 'branch-2', odoo_branch_id: '12' },
+        }),
+      getEmployeeByWebsiteUserKeyFn: async () => ({ id: 7002, name: '002 - Alex Crew' }),
+      getTotalEndedBreakMinutesByUserAndDateFn: async () => 95,
+      setBreakWorkEntryDurationFn: async (input) => {
+        breakWorkEntryCalls.push(input as Record<string, unknown>);
+        return { id: 12902, action: 'updated', durationHours: Number(input.durationMinutes) / 60 };
+      },
+    },
+  );
+
+  assert.deepEqual(breakWorkEntryCalls, [
+    {
+      employeeId: 7002,
+      date: '2026-04-18',
+      durationMinutes: 95,
+    },
+  ]);
 });

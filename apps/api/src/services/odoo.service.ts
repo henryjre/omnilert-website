@@ -1288,7 +1288,7 @@ export async function createOvertimeWorkEntry(params: {
 const BREAK_WORK_ENTRY_TYPE_ID = 129;
 const BREAK_WORK_ENTRY_DESCRIPTION = 'Break - Synced from Omnilert';
 
-export async function upsertBreakWorkEntry(
+export async function setBreakWorkEntryDuration(
   params: {
     employeeId: number;
     date: string;
@@ -1315,11 +1315,10 @@ export async function upsertBreakWorkEntry(
 
   if (existingEntries.length > 0) {
     const existingEntry = existingEntries[0];
-    const newDurationHours = Number(existingEntry.duration || 0) + durationHours;
 
     await callFn('hr.work.entry', 'write', [
       [existingEntry.id],
-      { duration: newDurationHours, name: BREAK_WORK_ENTRY_DESCRIPTION },
+      { duration: durationHours, name: BREAK_WORK_ENTRY_DESCRIPTION },
     ]);
 
     logger.info(
@@ -1327,14 +1326,13 @@ export async function upsertBreakWorkEntry(
         entryId: existingEntry.id,
         employeeId: params.employeeId,
         date: params.date,
-        addedDurationHours: durationHours,
-        totalDurationHours: newDurationHours,
+        durationHours,
         workEntryTypeId: BREAK_WORK_ENTRY_TYPE_ID,
       },
-      'Updated Odoo break work entry from Omnilert break duration',
+      'Set Odoo break work entry from Omnilert break duration',
     );
 
-    return { id: existingEntry.id, action: 'updated', durationHours: newDurationHours };
+    return { id: existingEntry.id, action: 'updated', durationHours };
   }
 
   const createdEntryId = (await callFn('hr.work.entry', 'create', [

@@ -140,7 +140,7 @@ function createAttendanceHarness(options?: {
   resolvedUserId?: string | null;
   resolvedEmployeeName?: string;
   odooEmployee?: { id: number; name: string } | null;
-  upsertBreakWorkEntryError?: Error;
+  setBreakWorkEntryDurationError?: Error;
   userRolesByUserId?: Record<string, Array<{ id: string; name: string }>>;
   activeAttendancesByWebsiteKey?: Record<
     string,
@@ -533,9 +533,28 @@ function createAttendanceHarness(options?: {
 
         return updatedCount;
       },
+      getTotalEndedBreakMinutesByUserAndDate: async (input: { userId: string; date: string }) =>
+        shifts
+          .filter(
+            (shift) =>
+              shift.user_id === input.userId &&
+              new Date(shift.shift_start).toISOString().split('T')[0] === input.date,
+          )
+          .map((shift) => shift.id)
+          .reduce((sum, shiftId) => {
+            const shiftBreakMinutes = activities
+              .filter(
+                (activity) =>
+                  activity.shift_id === shiftId &&
+                  activity.activity_type === 'break' &&
+                  activity.end_time != null,
+              )
+              .reduce((activitySum, activity) => activitySum + (Number(activity.duration_minutes) || 0), 0);
+            return sum + shiftBreakMinutes;
+          }, 0),
       findOdooEmployeeByWebsiteUserKey: async (websiteUserKey: string) =>
         websiteUserKey && defaultOdooEmployee ? { ...defaultOdooEmployee } : null,
-      upsertBreakWorkEntry: async (input: Record<string, unknown>) => {
+      setBreakWorkEntryDuration: async (input: Record<string, unknown>) => {
         const employeeId = Number(input.employeeId);
         const date = String(input.date);
         const durationMinutes = Number(input.durationMinutes);
@@ -550,8 +569,8 @@ function createAttendanceHarness(options?: {
           description,
         });
 
-        if (options?.upsertBreakWorkEntryError) {
-          throw options.upsertBreakWorkEntryError;
+        if (options?.setBreakWorkEntryDurationError) {
+          throw options.setBreakWorkEntryDurationError;
         }
 
         const durationHours = durationMinutes / 60;
@@ -563,7 +582,7 @@ function createAttendanceHarness(options?: {
         );
 
         if (existingEntry) {
-          existingEntry.duration += durationHours;
+          existingEntry.duration = durationHours;
           existingEntry.name = description;
           breakWorkEntryOps.push({
             action: 'updated',
@@ -748,6 +767,14 @@ function createHarnessTenantDb(harness: HarnessShape) {
         for (const row of matchedRows) {
           const currentValue = Number(row[column] ?? 0);
           row[column] = currentValue + amount;
+        }
+        return Promise.resolve(matchedRows.length);
+      },
+      decrement(column: string, amount = 1) {
+        const matchedRows = getMatchedRows();
+        for (const row of matchedRows) {
+          const currentValue = Number(row[column] ?? 0);
+          row[column] = currentValue - amount;
         }
         return Promise.resolve(matchedRows.length);
       },
@@ -1501,7 +1528,7 @@ test('createAttendanceProcessor checkout creates a type-129 break work entry for
   assert.equal(harness.activities[0]?.is_calculated, true);
 });
 
-test('createAttendanceProcessor creates overtime authorization and peer evaluation when net worked time exceeds effective allocated hours', async (t) => {
+test('createAttendanceProcessor enqueues peer evaluation without overtime when net worked time exceeds effective allocated hours but not allocated hours', async (t) => {
   const shift = createShift({
     id: 'shift-overtime-1',
     odoo_shift_id: 2501,
@@ -1510,7 +1537,7 @@ test('createAttendanceProcessor creates overtime authorization and peer evaluati
     shift_start: '2026-04-02T00:00:00.000Z',
     shift_end: '2026-04-02T09:00:00.000Z',
     allocated_hours: 8,
-    total_worked_hours: 1,
+    total_worked_hours: 0,
     status: 'active',
     check_in_status: 'checked_in',
   });
@@ -1518,6 +1545,17 @@ test('createAttendanceProcessor creates overtime authorization and peer evaluati
     shifts: [shift],
     websiteUserKey: 'website-user-1',
     resolvedUserId: 'user-1',
+    activities: [
+      createActivity({
+        id: 'activity-peer-eval-only-break',
+        user_id: 'user-1',
+        shift_id: shift.id,
+        activity_type: 'break',
+        start_time: '2026-04-02T04:00:00.000Z',
+        end_time: '2026-04-02T04:30:00.000Z',
+        duration_minutes: 30,
+      }),
+    ],
   });
   installHarnessDb(harness, (cleanup) => t.after(cleanup));
   const processAttendance = createAttendanceProcessor(harness.deps as any);
@@ -1535,18 +1573,68 @@ test('createAttendanceProcessor creates overtime authorization and peer evaluati
   });
 
   const overtimeAuth = harness.auths.find((auth) => auth.auth_type === 'overtime');
-  assert.ok(overtimeAuth, 'overtime authorization should be created');
-  assert.equal(overtimeAuth?.needs_employee_reason, true);
-  assert.equal(overtimeAuth?.status, 'pending');
-  assert.equal(overtimeAuth?.diff_minutes, 120);
+  assert.equal(overtimeAuth, undefined, 'overtime authorization should not be created below allocated hours');
   assert.equal(harness.peerEvaluationJobs.length, 1, 'peer evaluation should be enqueued');
   assert.equal(harness.peerEvaluationJobs[0]?.shiftId, shift.id);
 });
 
-test('createAttendanceProcessor does not create overtime authorization or peer evaluation when net worked time equals effective allocated hours', async (t) => {
+test('createAttendanceProcessor creates overtime authorization when net worked time exceeds allocated hours', async (t) => {
+  const shift = createShift({
+    id: 'shift-overtime-allocated-threshold',
+    odoo_shift_id: 2502,
+    branch_id: 'branch-main',
+    user_id: 'user-1',
+    shift_start: '2026-04-02T00:00:00.000Z',
+    shift_end: '2026-04-02T09:00:00.000Z',
+    allocated_hours: 8,
+    total_worked_hours: 0,
+    status: 'active',
+    check_in_status: 'checked_in',
+  });
+  const harness = createAttendanceHarness({
+    shifts: [shift],
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+    activities: [
+      createActivity({
+        id: 'activity-overtime-threshold-break',
+        user_id: 'user-1',
+        shift_id: shift.id,
+        activity_type: 'break',
+        start_time: '2026-04-02T04:00:00.000Z',
+        end_time: '2026-04-02T05:00:00.000Z',
+        duration_minutes: 60,
+      }),
+    ],
+  });
+  installHarnessDb(harness, (cleanup) => t.after(cleanup));
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  await processAttendance({
+    id: 12502,
+    check_in: '2026-04-02 01:00:00',
+    check_out: '2026-04-02 11:00:00',
+    worked_hours: 10,
+    x_company_id: 12,
+    x_cumulative_minutes: 600,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: 2502,
+    x_website_key: 'website-user-1',
+  });
+
+  const overtimeAuth = harness.auths.find((auth) => auth.auth_type === 'overtime');
+  assert.ok(overtimeAuth, 'overtime authorization should be created above allocated hours');
+  assert.equal(overtimeAuth?.needs_employee_reason, true);
+  assert.equal(overtimeAuth?.status, 'pending');
+  assert.equal(overtimeAuth?.diff_minutes, 60);
+  assert.equal(harness.peerEvaluationJobs.length, 1, 'peer evaluation should still be enqueued');
+  assert.equal(harness.peerEvaluationJobs[0]?.shiftId, shift.id);
+});
+
+test('createAttendanceProcessor does not create overtime authorization when net worked time equals allocated hours', async (t) => {
   const shift = createShift({
     id: 'shift-overtime-boundary-1',
-    odoo_shift_id: 2502,
+    odoo_shift_id: 2503,
     branch_id: 'branch-main',
     user_id: 'user-1',
     shift_start: '2026-04-02T00:00:00.000Z',
@@ -1576,23 +1664,24 @@ test('createAttendanceProcessor does not create overtime authorization or peer e
   const processAttendance = createAttendanceProcessor(harness.deps as any);
 
   await processAttendance({
-    id: 12502,
+    id: 12503,
     check_in: '2026-04-02 01:00:00',
-    check_out: '2026-04-02 09:00:00',
-    worked_hours: 8,
+    check_out: '2026-04-02 10:00:00',
+    worked_hours: 9,
     x_company_id: 12,
-    x_cumulative_minutes: 480,
+    x_cumulative_minutes: 540,
     x_employee_contact_name: '001 - Alex Crew',
-    x_planning_slot_id: 2502,
+    x_planning_slot_id: 2503,
     x_website_key: 'website-user-1',
   });
 
   const overtimeAuth = harness.auths.find((auth) => auth.auth_type === 'overtime');
-  assert.equal(overtimeAuth, undefined, 'overtime authorization should not be created at the boundary');
-  assert.equal(harness.peerEvaluationJobs.length, 0, 'peer evaluation should not be enqueued at the boundary');
+  assert.equal(overtimeAuth, undefined, 'overtime authorization should not be created at the allocated-hours boundary');
+  assert.equal(harness.peerEvaluationJobs.length, 1, 'peer evaluation should still be enqueued at the allocated-hours boundary');
+  assert.equal(harness.peerEvaluationJobs[0]?.shiftId, shift.id);
 });
 
-test('createAttendanceProcessor checkout updates the existing type-129 break work entry using only newly uncalculated management-interrupt break minutes', async (t) => {
+test('createAttendanceProcessor checkout overwrites an existing type-129 break work entry to the exact employee-date break total', async (t) => {
   const plannedShift = createShift({
     id: 'shift-break-sync-update',
     odoo_shift_id: 9302,
@@ -1614,7 +1703,7 @@ test('createAttendanceProcessor checkout updates the existing type-129 break wor
         employee_id: 7001,
         date: '2026-04-03',
         work_entry_type_id: 129,
-        duration: 0.5,
+        duration: 0.25,
         name: 'Break - Synced from Omnilert',
       },
     ],
@@ -1663,9 +1752,86 @@ test('createAttendanceProcessor checkout updates the existing type-129 break wor
   assert.equal(harness.breakWorkEntryAttempts.length, 1);
   assert.equal(harness.breakWorkEntryOps.length, 1);
   assert.equal(harness.breakWorkEntryOps[0]?.action, 'updated');
-  assert.equal(harness.breakWorkEntryOps[0]?.durationMinutes, 15);
+  assert.equal(harness.breakWorkEntryOps[0]?.durationMinutes, 45);
   assert.equal(harness.workEntries[0]?.duration, 0.75);
   assert.equal(harness.activities[0]?.is_calculated, true);
+  assert.equal(harness.activities[1]?.is_calculated, true);
+});
+
+test('createAttendanceProcessor checkout creates a type-129 break work entry from the combined same-day break total across multiple shifts', async (t) => {
+  const earlierShift = createShift({
+    id: 'shift-break-sync-earlier',
+    odoo_shift_id: 9305,
+    branch_id: 'branch-main',
+    user_id: 'user-1',
+    shift_start: '2026-04-06T07:00:00.000Z',
+    shift_end: '2026-04-06T10:00:00.000Z',
+    allocated_hours: 3,
+    total_worked_hours: 3,
+    status: 'ended',
+    check_in_status: 'checked_out',
+  });
+  const activeShift = createShift({
+    id: 'shift-break-sync-later',
+    odoo_shift_id: 9306,
+    branch_id: 'branch-main',
+    user_id: 'user-1',
+    shift_start: '2026-04-06T11:00:00.000Z',
+    shift_end: '2026-04-06T18:00:00.000Z',
+    allocated_hours: 7,
+    status: 'active',
+    check_in_status: 'checked_in',
+  });
+  const harness = createAttendanceHarness({
+    shifts: [earlierShift, activeShift],
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+    activities: [
+      createActivity({
+        id: 'activity-break-sync-earlier-1',
+        user_id: 'user-1',
+        shift_id: earlierShift.id,
+        activity_type: 'break',
+        start_time: '2026-04-06T08:00:00.000Z',
+        end_time: '2026-04-06T08:30:00.000Z',
+        duration_minutes: 30,
+        is_calculated: true,
+      }),
+      createActivity({
+        id: 'activity-break-sync-later-1',
+        user_id: 'user-1',
+        shift_id: activeShift.id,
+        activity_type: 'break',
+        start_time: '2026-04-06T12:00:00.000Z',
+        end_time: '2026-04-06T12:15:00.000Z',
+        duration_minutes: 15,
+      }),
+    ],
+  });
+  installHarnessDb(harness, (cleanup) => t.after(cleanup));
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  await processAttendance({
+    id: 9306,
+    check_in: '2026-04-06 11:00:00',
+    check_out: '2026-04-06 16:00:00',
+    worked_hours: 5,
+    x_company_id: 12,
+    x_cumulative_minutes: 300,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: 9306,
+    x_website_key: 'website-user-1',
+  });
+
+  assert.equal(harness.breakWorkEntryAttempts.length, 1);
+  assert.equal(harness.breakWorkEntryOps.length, 1);
+  assert.equal(harness.breakWorkEntryOps[0]?.action, 'created');
+  assert.equal(
+    harness.breakWorkEntryOps[0]?.durationMinutes,
+    45,
+    'checkout should reconcile to the full same-day break total, not only the active shift delta',
+  );
+  assert.equal(harness.workEntries[0]?.duration, 0.75);
   assert.equal(harness.activities[1]?.is_calculated, true);
 });
 
@@ -1738,7 +1904,7 @@ test('createAttendanceProcessor checkout leaves break rows retryable when the ty
     shifts: [plannedShift],
     websiteUserKey: 'website-user-1',
     resolvedUserId: 'user-1',
-    upsertBreakWorkEntryError: new Error('Odoo break work entry sync failed'),
+    setBreakWorkEntryDurationError: new Error('Odoo break work entry sync failed'),
     activities: [
       createActivity({
         id: 'activity-break-sync-failure',
@@ -2168,7 +2334,7 @@ test('createAttendanceProcessor skips check-out processing when a check-out log 
   assert.deepEqual(result, existingLog, 'should return the existing log unchanged');
 });
 
-test('createAttendanceProcessor skips tardiness when x_prev_attendance_id is set (re-check-in after earlier check-out)', async () => {
+test('createAttendanceProcessor skips tardiness when x_prev_attendance_id is set (re-check-in after earlier check-out)', async (t) => {
   const shift = createShift({
     id: 'shift-rechkin',
     odoo_shift_id: 1601,
@@ -2178,6 +2344,7 @@ test('createAttendanceProcessor skips tardiness when x_prev_attendance_id is set
     shift_end: '2026-04-01 13:00:00',
   });
   const harness = createAttendanceHarness({ shifts: [shift] });
+  installHarnessDb(harness, (cleanup) => t.after(cleanup));
   const processAttendance = createAttendanceProcessor(harness.deps as any);
 
   // Check in at 7:41 AM — 3h 41m after shift start (12:00 PM UTC = 4:00 UTC shift start)
@@ -2201,7 +2368,7 @@ test('createAttendanceProcessor skips tardiness when x_prev_attendance_id is set
   assert.equal(harness.queuedJobs.length, 0, 'no early check-in job should be queued for a re-check-in');
 });
 
-test('createAttendanceProcessor skips early check-in job when x_prev_attendance_id is set (re-check-in before shift start)', async () => {
+test('createAttendanceProcessor skips early check-in job when x_prev_attendance_id is set (re-check-in before shift start)', async (t) => {
   const shift = createShift({
     id: 'shift-rechkin-early',
     odoo_shift_id: 1602,
@@ -2211,6 +2378,7 @@ test('createAttendanceProcessor skips early check-in job when x_prev_attendance_
     shift_end: '2026-04-01 18:00:00',
   });
   const harness = createAttendanceHarness({ shifts: [shift] });
+  installHarnessDb(harness, (cleanup) => t.after(cleanup));
   const processAttendance = createAttendanceProcessor(harness.deps as any);
 
   // Check in at 09:45 — 15m before shift start, but with x_prev_attendance_id → re-check-in
@@ -2233,7 +2401,7 @@ test('createAttendanceProcessor skips early check-in job when x_prev_attendance_
   );
 });
 
-test('createAttendanceProcessor retroactively voids early_check_out when re-check-in follows (break checkout scenario)', async () => {
+test('createAttendanceProcessor retroactively voids early_check_out when re-check-in follows (break checkout scenario)', async (t) => {
   const plannedShift = createShift({
     id: 'shift-break-1',
     odoo_shift_id: 2001,
@@ -2247,6 +2415,7 @@ test('createAttendanceProcessor retroactively voids early_check_out when re-chec
     websiteUserKey: 'website-user-1',
     resolvedUserId: 'user-1',
   });
+  installHarnessDb(harness, (cleanup) => t.after(cleanup));
   const processAttendance = createAttendanceProcessor(harness.deps as any);
 
   // Initial check-in at 7:30 AM → tardiness (30 min late)
@@ -2281,9 +2450,14 @@ test('createAttendanceProcessor retroactively voids early_check_out when re-chec
     'early_check_out should be initially created',
   );
   assert.equal(
+    harness.auths.filter((a) => a.auth_type === 'underbreak').length,
+    1,
+    'underbreak should also be created when the break checkout leaves the shift below 60 total break minutes',
+  );
+  assert.equal(
     plannedShift.pending_approvals,
-    2,
-    'tardiness + early_check_out should both count as pending before re-check-in',
+    3,
+    'tardiness + early_check_out + underbreak should all count as pending before re-check-in',
   );
 
   // Re-check-in at 1:00 PM with x_prev_attendance_id → should void the early_check_out
@@ -2310,11 +2484,124 @@ test('createAttendanceProcessor retroactively voids early_check_out when re-chec
   assert.equal(
     plannedShift.pending_approvals,
     1,
-    'voiding the false-positive early_check_out should restore pending approvals to the remaining tardiness auth only',
+    'voiding the false-positive early_check_out and underbreak should restore pending approvals to the remaining tardiness auth only',
   );
 });
 
-test('createAttendanceProcessor preserves the final early_check_out when no re-check-in follows', async () => {
+test('createAttendanceProcessor preserves synced break work entry across re-check-in and final checkout', async (t) => {
+  const plannedShift = createShift({
+    id: 'shift-break-recheck-sync',
+    odoo_shift_id: 2018,
+    branch_id: 'branch-main',
+    user_id: 'user-1',
+    shift_start: '2026-04-18T04:00:00.000Z',
+    shift_end: '2026-04-18T10:00:00.000Z',
+    status: 'active',
+    check_in_status: 'checked_in',
+  });
+  const harness = createAttendanceHarness({
+    shifts: [plannedShift],
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+    activities: [
+      createActivity({
+        id: 'activity-break-3m',
+        user_id: 'user-1',
+        shift_id: plannedShift.id,
+        activity_type: 'break',
+        start_time: '2026-04-18T04:37:00.000Z',
+        end_time: '2026-04-18T04:39:00.000Z',
+        duration_minutes: 3,
+      }),
+      createActivity({
+        id: 'activity-break-2m',
+        user_id: 'user-1',
+        shift_id: plannedShift.id,
+        activity_type: 'break',
+        start_time: '2026-04-18T04:46:00.000Z',
+        end_time: '2026-04-18T04:49:00.000Z',
+        duration_minutes: 2,
+      }),
+      createActivity({
+        id: 'activity-field-task-open',
+        user_id: 'user-1',
+        shift_id: plannedShift.id,
+        activity_type: 'field_task',
+        start_time: '2026-04-18T04:58:00.000Z',
+      }),
+    ],
+  });
+  installHarnessDb(harness, (cleanup) => t.after(cleanup));
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  await processAttendance({
+    id: 12001,
+    check_in: '2026-04-18 04:17:00',
+    check_out: '2026-04-18 05:00:00',
+    worked_hours: 0.72,
+    x_company_id: 12,
+    x_cumulative_minutes: 43,
+    x_employee_contact_name: '3065 - Carl Anthony Camaya',
+    x_planning_slot_id: 2018,
+    x_website_key: 'website-user-1',
+  });
+
+  assert.equal(
+    harness.breakWorkEntryOps.length,
+    1,
+    'first checkout should sync the completed 5-minute break total to Odoo',
+  );
+  assert.equal(harness.breakWorkEntryOps[0]?.action, 'created');
+  assert.equal(harness.breakWorkEntryOps[0]?.durationMinutes, 5);
+  assert.equal(harness.workEntries.length, 1);
+  assert.equal(harness.workEntries[0]?.work_entry_type_id, 129);
+  assert.equal(harness.workEntries[0]?.duration, 5 / 60);
+  assert.equal(harness.activities[0]?.is_calculated, true);
+  assert.equal(harness.activities[1]?.is_calculated, true);
+  assert.equal(harness.activities[2]?.duration_minutes, 2);
+  harness.workEntries.splice(0, harness.workEntries.length);
+
+  await processAttendance({
+    id: 12002,
+    check_in: '2026-04-18 05:00:00',
+    x_company_id: 12,
+    x_cumulative_minutes: 0,
+    x_employee_contact_name: '3065 - Carl Anthony Camaya',
+    x_planning_slot_id: 2018,
+    x_prev_attendance_id: 12001,
+    x_website_key: 'website-user-1',
+  });
+
+  await processAttendance({
+    id: 12002,
+    check_in: '2026-04-18 05:00:00',
+    check_out: '2026-04-18 07:59:00',
+    worked_hours: 2.98,
+    x_company_id: 12,
+    x_cumulative_minutes: 179,
+    x_employee_contact_name: '3065 - Carl Anthony Camaya',
+    x_planning_slot_id: 2018,
+    x_website_key: 'website-user-1',
+  });
+
+  assert.equal(
+    harness.breakWorkEntryOps.length,
+    2,
+    'final checkout should restore the missing 5-minute break entry from the employee-date total even without new break deltas',
+  );
+  assert.equal(harness.workEntries.length, 1);
+  assert.equal(harness.breakWorkEntryOps[1]?.action, 'created');
+  assert.equal(harness.breakWorkEntryOps[1]?.durationMinutes, 5);
+  assert.equal(harness.workEntries[0]?.work_entry_type_id, 129);
+  assert.equal(harness.workEntries[0]?.duration, 5 / 60);
+  assert.equal(
+    harness.auths.filter((a) => a.auth_type === 'underbreak').length,
+    1,
+    'underbreak should be recreated on the final checkout because only 5 total break minutes were recorded',
+  );
+});
+
+test('createAttendanceProcessor preserves the final early_check_out when no re-check-in follows', async (t) => {
   const plannedShift = createShift({
     id: 'shift-break-2',
     odoo_shift_id: 2002,
@@ -2330,6 +2617,7 @@ test('createAttendanceProcessor preserves the final early_check_out when no re-c
     websiteUserKey: 'website-user-1',
     resolvedUserId: 'user-1',
   });
+  installHarnessDb(harness, (cleanup) => t.after(cleanup));
   const processAttendance = createAttendanceProcessor(harness.deps as any);
 
   // Final checkout at 5:00 PM (1 hour early) — no subsequent re-check-in
