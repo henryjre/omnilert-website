@@ -1694,6 +1694,16 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
         await deps.incrementShiftPendingApprovals(interimShift.id as string);
         deps.emitSocketEvent('shift:authorization-new', interimDutyAuth as Record<string, unknown>);
 
+        if (interimShift.user_id) {
+          await deps.createAndDispatchNotification({
+            userId: interimShift.user_id as string,
+            title: 'Interim Duty - Reason Required',
+            message: `You have been assigned an interim duty shift. Please submit a reason in the Authorization Requests tab.`,
+            type: 'warning',
+            linkUrl: `/account/schedule?shiftId=${String(interimShift.id)}&authId=${String((interimDutyAuth as any).id)}`,
+          });
+        }
+
         if (shift) {
           restoredScheduledShift = await deps.updateShiftById(shift.id, {
             status: 'open',
@@ -1879,7 +1889,7 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
                 title: 'Tardiness Authorization Required',
                 message: `You checked in ${formatDiffMinutes(absDiff)} late for your shift. Please submit a reason in the Authorization Requests tab.`,
                 type: 'warning',
-                linkUrl: '/account/schedule',
+                linkUrl: `/account/schedule?shiftId=${String(shift.id)}&authId=${String((auth as any).id)}`,
               });
             }
             deps.emitSocketEvent('shift:authorization-new', auth as Record<string, unknown>);
@@ -1908,7 +1918,7 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
               title: 'Early Check Out - Reason Required',
               message: `You checked out ${formatDiffMinutes(diffMinutes)} before your scheduled shift end. Please submit a reason in the Authorization Requests tab.`,
               type: 'warning',
-              linkUrl: '/account/schedule',
+              linkUrl: `/account/schedule?shiftId=${String(shift.id)}&authId=${String((auth as any).id)}`,
             });
           }
           deps.emitSocketEvent('shift:authorization-new', auth as Record<string, unknown>);
@@ -1932,7 +1942,7 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
               title: 'Late Check Out - Reason Required',
               message: `You checked out ${formatDiffMinutes(absDiff)} after your scheduled shift end. Please submit a reason in the Authorization Requests tab.`,
               type: 'warning',
-              linkUrl: '/account/schedule',
+              linkUrl: `/account/schedule?shiftId=${String(shift.id)}&authId=${String((auth as any).id)}`,
             });
           }
           deps.emitSocketEvent('shift:authorization-new', auth as Record<string, unknown>);
@@ -1964,7 +1974,7 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
               title: 'Underbreak - Reason Required',
               message: `Your recorded break time is ${totalBreakMinutes} min, which is less than the required 1 hour. Please submit a reason in the Authorization Requests tab.`,
               type: 'warning',
-              linkUrl: '/account/schedule',
+              linkUrl: `/account/schedule?shiftId=${String(shift.id)}&authId=${String((underbreakAuth as any).id)}`,
             });
           }
           deps.emitSocketEvent('shift:authorization-new', underbreakAuth as Record<string, unknown>);

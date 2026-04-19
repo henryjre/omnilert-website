@@ -2641,3 +2641,260 @@ test('createAttendanceProcessor preserves the final early_check_out when no re-c
     'no void event should be emitted for a final checkout',
   );
 });
+
+test('createAttendanceProcessor includes authId in linkUrl for tardiness notification', async (t) => {
+  const plannedShift = createShift({
+    id: 'shift-tardiness-1',
+    odoo_shift_id: 3001,
+    branch_id: 'branch-main',
+    user_id: 'user-1',
+    shift_start: '2026-04-19T07:00:00.000Z',
+    shift_end: '2026-04-19T15:00:00.000Z',
+    status: 'open',
+    check_in_status: null,
+  });
+  const harness = createAttendanceHarness({
+    shifts: [plannedShift],
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+  });
+  installHarnessDb(harness, (cleanup) => t.after(cleanup));
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  // Check in 30 minutes late
+  await processAttendance({
+    id: 13001,
+    check_in: '2026-04-19 07:30:00',
+    x_company_id: 12,
+    x_cumulative_minutes: 0,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: 3001,
+    x_website_key: 'website-user-1',
+  });
+
+  const tardinessNotification = harness.notifications.find(
+    (n) => n['title'] === 'Tardiness Authorization Required',
+  );
+  assert.ok(tardinessNotification, 'tardiness notification must be dispatched');
+  const linkUrl = String(tardinessNotification?.['linkUrl'] ?? '');
+  assert.ok(
+    linkUrl.includes('authId='),
+    `tardiness linkUrl must contain authId=, got: ${linkUrl}`,
+  );
+  assert.ok(
+    linkUrl.includes('shiftId='),
+    `tardiness linkUrl must contain shiftId=, got: ${linkUrl}`,
+  );
+});
+
+test('createAttendanceProcessor includes authId in linkUrl for early_check_out notification', async (t) => {
+  const plannedShift = createShift({
+    id: 'shift-early-co-1',
+    odoo_shift_id: 3002,
+    branch_id: 'branch-main',
+    user_id: 'user-1',
+    shift_start: '2026-04-19T07:00:00.000Z',
+    shift_end: '2026-04-19T15:00:00.000Z',
+    status: 'active',
+    check_in_status: 'checked_in',
+  });
+  const harness = createAttendanceHarness({
+    shifts: [plannedShift],
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+    activities: [
+      createActivity({
+        id: 'activity-break-full',
+        user_id: 'user-1',
+        shift_id: plannedShift.id,
+        activity_type: 'break',
+        start_time: '2026-04-19T10:00:00.000Z',
+        end_time: '2026-04-19T11:00:00.000Z',
+        duration_minutes: 60,
+      }),
+    ],
+  });
+  installHarnessDb(harness, (cleanup) => t.after(cleanup));
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  // Check out 1 hour early
+  await processAttendance({
+    id: 13002,
+    check_in: '2026-04-19 07:00:00',
+    check_out: '2026-04-19 14:00:00',
+    worked_hours: 7,
+    x_company_id: 12,
+    x_cumulative_minutes: 420,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: 3002,
+    x_website_key: 'website-user-1',
+  });
+
+  const earlyCoNotification = harness.notifications.find(
+    (n) => n['title'] === 'Early Check Out - Reason Required',
+  );
+  assert.ok(earlyCoNotification, 'early check out notification must be dispatched');
+  const linkUrl = String(earlyCoNotification?.['linkUrl'] ?? '');
+  assert.ok(
+    linkUrl.includes('authId='),
+    `early check out linkUrl must contain authId=, got: ${linkUrl}`,
+  );
+  assert.ok(
+    linkUrl.includes('shiftId='),
+    `early check out linkUrl must contain shiftId=, got: ${linkUrl}`,
+  );
+});
+
+test('createAttendanceProcessor includes authId in linkUrl for late_check_out notification', async (t) => {
+  const plannedShift = createShift({
+    id: 'shift-late-co-1',
+    odoo_shift_id: 3003,
+    branch_id: 'branch-main',
+    user_id: 'user-1',
+    shift_start: '2026-04-19T07:00:00.000Z',
+    shift_end: '2026-04-19T15:00:00.000Z',
+    status: 'active',
+    check_in_status: 'checked_in',
+  });
+  const harness = createAttendanceHarness({
+    shifts: [plannedShift],
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+    activities: [
+      createActivity({
+        id: 'activity-break-full-late',
+        user_id: 'user-1',
+        shift_id: plannedShift.id,
+        activity_type: 'break',
+        start_time: '2026-04-19T10:00:00.000Z',
+        end_time: '2026-04-19T11:00:00.000Z',
+        duration_minutes: 60,
+      }),
+    ],
+  });
+  installHarnessDb(harness, (cleanup) => t.after(cleanup));
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  // Check out 1 hour late
+  await processAttendance({
+    id: 13003,
+    check_in: '2026-04-19 07:00:00',
+    check_out: '2026-04-19 16:00:00',
+    worked_hours: 9,
+    x_company_id: 12,
+    x_cumulative_minutes: 540,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: 3003,
+    x_website_key: 'website-user-1',
+  });
+
+  const lateCoNotification = harness.notifications.find(
+    (n) => n['title'] === 'Late Check Out - Reason Required',
+  );
+  assert.ok(lateCoNotification, 'late check out notification must be dispatched');
+  const linkUrl = String(lateCoNotification?.['linkUrl'] ?? '');
+  assert.ok(
+    linkUrl.includes('authId='),
+    `late check out linkUrl must contain authId=, got: ${linkUrl}`,
+  );
+  assert.ok(
+    linkUrl.includes('shiftId='),
+    `late check out linkUrl must contain shiftId=, got: ${linkUrl}`,
+  );
+});
+
+test('createAttendanceProcessor includes authId in linkUrl for underbreak notification', async (t) => {
+  const plannedShift = createShift({
+    id: 'shift-underbreak-1',
+    odoo_shift_id: 3004,
+    branch_id: 'branch-main',
+    user_id: 'user-1',
+    shift_start: '2026-04-19T07:00:00.000Z',
+    shift_end: '2026-04-19T15:00:00.000Z',
+    status: 'active',
+    check_in_status: 'checked_in',
+  });
+  const harness = createAttendanceHarness({
+    shifts: [plannedShift],
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+    // No break activities — triggers underbreak
+  });
+  installHarnessDb(harness, (cleanup) => t.after(cleanup));
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  // On-time checkout triggers underbreak (no breaks taken)
+  await processAttendance({
+    id: 13004,
+    check_in: '2026-04-19 07:00:00',
+    check_out: '2026-04-19 15:00:00',
+    worked_hours: 8,
+    x_company_id: 12,
+    x_cumulative_minutes: 480,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: 3004,
+    x_website_key: 'website-user-1',
+  });
+
+  const underbreakNotification = harness.notifications.find(
+    (n) => n['title'] === 'Underbreak - Reason Required',
+  );
+  assert.ok(underbreakNotification, 'underbreak notification must be dispatched');
+  const linkUrl = String(underbreakNotification?.['linkUrl'] ?? '');
+  assert.ok(
+    linkUrl.includes('authId='),
+    `underbreak linkUrl must contain authId=, got: ${linkUrl}`,
+  );
+  assert.ok(
+    linkUrl.includes('shiftId='),
+    `underbreak linkUrl must contain shiftId=, got: ${linkUrl}`,
+  );
+});
+
+test('createAttendanceProcessor dispatches interim_duty notification with authId in linkUrl', async (t) => {
+  const harness = createAttendanceHarness({
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+  });
+  installHarnessDb(harness, (cleanup) => t.after(cleanup));
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  await processAttendance({
+    id: 14001,
+    check_in: '2026-04-19 01:00:00',
+    x_company_id: 12,
+    x_cumulative_minutes: 0,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_employee_avatar: 'https://example.com/alex.png',
+    x_planning_slot_id: false,
+    x_website_key: 'website-user-1',
+  });
+
+  await processAttendance({
+    id: 14001,
+    check_in: '2026-04-19 01:00:00',
+    check_out: '2026-04-19 09:00:00',
+    worked_hours: 8,
+    x_company_id: 12,
+    x_cumulative_minutes: 480,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_employee_avatar: 'https://example.com/alex.png',
+    x_planning_slot_id: false,
+    x_website_key: 'website-user-1',
+  });
+
+  const interimDutyNotification = harness.notifications.find(
+    (n) => n['title'] === 'Interim Duty - Reason Required',
+  );
+  assert.ok(interimDutyNotification, 'interim duty notification must be dispatched');
+  assert.equal(interimDutyNotification?.['type'], 'warning');
+  const linkUrl = String(interimDutyNotification?.['linkUrl'] ?? '');
+  assert.ok(
+    linkUrl.includes('authId='),
+    `interim duty linkUrl must contain authId=, got: ${linkUrl}`,
+  );
+  assert.ok(
+    linkUrl.includes('shiftId='),
+    `interim duty linkUrl must contain shiftId=, got: ${linkUrl}`,
+  );
+});
