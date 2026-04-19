@@ -430,14 +430,18 @@ export async function syncShiftAuthorizationWithOdoo(
 
   const odooAttendanceId = shiftLog.odoo_attendance_id as number;
 
+  let attendanceWasModified = false;
+
   try {
     if (action === 'approve') {
       if (auth.auth_type === 'tardiness') {
         await updateAttendanceCheckIn(odooAttendanceId, shift.shift_start);
+        attendanceWasModified = true;
       }
     } else if (action === 'reject') {
       if (auth.auth_type === 'early_check_in') {
         await updateAttendanceCheckIn(odooAttendanceId, shift.shift_start);
+        attendanceWasModified = true;
       }
       if (auth.auth_type === 'late_check_out') {
         const checkInLog = await tenantDb('shift_logs')
@@ -454,11 +458,56 @@ export async function syncShiftAuthorizationWithOdoo(
           );
         } else {
           await updateAttendanceCheckOut(odooAttendanceId, shiftEndTime);
+          attendanceWasModified = true;
         }
       }
     }
   } catch (err) {
     logger.error(`Failed to sync Odoo attendance for authorization ${auth.id}: ${err}`);
+  }
+
+  // Odoo regenerates hr.work.entry when hr.attendance is written, which removes 3rd-party break
+  // entries. Re-sync the break work entry after any attendance modification.
+  if (attendanceWasModified) {
+    try {
+      const shiftDate = toUtcDateBucket(shift.shift_start);
+      const user = await tenantDb('users')
+        .where({ id: shift.user_id })
+        .select('user_key')
+        .first() as { user_key: string | null } | null;
+      const userKey = getTrimmedString(user?.user_key);
+      const branch = await tenantDb('branches')
+        .where({ id: shift.branch_id })
+        .select('odoo_branch_id')
+        .first();
+      const odooCompanyId = Number(branch?.odoo_branch_id ?? 0);
+
+      if (userKey && odooCompanyId) {
+        const employee = await (deps.getEmployeeByWebsiteUserKeyFn ?? getEmployeeByWebsiteUserKey)(
+          userKey,
+          odooCompanyId,
+        );
+        if (employee?.id) {
+          const localBreakMinutes = await (
+            deps.getTotalEndedBreakMinutesByUserAndDateFn ?? getTotalEndedBreakMinutesByUserAndDate
+          )(String(shift.user_id), shiftDate);
+          if (localBreakMinutes > 0) {
+            await (deps.setBreakWorkEntryDurationFn ?? setBreakWorkEntryDuration)({
+              employeeId: employee.id,
+              date: shiftDate,
+              durationMinutes: localBreakMinutes,
+            });
+            logger.info(
+              `Re-synced break work entry (${localBreakMinutes}min) for employee ${employee.id} on ${shiftDate} after attendance update (auth ${String(auth.id)}).`,
+            );
+          }
+        } else {
+          logger.warn(`Break re-sync skipped: no Odoo employee for user_key ${userKey}, company ${odooCompanyId}`);
+        }
+      }
+    } catch (err) {
+      logger.error(`Failed to re-sync break work entry after attendance update for auth ${String(auth.id)}: ${err}`);
+    }
   }
 }
 
