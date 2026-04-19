@@ -12,6 +12,7 @@ import { useAppToast } from '@/shared/hooks/useAppToast';
 import { useNotificationStore } from '@/shared/store/notificationStore';
 import { ShiftExchangeDetailModal } from '@/features/shift-exchange/components/ShiftExchangeDetailModal';
 import { PeerEvaluationModal } from '../../peer-evaluations/components/PeerEvaluationModal';
+import { ShiftAuthReasonModal } from './ShiftAuthReasonModal';
 import { Bell, Check, X } from 'lucide-react';
 
 function NotificationSkeleton() {
@@ -93,6 +94,12 @@ function getPeerEvaluationId(linkUrl: string | null | undefined): string | null 
   return match?.[1] ?? null;
 }
 
+function getAuthId(linkUrl: string | null | undefined): string | null {
+  if (!linkUrl) return null;
+  const match = linkUrl.match(/[?&]authId=([0-9a-f-]{36})/i);
+  return match?.[1] ?? null;
+}
+
 function getShiftId(linkUrl: string | null | undefined): string | null {
   if (!linkUrl) return null;
   const match = linkUrl.match(/[?&]shiftId=([0-9a-f-]{36})/i);
@@ -130,6 +137,7 @@ export function EmployeeNotificationsTab() {
   const [actionLoading, setActionLoading] = useState(false);
   const [shiftExchangeRequestId, setShiftExchangeRequestId] = useState<string | null>(null);
   const [peerEvalId, setPeerEvalId] = useState<string | null>(null);
+  const [reasonModalAuthId, setReasonModalAuthId] = useState<string | null>(null);
 
   useEffect(() => {
     api
@@ -334,6 +342,7 @@ export function EmployeeNotificationsTab() {
           const shiftExchangeId = getShiftExchangeId(n.link_url);
           const peerEvaluationId = getPeerEvaluationId(n.link_url);
           const shiftId = getShiftId(n.link_url);
+          const authId = getAuthId(n.link_url);
           const requestId = getRequestId(n.link_url);
           const isAuthRequestLink = typeof n.link_url === "string" && n.link_url.startsWith("/account/authorization-requests");
           const isCashRequestLink = typeof n.link_url === "string" && n.link_url.startsWith("/account/cash-requests");
@@ -365,7 +374,20 @@ export function EmployeeNotificationsTab() {
 
                   {/* Action buttons — below text on mobile, right column on desktop */}
                   <div className="flex shrink-0 flex-wrap items-center gap-2">
-                    {shiftId && (
+                    {authId && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          if (!n.is_read) { void markAsRead(n.id); }
+                          setReasonModalAuthId(authId);
+                        }}
+                        className="text-xs"
+                      >
+                        View Authorization
+                      </Button>
+                    )}
+                    {shiftId && !authId && (
                       <Button
                         variant="secondary"
                         size="sm"
@@ -706,6 +728,15 @@ export function EmployeeNotificationsTab() {
         initialEvaluationId={peerEvalId}
         onClose={() => setPeerEvalId(null)}
       />
+
+      <AnimatePresence>
+        {reasonModalAuthId && (
+          <ShiftAuthReasonModal
+            authId={reasonModalAuthId}
+            onClose={() => setReasonModalAuthId(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
