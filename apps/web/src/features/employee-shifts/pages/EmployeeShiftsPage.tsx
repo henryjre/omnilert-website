@@ -17,8 +17,9 @@ import { OvertimeTypePicker } from '@/shared/components/OvertimeTypePicker';
 import { ShiftExchangeFlowModal } from '@/features/shift-exchange/components/ShiftExchangeFlowModal';
 import { PeerEvaluationModal } from '@/features/peer-evaluations/components/PeerEvaluationModal';
 import { PERMISSIONS } from '@omnilert/shared';
-import { formatDuration } from '@/shared/utils/duration';
+import { formatCompactDuration, formatDuration } from '@/shared/utils/duration';
 import { formatDateTimeInManila } from '@/shared/utils/dateTime';
+import { deriveAdjustedShiftSummary } from '@/shared/utils/shiftSummaryAdjustments';
 import {
   AlertTriangle,
   ArrowDown,
@@ -1252,11 +1253,13 @@ function ShiftProgressBar({
   value,
   max,
   color,
+  adjusted = false,
 }: {
   label: string;
   value: number;
   max: number;
   color: 'blue' | 'amber';
+  adjusted?: boolean;
 }) {
   const isOverflow = value > max && max > 0;
   const displayMax = isOverflow ? value : max;
@@ -1273,9 +1276,17 @@ function ShiftProgressBar({
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between text-[11px]">
-        <span className="font-medium text-gray-600 uppercase tracking-wide">{label}</span>
+        <span className="font-medium text-gray-600 uppercase tracking-wide">
+          {label}
+          {adjusted ? ' (ADJUSTED)' : ''}
+        </span>
         <span className="text-gray-500 tabular-nums">
-          {formatDuration(value)} / {formatDuration(max)}
+          <span className="sm:hidden">
+            {formatCompactDuration(value)} / {formatCompactDuration(max)}
+          </span>
+          <span className="hidden sm:inline">
+            {formatDuration(value)} / {formatDuration(max)}
+          </span>
         </span>
       </div>
       <div className={trackCls}>
@@ -1311,9 +1322,11 @@ function ShiftProgressBar({
 function ShiftStackedBar({
   segments,
   total,
+  adjusted = false,
 }: {
   segments: { label: string; value: number; color: 'blue' | 'amber' | 'purple' }[];
   total: number;
+  adjusted?: boolean;
 }) {
   const colorCls: Record<string, string> = {
     blue: 'bg-blue-500',
@@ -1324,8 +1337,14 @@ function ShiftStackedBar({
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between text-[11px]">
-        <span className="font-medium text-gray-600 uppercase tracking-wide">Total Active Hours</span>
-        <span className="text-gray-500 tabular-nums">{formatDuration(total)} total</span>
+        <span className="font-medium text-gray-600 uppercase tracking-wide">
+          Total Active Hours
+          {adjusted ? ' (ADJUSTED)' : ''}
+        </span>
+        <span className="text-gray-500 tabular-nums">
+          <span className="sm:hidden">{formatCompactDuration(total)} total</span>
+          <span className="hidden sm:inline">{formatDuration(total)} total</span>
+        </span>
       </div>
       <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100 flex">
         {total > 0
@@ -1342,7 +1361,8 @@ function ShiftStackedBar({
         {segments.map((seg) => (
           <span key={seg.label} className="flex items-center gap-1 text-[11px] text-gray-500">
             <span className={`h-1.5 w-1.5 rounded-full ${colorCls[seg.color]}`} />
-            {formatDuration(seg.value)} {seg.label}
+            <span className="sm:hidden">{formatCompactDuration(seg.value)} {seg.label}</span>
+            <span className="hidden sm:inline">{formatDuration(seg.value)} {seg.label}</span>
           </span>
         ))}
       </div>
@@ -1451,7 +1471,20 @@ const ShiftDetailPanel = memo(
     const totalWorkedHours = isActive && checkInTime
       ? (now - checkInTime) / 3_600_000
       : Number(shift.total_worked_hours || 0);
-    const netWorkedHours = Math.max(0, totalWorkedHours - totalBreakHours - totalFieldTaskHours);
+    const adjustedSummary = useMemo(
+      () =>
+        deriveAdjustedShiftSummary({
+          totalWorkedHours,
+          totalBreakHours,
+          totalFieldTaskHours,
+          authorizations,
+        }),
+      [authorizations, totalBreakHours, totalFieldTaskHours, totalWorkedHours],
+    );
+    const adjustedWorkedHours = adjustedSummary.adjusted.workedMinutes / 60;
+    const adjustedBreakHours = adjustedSummary.adjusted.breakMinutes / 60;
+    const adjustedFieldTaskHours = adjustedSummary.adjusted.fieldTaskMinutes / 60;
+    const adjustedTotalActiveHours = adjustedSummary.adjusted.totalActiveMinutes / 60;
 
     const highlightIdx = useMemo(() => {
       if (!highlightLog) return -1;
@@ -1610,23 +1643,26 @@ const ShiftDetailPanel = memo(
                 <div className="border-t border-gray-100 pt-3 space-y-3">
                   <ShiftProgressBar
                     label="Worked Hours"
-                    value={netWorkedHours}
+                    value={adjustedWorkedHours}
                     max={effectiveAllocatedHours}
                     color="blue"
+                    adjusted={adjustedSummary.flags.workedAdjusted}
                   />
                   <ShiftProgressBar
                     label="Break Hours"
-                    value={totalBreakHours}
+                    value={adjustedBreakHours}
                     max={allocatedBreakHours}
                     color="amber"
+                    adjusted={adjustedSummary.flags.breakAdjusted}
                   />
                   <ShiftStackedBar
-                    total={totalWorkedHours}
+                    total={adjustedTotalActiveHours}
                     segments={[
-                      { label: 'worked', value: netWorkedHours, color: 'blue' },
-                      { label: 'break', value: totalBreakHours, color: 'amber' },
-                      { label: 'field task', value: totalFieldTaskHours, color: 'purple' },
+                      { label: 'worked', value: adjustedWorkedHours, color: 'blue' },
+                      { label: 'break', value: adjustedBreakHours, color: 'amber' },
+                      { label: 'field task', value: adjustedFieldTaskHours, color: 'purple' },
                     ]}
+                    adjusted={adjustedSummary.flags.totalAdjusted}
                   />
                 </div>
               </div>
