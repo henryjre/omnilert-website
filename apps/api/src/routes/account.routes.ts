@@ -156,7 +156,7 @@ router.delete('/push/subscriptions', accountController.removePushSubscription);
 
 router.get(
   '/shift-authorizations/:id',
-  requirePermission(PERMISSIONS.ACCOUNT_MANAGE_SCHEDULE),
+  requirePermission(PERMISSIONS.ACCOUNT_VIEW_SCHEDULE),
   accountController.getShiftAuthorizationById,
 );
 
