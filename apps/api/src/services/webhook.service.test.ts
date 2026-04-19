@@ -1578,7 +1578,7 @@ test('createAttendanceProcessor enqueues peer evaluation without overtime when n
   assert.equal(harness.peerEvaluationJobs[0]?.shiftId, shift.id);
 });
 
-test('createAttendanceProcessor creates overtime authorization when net worked time exceeds allocated hours', async (t) => {
+test('createAttendanceProcessor does not create overtime authorization at checkout even when net worked time exceeds allocated hours', async (t) => {
   const shift = createShift({
     id: 'shift-overtime-allocated-threshold',
     odoo_shift_id: 2502,
@@ -1623,10 +1623,7 @@ test('createAttendanceProcessor creates overtime authorization when net worked t
   });
 
   const overtimeAuth = harness.auths.find((auth) => auth.auth_type === 'overtime');
-  assert.ok(overtimeAuth, 'overtime authorization should be created above allocated hours');
-  assert.equal(overtimeAuth?.needs_employee_reason, true);
-  assert.equal(overtimeAuth?.status, 'pending');
-  assert.equal(overtimeAuth?.diff_minutes, 60);
+  assert.equal(overtimeAuth, undefined, 'checkout should no longer create managed overtime authorizations');
   assert.equal(harness.peerEvaluationJobs.length, 1, 'peer evaluation should still be enqueued');
   assert.equal(harness.peerEvaluationJobs[0]?.shiftId, shift.id);
 });

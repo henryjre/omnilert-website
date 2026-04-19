@@ -69,7 +69,11 @@ export async function list(req: Request, res: Response, next: NextFunction) {
           'branches.name as branch_name',
           'companies.name as company_name',
         );
-      if (status) q = q.where('shift_authorizations.status', status);
+      if (status === 'pending') {
+        q = q.whereIn('shift_authorizations.status', ['pending', 'locked']);
+      } else if (status) {
+        q = q.where('shift_authorizations.status', status);
+      }
       authRows = await q.orderBy('shift_authorizations.created_at', 'desc');
     }
 

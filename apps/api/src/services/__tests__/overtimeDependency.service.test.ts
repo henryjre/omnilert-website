@@ -6,10 +6,12 @@ import {
 } from '../overtimeDependency.service.js';
 
 describe('OVERTIME_BLOCKER_AUTH_TYPES', () => {
-  it('includes all four blocker types', () => {
+  it('includes every non-overtime auth type that keeps managed overtime locked', () => {
+    expect(OVERTIME_BLOCKER_AUTH_TYPES.has('early_check_in')).toBe(true);
     expect(OVERTIME_BLOCKER_AUTH_TYPES.has('tardiness')).toBe(true);
     expect(OVERTIME_BLOCKER_AUTH_TYPES.has('early_check_out')).toBe(true);
     expect(OVERTIME_BLOCKER_AUTH_TYPES.has('late_check_out')).toBe(true);
+    expect(OVERTIME_BLOCKER_AUTH_TYPES.has('interim_duty')).toBe(true);
     expect(OVERTIME_BLOCKER_AUTH_TYPES.has('underbreak')).toBe(true);
   });
 });
@@ -27,12 +29,14 @@ describe('computeOvertimeBlockerState', () => {
 
   it('returns blocked=true with pending blocker auth types', () => {
     const auths = [
+      { auth_type: 'early_check_in', status: 'pending' },
       { auth_type: 'tardiness', status: 'pending' },
       { auth_type: 'underbreak', status: 'pending' },
       { auth_type: 'overtime', status: 'pending' },
     ];
     const result = computeOvertimeBlockerState(auths);
     expect(result.blocked).toBe(true);
+    expect(result.blockerAuthTypes).toContain('early_check_in');
     expect(result.blockerAuthTypes).toContain('tardiness');
     expect(result.blockerAuthTypes).toContain('underbreak');
   });

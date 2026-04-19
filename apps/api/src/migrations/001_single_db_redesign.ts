@@ -651,7 +651,7 @@ export async function up(knex: Knex): Promise<void> {
       .string('status', 20)
       .notNullable()
       .defaultTo('pending')
-      .checkIn(['pending', 'approved', 'rejected', 'no_approval_needed']);
+      .checkIn(['pending', 'approved', 'rejected', 'no_approval_needed', 'locked']);
     table.text('employee_reason').nullable();
     table.text('rejection_reason').nullable();
     table.string('overtime_type', 50).nullable();

@@ -1,11 +1,19 @@
 export const OVERTIME_BLOCKER_AUTH_TYPES = new Set([
+  'early_check_in',
   'tardiness',
   'early_check_out',
   'late_check_out',
+  'interim_duty',
   'underbreak',
 ] as const);
 
-export type OvertimeBlockerAuthType = 'tardiness' | 'early_check_out' | 'late_check_out' | 'underbreak';
+export type OvertimeBlockerAuthType =
+  | 'early_check_in'
+  | 'tardiness'
+  | 'early_check_out'
+  | 'late_check_out'
+  | 'interim_duty'
+  | 'underbreak';
 
 export interface OvertimeBlockerState {
   blocked: boolean;

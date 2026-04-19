@@ -189,6 +189,7 @@ const OVERTIME_TYPE_LABELS: Record<string, string> = {
 
 const STATUS_VARIANT: Record<string, 'warning' | 'success' | 'danger' | 'default'> = {
   pending: 'warning',
+  locked: 'warning',
   approved: 'success',
   rejected: 'danger',
   no_approval_needed: 'default',
@@ -196,10 +197,15 @@ const STATUS_VARIANT: Record<string, 'warning' | 'success' | 'danger' | 'default
 
 const STATUS_LABEL: Record<string, string> = {
   pending: 'Pending',
+  locked: 'Locked',
   approved: 'Approved',
   rejected: 'Rejected',
   no_approval_needed: 'No Approval Needed',
 };
+
+function isPendingApprovalStatus(status: string | null | undefined): boolean {
+  return status === 'pending' || status === 'locked';
+}
 
 // ─── Overtime blocker utility ─────────────────────────────────────────────────
 
@@ -207,11 +213,20 @@ function deriveOvertimeBlockState(auths: Array<{ auth_type: string; status: stri
   blocked: boolean;
   blockerLabels: string[];
 } {
-  const BLOCKER_TYPES = new Set(['tardiness', 'early_check_out', 'late_check_out', 'underbreak']);
+  const BLOCKER_TYPES = new Set([
+    'early_check_in',
+    'tardiness',
+    'early_check_out',
+    'late_check_out',
+    'interim_duty',
+    'underbreak',
+  ]);
   const AUTH_LABELS: Record<string, string> = {
+    early_check_in: 'Early Check In',
     tardiness: 'Tardiness',
     early_check_out: 'Early Check Out',
     late_check_out: 'Late Check Out',
+    interim_duty: 'Interim Duty',
     underbreak: 'Underbreak',
   };
   const pendingBlockers = auths.filter(
@@ -354,6 +369,14 @@ const AuthorizationCard = memo(
           <div className="rounded bg-gray-50 p-2 text-xs text-gray-700">
             <span className="font-medium">Employee reason: </span>
             {auth.employee_reason}
+          </div>
+        )}
+
+        {auth.auth_type === 'overtime' && auth.status === 'locked' && (
+          <div className="rounded bg-amber-50 p-2 text-xs text-amber-700">
+            {blockerLabels.length > 0
+              ? `Resolve ${blockerLabels.join(' and ')} before reviewing overtime.`
+              : 'Resolve the remaining shift authorizations before reviewing overtime.'}
           </div>
         )}
 
@@ -1997,7 +2020,7 @@ export function ScheduleTab() {
         if (!prev || prev.id !== data.shift_id) return prev;
         return { ...prev, authorizations: [...(prev.authorizations || []), data] };
       });
-      if (data.status === 'pending') {
+      if (selectedShift?.id !== data.shift_id && isPendingApprovalStatus(data.status)) {
         setShifts((prev) =>
           prev.map((s) =>
             s.id === data.shift_id
@@ -2011,13 +2034,67 @@ export function ScheduleTab() {
     socket.on('shift:authorization-updated', (data: any) => {
       setSelectedShift((prev: any) => {
         if (!prev || prev.id !== data.shift_id) return prev;
+        const updatedAuths = (prev.authorizations || []).map((a: any) =>
+          a.id === data.id ? data : a,
+        );
+        const newPending = updatedAuths.filter((a: any) => isPendingApprovalStatus(a.status)).length;
+        setShifts((prevShifts) =>
+          prevShifts.map((s) =>
+            s.id === prev.id ? { ...s, pending_approvals: newPending } : s,
+          ),
+        );
         return {
           ...prev,
-          authorizations: (prev.authorizations || []).map((a: any) =>
-            a.id === data.id ? data : a,
-          ),
+          authorizations: updatedAuths,
+          pending_approvals: newPending,
         };
       });
+      if (selectedShift?.id !== data.shift_id) {
+        const wasPending = isPendingApprovalStatus(data.previous_status);
+        const isPending = isPendingApprovalStatus(data.status);
+        if (wasPending !== isPending) {
+          setShifts((prev) =>
+            prev.map((s) =>
+              s.id === data.shift_id
+                ? {
+                    ...s,
+                    pending_approvals: Math.max(
+                      0,
+                      (s.pending_approvals ?? 0) + (isPending ? 1 : -1),
+                    ),
+                  }
+                : s,
+            ),
+          );
+        }
+      }
+    });
+
+    socket.on('shift:authorization-deleted', (data: any) => {
+      setSelectedShift((prev: any) => {
+        if (!prev || prev.id !== data.shift_id) return prev;
+        const remainingAuths = (prev.authorizations || []).filter((a: any) => a.id !== data.id);
+        const newPending = remainingAuths.filter((a: any) => isPendingApprovalStatus(a.status)).length;
+        setShifts((prevShifts) =>
+          prevShifts.map((s) =>
+            s.id === prev.id ? { ...s, pending_approvals: newPending } : s,
+          ),
+        );
+        return {
+          ...prev,
+          authorizations: remainingAuths,
+          pending_approvals: newPending,
+        };
+      });
+      if (selectedShift?.id !== data.shift_id && isPendingApprovalStatus(data.status)) {
+        setShifts((prev) =>
+          prev.map((s) =>
+            s.id === data.shift_id
+              ? { ...s, pending_approvals: Math.max(0, (s.pending_approvals ?? 0) - 1) }
+              : s,
+          ),
+        );
+      }
     });
 
     return () => {
@@ -2026,8 +2103,9 @@ export function ScheduleTab() {
       socket.off('shift:log-new');
       socket.off('shift:authorization-new');
       socket.off('shift:authorization-updated');
+      socket.off('shift:authorization-deleted');
     };
-  }, [socket]);
+  }, [selectedShift?.id, socket]);
 
   useEffect(() => {
     if (!socket) return;
@@ -2609,11 +2687,19 @@ export function ScheduleTab() {
                     onAuthorizationUpdate={(updatedAuth) => {
                       setSelectedShift((prev: any) => {
                         if (!prev) return prev;
+                        const updatedAuths = (prev.authorizations || []).map((a: any) =>
+                          a.id === updatedAuth.id ? updatedAuth : a,
+                        );
+                        const newPending = updatedAuths.filter((a: any) => isPendingApprovalStatus(a.status)).length;
+                        setShifts((prevShifts) =>
+                          prevShifts.map((s) =>
+                            s.id === prev.id ? { ...s, pending_approvals: newPending } : s,
+                          ),
+                        );
                         return {
                           ...prev,
-                          authorizations: (prev.authorizations || []).map((a: any) =>
-                            a.id === updatedAuth.id ? updatedAuth : a,
-                          ),
+                          authorizations: updatedAuths,
+                          pending_approvals: newPending,
                         };
                       });
                     }}

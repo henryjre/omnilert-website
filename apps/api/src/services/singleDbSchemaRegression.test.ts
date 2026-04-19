@@ -1086,6 +1086,11 @@ test('shift authorization writes include company_id and schema allows overtime/s
     /checkIn\(\['early_check_in',\s*'tardiness',\s*'early_check_out',\s*'late_check_out',\s*'overtime'\]\)/,
     'shift_authorizations auth_type check should allow overtime',
   );
+  assert.match(
+    shiftAuthBlock,
+    /checkIn\(\['pending',\s*'approved',\s*'rejected',\s*'no_approval_needed',\s*'locked'\]\)/,
+    'shift_authorizations status check should allow locked overtime rows',
+  );
 });
 
 test('shift constraints alignment migration exists for live databases', () => {
@@ -1151,6 +1156,37 @@ test('historical early check out approval migration exists', () => {
     source,
     /resolved_at[\s\S]*(NOW\(\)|knex\.fn\.now)/i,
     'Historical early_check_out migration should stamp resolved_at',
+  );
+});
+
+test('locked overtime status migration exists for shift authorizations', () => {
+  const migrationNames = fs.readdirSync(migrationsDirPath);
+  const migrationName = migrationNames.find((name) => /039_.*locked.*status.*\.ts$/i.test(name));
+
+  assert.ok(
+    migrationName,
+    'Expected a 039 migration to add locked to shift_authorizations status',
+  );
+
+  const source = fs.readFileSync(path.join(migrationsDirPath, migrationName!), 'utf8');
+  assert.match(
+    source,
+    /shift_authorizations_status_check[\s\S]*locked/,
+    'Locked overtime migration should extend shift_authorizations_status_check with locked',
+  );
+});
+
+test('authorization requests pending filter includes locked service-crew overtime rows', () => {
+  const source = fs.readFileSync(authorizationRequestControllerPath, 'utf8');
+  const listBlock = source.slice(
+    source.indexOf('export async function list'),
+    source.indexOf('/**\n * POST /authorization-requests/:id/approve'),
+  );
+
+  assert.match(
+    listBlock,
+    /if \(status === 'pending'\) \{\s*q = q\.whereIn\('shift_authorizations\.status', \['pending', 'locked'\]\);/s,
+    'authorization requests list should include locked shift authorizations in the pending filter',
   );
 });
 

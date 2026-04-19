@@ -5,6 +5,8 @@ import {
   EXPIRING_EMPLOYEE_REASON_AUTH_TYPES,
   createShiftAuthorizationRejectResolver,
   hasSubmittedEmployeeReason,
+  reconcileOvertimeForShift,
+  shouldReconcileManagedOvertimeForAuthType,
 } from './shiftAuthorizationResolution.service.js';
 
 let cronHandle: NodeJS.Timeout | null = null;
@@ -24,6 +26,7 @@ type ShiftAuthorizationExpiryRunnerDeps = {
     resolvedByName: string;
     companyId?: string | null;
   }) => Promise<unknown>;
+  reconcileManagedOvertime: typeof reconcileOvertimeForShift;
   notifyCronJobRun: typeof notifyCronJobRun;
   logInfo: (context: Record<string, unknown>, message: string) => void;
   logError: (context: Record<string, unknown>, message: string) => void;
@@ -36,6 +39,7 @@ const defaultShiftAuthorizationExpiryRunnerDeps: ShiftAuthorizationExpiryRunnerD
       .where({ status: 'pending', needs_employee_reason: true })
       .select('*')) as Array<Record<string, unknown>>,
   rejectAuthorization: createShiftAuthorizationRejectResolver(),
+  reconcileManagedOvertime: reconcileOvertimeForShift,
   notifyCronJobRun,
   logInfo: (context, message) => {
     logger.info(context, message);
@@ -109,6 +113,12 @@ export function createShiftAuthorizationExpiryRunner(
             resolvedByName: 'System',
             companyId: typeof auth.company_id === 'string' ? auth.company_id : null,
           });
+          if (shouldReconcileManagedOvertimeForAuthType(auth.auth_type)) {
+            await deps.reconcileManagedOvertime({
+              shiftId: String(auth.shift_id ?? ''),
+              triggeringAuth: auth,
+            });
+          }
           succeeded += 1;
         } catch (err) {
           failed += 1;

@@ -1782,7 +1782,7 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
         resolvedIdentity,
       });
 
-      // 3. Threshold check for Overtime Authorization and Peer Evaluation
+      // 3. Threshold check for Peer Evaluation
       const grossWorkedHours = updatedTotalWorkedHours ?? Number(activeShift.total_worked_hours || 0);
       const allocatedHours = Number(activeShift.allocated_hours || 0);
       checkoutCompletionMetrics = await resolveCheckoutCompletionMetrics({
@@ -1791,41 +1791,6 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
         allocatedHours,
         grossWorkedHours,
       });
-
-      if (checkoutCompletionMetrics.netWorkedHours > checkoutCompletionMetrics.allocatedHours) {
-        const existingOT = await tenantDb('shift_authorizations')
-          .where({ shift_id: activeShift.id, auth_type: 'overtime', shift_log_id: log.id })
-          .first();
-
-        if (!existingOT) {
-          const overtimeMinutes = Math.round(
-            (checkoutCompletionMetrics.netWorkedHours -
-              checkoutCompletionMetrics.allocatedHours) *
-              60,
-          );
-          const [auth] = await tenantDb('shift_authorizations')
-            .insert({
-              company_id: branch.company_id,
-              shift_id: activeShift.id,
-              shift_log_id: log.id,
-              branch_id: branch.id,
-              user_id: activeShift.user_id ?? null,
-              auth_type: 'overtime',
-              diff_minutes: overtimeMinutes,
-              needs_employee_reason: true,
-              status: 'pending',
-            })
-            .returning('*');
-          
-          await tenantDb('employee_shifts')
-            .where({ id: activeShift.id })
-            .increment('pending_approvals', 1);
-
-          deps.emitSocketEvent('shift:authorization-new', auth as Record<string, unknown>);
-        }
-
-        // Trigger Peer Evaluation (Already handled by existing check below, but we ensure conditions are met)
-      }
     }
 
     if (shift && !skipStandardAuthorizationFlow) {
