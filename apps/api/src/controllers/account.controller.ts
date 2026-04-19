@@ -1327,6 +1327,63 @@ export async function getEmploymentRequirements(req: Request, res: Response, nex
   }
 }
 
+export async function getShiftAuthorizationById(req: Request, res: Response, next: NextFunction) {
+  try {
+    const userId = req.user!.sub;
+    const { id } = req.params;
+    const tenantDb = db.getDb();
+
+    const auth = await tenantDb('shift_authorizations').where({ id }).first();
+    if (!auth) throw new AppError(404, 'Authorization not found');
+    if (auth.user_id !== userId) throw new AppError(403, 'Not your authorization');
+
+    const shift = await tenantDb('employee_shifts as es')
+      .leftJoin('branches as b', 'b.id', 'es.branch_id')
+      .where({ 'es.id': auth.shift_id })
+      .select(
+        'es.id',
+        'es.shift_start',
+        'es.shift_end',
+        'es.status',
+        'es.duty_type',
+        'es.duty_color',
+        'es.employee_name',
+        'es.employee_avatar_url',
+        'es.pending_approvals',
+        'es.total_worked_hours',
+        'b.name as branch_name',
+      )
+      .first();
+
+    const resolvedByName: string | null = auth.resolved_by
+      ? await tenantDb('users')
+          .where({ id: auth.resolved_by })
+          .select(tenantDb.raw("CONCAT(first_name, ' ', last_name) as name"))
+          .first()
+          .then((u: any) => u?.name ?? null)
+      : null;
+
+    res.json({
+      success: true,
+      data: {
+        id: auth.id,
+        auth_type: auth.auth_type,
+        diff_minutes: auth.diff_minutes,
+        status: auth.status,
+        employee_reason: auth.employee_reason ?? null,
+        needs_employee_reason: auth.needs_employee_reason,
+        rejection_reason: auth.rejection_reason ?? null,
+        created_at: auth.created_at,
+        resolved_at: auth.resolved_at ?? null,
+        resolved_by_name: resolvedByName,
+        shift: shift ?? null,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function submitEmploymentRequirement(req: Request, res: Response, next: NextFunction) {
   try {
     const { companyId, companyStorageRoot } = req.companyContext!;

@@ -154,6 +154,12 @@ router.patch('/push/preferences', accountController.updatePushPreferences);
 router.post('/push/subscriptions', accountController.upsertPushSubscription);
 router.delete('/push/subscriptions', accountController.removePushSubscription);
 
+router.get(
+  '/shift-authorizations/:id',
+  requirePermission(PERMISSIONS.ACCOUNT_MANAGE_SCHEDULE),
+  accountController.getShiftAuthorizationById,
+);
+
 // Token Pay wallet and transaction history
 router.get('/token-pay/wallet', requirePermission(PERMISSIONS.ACCOUNT_VIEW_TOKEN_PAY), tokenPayController.getWallet);
 router.get('/token-pay/transactions', requirePermission(PERMISSIONS.ACCOUNT_VIEW_TOKEN_PAY), tokenPayController.getTransactions);

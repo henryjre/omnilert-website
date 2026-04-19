@@ -19,6 +19,7 @@ const {
   reject,
   resolveInterimDutyCleanupTargets,
 } = await import('./shiftAuthorization.controller.js');
+const { getShiftAuthorizationById } = await import('./account.controller.js');
 const { db } = await import('../config/database.js');
 
 function createShiftAuthorizationDbStub(
@@ -278,4 +279,214 @@ test('reject returns overtime-blocked response for pending overtime rows with pe
       overtime_blocker_auth_types: ['underbreak'],
     },
   });
+});
+
+// ---------------------------------------------------------------------------
+// GET /account/shift-authorizations/:id  (getShiftAuthorizationById)
+// ---------------------------------------------------------------------------
+
+const ownAuthId = 'auth-own-1';
+const otherUserAuthId = 'auth-other-1';
+const employeeUserId = 'user-employee-1';
+const shiftId = 'shift-test-1';
+
+const shiftAuthRows: Array<Record<string, unknown>> = [
+  {
+    id: ownAuthId,
+    shift_id: shiftId,
+    user_id: employeeUserId,
+    auth_type: 'overtime',
+    diff_minutes: 30,
+    status: 'pending',
+    employee_reason: null,
+    needs_employee_reason: true,
+    rejection_reason: null,
+    created_at: '2026-01-01T08:00:00.000Z',
+    resolved_at: null,
+    resolved_by: null,
+  },
+  {
+    id: otherUserAuthId,
+    shift_id: 'shift-other',
+    user_id: 'user-other-99',
+    auth_type: 'underbreak',
+    diff_minutes: 10,
+    status: 'approved',
+    employee_reason: null,
+    needs_employee_reason: false,
+    rejection_reason: null,
+    created_at: '2026-01-01T08:00:00.000Z',
+    resolved_at: null,
+    resolved_by: null,
+  },
+];
+
+const shiftRows: Array<Record<string, unknown>> = [
+  {
+    id: shiftId,
+    shift_start: '2026-01-01T06:00:00.000Z',
+    shift_end: '2026-01-01T14:00:00.000Z',
+    status: 'closed',
+    duty_type: 'regular',
+    duty_color: '#000000',
+    employee_name: 'John Doe',
+    employee_avatar_url: null,
+    pending_approvals: 1,
+    total_worked_hours: 8,
+    branch_name: 'Main Branch',
+  },
+];
+
+function createMultiTableDbStub(
+  authRows: Array<Record<string, unknown>>,
+  shiftRowsData: Array<Record<string, unknown>>,
+) {
+  return ((tableName: string) => {
+    const isShiftTable = tableName === 'employee_shifts as es' || tableName === 'employee_shifts';
+    const isAuthTable = tableName === 'shift_authorizations';
+    const isUsersTable = tableName === 'users';
+
+    let matchedRows = isAuthTable
+      ? authRows.map((r) => ({ ...r }))
+      : isShiftTable || isUsersTable
+        ? shiftRowsData.map((r) => ({ ...r }))
+        : [];
+
+    let selectedFields: string[] | null = null;
+
+    const applySelection = () => {
+      if (!selectedFields) return matchedRows;
+      return matchedRows.map((row) => {
+        const selected: Record<string, unknown> = {};
+        for (const field of selectedFields ?? []) {
+          const key = field.includes(' as ') ? field.split(' as ')[1].trim() : field.replace(/^.*\./, '');
+          const rawKey = field.includes(' as ') ? field.split(' as ')[0].trim().replace(/^.*\./, '') : field.replace(/^.*\./, '');
+          selected[key] = row[key] ?? row[rawKey] ?? null;
+        }
+        return selected;
+      });
+    };
+
+    const rawFn = (_sql: string) => ({ first: () => Promise.resolve(null) });
+
+    const query: Record<string, any> = {
+      leftJoin(_table: string, _left: string, _right: string) {
+        return query;
+      },
+      where(condition: Record<string, unknown> | string, _val?: unknown) {
+        if (typeof condition === 'object') {
+          matchedRows = matchedRows.filter((row) =>
+            Object.entries(condition).every(([key, value]) => {
+              const k = key.includes('.') ? key.split('.')[1] : key;
+              return row[k] === value || row[key] === value;
+            }),
+          );
+        }
+        return query;
+      },
+      select(...fields: string[]) {
+        selectedFields = fields;
+        return query;
+      },
+      first() {
+        return Promise.resolve(applySelection()[0] ?? null);
+      },
+      then(resolve: (value: unknown) => unknown, rejectNext?: (reason: unknown) => unknown) {
+        return Promise.resolve(applySelection()).then(resolve, rejectNext);
+      },
+      raw: rawFn,
+    };
+
+    return query;
+  }) as any;
+}
+
+function createResponseStubForAccount() {
+  return {
+    statusCode: 200,
+    body: null as Record<string, unknown> | null,
+    status(code: number) {
+      this.statusCode = code;
+      return this;
+    },
+    json(payload: Record<string, unknown>) {
+      this.body = payload;
+      return this;
+    },
+  };
+}
+
+test('getShiftAuthorizationById returns 404 when auth does not exist', async () => {
+  const originalGetDb = db.getDb;
+  db.getDb = () => createMultiTableDbStub([], shiftRows);
+
+  const res = createResponseStubForAccount();
+  let nextError: unknown = null;
+
+  try {
+    await getShiftAuthorizationById(
+      {
+        user: { sub: employeeUserId },
+        params: { id: '00000000-0000-0000-0000-000000000000' },
+      } as any,
+      res as any,
+      (err?: unknown) => { nextError = err ?? null; },
+    );
+  } finally {
+    db.getDb = originalGetDb;
+  }
+
+  assert.ok(nextError instanceof Error);
+  assert.equal((nextError as any).statusCode, 404);
+});
+
+test('getShiftAuthorizationById returns 403 when auth belongs to another user', async () => {
+  const originalGetDb = db.getDb;
+  db.getDb = () => createMultiTableDbStub(shiftAuthRows, shiftRows);
+
+  const res = createResponseStubForAccount();
+  let nextError: unknown = null;
+
+  try {
+    await getShiftAuthorizationById(
+      {
+        user: { sub: employeeUserId },
+        params: { id: otherUserAuthId },
+      } as any,
+      res as any,
+      (err?: unknown) => { nextError = err ?? null; },
+    );
+  } finally {
+    db.getDb = originalGetDb;
+  }
+
+  assert.ok(nextError instanceof Error);
+  assert.equal((nextError as any).statusCode, 403);
+});
+
+test('getShiftAuthorizationById returns auth + shift for the owning employee', async () => {
+  const originalGetDb = db.getDb;
+  db.getDb = () => createMultiTableDbStub(shiftAuthRows, shiftRows);
+
+  const res = createResponseStubForAccount();
+  let nextError: unknown = null;
+
+  try {
+    await getShiftAuthorizationById(
+      {
+        user: { sub: employeeUserId },
+        params: { id: ownAuthId },
+      } as any,
+      res as any,
+      (err?: unknown) => { nextError = err ?? null; },
+    );
+  } finally {
+    db.getDb = originalGetDb;
+  }
+
+  assert.equal(nextError, null);
+  assert.equal(res.statusCode, 200);
+  assert.equal((res.body as any)?.success, true);
+  assert.equal((res.body as any)?.data?.id, ownAuthId);
+  assert.equal(typeof (res.body as any)?.data?.auth_type, 'string');
 });
