@@ -1080,9 +1080,9 @@ function ShiftProgressBar({
   const trackCls = 'h-2 w-full overflow-hidden rounded-full bg-gray-100 relative';
   const normalFillCls =
     color === 'blue'
-      ? 'h-full rounded-full bg-blue-500'
+      ? 'h-full rounded-full bg-primary-500'
       : 'h-full rounded-full bg-amber-400';
-  const overflowFillCls = 'h-full rounded-full bg-red-400';
+  const overflowFillCls = 'h-full bg-red-400';
 
   return (
     <div className="space-y-1">
@@ -1110,10 +1110,13 @@ function ShiftProgressBar({
         ) : isOverflow ? (
           <>
             <div
-              className={color === 'blue' ? 'h-full bg-blue-500' : 'h-full bg-amber-400'}
+              className={color === 'blue' ? 'h-full bg-primary-500' : 'h-full bg-amber-400'}
               style={{ width: `${normalPct}%`, position: 'absolute', top: 0, left: 0 }}
             />
-            <div className={overflowFillCls} style={{ width: `${fillPct}%`, position: 'absolute', top: 0, left: 0 }} />
+            <div
+              className={overflowFillCls}
+              style={{ left: `${normalPct}%`, width: `${fillPct - normalPct}%`, position: 'absolute', top: 0, bottom: 0 }}
+            />
             <div
               style={{
                 position: 'absolute',
