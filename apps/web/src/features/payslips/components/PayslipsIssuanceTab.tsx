@@ -93,7 +93,10 @@ export function PayslipsIssuanceTab() {
     <div className="space-y-6">
       {/* Deduction form */}
       <div className="rounded-xl border border-gray-200 bg-white p-5">
-        <h2 className="mb-4 text-sm font-semibold text-gray-900">Submit Deduction</h2>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-gray-900">Submit Deduction</h2>
+          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">Coming soon</span>
+        </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             {/* Branch */}

@@ -26,7 +26,7 @@ function getStatusBadge(status: PayslipStatus): { label: string; className: stri
 interface PayslipManagementCardProps {
   payslip: PayslipListItem;
   selected: boolean;
-  onSelect: () => void;
+  onSelect: (id: string) => void;
 }
 
 export const PayslipManagementCard = React.memo(({ payslip, selected, onSelect }: PayslipManagementCardProps) => {
@@ -37,7 +37,7 @@ export const PayslipManagementCard = React.memo(({ payslip, selected, onSelect }
   return (
     <button
       type="button"
-      onClick={onSelect}
+      onClick={() => onSelect(payslip.id)}
       className={`w-full rounded-xl border px-4 py-3.5 text-left transition-colors ${
         selected ? 'border-primary-500 bg-primary-50' : 'border-gray-200 bg-white hover:bg-gray-50'
       }`}
@@ -72,3 +72,4 @@ export const PayslipManagementCard = React.memo(({ payslip, selected, onSelect }
     </button>
   );
 });
+PayslipManagementCard.displayName = 'PayslipManagementCard';

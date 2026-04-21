@@ -163,7 +163,7 @@ export function PayslipsOverviewTab() {
                 key={payslip.id}
                 payslip={payslip}
                 selected={payslip.id === selectedPayslipId}
-                onSelect={() => handleSelectPayslip(payslip.id)}
+                onSelect={handleSelectPayslip}
               />
             ))}
             {totalPages > 1 && (
