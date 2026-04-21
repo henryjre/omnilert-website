@@ -20,6 +20,7 @@ const {
   reassignUserToSingleCheckedInBranch,
   shouldPreserveInterimDutyPlanningSlotDelete,
 } = await import('./webhook.service.js');
+const { startActivity } = await import('./shiftActivity.service.js');
 
 type ShiftRecord = {
   id: string;
@@ -333,6 +334,53 @@ function createAttendanceHarness(options?: {
             log.shift_id = shiftId;
           }
         }
+      },
+      reassignActivitiesToShift: async (input: {
+        fromShiftId: string;
+        toShiftId: string;
+        attendanceStart: Date;
+        attendanceEnd: Date;
+      }) => {
+        let updatedCount = 0;
+        for (const activity of activities) {
+          const startedAt = new Date(activity.start_time).getTime();
+          if (
+            activity.shift_id === input.fromShiftId &&
+            startedAt >= input.attendanceStart.getTime() &&
+            startedAt <= input.attendanceEnd.getTime()
+          ) {
+            activity.shift_id = input.toShiftId;
+            updatedCount += 1;
+          }
+        }
+        return updatedCount;
+      },
+      reassignActivityLogsToShift: async (input: {
+        fromShiftId: string;
+        toShiftId: string;
+        attendanceStart: Date;
+        attendanceEnd: Date;
+      }) => {
+        let updatedCount = 0;
+        const targetLogTypes = new Set([
+          'break_start',
+          'break_end',
+          'field_task_start',
+          'field_task_end',
+        ]);
+        for (const log of logs) {
+          const eventTime = log.event_time ? new Date(String(log.event_time)).getTime() : NaN;
+          if (
+            log.shift_id === input.fromShiftId &&
+            targetLogTypes.has(String(log.log_type)) &&
+            eventTime >= input.attendanceStart.getTime() &&
+            eventTime <= input.attendanceEnd.getTime()
+          ) {
+            log.shift_id = input.toShiftId;
+            updatedCount += 1;
+          }
+        }
+        return updatedCount;
       },
       findOverlappingShiftInOtherBranches: async (input: {
         userId: string | null;
@@ -803,7 +851,17 @@ function createHarnessTenantDb(harness: HarnessShape) {
         return Promise.resolve(selectedRows[0] ?? null);
       },
       insert(input: Record<string, unknown> | Array<Record<string, unknown>>) {
-        const inserted = (Array.isArray(input) ? input : [input]).map((row) => ({ ...row }));
+        const inserted = (Array.isArray(input) ? input : [input]).map((row, index) => {
+          const insertedRow = { ...row };
+          if (insertedRow.id == null) {
+            if (tableName === 'shift_activities') {
+              insertedRow.id = `db-activity-${rows.length + index + 1}`;
+            } else if (tableName === 'shift_logs') {
+              insertedRow.id = `db-log-${rows.length + index + 1}`;
+            }
+          }
+          return insertedRow;
+        });
         rows.push(...inserted);
         return {
           returning: async () => inserted,
@@ -854,7 +912,10 @@ function createHarnessTenantDb(harness: HarnessShape) {
     return query;
   };
 
-  return ((tableName: string) => createQuery(tableName)) as any;
+  const tenantDb = ((tableName: string) => createQuery(tableName)) as any;
+  tenantDb.transaction = async <T>(callback: (trx: typeof tenantDb) => Promise<T>) =>
+    callback(tenantDb);
+  return tenantDb;
 }
 
 function installHarnessDb(harness: HarnessShape, registerCleanup: (cleanup: () => void) => void) {
@@ -897,6 +958,46 @@ test('createAttendanceProcessor creates a synthetic interim-duty shift for unlin
     x_website_key: 'website-user-1',
   });
 
+  const interimShift = harness.shifts.find((shift) => shift.odoo_shift_id === -9001);
+  assert.ok(interimShift);
+  assert.equal(interimShift?.duty_type, 'Interim Duty');
+  assert.equal(interimShift?.user_id, 'user-1');
+  assert.equal(interimShift?.status, 'active');
+  assert.equal(interimShift?.check_in_status, 'checked_in');
+  assert.equal(interimShift?.allocated_hours, 0);
+  assert.equal(interimShift?.total_worked_hours, 0);
+  assert.equal(harness.auths.length, 0);
+
+  const provisionalPayload = JSON.parse(String(interimShift?.odoo_payload ?? '{}')) as Record<
+    string,
+    unknown
+  >;
+  assert.equal(provisionalPayload.interim_reason, 'no_planning_schedule');
+
+  const startedBreak = await startActivity({
+    userId: 'user-1',
+    shiftId: String(interimShift?.id),
+    activityType: 'break',
+    occurredAt: new Date('2026-03-20T02:00:00.000Z'),
+  });
+  assert.equal(startedBreak.activity.shift_id, interimShift?.id);
+
+  await harness.deps.endShiftActivity({
+    userId: 'user-1',
+    shiftId: String(interimShift?.id),
+    activityId: String(startedBreak.activity.id),
+    endedAt: new Date('2026-03-20T02:10:00.000Z'),
+  });
+
+  const startedFieldTask = await startActivity({
+    userId: 'user-1',
+    shiftId: String(interimShift?.id),
+    activityType: 'field_task',
+    details: { reason: 'Stock run' },
+    occurredAt: new Date('2026-03-20T02:15:00.000Z'),
+  });
+  assert.equal(startedFieldTask.activity.shift_id, interimShift?.id);
+
   await processAttendance({
     id: 9001,
     check_in: '2026-03-20 01:00:00',
@@ -910,10 +1011,7 @@ test('createAttendanceProcessor creates a synthetic interim-duty shift for unlin
     x_website_key: 'website-user-1',
   });
 
-  const interimShift = harness.shifts.find((shift) => shift.odoo_shift_id === -9001);
-  assert.ok(interimShift);
-  assert.equal(interimShift?.duty_type, 'Interim Duty');
-  assert.equal(interimShift?.user_id, 'user-1');
+  assert.equal(interimShift?.id, 'shift-interim-1');
   assert.equal(interimShift?.status, 'ended');
   assert.equal(interimShift?.check_in_status, 'checked_out');
   assert.equal(interimShift?.allocated_hours, 8);
@@ -993,6 +1091,14 @@ test('createAttendanceProcessor restores the planned shift and reclassifies a fu
   assert.equal(plannedShift.check_in_status, 'checked_in');
   assert.equal(harness.queuedJobs.length, 1);
 
+  const startedBreak = await harness.deps.startShiftActivity({
+    userId: 'user-1',
+    shiftId: plannedShift.id,
+    activityType: 'break',
+    occurredAt: new Date('2026-03-20T07:20:00.000Z'),
+  });
+  assert.equal(startedBreak.activity.shift_id, plannedShift.id);
+
   await processAttendance({
     id: 9002,
     check_in: '2026-03-20 07:00:00',
@@ -1017,6 +1123,26 @@ test('createAttendanceProcessor restores the planned shift and reclassifies a fu
   assert.equal(harness.auths[0]?.shift_id, interimShift?.id);
   assert.equal(interimShift?.pending_approvals, 1);
   assert.ok(harness.logs.every((log) => log.shift_id === interimShift?.id));
+  assert.equal(
+    harness.activities.filter((activity) => activity.id === startedBreak.activity.id)[0]?.shift_id,
+    interimShift?.id,
+  );
+  assert.ok(
+    harness.logs.some(
+      (log) =>
+        log.shift_id === interimShift?.id &&
+        log.log_type === 'break_start' &&
+        String(log.changes ?? '').includes(String(startedBreak.activity.id)),
+    ),
+  );
+  assert.ok(
+    harness.logs.some(
+      (log) =>
+        log.shift_id === interimShift?.id &&
+        log.log_type === 'break_end' &&
+        String(log.changes ?? '').includes(String(startedBreak.activity.id)),
+    ),
+  );
 });
 
 test('createAttendanceProcessor skips tardiness creation when check-in occurs after the linked shift already ended', async () => {
@@ -1050,7 +1176,7 @@ test('createAttendanceProcessor skips tardiness creation when check-in occurs af
   assert.equal(plannedShift.check_in_status, null);
 });
 
-test('createAttendanceProcessor marks cross-branch coverage as scheduled_other_branch interim duty', async () => {
+test('createAttendanceProcessor marks cross-branch coverage as scheduled_other_branch interim duty', async (t) => {
   const otherBranchShift = createShift({
     id: 'shift-other',
     odoo_shift_id: 200,
@@ -1064,6 +1190,7 @@ test('createAttendanceProcessor marks cross-branch coverage as scheduled_other_b
     websiteUserKey: 'website-user-1',
     resolvedUserId: 'user-1',
   });
+  installHarnessDb(harness, (cleanup) => t.after(cleanup));
   const processAttendance = createAttendanceProcessor(harness.deps as any);
 
   await processAttendance({
@@ -1076,6 +1203,18 @@ test('createAttendanceProcessor marks cross-branch coverage as scheduled_other_b
     x_website_key: 'website-user-1',
   });
 
+  const interimShift = harness.shifts.find((shift) => shift.odoo_shift_id === -9004);
+  assert.ok(interimShift);
+  assert.equal(interimShift?.status, 'active');
+  assert.equal(interimShift?.check_in_status, 'checked_in');
+  assert.equal(harness.auths.length, 0);
+
+  const provisionalPayload = JSON.parse(String(interimShift?.odoo_payload ?? '{}')) as Record<
+    string,
+    unknown
+  >;
+  assert.equal(provisionalPayload.interim_reason, 'scheduled_other_branch');
+
   await processAttendance({
     id: 9004,
     check_in: '2026-03-20 09:00:00',
@@ -1087,8 +1226,6 @@ test('createAttendanceProcessor marks cross-branch coverage as scheduled_other_b
     x_planning_slot_id: false,
     x_website_key: 'website-user-1',
   });
-
-  const interimShift = harness.shifts.find((shift) => shift.odoo_shift_id === -9004);
   assert.ok(interimShift);
 
   const interimPayload = JSON.parse(String(interimShift?.odoo_payload ?? '{}')) as Record<

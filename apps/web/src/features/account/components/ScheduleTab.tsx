@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef, memo } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { ViewToggle, type ViewOption } from '@/shared/components/ui/ViewToggle';
 import { useSearchParams } from 'react-router-dom';
@@ -105,6 +105,50 @@ function fmtTimeShort(dt: string) {
     minute: '2-digit',
     hour12: true,
   });
+}
+
+function isInterimDutyShift(shift: any): boolean {
+  return shift?.duty_type === 'Interim Duty';
+}
+
+function isActiveInterimDutyShift(shift: any): boolean {
+  return isInterimDutyShift(shift) && shift?.status === 'active';
+}
+
+function getShiftEndDisplay(shift: any): string {
+  return isActiveInterimDutyShift(shift) ? 'In Progress' : fmtShift(shift.shift_end);
+}
+
+function getAllocatedHoursDisplay(shift: any): string {
+  return isActiveInterimDutyShift(shift)
+    ? 'In Progress'
+    : `${formatDuration(shift.allocated_hours)} allocated`;
+}
+
+function getShiftRangeDisplay(shift: any): string {
+  return isActiveInterimDutyShift(shift)
+    ? `${fmtTimeShort(shift.shift_start)}–In Progress`
+    : `${fmtTimeShort(shift.shift_start)}–${fmtTimeShort(shift.shift_end)}`;
+}
+
+function getLinkedShiftIdFromInterimPayload(shift: any): string | null {
+  if (!isInterimDutyShift(shift)) return null;
+  const rawPayload = shift?.odoo_payload;
+  const payload =
+    typeof rawPayload === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(rawPayload) as Record<string, unknown>;
+          } catch {
+            return null;
+          }
+        })()
+      : rawPayload && typeof rawPayload === 'object'
+        ? (rawPayload as Record<string, unknown>)
+        : null;
+  const linkedShiftId =
+    typeof payload?.linked_shift_id === 'string' ? payload.linked_shift_id.trim() : '';
+  return linkedShiftId || null;
 }
 
 function dayKey(dt: string) {
@@ -1009,17 +1053,29 @@ function ShiftProgressBar({
   max,
   color,
   adjusted = false,
+  uncapped = false,
 }: {
   label: string;
   value: number;
-  max: number;
+  max?: number | null;
   color: 'blue' | 'amber';
   adjusted?: boolean;
+  uncapped?: boolean;
 }) {
-  const isOverflow = value > max && max > 0;
-  const displayMax = isOverflow ? value : max;
-  const normalPct = max > 0 ? Math.min((max / displayMax) * 100, 100) : 0;
-  const fillPct = displayMax > 0 ? Math.min((value / displayMax) * 100, 100) : 0;
+  const resolvedMax = typeof max === 'number' ? max : 0;
+  const isOverflow = !uncapped && value > resolvedMax && resolvedMax > 0;
+  const displayMax = uncapped ? value : isOverflow ? value : resolvedMax;
+  const normalPct =
+    uncapped || resolvedMax <= 0 || displayMax <= 0
+      ? 0
+      : Math.min((resolvedMax / displayMax) * 100, 100);
+  const fillPct = uncapped
+    ? value > 0
+      ? 100
+      : 0
+    : displayMax > 0
+      ? Math.min((value / displayMax) * 100, 100)
+      : 0;
 
   const trackCls = 'h-2 w-full overflow-hidden rounded-full bg-gray-100 relative';
   const normalFillCls =
@@ -1037,15 +1093,21 @@ function ShiftProgressBar({
         </span>
         <span className="text-gray-500 tabular-nums">
           <span className="sm:hidden">
-            {formatCompactDuration(value)} / {formatCompactDuration(max)}
+            {uncapped
+              ? formatCompactDuration(value)
+              : `${formatCompactDuration(value)} / ${formatCompactDuration(resolvedMax)}`}
           </span>
           <span className="hidden sm:inline">
-            {formatDuration(value)} / {formatDuration(max)}
+            {uncapped
+              ? formatDuration(value)
+              : `${formatDuration(value)} / ${formatDuration(resolvedMax)}`}
           </span>
         </span>
       </div>
       <div className={trackCls}>
-        {isOverflow ? (
+        {uncapped ? (
+          <div className={normalFillCls} style={{ width: `${fillPct}%` }} />
+        ) : isOverflow ? (
           <>
             <div
               className={color === 'blue' ? 'h-full bg-blue-500' : 'h-full bg-amber-400'}
@@ -1202,6 +1264,7 @@ const ShiftDetailPanel = memo(
     );
 
     const isActive = shift.status === 'active';
+    const isActiveInterimDuty = isActiveInterimDutyShift(shift);
     const checkInTime = useMemo(
       () => {
         const log = [...logs].reverse().find((l: any) => l.log_type === 'check_in');
@@ -1367,7 +1430,7 @@ const ShiftDetailPanel = memo(
                   <div>
                     <p className="text-[11px] uppercase tracking-wide text-gray-400">Shift End</p>
                     <p className="mt-0.5 text-sm font-medium text-gray-800">
-                      {fmtShift(shift.shift_end)}
+                      {getShiftEndDisplay(shift)}
                     </p>
                   </div>
                   {shift.pending_approvals > 0 && (
@@ -1386,9 +1449,10 @@ const ShiftDetailPanel = memo(
                   <ShiftProgressBar
                     label="Worked Hours"
                     value={adjustedWorkedHours}
-                    max={effectiveAllocatedHours}
+                    max={isActiveInterimDuty ? null : effectiveAllocatedHours}
                     color="blue"
                     adjusted={adjustedSummary.flags.workedAdjusted}
+                    uncapped={isActiveInterimDuty}
                   />
                   <ShiftProgressBar
                     label="Break Hours"
@@ -1637,15 +1701,13 @@ const MyShiftCard = memo(
               <span title="Shift End">
                 <LogOut className="h-3.5 w-3.5 shrink-0 text-gray-400" />
               </span>
-              <span className="text-xs text-gray-700">{fmtShift(shift.shift_end)}</span>
+              <span className="text-xs text-gray-700">{getShiftEndDisplay(shift)}</span>
             </div>
             <div className="flex items-center gap-2">
               <span title="Allocated Hours">
                 <Clock className="h-3.5 w-3.5 shrink-0 text-gray-400" />
               </span>
-              <span className="text-xs text-gray-700">
-                {formatDuration(shift.allocated_hours)} allocated
-              </span>
+              <span className="text-xs text-gray-700">{getAllocatedHoursDisplay(shift)}</span>
             </div>
             {shift.total_worked_hours != null && (
               <div className="flex items-center gap-2">
@@ -1828,6 +1890,7 @@ export function ScheduleTab() {
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [draftFilters, setDraftFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [selectedShift, setSelectedShift] = useState<any | null>(null);
+  const [highlightLog, setHighlightLog] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [currentMonth, setCurrentMonth] = useState<Date>(() => new Date());
   const [page, setPage] = useState(1);
@@ -1939,6 +2002,33 @@ export function ScheduleTab() {
     setActivityReason('');
   };
 
+  const refreshSelectedShiftDetail = useCallback(async (shiftId: string) => {
+    try {
+      const res = await api.get(`/account/schedule/${shiftId}`);
+      setSelectedShift((prev: any) => (prev?.id === shiftId ? res.data.data : prev));
+    } catch {}
+  }, []);
+
+  const openDetail = useCallback(
+    async (shiftId: string, highlight?: string) => {
+      setHighlightLog(highlight ?? null);
+      setDetailLoading(true);
+      try {
+        const res = await api.get(`/account/schedule/${shiftId}`);
+        setSelectedShift(res.data.data);
+      } catch (err: any) {
+        showErrorToast(
+          err?.response?.data?.error ||
+            err?.response?.data?.message ||
+            'Failed to load shift details.',
+        );
+      } finally {
+        setDetailLoading(false);
+      }
+    },
+    [showErrorToast],
+  );
+
   const closeEndShiftConfirm = () => {
     if (endShiftLoading) return;
     setEndShiftConfirm(null);
@@ -2026,6 +2116,9 @@ export function ScheduleTab() {
             );
           });
       }
+      if (selectedShift?.id && getLinkedShiftIdFromInterimPayload(data) === selectedShift.id) {
+        void refreshSelectedShiftDetail(selectedShift.id);
+      }
     });
 
     socket.on('shift:updated', (data: any) => {
@@ -2037,6 +2130,9 @@ export function ScheduleTab() {
           ? { ...prev, ...data, logs: prev.logs, authorizations: prev.authorizations }
           : prev,
       );
+      if (selectedShift?.id && getLinkedShiftIdFromInterimPayload(data) === selectedShift.id) {
+        void refreshSelectedShiftDetail(selectedShift.id);
+      }
     });
 
     socket.on('shift:log-new', (data: any) => {
@@ -2135,6 +2231,26 @@ export function ScheduleTab() {
       }
     });
 
+    socket.on('shift:activity-started', (data: { shiftId: string; activity: any }) => {
+      setSelectedShift((prev: any) => {
+        if (!prev || prev.id !== data.shiftId) return prev;
+        return { ...prev, active_activity: data.activity };
+      });
+      setShifts((prev) =>
+        prev.map((s) => (s.id === data.shiftId ? { ...s, active_activity: data.activity } : s)),
+      );
+    });
+
+    socket.on('shift:activity-ended', (data: { shiftId: string; activity: any }) => {
+      setSelectedShift((prev: any) => {
+        if (!prev || prev.id !== data.shiftId) return prev;
+        return { ...prev, active_activity: null };
+      });
+      setShifts((prev) =>
+        prev.map((s) => (s.id === data.shiftId ? { ...s, active_activity: null } : s)),
+      );
+    });
+
     return () => {
       socket.off('shift:new');
       socket.off('shift:updated');
@@ -2142,8 +2258,10 @@ export function ScheduleTab() {
       socket.off('shift:authorization-new');
       socket.off('shift:authorization-updated');
       socket.off('shift:authorization-deleted');
+      socket.off('shift:activity-started');
+      socket.off('shift:activity-ended');
     };
-  }, [selectedShift?.id, socket]);
+  }, [currentUser?.id, refreshSelectedShiftDetail, selectedShift?.id, socket]);
 
   useEffect(() => {
     if (!socket) return;
@@ -2153,25 +2271,6 @@ export function ScheduleTab() {
       branchIds.forEach((id) => socket.emit('leave-branch', id));
     };
   }, [socket, currentUser?.branchIds]);
-
-  const [highlightLog, setHighlightLog] = useState<string | null>(null);
-
-  const openDetail = async (shiftId: string, highlight?: string) => {
-    setHighlightLog(highlight ?? null);
-    setDetailLoading(true);
-    try {
-      const res = await api.get(`/account/schedule/${shiftId}`);
-      setSelectedShift(res.data.data);
-    } catch (err: any) {
-      showErrorToast(
-        err?.response?.data?.error ||
-          err?.response?.data?.message ||
-          'Failed to load shift details.',
-      );
-    } finally {
-      setDetailLoading(false);
-    }
-  };
 
   const handleEndShift = async (shiftId: string): Promise<boolean> => {
     try {
@@ -2661,8 +2760,7 @@ export function ScheduleTab() {
                             className="w-full rounded bg-primary-50 px-1 py-0.5 text-left text-[11px] text-primary-800 hover:bg-primary-100"
                           >
                             <div className="truncate">
-                              {fmtTimeShort(s.shift_start)}–{fmtTimeShort(s.shift_end)} ·{' '}
-                              {s.duty_type}
+                              {getShiftRangeDisplay(s)} · {s.duty_type}
                             </div>
                             <div className="truncate text-[10px] text-gray-500">
                               {s.branch_name ?? 'Unknown Branch'}

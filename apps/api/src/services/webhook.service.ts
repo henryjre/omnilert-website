@@ -32,6 +32,14 @@ const INTERIM_DUTY_AUTH_TYPE = 'interim_duty';
 const PRESERVED_INTERIM_DUTY_STATUSES = new Set(['pending', 'approved', 'rejected']);
 const MANAGEMENT_INTERRUPT_BREAK_SOURCE = 'management_interrupt';
 const ALLOCATED_BREAK_HOURS = 1;
+const SHIFT_ACTIVITY_LOG_TYPES = [
+  'break_start',
+  'break_end',
+  'field_task_start',
+  'field_task_end',
+] as const;
+
+type InterimReason = 'no_planning_schedule' | 'scheduled_other_branch';
 
 export function shouldPreserveInterimDutyPlanningSlotDelete(statuses: string[]): boolean {
   return statuses.some((status) => PRESERVED_INTERIM_DUTY_STATUSES.has(status));
@@ -713,6 +721,18 @@ interface AttendanceProcessorDeps {
   ) => Promise<AttendanceShiftAuthorizationRow>;
   upsertInterimShift: (input: Record<string, unknown>) => Promise<AttendanceShiftRow>;
   reassignLogsToShift: (attendanceId: number, shiftId: string) => Promise<void>;
+  reassignActivitiesToShift: (input: {
+    fromShiftId: string;
+    toShiftId: string;
+    attendanceStart: Date;
+    attendanceEnd: Date;
+  }) => Promise<number>;
+  reassignActivityLogsToShift: (input: {
+    fromShiftId: string;
+    toShiftId: string;
+    attendanceStart: Date;
+    attendanceEnd: Date;
+  }) => Promise<number>;
   findOverlappingShiftInOtherBranches: (input: {
     userId: string | null;
     branchId: string;
@@ -1043,6 +1063,25 @@ const defaultAttendanceProcessorDeps: AttendanceProcessorDeps = {
       .where({ odoo_attendance_id: attendanceId })
       .update({ shift_id: shiftId });
   },
+  reassignActivitiesToShift: async (input) =>
+    Number(
+      await db
+        .getDb()('shift_activities')
+        .where({ shift_id: input.fromShiftId })
+        .andWhere('start_time', '>=', input.attendanceStart)
+        .andWhere('start_time', '<=', input.attendanceEnd)
+        .update({ shift_id: input.toShiftId }),
+    ),
+  reassignActivityLogsToShift: async (input) =>
+    Number(
+      await db
+        .getDb()('shift_logs')
+        .where({ shift_id: input.fromShiftId })
+        .whereIn('log_type', [...SHIFT_ACTIVITY_LOG_TYPES])
+        .andWhere('event_time', '>=', input.attendanceStart)
+        .andWhere('event_time', '<=', input.attendanceEnd)
+        .update({ shift_id: input.toShiftId }),
+    ),
   findOverlappingShiftInOtherBranches: async (input) => {
     if (!input.userId) return null;
     return (await db
@@ -1276,9 +1315,48 @@ async function resolveInterimReason(
     attendanceStart: Date;
     attendanceEnd: Date;
   },
-): Promise<'no_planning_schedule' | 'scheduled_other_branch'> {
+): Promise<InterimReason> {
   const otherBranchShift = await deps.findOverlappingShiftInOtherBranches(input);
   return otherBranchShift ? 'scheduled_other_branch' : 'no_planning_schedule';
+}
+
+function isInterimDutyShift(shift: AttendanceShiftRow | null | undefined): boolean {
+  if (!shift) return false;
+  return (
+    String(shift.duty_type ?? '').trim() === 'Interim Duty' &&
+    Number(shift.odoo_shift_id ?? 0) < 0
+  );
+}
+
+function getInterimShiftContext(input: {
+  shift: AttendanceShiftRow | null | undefined;
+}): {
+  interimReason: InterimReason | null;
+  linkedShiftId: string | null;
+  linkedShiftOdooId: number | null;
+} {
+  const payload = parseRecord(input.shift?.odoo_payload);
+  const rawReason = String(payload.interim_reason ?? '').trim();
+  const interimReason =
+    rawReason === 'scheduled_other_branch' || rawReason === 'no_planning_schedule'
+      ? (rawReason as InterimReason)
+      : null;
+  const linkedShiftId =
+    typeof payload.linked_shift_id === 'string' && payload.linked_shift_id.trim()
+      ? payload.linked_shift_id.trim()
+      : null;
+  const linkedShiftOdooId =
+    typeof payload.linked_shift_odoo_id === 'number'
+      ? payload.linked_shift_odoo_id
+      : typeof payload.linked_shift_odoo_id === 'string' && payload.linked_shift_odoo_id.trim()
+        ? Number(payload.linked_shift_odoo_id)
+        : null;
+
+  return {
+    interimReason,
+    linkedShiftId,
+    linkedShiftOdooId: Number.isFinite(linkedShiftOdooId) ? linkedShiftOdooId : null,
+  };
 }
 
 async function tryStartManagementInterruptBreak(input: {
@@ -1598,10 +1676,15 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
     if (!branch)
       throw new AppError(404, `Branch not found for x_company_id: ${payload.x_company_id}`);
 
+    const interimOdooShiftId = payload.id * -1;
     let shift =
       payload.x_planning_slot_id !== false && payload.x_planning_slot_id != null
         ? await deps.findShiftByPlanningSlotId(payload.x_planning_slot_id, branch.id)
         : null;
+    const existingInterimShift = await deps.findShiftByPlanningSlotId(interimOdooShiftId, branch.id);
+    const provisionalInterimShift = isInterimDutyShift(existingInterimShift)
+      ? existingInterimShift
+      : null;
 
     const isCheckOut = Boolean(payload.check_out);
 
@@ -1623,7 +1706,7 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
 
     let log = await deps.createShiftLog({
       company_id: branch.company_id,
-      shift_id: shift ? shift.id : null,
+      shift_id: provisionalInterimShift?.id ?? shift?.id ?? null,
       branch_id: branch.id,
       log_type: logType,
       odoo_attendance_id: payload.id,
@@ -1638,8 +1721,10 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
     let updatedTotalWorkedHours: number | null = null;
     let createdInterimShift = false;
     let restoredScheduledShift: AttendanceShiftRow | null = null;
-    let activeShift: AttendanceShiftRow | null = shift;
+    let activeShift: AttendanceShiftRow | null = provisionalInterimShift ?? shift;
     let skipStandardAuthorizationFlow = false;
+
+    const allowsInterimDuty = payload.x_company_id !== 1;
 
     if (!isCheckOut) {
       await applyCheckInRoleScopeAndAttendanceGuard({
@@ -1648,70 +1733,38 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
         checkInTime: eventTime,
         resolvedIdentity,
       });
-    }
 
-    if (isCheckOut) {
-      const attendanceStart = parseOdooUtcDateTime(payload.check_in);
-      const attendanceEnd = eventTime;
-      const linkedShiftHasOverlap = shift
-        ? hasPositiveWindowOverlap(
-            attendanceStart,
-            attendanceEnd,
-            new Date(shift.shift_start),
-            new Date(shift.shift_end),
-          )
-        : false;
-      const allowsInterimDuty = payload.x_company_id !== 1;
-
-      let interimReason: 'no_planning_schedule' | 'scheduled_other_branch' | null = null;
-      if (allowsInterimDuty && (!shift || !linkedShiftHasOverlap)) {
-        interimReason = await resolveInterimReason(deps, {
+      if (!shift && !provisionalInterimShift && allowsInterimDuty) {
+        const interimReason = await resolveInterimReason(deps, {
           userId: resolvedIdentity.userId,
           branchId: branch.id,
-          attendanceStart,
-          attendanceEnd,
+          attendanceStart: eventTime,
+          attendanceEnd: new Date(eventTime.getTime() + 1),
         });
-      }
-
-      if (interimReason) {
-        skipStandardAuthorizationFlow = true;
-        const interimOdooShiftId = payload.id * -1;
-        const existingInterimShift = await deps.findShiftByPlanningSlotId(
-          interimOdooShiftId,
-          branch.id,
-        );
-        const totalWorkedHours = Math.round((payload.x_cumulative_minutes / 60) * 100) / 100;
-        const allocatedHours = Math.max(
-          0,
-          roundHoursFromMs(attendanceEnd.getTime() - attendanceStart.getTime()),
-        );
         const interimShift = await deps.upsertInterimShift({
           company_id: branch.company_id,
           odoo_shift_id: interimOdooShiftId,
           branch_id: branch.id,
-          user_id: resolvedIdentity.userId ?? (shift?.user_id as string | null | undefined) ?? null,
+          user_id: resolvedIdentity.userId ?? null,
           employee_name:
             resolvedIdentity.employeeName || String(payload.x_employee_contact_name ?? ''),
-          employee_avatar_url:
-            payload.x_employee_avatar ??
-            (shift?.employee_avatar_url as string | null | undefined) ??
-            null,
+          employee_avatar_url: payload.x_employee_avatar ?? null,
           duty_type: 'Interim Duty',
           duty_color: 0,
-          shift_start: attendanceStart,
-          shift_end: attendanceEnd,
-          allocated_hours: allocatedHours,
-          total_worked_hours: totalWorkedHours,
-          status: 'ended',
-          check_in_status: 'checked_out',
+          shift_start: eventTime,
+          shift_end: eventTime,
+          allocated_hours: 0,
+          total_worked_hours: 0,
+          status: 'active',
+          check_in_status: 'checked_in',
           odoo_payload: JSON.stringify({
             source: 'attendance',
             source_attendance_id: payload.id,
             source_planning_slot_id:
               payload.x_planning_slot_id === false ? null : (payload.x_planning_slot_id ?? null),
             interim_reason: interimReason,
-            linked_shift_id: shift?.id ?? null,
-            linked_shift_odoo_id: shift?.odoo_shift_id ?? null,
+            linked_shift_id: null,
+            linked_shift_odoo_id: null,
             website_user_key: resolvedIdentity.websiteUserKey,
             attendance_payload: payload,
           }),
@@ -1719,41 +1772,17 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
         });
 
         createdInterimShift = !existingInterimShift;
-        updatedTotalWorkedHours = totalWorkedHours;
         await deps.reassignLogsToShift(payload.id, interimShift.id);
         log = { ...log, shift_id: interimShift.id };
         activeShift = interimShift;
 
-        const interimDutyAuth = await deps.createShiftAuthorization({
-          company_id: branch.company_id,
-          shift_id: interimShift.id,
-          shift_log_id: log.id,
-          branch_id: branch.id,
-          user_id: interimShift.user_id ?? null,
-          auth_type: INTERIM_DUTY_AUTH_TYPE,
-          diff_minutes: Math.max(0, Math.round(Number(payload.x_cumulative_minutes ?? 0))),
-          needs_employee_reason: true,
-          status: 'pending',
-        });
-        await deps.incrementShiftPendingApprovals(interimShift.id as string);
-        deps.emitSocketEvent('shift:authorization-new', interimDutyAuth as Record<string, unknown>);
-
         if (interimShift.user_id) {
-          await deps.createAndDispatchNotification({
-            userId: interimShift.user_id as string,
-            title: 'Interim Duty - Reason Required',
-            message: `You have been assigned an interim duty shift. Please submit a reason in the Authorization Requests tab.`,
-            type: 'warning',
-            linkUrl: `/account/schedule?shiftId=${String(interimShift.id)}&authId=${String((interimDutyAuth as any).id)}`,
-          });
-        }
-
-        if (shift) {
-          restoredScheduledShift = await deps.updateShiftById(shift.id, {
-            status: 'open',
-            check_in_status: null,
-            total_worked_hours: null,
-            updated_at: deps.now(),
+          const userId = interimShift.user_id as string;
+          const checkedInBranchId = branch.id as string;
+          await deps.reassignUserToSingleCheckedInBranch(userId, checkedInBranchId);
+          deps.emitSocketEvent('user:branch-assignments-updated', {
+            userId,
+            branchIds: [checkedInBranchId],
           });
         }
       }
@@ -1805,20 +1834,6 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
       }
     }
 
-    if (isCheckOut && shift && !skipStandardAuthorizationFlow) {
-      const calculatedMins = Math.round((eventTime.getTime() - parseOdooUtcDateTime(payload.check_in).getTime()) / 60000);
-      const sessionHours = calculatedMins / 60;
-      const totalWorkedHours = Number(shift.total_worked_hours || 0) + sessionHours;
-      activeShift =
-        (await deps.updateShiftById(shift.id, {
-          total_worked_hours: totalWorkedHours,
-          check_in_status: 'checked_out',
-          status: 'ended',
-          updated_at: deps.now(),
-        })) ?? shift;
-      updatedTotalWorkedHours = totalWorkedHours;
-    }
-
     if (isCheckOut && activeShift) {
       // 1. End any ongoing activities
       await autoEndOpenShiftActivitiesOnCheckOut({
@@ -1827,7 +1842,152 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
         branch,
         endedAt: eventTime,
       });
+    }
 
+    if (isCheckOut) {
+      const attendanceStart = parseOdooUtcDateTime(payload.check_in);
+      const attendanceEnd = eventTime;
+      const linkedShiftHasOverlap = shift
+        ? hasPositiveWindowOverlap(
+            attendanceStart,
+            attendanceEnd,
+            new Date(shift.shift_start),
+            new Date(shift.shift_end),
+          )
+        : false;
+      const interimContext = getInterimShiftContext({ shift: provisionalInterimShift });
+
+      let interimReason: InterimReason | null = interimContext.interimReason;
+      if (!interimReason && allowsInterimDuty && (!shift || !linkedShiftHasOverlap)) {
+        interimReason = await resolveInterimReason(deps, {
+          userId: resolvedIdentity.userId,
+          branchId: branch.id,
+          attendanceStart,
+          attendanceEnd,
+        });
+      }
+
+      if (interimReason) {
+        skipStandardAuthorizationFlow = true;
+        const totalWorkedHours = Math.round((payload.x_cumulative_minutes / 60) * 100) / 100;
+        const allocatedHours = Math.max(
+          0,
+          roundHoursFromMs(attendanceEnd.getTime() - attendanceStart.getTime()),
+        );
+        const interimShift = await deps.upsertInterimShift({
+          company_id: branch.company_id,
+          odoo_shift_id: interimOdooShiftId,
+          branch_id: branch.id,
+          user_id:
+            resolvedIdentity.userId ??
+            (shift?.user_id as string | null | undefined) ??
+            (provisionalInterimShift?.user_id as string | null | undefined) ??
+            null,
+          employee_name:
+            resolvedIdentity.employeeName ||
+            String(payload.x_employee_contact_name ?? provisionalInterimShift?.employee_name ?? ''),
+          employee_avatar_url:
+            payload.x_employee_avatar ??
+            (shift?.employee_avatar_url as string | null | undefined) ??
+            (provisionalInterimShift?.employee_avatar_url as string | null | undefined) ??
+            null,
+          duty_type: 'Interim Duty',
+          duty_color: 0,
+          shift_start: attendanceStart,
+          shift_end: attendanceEnd,
+          allocated_hours: allocatedHours,
+          total_worked_hours: totalWorkedHours,
+          status: 'ended',
+          check_in_status: 'checked_out',
+          odoo_payload: JSON.stringify({
+            source: 'attendance',
+            source_attendance_id: payload.id,
+            source_planning_slot_id:
+              payload.x_planning_slot_id === false ? null : (payload.x_planning_slot_id ?? null),
+            interim_reason: interimReason,
+            linked_shift_id: shift?.id ?? interimContext.linkedShiftId,
+            linked_shift_odoo_id:
+              shift && typeof shift.odoo_shift_id === 'number'
+                ? shift.odoo_shift_id
+                : interimContext.linkedShiftOdooId,
+            website_user_key: resolvedIdentity.websiteUserKey,
+            attendance_payload: payload,
+          }),
+          updated_at: deps.now(),
+        });
+
+        createdInterimShift = !existingInterimShift;
+        updatedTotalWorkedHours = totalWorkedHours;
+        await deps.reassignLogsToShift(payload.id, interimShift.id);
+
+        if (shift) {
+          await deps.reassignActivitiesToShift({
+            fromShiftId: String(shift.id),
+            toShiftId: String(interimShift.id),
+            attendanceStart,
+            attendanceEnd,
+          });
+          await deps.reassignActivityLogsToShift({
+            fromShiftId: String(shift.id),
+            toShiftId: String(interimShift.id),
+            attendanceStart,
+            attendanceEnd,
+          });
+        }
+
+        log = { ...log, shift_id: interimShift.id };
+        activeShift = interimShift;
+
+        const interimDutyAuth = await deps.createShiftAuthorization({
+          company_id: branch.company_id,
+          shift_id: interimShift.id,
+          shift_log_id: log.id,
+          branch_id: branch.id,
+          user_id: interimShift.user_id ?? null,
+          auth_type: INTERIM_DUTY_AUTH_TYPE,
+          diff_minutes: Math.max(0, Math.round(Number(payload.x_cumulative_minutes ?? 0))),
+          needs_employee_reason: true,
+          status: 'pending',
+        });
+        await deps.incrementShiftPendingApprovals(interimShift.id as string);
+        deps.emitSocketEvent('shift:authorization-new', interimDutyAuth as Record<string, unknown>);
+
+        if (interimShift.user_id) {
+          await deps.createAndDispatchNotification({
+            userId: interimShift.user_id as string,
+            title: 'Interim Duty - Reason Required',
+            message: `You have been assigned an interim duty shift. Please submit a reason in the Authorization Requests tab.`,
+            type: 'warning',
+            linkUrl: `/account/schedule?shiftId=${String(interimShift.id)}&authId=${String((interimDutyAuth as any).id)}`,
+          });
+        }
+
+        if (shift) {
+          restoredScheduledShift = await deps.updateShiftById(shift.id, {
+            status: 'open',
+            check_in_status: null,
+            total_worked_hours: null,
+            updated_at: deps.now(),
+          });
+        }
+      } else if (shift && !skipStandardAuthorizationFlow) {
+        const calculatedMins = Math.round(
+          (eventTime.getTime() - parseOdooUtcDateTime(payload.check_in).getTime()) / 60000,
+        );
+        const sessionHours = calculatedMins / 60;
+        const totalWorkedHours = Number(shift.total_worked_hours || 0) + sessionHours;
+        activeShift =
+          (await deps.updateShiftById(shift.id, {
+            total_worked_hours: totalWorkedHours,
+            check_in_status: 'checked_out',
+            status: 'ended',
+            updated_at: deps.now(),
+          })) ?? shift;
+        updatedTotalWorkedHours = totalWorkedHours;
+      }
+    }
+
+    if (isCheckOut && activeShift) {
       // 2. Reconcile the Odoo break work entry to the employee's total break minutes for that date
       await syncBreakWorkEntryToDateTotal({
         deps,

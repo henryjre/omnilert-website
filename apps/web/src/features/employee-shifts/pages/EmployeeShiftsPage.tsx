@@ -88,6 +88,44 @@ function fmtTime(iso: string) {
   return formatDateTimeInManila(iso) ?? iso;
 }
 
+function isInterimDutyShift(shift: any): boolean {
+  return shift?.duty_type === 'Interim Duty';
+}
+
+function isActiveInterimDutyShift(shift: any): boolean {
+  return isInterimDutyShift(shift) && shift?.status === 'active';
+}
+
+function getShiftEndDisplay(shift: any): string {
+  return isActiveInterimDutyShift(shift) ? 'In Progress' : fmtShift(shift.shift_end);
+}
+
+function getAllocatedHoursDisplay(shift: any): string {
+  return isActiveInterimDutyShift(shift)
+    ? 'In Progress'
+    : `${formatDuration(shift.allocated_hours)} allocated`;
+}
+
+function getLinkedShiftIdFromInterimPayload(shift: any): string | null {
+  if (!isInterimDutyShift(shift)) return null;
+  const rawPayload = shift?.odoo_payload;
+  const payload =
+    typeof rawPayload === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(rawPayload) as Record<string, unknown>;
+          } catch {
+            return null;
+          }
+        })()
+      : rawPayload && typeof rawPayload === 'object'
+        ? (rawPayload as Record<string, unknown>)
+        : null;
+  const linkedShiftId =
+    typeof payload?.linked_shift_id === 'string' ? payload.linked_shift_id.trim() : '';
+  return linkedShiftId || null;
+}
+
 function fmtShiftUpdatedValue(field: string, value: unknown): string {
   if (value == null) return '—';
   if (typeof value !== 'string') return String(value);
@@ -750,7 +788,7 @@ const ShiftCard = memo(
               <span title="Shift End">
                 <LogOut className="h-3.5 w-3.5 shrink-0 text-gray-400" />
               </span>
-              <span className="text-xs text-gray-700">{fmtShift(shift.shift_end)}</span>
+              <span className="text-xs text-gray-700">{getShiftEndDisplay(shift)}</span>
             </div>
             {/* Hours */}
             <div className="flex items-center gap-4">
@@ -758,9 +796,7 @@ const ShiftCard = memo(
                 <span title="Allocated Hours">
                   <Clock className="h-3.5 w-3.5 shrink-0 text-gray-400" />
                 </span>
-                <span className="text-xs text-gray-700">
-                  {formatDuration(shift.allocated_hours)} allocated
-                </span>
+                <span className="text-xs text-gray-700">{getAllocatedHoursDisplay(shift)}</span>
               </div>
             </div>
             {shift.total_worked_hours != null && (
@@ -1254,17 +1290,29 @@ function ShiftProgressBar({
   max,
   color,
   adjusted = false,
+  uncapped = false,
 }: {
   label: string;
   value: number;
-  max: number;
+  max?: number | null;
   color: 'blue' | 'amber';
   adjusted?: boolean;
+  uncapped?: boolean;
 }) {
-  const isOverflow = value > max && max > 0;
-  const displayMax = isOverflow ? value : max;
-  const normalPct = max > 0 ? Math.min((max / displayMax) * 100, 100) : 0;
-  const fillPct = displayMax > 0 ? Math.min((value / displayMax) * 100, 100) : 0;
+  const resolvedMax = typeof max === 'number' ? max : 0;
+  const isOverflow = !uncapped && value > resolvedMax && resolvedMax > 0;
+  const displayMax = uncapped ? value : isOverflow ? value : resolvedMax;
+  const normalPct =
+    uncapped || resolvedMax <= 0 || displayMax <= 0
+      ? 0
+      : Math.min((resolvedMax / displayMax) * 100, 100);
+  const fillPct = uncapped
+    ? value > 0
+      ? 100
+      : 0
+    : displayMax > 0
+      ? Math.min((value / displayMax) * 100, 100)
+      : 0;
 
   const trackCls = 'h-2 w-full overflow-hidden rounded-full bg-gray-100 relative';
   const normalFillCls =
@@ -1282,15 +1330,21 @@ function ShiftProgressBar({
         </span>
         <span className="text-gray-500 tabular-nums">
           <span className="sm:hidden">
-            {formatCompactDuration(value)} / {formatCompactDuration(max)}
+            {uncapped
+              ? formatCompactDuration(value)
+              : `${formatCompactDuration(value)} / ${formatCompactDuration(resolvedMax)}`}
           </span>
           <span className="hidden sm:inline">
-            {formatDuration(value)} / {formatDuration(max)}
+            {uncapped
+              ? formatDuration(value)
+              : `${formatDuration(value)} / ${formatDuration(resolvedMax)}`}
           </span>
         </span>
       </div>
       <div className={trackCls}>
-        {isOverflow ? (
+        {uncapped ? (
+          <div className={normalFillCls} style={{ width: `${fillPct}%` }} />
+        ) : isOverflow ? (
           <>
             <div
               className={color === 'blue' ? 'h-full bg-blue-500' : 'h-full bg-amber-400'}
@@ -1442,6 +1496,7 @@ const ShiftDetailPanel = memo(
     );
 
     const isActive = shift.status === 'active';
+    const isActiveInterimDuty = isActiveInterimDutyShift(shift);
     const checkInTime = useMemo(
       () => {
         const log = [...logs].reverse().find((l: any) => l.log_type === 'check_in');
@@ -1611,7 +1666,7 @@ const ShiftDetailPanel = memo(
                   <div>
                     <p className="text-[11px] uppercase tracking-wide text-gray-400">Shift End</p>
                     <p className="mt-0.5 text-sm font-medium text-gray-800">
-                      {fmtShift(shift.shift_end)}
+                      {getShiftEndDisplay(shift)}
                     </p>
                   </div>
                   {shift.check_in_status && (
@@ -1646,9 +1701,10 @@ const ShiftDetailPanel = memo(
                   <ShiftProgressBar
                     label="Worked Hours"
                     value={adjustedWorkedHours}
-                    max={effectiveAllocatedHours}
+                    max={isActiveInterimDuty ? null : effectiveAllocatedHours}
                     color="blue"
                     adjusted={adjustedSummary.flags.workedAdjusted}
+                    uncapped={isActiveInterimDuty}
                   />
                   <ShiftProgressBar
                     label="Break Hours"
@@ -1680,7 +1736,12 @@ const ShiftDetailPanel = memo(
                       variant="danger"
                       size="sm"
                       disabled={activityLoading}
-                      onClick={() => onEndShift?.(shift.id, shift.shift_end)}
+                      onClick={() =>
+                        onEndShift?.(
+                          shift.id,
+                          isActiveInterimDuty ? new Date().toISOString() : shift.shift_end,
+                        )
+                      }
                     >
                       <LogOut className="mr-2 h-4 w-4" />
                       Check Out
@@ -1959,6 +2020,13 @@ export function EmployeeShiftsPage() {
     }
   };
 
+  const refreshSelectedShiftDetail = useCallback(async (shiftId: string) => {
+    try {
+      const res = await api.get(`/employee-shifts/${shiftId}`);
+      setSelectedShift((prev: any) => (prev?.id === shiftId ? res.data.data : prev));
+    } catch {}
+  }, []);
+
   const handleEndShift = async (shiftId: string, checkOutTime: string): Promise<boolean> => {
     try {
       const res = await api.post(`/employee-shifts/${shiftId}/end`, { checkOutTime });
@@ -2094,6 +2162,9 @@ export function EmployeeShiftsPage() {
       if (activeTab === 'all' || data.status === activeTab) {
         setShifts((prev) => [data, ...prev]);
       }
+      if (selectedShift?.id && getLinkedShiftIdFromInterimPayload(data) === selectedShift.id) {
+        void refreshSelectedShiftDetail(selectedShift.id);
+      }
     });
 
     socket.on('shift:updated', (data: any) => {
@@ -2107,6 +2178,9 @@ export function EmployeeShiftsPage() {
           ? { ...prev, ...data, logs: prev.logs, authorizations: prev.authorizations }
           : prev,
       );
+      if (selectedShift?.id && getLinkedShiftIdFromInterimPayload(data) === selectedShift.id) {
+        void refreshSelectedShiftDetail(selectedShift.id);
+      }
     });
 
     socket.on('shift:log-new', (data: any) => {
@@ -2256,7 +2330,7 @@ export function EmployeeShiftsPage() {
       socket.off('shift:authorization-updated');
       socket.off('shift:authorization-deleted');
     };
-  }, [selectedShift?.id, socket, activeTab]);
+  }, [activeTab, refreshSelectedShiftDetail, selectedShift?.id, socket]);
 
   useEffect(() => {
     setPage(1);
