@@ -36,7 +36,7 @@ interface SidebarProps {
 }
 
 const HR_PATHS = ['/employee-profiles', '/employee-schedule', '/violation-notices', '/workplace-relations'];
-const FINANCE_PATHS = ['/cash-requests', '/token-pay'];
+const FINANCE_PATHS = ['/cash-requests', '/token-pay', '/payslips'];
 const AUDIT_PATHS = ['/store-audits'];
 
 function SubCategory({
@@ -241,7 +241,7 @@ export function Sidebar({ className = '' }: SidebarProps) {
               </SubCategory>
             )}
 
-            {(hasPermission(PERMISSIONS.CASH_REQUESTS_VIEW) || hasPermission(PERMISSIONS.TOKEN_PAY_VIEW)) && (
+            {(hasPermission(PERMISSIONS.CASH_REQUESTS_VIEW) || hasPermission(PERMISSIONS.TOKEN_PAY_VIEW) || hasPermission(PERMISSIONS.PAYSLIPS_VIEW)) && (
               <SubCategory
                 label="Accounting and Finance"
                 expanded={financeExpanded}
@@ -257,6 +257,12 @@ export function Sidebar({ className = '' }: SidebarProps) {
                   <AnimatedNavLink to="/token-pay" className={linkClass}>
                     <Coins className="h-5 w-5" />
                     Token Pay
+                  </AnimatedNavLink>
+                )}
+                {hasPermission(PERMISSIONS.PAYSLIPS_VIEW) && (
+                  <AnimatedNavLink to="/payslips" className={linkClass}>
+                    <FileText className="h-5 w-5" />
+                    Payslips
                   </AnimatedNavLink>
                 )}
               </SubCategory>

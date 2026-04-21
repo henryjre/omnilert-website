@@ -23,6 +23,7 @@ import { DepartmentManagementPage } from '@/features/company/pages/DepartmentMan
 import { AuthorizationRequestsPage } from '@/features/authorization-requests/pages/AuthorizationRequestsPage';
 import { CashRequestsPage } from '@/features/cash-requests/pages/CashRequestsPage';
 import { TokenPayManagementPage } from '@/features/token-pay/pages/TokenPayManagementPage';
+import { PayslipsManagementPage } from '@/features/payslips/pages/PayslipsManagementPage';
 import { EmployeeVerificationsPage } from '@/features/employee-verifications/pages/EmployeeVerificationsPage';
 import { EmployeeProfilesPage } from '@/features/employee-profiles/pages/EmployeeProfilesPage';
 import { StoreAuditsPage } from '@/features/store-audits/pages/StoreAuditsPage';
@@ -160,6 +161,14 @@ export const router = createBrowserRouter([
             element: (
               <PermissionGuard permission={PERMISSIONS.TOKEN_PAY_VIEW}>
                 <TokenPayManagementPage />
+              </PermissionGuard>
+            ),
+          },
+          {
+            path: 'payslips',
+            element: (
+              <PermissionGuard permission={PERMISSIONS.PAYSLIPS_VIEW}>
+                <PayslipsManagementPage />
               </PermissionGuard>
             ),
           },
