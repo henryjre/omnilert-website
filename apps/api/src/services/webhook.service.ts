@@ -4,7 +4,10 @@ import { enqueueEarlyCheckInAuthJob } from './attendanceQueue.service.js';
 import { enqueuePeerEvaluationJob } from './peerEvaluationQueue.service.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
-import { createAndDispatchNotification } from './notification.service.js';
+import {
+  createAndDispatchNotification,
+  deleteNotificationsByUserIdAndAuthId,
+} from './notification.service.js';
 import {
   endActivity as endShiftActivityRecord,
   startActivity as startShiftActivityRecord,
@@ -648,6 +651,8 @@ interface AttendanceShiftAuthorizationRow {
   id: string;
   auth_type: string;
   status: string;
+  user_id?: string | null;
+  shift_id?: string | null;
   [key: string]: unknown;
 }
 
@@ -766,8 +771,10 @@ interface AttendanceProcessorDeps {
     activityId: string;
     endedAt?: Date;
   }) => Promise<{ activity: ShiftActivityRow; log: AttendanceShiftLogRow }>;
-  deleteEarlyCheckOutAuthByShiftLogId: (shiftLogId: string) => Promise<boolean>;
-  deleteUnderbreakAuthByShiftId: (shiftId: string) => Promise<boolean>;
+  deleteEarlyCheckOutAuthByShiftLogId: (
+    shiftLogId: string,
+  ) => Promise<AttendanceShiftAuthorizationRow | null>;
+  deleteUnderbreakAuthByShiftId: (shiftId: string) => Promise<AttendanceShiftAuthorizationRow | null>;
   deleteShiftLog: (input: { odooAttendanceId?: number; shiftId?: string; logType: string }) => Promise<number>;
   checkOutAttendancesByIds: (attendanceIds: number[], checkOutTime: Date) => Promise<void>;
   reassignUserToSingleCheckedInBranch: (userId: string, branchId: string) => Promise<void>;
@@ -781,6 +788,9 @@ interface AttendanceProcessorDeps {
   createAndDispatchNotification: (
     input: Parameters<typeof createAndDispatchNotification>[0],
   ) => ReturnType<typeof createAndDispatchNotification>;
+  deleteNotificationsByUserIdAndAuthId: (
+    input: Parameters<typeof deleteNotificationsByUserIdAndAuthId>[0],
+  ) => ReturnType<typeof deleteNotificationsByUserIdAndAuthId>;
   emitSocketEvent: (event: string, payload: Record<string, unknown>) => void;
 }
 
@@ -799,6 +809,17 @@ export function emitAttendanceSocketEvent(
   event: string,
   payload: Record<string, unknown>,
 ): void {
+  if (event === 'notification:deleted') {
+    const userId = String(payload.userId ?? payload.user_id ?? '').trim();
+    const id = String(payload.id ?? '').trim();
+    if (!userId || !id) return;
+    io.of('/notifications').to(`user:${userId}`).emit(event, {
+      id,
+      wasUnread: payload.wasUnread === true,
+    });
+    return;
+  }
+
   if (event === 'user:branch-assignments-updated') {
     const userId = String(payload.userId ?? '').trim();
     if (!userId) return;
@@ -836,6 +857,28 @@ function parseOdooUtcDateTime(value: string): Date {
 
 function roundHoursFromMs(ms: number): number {
   return Math.round((ms / 3_600_000) * 100) / 100;
+}
+
+async function emitDeletedAuthNotificationEvents(input: {
+  deps: Pick<AttendanceProcessorDeps, 'deleteNotificationsByUserIdAndAuthId' | 'emitSocketEvent'>;
+  auth: AttendanceShiftAuthorizationRow | null;
+}): Promise<void> {
+  const userId = typeof input.auth?.user_id === 'string' ? input.auth.user_id.trim() : '';
+  const authId = typeof input.auth?.id === 'string' ? input.auth.id.trim() : '';
+  if (!userId || !authId) return;
+
+  const deletedNotifications = await input.deps.deleteNotificationsByUserIdAndAuthId({
+    userId,
+    authId,
+  });
+
+  for (const notification of deletedNotifications) {
+    input.deps.emitSocketEvent('notification:deleted', {
+      userId,
+      id: notification.id,
+      wasUnread: notification.wasUnread,
+    });
+  }
 }
 
 type CheckoutCompletionMetrics = {
@@ -1177,7 +1220,7 @@ const defaultAttendanceProcessorDeps: AttendanceProcessorDeps = {
       .where({ shift_log_id: shiftLogId, auth_type: 'early_check_out' })
       .first()) as AttendanceShiftAuthorizationRow | null;
     if (!auth) {
-      return false;
+      return null;
     }
 
     await tenantDb('shift_authorizations').where({ id: auth.id }).delete();
@@ -1188,7 +1231,7 @@ const defaultAttendanceProcessorDeps: AttendanceProcessorDeps = {
         .decrement('pending_approvals', 1);
     }
 
-    return true;
+    return auth;
   },
   deleteUnderbreakAuthByShiftId: async (shiftId) => {
     const tenantDb = db.getDb();
@@ -1196,7 +1239,7 @@ const defaultAttendanceProcessorDeps: AttendanceProcessorDeps = {
       .where({ shift_id: shiftId, auth_type: 'underbreak' })
       .first()) as AttendanceShiftAuthorizationRow | null;
     if (!auth) {
-      return false;
+      return null;
     }
     await tenantDb('shift_authorizations').where({ id: auth.id }).delete();
     if (auth.status === 'pending' && typeof auth.shift_id === 'string' && auth.shift_id.trim()) {
@@ -1204,7 +1247,7 @@ const defaultAttendanceProcessorDeps: AttendanceProcessorDeps = {
         .where({ id: auth.shift_id })
         .decrement('pending_approvals', 1);
     }
-    return true;
+    return auth;
   },
   checkOutAttendancesByIds: async (attendanceIds, checkOutTime) => {
     await batchCheckOutAttendances(attendanceIds, checkOutTime);
@@ -1214,6 +1257,7 @@ const defaultAttendanceProcessorDeps: AttendanceProcessorDeps = {
   enqueueEarlyCheckInAuthJob: (payload, runAt) => enqueueEarlyCheckInAuthJob(payload, runAt),
   enqueuePeerEvaluationJob: (payload) => enqueuePeerEvaluationJob(payload),
   createAndDispatchNotification: (input) => createAndDispatchNotification(input),
+  deleteNotificationsByUserIdAndAuthId: (input) => deleteNotificationsByUserIdAndAuthId(input),
   emitSocketEvent: (event, payload) => {
     try {
       const io = getIO();
@@ -1836,6 +1880,7 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
                 shift_id: prevCheckOutLog.shift_id ?? shift?.id ?? null,
                 branch_id: branch.id,
               });
+              await emitDeletedAuthNotificationEvents({ deps, auth: voided });
             }
           }
           // Void any underbreak auth from the previous checkout — employee is back, more breaks may occur
@@ -1850,6 +1895,7 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
                 shift_id: shift.id,
                 branch_id: branch.id,
               });
+              await emitDeletedAuthNotificationEvents({ deps, auth: voidedUnderbreak });
             }
           }
         } else {

@@ -89,18 +89,31 @@ export function TopBar({ onOpenSidebar, onOpenAccountSidebar, accountSidebarOpen
   useEffect(() => {
     if (!notificationsSocket) return;
 
-    notificationsSocket.on('notification:new', (data: any) => {
+    const handleNotificationNew = (data: any) => {
       if (data?.id) {
         setNotifications((prev) => [data, ...prev].slice(0, 20));
         pushNotification(data);
       }
       increment();
-    });
+    };
+
+    const handleNotificationDeleted = (data: any) => {
+      if (data?.id) {
+        setNotifications((prev) => prev.filter((notification) => notification.id !== data.id));
+      }
+      if (data?.wasUnread) {
+        decrement();
+      }
+    };
+
+    notificationsSocket.on('notification:new', handleNotificationNew);
+    notificationsSocket.on('notification:deleted', handleNotificationDeleted);
 
     return () => {
-      notificationsSocket.off('notification:new');
+      notificationsSocket.off('notification:new', handleNotificationNew);
+      notificationsSocket.off('notification:deleted', handleNotificationDeleted);
     };
-  }, [notificationsSocket, increment, pushNotification]);
+  }, [notificationsSocket, decrement, increment, pushNotification]);
 
   useEffect(() => {
     if (!userEventsSocket) return;

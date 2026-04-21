@@ -17,6 +17,8 @@ type NotificationRecord = {
   created_at: string | Date;
 };
 
+type NotificationLookupRow = Pick<NotificationRecord, 'id' | 'is_read' | 'link_url'>;
+
 type PushSubscriptionRecord = {
   id: string;
   user_id: string;
@@ -49,6 +51,13 @@ export type RegisterPushSubscriptionInput = {
   auth: string;
   userAgent?: string | null;
 };
+
+export type DeletedNotificationInfo = {
+  id: string;
+  wasUnread: boolean;
+};
+
+const AUTH_ID_PARAM_PATTERN = /(?:[?&])authId=([0-9a-f-]{36})(?:&|$)/i;
 
 const isWebPushConfigured =
   env.WEB_PUSH_ENABLED
@@ -98,6 +107,35 @@ export async function createAndDispatchNotification(
 
   await maybeDispatchWebPush(input.userId, notification);
   return notification;
+}
+
+export async function deleteNotificationsByUserIdAndAuthId(input: {
+  userId: string;
+  authId: string;
+}): Promise<DeletedNotificationInfo[]> {
+  const userId = input.userId.trim();
+  const authId = input.authId.trim();
+  if (!userId || !authId) return [];
+
+  const tenantDb = db.getDb();
+  const rows = (await tenantDb('employee_notifications')
+    .where({ user_id: userId })
+    .select('id', 'is_read', 'link_url')) as NotificationLookupRow[];
+
+  const matchingNotifications = rows
+    .filter((row) => extractAuthIdFromLinkUrl(row.link_url) === authId)
+    .map((row) => ({
+      id: String(row.id),
+      wasUnread: row.is_read !== true,
+    }));
+
+  for (const notification of matchingNotifications) {
+    await tenantDb('employee_notifications')
+      .where({ id: notification.id, user_id: userId })
+      .delete();
+  }
+
+  return matchingNotifications;
 }
 
 export async function registerPushSubscription(
@@ -219,4 +257,10 @@ async function maybeDispatchWebPush(
       }
     }),
   );
+}
+
+function extractAuthIdFromLinkUrl(linkUrl: string | null | undefined): string | null {
+  if (typeof linkUrl !== 'string') return null;
+  const match = linkUrl.match(AUTH_ID_PARAM_PATTERN);
+  return match?.[1] ?? null;
 }

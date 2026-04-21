@@ -112,6 +112,12 @@ function parseActivityDetails(value: string | null | undefined): Record<string, 
   }
 }
 
+function getAuthIdFromNotificationLink(linkUrl: unknown): string | null {
+  if (typeof linkUrl !== 'string') return null;
+  const match = linkUrl.match(/[?&]authId=([0-9a-f-]{36}|auth-\d+)/i);
+  return match?.[1] ?? null;
+}
+
 function createActivity(
   partial: Partial<ShiftActivityRecord> &
     Pick<ShiftActivityRecord, 'id' | 'user_id' | 'shift_id' | 'activity_type'>,
@@ -235,6 +241,7 @@ function createAttendanceHarness(options?: {
   let authCount = 0;
   let activityCount = activities.length;
   let interimShiftCount = 0;
+  let notificationCount = 0;
   let workEntryCount = workEntries.reduce((max, entry) => Math.max(max, entry.id), 0);
   const defaultOdooEmployee =
     options?.odooEmployee === undefined ? { id: 7001, name: '001 - Alex Crew' } : options.odooEmployee;
@@ -618,7 +625,7 @@ function createAttendanceHarness(options?: {
         const idx = auths.findIndex(
           (a) => a.shift_log_id === shiftLogId && a.auth_type === 'early_check_out',
         );
-        if (idx === -1) return false;
+        if (idx === -1) return null;
         const [deletedAuth] = auths.splice(idx, 1);
         if (deletedAuth?.status === 'pending' && typeof deletedAuth.shift_id === 'string') {
           const shift = shifts.find((row) => row.id === deletedAuth.shift_id);
@@ -626,7 +633,19 @@ function createAttendanceHarness(options?: {
             shift.pending_approvals = Math.max(0, Number(shift.pending_approvals ?? 0) - 1);
           }
         }
-        return true;
+        return deletedAuth;
+      },
+      deleteUnderbreakAuthByShiftId: async (shiftId: string) => {
+        const idx = auths.findIndex((a) => a.shift_id === shiftId && a.auth_type === 'underbreak');
+        if (idx === -1) return null;
+        const [deletedAuth] = auths.splice(idx, 1);
+        if (deletedAuth?.status === 'pending' && typeof deletedAuth.shift_id === 'string') {
+          const shift = shifts.find((row) => row.id === deletedAuth.shift_id);
+          if (shift) {
+            shift.pending_approvals = Math.max(0, Number(shift.pending_approvals ?? 0) - 1);
+          }
+        }
+        return deletedAuth;
       },
       checkOutAttendancesByIds: async (attendanceIds: number[], checkOutTime: Date) => {
         checkoutOps.push({ attendanceIds: [...attendanceIds], checkOutTime });
@@ -648,7 +667,46 @@ function createAttendanceHarness(options?: {
         peerEvaluationJobs.push(payload);
       },
       createAndDispatchNotification: async (input: Record<string, unknown>) => {
-        notifications.push(input);
+        const record = {
+          id: `notification-${++notificationCount}`,
+          user_id: input.userId ?? null,
+          company_id: input.companyId ?? null,
+          title: input.title ?? null,
+          message: input.message ?? null,
+          type: input.type ?? null,
+          is_read: false,
+          link_url: input.linkUrl ?? null,
+          linkUrl: input.linkUrl ?? null,
+          created_at: now.toISOString(),
+          ...input,
+        };
+        notifications.push(record);
+        return record;
+      },
+      deleteNotificationsByUserIdAndAuthId: async (input: Record<string, unknown>) => {
+        const userId = String(input.userId ?? '').trim();
+        const authId = String(input.authId ?? '').trim();
+        if (!userId || !authId) return [];
+
+        const deletedNotifications = notifications
+          .filter(
+            (notification) =>
+              notification.user_id === userId &&
+              getAuthIdFromNotificationLink(notification.link_url ?? notification.linkUrl) === authId,
+          )
+          .map((notification) => ({
+            id: String(notification.id),
+            wasUnread: notification.is_read !== true,
+          }));
+
+        for (const notification of deletedNotifications) {
+          const index = notifications.findIndex((row) => row.id === notification.id);
+          if (index >= 0) {
+            notifications.splice(index, 1);
+          }
+        }
+
+        return deletedNotifications;
       },
       emitSocketEvent: (event: string, payload: Record<string, unknown>) => {
         socketEvents.push({ event, payload });
@@ -670,6 +728,8 @@ function createHarnessTenantDb(harness: HarnessShape) {
         return harness.users as Array<Record<string, unknown>>;
       case 'shift_authorizations':
         return harness.auths;
+      case 'employee_notifications':
+        return harness.notifications;
       default:
         return [];
     }
@@ -2456,6 +2516,16 @@ test('createAttendanceProcessor retroactively voids early_check_out when re-chec
     3,
     'tardiness + early_check_out + underbreak should all count as pending before re-check-in',
   );
+  assert.equal(
+    harness.notifications.filter((n) => n.title === 'Early Check Out - Reason Required').length,
+    1,
+    'early check out notification should be created before re-check-in',
+  );
+  assert.equal(
+    harness.notifications.filter((n) => n.title === 'Underbreak - Reason Required').length,
+    1,
+    'underbreak notification should be created before re-check-in',
+  );
 
   // Re-check-in at 1:00 PM with x_prev_attendance_id → should void the early_check_out
   await processAttendance({
@@ -2477,6 +2547,27 @@ test('createAttendanceProcessor retroactively voids early_check_out when re-chec
   assert.ok(
     harness.socketEvents.some((e) => e.event === 'shift:authorization-voided'),
     'shift:authorization-voided must be emitted',
+  );
+  assert.equal(
+    harness.notifications.filter((n) => n.title === 'Early Check Out - Reason Required').length,
+    0,
+    'early check out notification must be deleted after re-check-in',
+  );
+  assert.equal(
+    harness.notifications.filter((n) => n.title === 'Underbreak - Reason Required').length,
+    0,
+    'underbreak notification must be deleted after re-check-in',
+  );
+  assert.equal(
+    harness.socketEvents.filter((e) => e.event === 'notification:deleted').length,
+    2,
+    'notification:deleted must be emitted for both stale auth notifications',
+  );
+  assert.ok(
+    harness.socketEvents
+      .filter((e) => e.event === 'notification:deleted')
+      .every((e) => e.payload.wasUnread === true),
+    'notification:deleted payloads should preserve unread state for stale auth notifications',
   );
   assert.equal(
     plannedShift.pending_approvals,

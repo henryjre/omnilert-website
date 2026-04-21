@@ -9,6 +9,7 @@ import { AnimatedModal } from "@/shared/components/ui/AnimatedModal";
 import { AnimatePresence } from "framer-motion";
 import { api } from '@/shared/services/api.client';
 import { useAppToast } from '@/shared/hooks/useAppToast';
+import { useSocket } from '@/shared/hooks/useSocket';
 import { useNotificationStore } from '@/shared/store/notificationStore';
 import { ShiftExchangeDetailModal } from '@/features/shift-exchange/components/ShiftExchangeDetailModal';
 import { PeerEvaluationModal } from '../../peer-evaluations/components/PeerEvaluationModal';
@@ -124,6 +125,7 @@ export function EmployeeNotificationsTab() {
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const location = useLocation();
   const navigate = useNavigate();
+  const notificationsSocket = useSocket('/notifications');
   const decrement = useNotificationStore((s) => s.decrement);
   const latestNotification = useNotificationStore((s) => s.latestNotification);
 
@@ -158,6 +160,21 @@ export function EmployeeNotificationsTab() {
     });
     setPage(1);
   }, [latestNotification]);
+
+  useEffect(() => {
+    if (!notificationsSocket) return;
+
+    const handleNotificationDeleted = (data: any) => {
+      if (!data?.id) return;
+      setNotifications((prev) => prev.filter((notification) => notification.id !== data.id));
+    };
+
+    notificationsSocket.on('notification:deleted', handleNotificationDeleted);
+
+    return () => {
+      notificationsSocket.off('notification:deleted', handleNotificationDeleted);
+    };
+  }, [notificationsSocket]);
 
   // Scroll to and highlight a notification when navigated from the bell dropdown
   useEffect(() => {
