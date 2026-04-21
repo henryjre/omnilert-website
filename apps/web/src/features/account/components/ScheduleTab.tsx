@@ -1228,9 +1228,10 @@ const ShiftDetailPanel = memo(
       : totalFieldTaskMinutes / 60;
     const totalBreakHours = liveBreakHours;
     const totalFieldTaskHours = liveFieldTaskHours;
-    const totalWorkedHours = isActive && checkInTime
+    const liveSessionHours = isActive && checkInTime
       ? (now - checkInTime) / 3_600_000
-      : Number(shift.total_worked_hours || 0);
+      : 0;
+    const totalWorkedHours = Number(shift.total_worked_hours || 0) + liveSessionHours;
     const adjustedSummary = useMemo(
       () =>
         deriveAdjustedShiftSummary({
@@ -1241,7 +1242,8 @@ const ShiftDetailPanel = memo(
         }),
       [authorizations, totalBreakHours, totalFieldTaskHours, totalWorkedHours],
     );
-    const adjustedWorkedHours = adjustedSummary.adjusted.workedMinutes / 60;
+    const adjustedWorkedHours =
+      (adjustedSummary.adjusted.workedMinutes + adjustedSummary.adjusted.fieldTaskMinutes) / 60;
     const adjustedBreakHours = adjustedSummary.adjusted.breakMinutes / 60;
     const adjustedFieldTaskHours = adjustedSummary.adjusted.fieldTaskMinutes / 60;
     const adjustedTotalActiveHours = adjustedSummary.adjusted.totalActiveMinutes / 60;

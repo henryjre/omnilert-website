@@ -252,7 +252,7 @@ export function ShiftAuthReasonModal({ authId, onClose, onReasonSubmitted }: Shi
                   <span className="font-medium text-gray-900">{fmtDiff(data.auth_type, data.diff_minutes)}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-gray-500">Submitted</span>
+                  <span className="text-gray-500">Created</span>
                   <span className="text-gray-700">{fmtDateTime(data.created_at)}</span>
                 </div>
                 {data.resolved_at && (
