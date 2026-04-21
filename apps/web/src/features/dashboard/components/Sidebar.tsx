@@ -262,7 +262,7 @@ export function Sidebar({ className = '' }: SidebarProps) {
                 {hasPermission(PERMISSIONS.PAYSLIPS_VIEW) && (
                   <AnimatedNavLink to="/payslips" className={linkClass}>
                     <FileText className="h-5 w-5" />
-                    Payslips
+                    Payroll
                   </AnimatedNavLink>
                 )}
               </SubCategory>

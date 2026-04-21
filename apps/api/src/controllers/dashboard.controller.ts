@@ -4,7 +4,12 @@ import { getIO } from '../config/socket.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import { getEmployeeByWebsiteUserKey, getEmployeePayslipData, createViewOnlyPayslip, getEmployeeEPIData, getEmployeeAuditRatings, getAllEmployeesWithEPI, getAllPayslipsForUser, calculatePendingPayslipStubs, getPayslipDetailById, getOrCreatePendingPayslipDetail, getEmployeesForWebsiteUserKey } from '../services/odoo.service.js';
-import type { PayslipListItem, PayslipDetailResponse, PayslipStatus } from '@omnilert/shared';
+import type {
+  GroupedUsersResponse,
+  PayslipListItem,
+  PayslipDetailResponse,
+  PayslipStatus,
+} from '@omnilert/shared';
 import { SYSTEM_ROLES } from '@omnilert/shared';
 import { getEpiDashboard, getEpiLeaderboard, getEpiLeaderboardDetail } from '../services/epiDashboard.service.js';
 import { getEmployeeMetricDailySnapshots } from '../services/employeeAnalyticsSnapshot.service.js';
@@ -75,6 +80,140 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
     return fallback;
   }
   return parsed;
+}
+
+async function assertUserCanAccessPayslipBranch(
+  companyId: string,
+  userId: string,
+  branchId: string,
+): Promise<void> {
+  const masterDb = db.getDb();
+
+  const branch = await masterDb('branches')
+    .where({ id: branchId, company_id: companyId, is_active: true })
+    .first('id');
+
+  if (!branch) {
+    throw new AppError(400, 'Selected branch is invalid or inactive.');
+  }
+
+  const [companyAssignments, legacyAssignments] = await Promise.all([
+    masterDb('user_company_branches')
+      .where({ company_id: companyId, user_id: userId })
+      .select('branch_id'),
+    masterDb('user_branches')
+      .where({ company_id: companyId, user_id: userId })
+      .select('branch_id'),
+  ]);
+
+  const effectiveAssignments =
+    companyAssignments.length > 0 ? companyAssignments : legacyAssignments;
+
+  if (effectiveAssignments.length === 0) {
+    return;
+  }
+
+  const isAssigned = effectiveAssignments.some(
+    (row: { branch_id: string }) => row.branch_id === branchId,
+  );
+
+  if (!isAssigned) {
+    throw new AppError(403, 'You are not assigned to the selected branch.');
+  }
+}
+
+async function listGroupedBranchUsers(
+  companyId: string,
+  branchId: string,
+): Promise<GroupedUsersResponse> {
+  const masterDb = db.getDb();
+
+  const [companyAssignmentRows, legacyAssignmentRows] = await Promise.all([
+    masterDb('user_company_branches')
+      .where({ company_id: companyId, branch_id: branchId })
+      .select('user_id'),
+    masterDb('user_branches')
+      .where({ company_id: companyId, branch_id: branchId })
+      .select('user_id'),
+  ]);
+
+  const assignedUserIds = Array.from(new Set([
+    ...companyAssignmentRows.map((row: { user_id: string }) => String(row.user_id)),
+    ...legacyAssignmentRows.map((row: { user_id: string }) => String(row.user_id)),
+  ]));
+
+  if (assignedUserIds.length === 0) {
+    return { management: [], service_crew: [], other: [] };
+  }
+
+  const userRows = await masterDb('users as users')
+    .join('user_company_access as uca', function joinUserCompanyAccess() {
+      this.on('uca.user_id', '=', 'users.id')
+        .andOn('uca.company_id', '=', masterDb.raw('?', [companyId]))
+        .andOn('uca.is_active', '=', masterDb.raw('true'));
+    })
+    .whereIn('users.id', assignedUserIds)
+    .andWhere('users.is_active', true)
+    .select(
+      'users.id',
+      'users.first_name',
+      'users.last_name',
+      'users.avatar_url',
+    );
+
+  if (userRows.length === 0) {
+    return { management: [], service_crew: [], other: [] };
+  }
+
+  const userIds = userRows.map((row: { id: string }) => String(row.id));
+  const userRoleRows = await masterDb('user_roles as ur')
+    .join('roles as roles', 'ur.role_id', 'roles.id')
+    .whereIn('ur.user_id', userIds)
+    .select('ur.user_id', 'roles.name', 'roles.priority')
+    .orderBy('roles.priority', 'desc');
+
+  const topRoleByUserId = new Map<string, string>();
+  for (const row of userRoleRows as Array<{ user_id: string; name: string }>) {
+    const userId = String(row.user_id);
+    if (!topRoleByUserId.has(userId)) {
+      topRoleByUserId.set(userId, String(row.name));
+    }
+  }
+
+  const management: GroupedUsersResponse['management'] = [];
+  const service_crew: GroupedUsersResponse['service_crew'] = [];
+  const other: GroupedUsersResponse['other'] = [];
+
+  for (const row of userRows as Array<{
+    id: string;
+    first_name: string | null;
+    last_name: string | null;
+    avatar_url: string | null;
+  }>) {
+    const entry = {
+      id: String(row.id),
+      name: `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim() || 'Unknown User',
+      avatar_url: row.avatar_url ?? null,
+    };
+
+    const topRole = topRoleByUserId.get(String(row.id));
+    if (topRole === SYSTEM_ROLES.MANAGEMENT || topRole === SYSTEM_ROLES.ADMINISTRATOR) {
+      management.push(entry);
+    } else if (topRole === SYSTEM_ROLES.SERVICE_CREW) {
+      service_crew.push(entry);
+    } else {
+      other.push(entry);
+    }
+  }
+
+  const sortByName = (left: { name: string }, right: { name: string }) =>
+    left.name.localeCompare(right.name);
+
+  management.sort(sortByName);
+  service_crew.sort(sortByName);
+  other.sort(sortByName);
+
+  return { management, service_crew, other };
 }
 
 export async function getPerformanceIndex(req: Request, res: Response, next: NextFunction) {
@@ -843,6 +982,28 @@ export async function getPayslipList(req: Request, res: Response, next: NextFunc
     ];
 
     res.json({ success: true, data: { items } });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * GET /dashboard/payslips/branch-users
+ * Returns active users assigned to a selected branch, grouped by top role.
+ */
+export async function getPayslipBranchUsers(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { companyId } = req.companyContext!;
+    const userId = req.user!.sub;
+    const branchId = typeof req.query.branchId === 'string' ? req.query.branchId.trim() : '';
+
+    if (!branchId) {
+      throw new AppError(400, 'branchId is required');
+    }
+
+    await assertUserCanAccessPayslipBranch(companyId, userId, branchId);
+    const data = await listGroupedBranchUsers(companyId, branchId);
+    res.json({ success: true, data });
   } catch (err) {
     next(err);
   }

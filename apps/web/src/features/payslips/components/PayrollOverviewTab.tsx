@@ -7,13 +7,17 @@ import { api } from '@/shared/services/api.client';
 import { useAppToast } from '@/shared/hooks/useAppToast';
 import { useBranchStore } from '@/shared/store/branchStore';
 import { Pagination } from '@/shared/components/ui/Pagination';
-import { Spinner } from '@/shared/components/ui/Spinner';
-import { PayslipManagementCard } from './PayslipManagementCard';
-import { PayslipManagementDetailPanel } from './PayslipManagementDetailPanel';
+import { ViewToggle, type ViewOption } from '@/shared/components/ui/ViewToggle';
+import { PayrollManagementCard } from './PayrollManagementCard';
+import { PayrollManagementDetailPanel } from './PayrollManagementDetailPanel';
 
 type StatusTab = 'pending' | 'draft';
 
 const PAGE_SIZE = 10;
+const STATUS_TABS: ViewOption<StatusTab>[] = [
+  { id: 'pending', label: 'Pending', icon: Clock },
+  { id: 'draft', label: 'Draft', icon: FileEdit },
+];
 
 function CardSkeleton() {
   return (
@@ -35,7 +39,7 @@ function CardSkeleton() {
   );
 }
 
-export function PayslipsOverviewTab() {
+export function PayrollOverviewTab() {
   const { error: showError } = useAppToast();
   const { selectedBranchIds, branches } = useBranchStore();
 
@@ -60,7 +64,7 @@ export function PayslipsOverviewTab() {
       .catch((err: unknown) => {
         if (!active) return;
         const axiosErr = err as { response?: { data?: { error?: string; message?: string } } };
-        showError(axiosErr?.response?.data?.error ?? axiosErr?.response?.data?.message ?? 'Failed to load payslips.');
+        showError(axiosErr?.response?.data?.error ?? axiosErr?.response?.data?.message ?? 'Failed to load payroll records.');
       })
       .finally(() => { if (active) setLoading(false); });
 
@@ -84,7 +88,7 @@ export function PayslipsOverviewTab() {
       .catch((err: unknown) => {
         if (!active) return;
         const axiosErr = err as { response?: { data?: { error?: string; message?: string } } };
-        showError(axiosErr?.response?.data?.error ?? axiosErr?.response?.data?.message ?? 'Failed to load payslip details.');
+        showError(axiosErr?.response?.data?.error ?? axiosErr?.response?.data?.message ?? 'Failed to load payroll details.');
         setSelectedPayslipId(null);
       })
       .finally(() => { if (active) setDetailLoading(false); });
@@ -116,6 +120,10 @@ export function PayslipsOverviewTab() {
   const paginatedPayslips = filteredPayslips.slice((clampedPage - 1) * PAGE_SIZE, clampedPage * PAGE_SIZE);
 
   const handleSelectPayslip = useCallback((id: string) => { setSelectedPayslipId(id); }, []);
+  const handleTabChange = useCallback((tab: StatusTab) => {
+    setStatusTab(tab);
+    setSelectedPayslipId(null);
+  }, []);
   const handleClosePanel = useCallback(() => {
     setSelectedPayslipId(null);
     setSelectedPayslipDetail(null);
@@ -127,26 +135,14 @@ export function PayslipsOverviewTab() {
   return (
     <>
       <div className="space-y-4">
-        {/* Status sub-tabs */}
-        <div className="flex w-fit gap-1 rounded-xl bg-gray-100 p-1">
-          {(['pending', 'draft'] as StatusTab[]).map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => { setStatusTab(tab); setSelectedPayslipId(null); }}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-                statusTab === tab
-                  ? 'bg-white text-gray-900 shadow-sm'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {tab === 'pending' ? <Clock className="h-3.5 w-3.5" /> : <FileEdit className="h-3.5 w-3.5" />}
-              {tab === 'pending' ? 'Pending' : 'Draft'}
-            </button>
-          ))}
-        </div>
+        <ViewToggle
+          options={STATUS_TABS}
+          activeId={statusTab}
+          onChange={handleTabChange}
+          layoutId="payroll-overview-status-tabs"
+          className="max-w-sm"
+        />
 
-        {/* List */}
         {loading ? (
           <div className="space-y-3">
             {Array.from({ length: 5 }).map((_, i) => <CardSkeleton key={i} />)}
@@ -154,12 +150,12 @@ export function PayslipsOverviewTab() {
         ) : paginatedPayslips.length === 0 ? (
           <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3.5">
             <FileText className="h-4 w-4 shrink-0 text-gray-300" />
-            <p className="text-sm text-gray-400">No {statusTab} payslips found.</p>
+            <p className="text-sm text-gray-400">No {statusTab} payroll records found.</p>
           </div>
         ) : (
           <div className="space-y-3">
             {paginatedPayslips.map((payslip) => (
-              <PayslipManagementCard
+              <PayrollManagementCard
                 key={payslip.id}
                 payslip={payslip}
                 selected={payslip.id === selectedPayslipId}
@@ -175,7 +171,6 @@ export function PayslipsOverviewTab() {
         )}
       </div>
 
-      {/* Portaled detail panel */}
       {createPortal(
         <AnimatePresence>
           {panelOpen && (
@@ -195,11 +190,10 @@ export function PayslipsOverviewTab() {
                 transition={{ type: 'spring', damping: 30, stiffness: 300, mass: 0.8 }}
                 className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[680px] flex-col overflow-hidden bg-white shadow-2xl"
               >
-                {/* Panel header */}
                 <div className="flex items-start justify-between border-b border-gray-200 px-6 py-4">
                   <div>
                     <h2 className="text-lg font-semibold text-gray-900">
-                      {selectedPayslipMeta ? selectedPayslipMeta.employee_name : 'Payslip Detail'}
+                      {selectedPayslipMeta ? selectedPayslipMeta.employee_name : 'Payroll Detail'}
                     </h2>
                     {selectedPayslipMeta && (
                       <p className="text-xs text-gray-500">
@@ -215,14 +209,13 @@ export function PayslipsOverviewTab() {
                     type="button"
                     onClick={handleClosePanel}
                     className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-                    aria-label="Close payslip detail"
+                    aria-label="Close payroll detail"
                   >
                     <X className="h-5 w-5" />
                   </button>
                 </div>
 
-                {/* Panel body */}
-                <PayslipManagementDetailPanel detail={selectedPayslipDetail} loading={detailLoading} />
+                <PayrollManagementDetailPanel detail={selectedPayslipDetail} loading={detailLoading} />
               </motion.div>
             </>
           )}

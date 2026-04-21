@@ -23,13 +23,13 @@ function getStatusBadge(status: PayslipStatus): { label: string; className: stri
   }
 }
 
-interface PayslipManagementCardProps {
+interface PayrollManagementCardProps {
   payslip: PayslipListItem;
   selected: boolean;
   onSelect: (id: string) => void;
 }
 
-export const PayslipManagementCard = React.memo(({ payslip, selected, onSelect }: PayslipManagementCardProps) => {
+export const PayrollManagementCard = React.memo(({ payslip, selected, onSelect }: PayrollManagementCardProps) => {
   const badge = getStatusBadge(payslip.status);
   const cutoffLabel = payslip.cutoff === 1 ? '1st Cutoff' : '2nd Cutoff';
   const periodLabel = `${formatShortDate(payslip.date_from)} – ${formatShortDate(payslip.date_to)}`;
@@ -72,4 +72,4 @@ export const PayslipManagementCard = React.memo(({ payslip, selected, onSelect }
     </button>
   );
 });
-PayslipManagementCard.displayName = 'PayslipManagementCard';
+PayrollManagementCard.displayName = 'PayrollManagementCard';

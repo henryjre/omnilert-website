@@ -5,12 +5,12 @@ function formatPHP(amount: number): string {
   return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(amount);
 }
 
-interface PayslipManagementDetailPanelProps {
+interface PayrollManagementDetailPanelProps {
   detail: PayslipDetailResponse | null;
   loading: boolean;
 }
 
-export function PayslipManagementDetailPanel({ detail, loading }: PayslipManagementDetailPanelProps) {
+export function PayrollManagementDetailPanel({ detail, loading }: PayrollManagementDetailPanelProps) {
   if (loading || !detail) {
     return (
       <div className="flex flex-1 items-center justify-center py-12">
@@ -108,7 +108,7 @@ export function PayslipManagementDetailPanel({ detail, loading }: PayslipManagem
               ))}
             </div>
           ) : (
-            <p className="text-sm italic text-gray-400">No deductions for this payslip.</p>
+            <p className="text-sm italic text-gray-400">No deductions for this period.</p>
           )}
         </div>
 
@@ -122,7 +122,7 @@ export function PayslipManagementDetailPanel({ detail, loading }: PayslipManagem
 
       {detail.status !== 'completed' && (
         <div className="rounded bg-amber-50 px-3 py-2 text-center text-xs text-amber-800">
-          This payslip may not be accurate. Official payslips are distributed by the Finance
+          This payroll record may not be accurate. Official payslips are distributed by the Finance
           Department through email.
         </div>
       )}

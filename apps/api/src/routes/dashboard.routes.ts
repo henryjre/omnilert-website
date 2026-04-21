@@ -33,6 +33,11 @@ router.get(
 );
 
 router.get(
+  '/payslips/branch-users',
+  dashboardController.getPayslipBranchUsers,
+);
+
+router.get(
   '/payslips/:id',
   dashboardController.getPayslipDetail,
 );
