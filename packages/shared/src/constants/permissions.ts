@@ -70,6 +70,11 @@ export const PERMISSIONS = {
   TOKEN_PAY_MANAGE: 'token_pay.manage',
   TOKEN_PAY_ACCOUNT_MANAGE: 'token_pay.account_manage',
 
+  // Payslips Management (3)
+  PAYSLIPS_VIEW: 'payslips.view',
+  PAYSLIPS_ISSUE: 'payslips.issue',
+  PAYSLIPS_MANAGE: 'payslips.manage',
+
   // Analytics (4)
   ANALYTICS_VIEW_EMPLOYEE_ANALYTICS: 'analytics.view_employee_analytics',
   ANALYTICS_VIEW_PROFITABILITY_ANALYTICS: 'analytics.view_profitability_analytics',
@@ -191,6 +196,14 @@ export const PERMISSION_CATEGORIES: Record<string, { label: string; permissions:
       PERMISSIONS.TOKEN_PAY_ACCOUNT_MANAGE,
     ],
   },
+  payslips: {
+    label: 'Payslips',
+    permissions: [
+      PERMISSIONS.PAYSLIPS_VIEW,
+      PERMISSIONS.PAYSLIPS_ISSUE,
+      PERMISSIONS.PAYSLIPS_MANAGE,
+    ],
+  },
   analytics: {
     label: 'Analytics',
     permissions: [
@@ -226,6 +239,8 @@ export const PERMISSION_PREREQUISITES: Partial<Record<PermissionKey, PermissionK
   [PERMISSIONS.TOKEN_PAY_ISSUE]: PERMISSIONS.TOKEN_PAY_VIEW,
   [PERMISSIONS.TOKEN_PAY_MANAGE]: PERMISSIONS.TOKEN_PAY_VIEW,
   [PERMISSIONS.TOKEN_PAY_ACCOUNT_MANAGE]: PERMISSIONS.TOKEN_PAY_VIEW,
+  [PERMISSIONS.PAYSLIPS_ISSUE]: PERMISSIONS.PAYSLIPS_VIEW,
+  [PERMISSIONS.PAYSLIPS_MANAGE]: PERMISSIONS.PAYSLIPS_VIEW,
   [PERMISSIONS.ACCOUNT_MANAGE_SCHEDULE]: PERMISSIONS.ACCOUNT_VIEW_SCHEDULE,
 };
 
@@ -274,6 +289,9 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
   [PERMISSIONS.TOKEN_PAY_ISSUE]: 'Submit token issuance and deduction requests',
   [PERMISSIONS.TOKEN_PAY_MANAGE]: 'Approve and reject token issuance and deduction requests',
   [PERMISSIONS.TOKEN_PAY_ACCOUNT_MANAGE]: 'Suspend and unsuspend loyalty accounts',
+  [PERMISSIONS.PAYSLIPS_VIEW]: 'Access the Payslips management page',
+  [PERMISSIONS.PAYSLIPS_ISSUE]: 'Submit payslip deduction and issuance requests',
+  [PERMISSIONS.PAYSLIPS_MANAGE]: 'Approve and reject payslip deduction and issuance requests',
   [PERMISSIONS.ANALYTICS_VIEW_EMPLOYEE_ANALYTICS]: 'Access the Employee Analytics page and view performance metrics',
   [PERMISSIONS.ANALYTICS_VIEW_PROFITABILITY_ANALYTICS]: 'Access the Profitability Analytics page and view P&L metrics',
   [PERMISSIONS.ANALYTICS_VIEW_POS_ANALYTICS]: 'Access the POS Analytics page and view session metrics',
