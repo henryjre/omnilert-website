@@ -8,7 +8,7 @@ type TabId = 'overview' | 'issuance';
 
 const TABS: ViewOption<TabId>[] = [
   { id: 'overview', label: 'Overview', icon: LayoutGrid },
-  { id: 'issuance', label: 'Issuance', icon: Send },
+  { id: 'issuance', label: 'Adjustments', icon: Send },
 ];
 
 export function TokenPayManagementPage() {

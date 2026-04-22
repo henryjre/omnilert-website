@@ -21,7 +21,7 @@ import type {
 const TYPE_TABS = [
   {
     id: 'issuance' as PayrollRequestType,
-    label: 'Issuance',
+    label: 'Add',
     icon: ArrowUpCircle,
     activeClassName: 'text-green-700',
     activeIndicatorClassName: 'bg-green-600',
@@ -29,7 +29,7 @@ const TYPE_TABS = [
   },
   {
     id: 'deduction' as PayrollRequestType,
-    label: 'Deduction',
+    label: 'Deduct',
     icon: ArrowDownCircle,
     activeClassName: 'text-red-700',
     activeIndicatorClassName: 'bg-red-600',
@@ -188,7 +188,7 @@ export function PayrollIssuanceCreateModal({
 
       onSubmitted({ id: created.id, companyId: selectedBranch.companyId });
       showSuccess(
-        `${selectedUsers.length} ${isIssuance ? 'issuance' : 'deduction'} request${selectedUsers.length === 1 ? '' : 's'} submitted.`,
+        `${selectedUsers.length} adjustment request${selectedUsers.length === 1 ? '' : 's'} submitted.`,
       );
     } catch (error: unknown) {
       const message =
@@ -332,7 +332,7 @@ export function PayrollIssuanceCreateModal({
                 onClick={() => void handleSubmit()}
                 className="min-w-0 flex-1"
               >
-                {isIssuance ? 'Submit Issuance' : 'Submit Deduction'}
+                {isIssuance ? 'Submit Add' : 'Submit Deduct'}
               </Button>
             </div>
           </div>

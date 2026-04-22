@@ -242,7 +242,7 @@ export function PayrollIssuanceDetailPanel({
             <DetailRow label="Reason" value={request.reason} />
             <DetailRow label="Company" value={request.companyName} />
             <DetailRow label="Branch" value={request.branchName} />
-            <DetailRow label="Issuer" value={request.createdByName} />
+            <DetailRow label="Created By" value={request.createdByName} />
             <DetailRow label="Date Submitted" value={formatPayrollRequestDate(request.createdAt, 'long')} />
             <DetailRow
               label="Payroll Periods"

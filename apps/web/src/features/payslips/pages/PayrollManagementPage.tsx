@@ -21,7 +21,7 @@ export function PayrollManagementPage() {
           <h1 className="text-2xl font-bold text-gray-900">Payroll</h1>
         </div>
         <p className="mt-1 hidden text-sm text-gray-500 sm:block">
-          Manage employee payroll, deductions, and issuances.
+          Manage employee payroll adjustments, additions, and deductions.
         </p>
       </div>
       <ViewToggle

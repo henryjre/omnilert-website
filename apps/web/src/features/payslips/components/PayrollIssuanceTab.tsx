@@ -408,7 +408,7 @@ export function PayrollIssuanceTab() {
               }}
             >
               <Plus className="h-4 w-4" />
-              Create Request
+              Create Adjustment
             </Button>
           ) : null}
         </div>

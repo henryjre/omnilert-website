@@ -96,7 +96,7 @@ export function getPayrollRequestStatusLabel(status: PayrollRequestStatus): stri
 }
 
 export function getPayrollRequestTypeLabel(type: PayrollRequestType): string {
-  return type === 'issuance' ? 'Issuance' : 'Deduction';
+  return type === 'issuance' ? 'Add' : 'Deduct';
 }
 
 export function getPayrollAdjustmentActionLabel(type: PayrollRequestType): string {
