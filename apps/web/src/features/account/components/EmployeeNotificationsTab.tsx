@@ -113,6 +113,12 @@ function getRequestId(linkUrl: string | null | undefined): string | null {
   return match?.[1] ?? null;
 }
 
+function getPayslipAdjustmentId(linkUrl: string | null | undefined): string | null {
+  if (!linkUrl) return null;
+  const match = linkUrl.match(/[?&]adjustmentId=([0-9a-f-]{36})/i);
+  return match?.[1] ?? null;
+}
+
 const PAGE_SIZE = 10;
 
 export function EmployeeNotificationsTab() {
@@ -361,6 +367,7 @@ export function EmployeeNotificationsTab() {
           const shiftId = getShiftId(n.link_url);
           const authId = getAuthId(n.link_url);
           const requestId = getRequestId(n.link_url);
+          const payslipAdjustmentId = getPayslipAdjustmentId(n.link_url);
           const isAuthRequestLink = typeof n.link_url === "string" && n.link_url.startsWith("/account/authorization-requests");
           const isCashRequestLink = typeof n.link_url === "string" && n.link_url.startsWith("/account/cash-requests");
           return (
@@ -448,6 +455,19 @@ export function EmployeeNotificationsTab() {
                         className="text-xs"
                       >
                         View Request
+                      </Button>
+                    )}
+                    {payslipAdjustmentId && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          if (!n.is_read) { void markAsRead(n.id); }
+                          navigate(`/account/payslip?tab=adjustments&adjustmentId=${payslipAdjustmentId}`);
+                        }}
+                        className="text-xs"
+                      >
+                        View Adjustment
                       </Button>
                     )}
                     {tokenPayId && (

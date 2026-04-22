@@ -42,6 +42,12 @@ function getAuthId(linkUrl: string | null | undefined): string | null {
   return match?.[1] ?? null;
 }
 
+function getPayslipAdjustmentId(linkUrl: string | null | undefined): string | null {
+  if (!linkUrl) return null;
+  const match = linkUrl.match(/[?&]adjustmentId=([0-9a-f-]{36})/i);
+  return match?.[1] ?? null;
+}
+
 const TYPE_DOT: Record<string, string> = {
   success: 'bg-green-500',
   warning: 'bg-yellow-500',
@@ -241,6 +247,11 @@ export function TopBar({ onOpenSidebar, onOpenAccountSidebar, accountSidebarOpen
     if (shiftId) {
       // Navigate using the full link_url to preserve extra params like ?highlight=.
       navigate(n.link_url ?? `/account/schedule?shiftId=${shiftId}`);
+      return;
+    }
+    const adjustmentId = getPayslipAdjustmentId(n.link_url);
+    if (adjustmentId) {
+      navigate(`/account/payslip?tab=adjustments&adjustmentId=${adjustmentId}`);
       return;
     }
     const shiftExchangeId = getShiftExchangeId(n.link_url);

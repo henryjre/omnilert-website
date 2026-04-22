@@ -5,7 +5,7 @@ import { LucideIcon } from 'lucide-react';
 export interface ViewOption<T extends string = string> {
   id: T;
   label: React.ReactNode;
-  icon: LucideIcon;
+  icon?: LucideIcon;
   activeClassName?: string;
   activeIndicatorClassName?: string;
   inactiveClassName?: string;
@@ -20,6 +20,9 @@ interface ViewToggleProps<T extends string = string> {
   layoutId?: string;
   className?: string;
   labelAboveOnMobile?: boolean;
+  showLabelOnMobile?: boolean;
+  showIcons?: boolean;
+  size?: 'default' | 'compact';
 }
 
 export function ViewToggle<T extends string = string>({ 
@@ -28,7 +31,10 @@ export function ViewToggle<T extends string = string>({
   onChange, 
   layoutId = 'active-view-underline',
   className = '',
-  labelAboveOnMobile = false
+  labelAboveOnMobile = false,
+  showLabelOnMobile = false,
+  showIcons = true,
+  size = 'default',
 }: ViewToggleProps<T>) {
   return (
     <div className={`flex w-full gap-1 border-b border-gray-100 ${className}`}>
@@ -39,6 +45,11 @@ export function ViewToggle<T extends string = string>({
         const activeIndicatorClassName = option.activeIndicatorClassName ?? 'bg-primary-600';
         const inactiveClassName = option.inactiveClassName ?? 'text-gray-500 hover:text-gray-700';
         const isDisabled = option.disabled;
+        const paddingClassName =
+          size === 'compact'
+            ? 'px-3 py-1.5 sm:py-2 text-xs sm:text-sm'
+            : 'px-4 py-2 sm:py-2.5 text-sm';
+        const showMobileLabel = !showIcons || showLabelOnMobile;
         return (
           <button
             key={option.id}
@@ -47,11 +58,11 @@ export function ViewToggle<T extends string = string>({
             onClick={() => onChange(option.id)}
             className={`relative flex flex-1 items-center justify-center transition-colors sm:flex-none ${
               labelAboveOnMobile ? 'flex-col gap-1.5 sm:flex-row sm:gap-2' : 'gap-2'
-            } px-4 py-2 sm:py-2.5 text-sm font-medium ${
+            } ${paddingClassName} font-medium ${
               isActive ? activeClassName : inactiveClassName
             } ${isDisabled ? 'cursor-not-allowed opacity-50' : ''}`}
           >
-            {labelAboveOnMobile && (
+            {labelAboveOnMobile && !showMobileLabel && (
               <div className="relative h-[11px] w-full sm:hidden">
                 <AnimatePresence initial={false}>
                   {isActive && (
@@ -70,8 +81,10 @@ export function ViewToggle<T extends string = string>({
               </div>
             )}
             <div className="flex items-center gap-1.5">
-              <Icon className="h-4 w-4" />
-              <span className="hidden sm:inline whitespace-nowrap">{option.label}</span>
+              {showIcons && Icon ? <Icon className="h-4 w-4" /> : null}
+              <span className={`${showMobileLabel ? 'inline' : 'hidden sm:inline'} whitespace-nowrap`}>
+                {option.label}
+              </span>
               {option.badge}
             </div>
             {isActive && (

@@ -49,6 +49,8 @@ const STATUS_TABS: ViewOption<StatusFilter>[] = [
 ];
 
 interface PayslipListContentProps {
+  /** Whether to render the page header inside this component */
+  showHeader?: boolean;
   /** Whether the initial payslip list is loading */
   loading: boolean;
   /** Filtered + paginated items to display */
@@ -78,6 +80,7 @@ interface PayslipListContentProps {
  * Renders the page header, status filter tabs, payslip cards, and pagination.
  */
 export function PayslipListContent({
+  showHeader = true,
   loading,
   items,
   total,
@@ -92,28 +95,27 @@ export function PayslipListContent({
 }: PayslipListContentProps) {
   return (
     <div className="space-y-5">
-      {/* Page header */}
-      <div>
-        <div className="flex items-center gap-2">
-          <FileText className="h-6 w-6 text-primary-600" />
-          <h1 className="text-2xl font-bold text-gray-900">My Payslip</h1>
+      {showHeader ? (
+        <div>
+          <div className="flex items-center gap-2">
+            <FileText className="h-6 w-6 text-primary-600" />
+            <h1 className="text-2xl font-bold text-gray-900">My Payslip</h1>
+            {branchLabel && (
+              <span className="mt-1 hidden text-sm font-medium text-primary-600 sm:inline">
+                {branchLabel}
+              </span>
+            )}
+          </div>
           {branchLabel && (
-            <span className="mt-1 hidden text-sm font-medium text-primary-600 sm:inline">
+            <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
               {branchLabel}
-            </span>
+            </p>
           )}
-        </div>
-        {branchLabel && (
-          <p className="mt-0.5 text-sm font-medium text-primary-600 sm:hidden">
-            {branchLabel}
+          <p className="mt-1 hidden text-sm text-gray-500 sm:block">
+            View your payslip history. Click a card to see the full breakdown.
           </p>
-        )}
-        {/* Mobile: active tab name as a compact subtitle */}
-        {/* Desktop: full description */}
-        <p className="mt-1 hidden text-sm text-gray-500 sm:block">
-          View your payslip history. Click a card to see the full breakdown.
-        </p>
-      </div>
+        </div>
+      ) : null}
 
       <ViewToggle
         options={STATUS_TABS}

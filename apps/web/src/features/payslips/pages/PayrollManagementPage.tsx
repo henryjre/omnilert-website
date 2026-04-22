@@ -1,14 +1,14 @@
 import { useState } from 'react';
-import { FileText, LayoutGrid, Send } from 'lucide-react';
+import { FileEdit, FileText, LayoutGrid } from 'lucide-react';
 import { ViewToggle, type ViewOption } from '@/shared/components/ui/ViewToggle';
 import { PayrollOverviewTab } from '../components/PayrollOverviewTab';
 import { PayrollIssuanceTab } from '../components/PayrollIssuanceTab';
 
-type TabId = 'overview' | 'issuance';
+type TabId = 'overview' | 'adjustments';
 
 const TABS: ViewOption<TabId>[] = [
   { id: 'overview', label: 'Overview', icon: LayoutGrid },
-  { id: 'issuance', label: 'Issuance', icon: Send },
+  { id: 'adjustments', label: 'Adjustments', icon: FileEdit },
 ];
 
 export function PayrollManagementPage() {
@@ -24,9 +24,15 @@ export function PayrollManagementPage() {
           Manage employee payroll, deductions, and issuances.
         </p>
       </div>
-      <ViewToggle options={TABS} activeId={activeTab} onChange={setActiveTab} layoutId="payroll-tabs" />
+      <ViewToggle
+        options={TABS}
+        activeId={activeTab}
+        onChange={setActiveTab}
+        layoutId="payroll-tabs"
+        labelAboveOnMobile
+      />
       {activeTab === 'overview' && <PayrollOverviewTab />}
-      {activeTab === 'issuance' && <PayrollIssuanceTab />}
+      {activeTab === 'adjustments' && <PayrollIssuanceTab />}
     </div>
   );
 }

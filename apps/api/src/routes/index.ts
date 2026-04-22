@@ -15,6 +15,7 @@ import shiftAuthorizationRoutes from './shiftAuthorization.routes.js';
 import authorizationRequestRoutes from './authorizationRequest.routes.js';
 import cashRequestRoutes from './cashRequest.routes.js';
 import tokenPayManagementRoutes from './tokenPayManagement.routes.js';
+import payrollAdjustmentRoutes from './payrollAdjustment.routes.js';
 import registrationRequestRoutes from './registrationRequest.routes.js';
 import employeeVerificationRoutes from './employeeVerification.routes.js';
 import employeeRequirementRoutes from './employeeRequirement.routes.js';
@@ -83,6 +84,7 @@ router.use('/profitability-analytics', profitabilityAnalyticsRoutes);
 router.use('/pos-analytics', posAnalyticsRoutes);
 router.use('/account', accountRoutes);
 router.use('/token-pay', tokenPayManagementRoutes);
+router.use('/payroll-adjustments', payrollAdjustmentRoutes);
 router.use('/dashboard', dashboardRoutes);
 
 // Webhooks (no JWT)

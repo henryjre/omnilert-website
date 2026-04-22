@@ -44,7 +44,17 @@ function getStatusBadge(status: PayslipStatus): StatusBadgeConfig {
         label: "Completed",
         className: "bg-green-50 text-green-700 ring-green-200",
       };
+    case "on_hold":
+      return {
+        label: "On Hold",
+        className: "bg-rose-50 text-rose-700 ring-rose-200",
+      };
   }
+
+  return {
+    label: "Pending",
+    className: "bg-amber-50 text-amber-700 ring-amber-200",
+  };
 }
 
 interface PayslipCardProps {

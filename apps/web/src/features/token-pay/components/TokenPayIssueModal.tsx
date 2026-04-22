@@ -141,6 +141,7 @@ export function TokenPayIssueModal({ open, onClose, onSubmitted }: TokenPayIssue
               activeId={type}
               onChange={setType}
               layoutId="issue-modal-type-tab"
+              labelAboveOnMobile
             />
           </div>
 

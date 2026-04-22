@@ -15,6 +15,7 @@ export type * from './types/user.types.js';
 export type * from './types/violationNotice.types.js';
 export type * from './types/webhook.types.js';
 export type * from './types/tokenPay.types.js';
+export type * from './types/payrollAdjustment.types.js';
 
 // Constants
 export {
@@ -168,3 +169,24 @@ export type { OdooShiftPayloadInput } from './validation/shift.schema.js';
 
 export { odooAttendancePayloadSchema } from './validation/attendance.schema.js';
 export type { OdooAttendancePayloadInput } from './validation/attendance.schema.js';
+
+export {
+  payrollAdjustmentManagerStatusSchema,
+  payrollAdjustmentEmployeeStatusSchema,
+  payrollAdjustmentTypeSchema,
+  createPayrollAdjustmentRequestSchema,
+  updatePayrollAdjustmentProcessingSchema,
+  rejectPayrollAdjustmentSchema,
+  authorizePayrollAdjustmentSchema,
+  payrollAdjustmentCompleteWebhookSchema,
+} from './validation/payrollAdjustment.schema.js';
+export type {
+  PayrollAdjustmentManagerStatusInput,
+  PayrollAdjustmentEmployeeStatusInput,
+  PayrollAdjustmentTypeInput,
+  CreatePayrollAdjustmentRequestInput,
+  UpdatePayrollAdjustmentProcessingInput,
+  RejectPayrollAdjustmentInput,
+  AuthorizePayrollAdjustmentInput,
+  PayrollAdjustmentCompleteWebhookInput,
+} from './validation/payrollAdjustment.schema.js';

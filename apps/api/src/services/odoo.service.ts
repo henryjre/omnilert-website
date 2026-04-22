@@ -2566,6 +2566,62 @@ export async function createAuditSalaryAttachment(input: {
   }
 }
 
+function getTodayManilaYmd(): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+}
+
+function getCurrentPayrollCutoffEndYmd(dateStart: string): string {
+  const [year, month, dayStr] = dateStart.split('-');
+  const day = Number.parseInt(dayStr, 10);
+
+  if (day <= 15) {
+    return `${year}-${month}-15`;
+  }
+
+  const lastDay = new Date(Number(year), Number(month), 0).getDate();
+  return `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
+}
+
+export async function createPayrollAdjustmentSalaryAttachment(input: {
+  employeeId: number;
+  type: 'issuance' | 'deduction';
+  totalAmount: number;
+  monthlyAmount: number;
+  payrollPeriods: number;
+  description: string;
+}): Promise<number> {
+  const dateStart = getTodayManilaYmd();
+  const payload: Record<string, unknown> = {
+    employee_ids: [[4, input.employeeId]],
+    // DEDUCTION TYPE
+    other_input_type_id: 1,
+    monthly_amount: input.monthlyAmount,
+    total_amount: input.totalAmount,
+    is_refund: input.type === 'deduction',
+    duration_type: input.payrollPeriods > 1 ? 'limited' : 'one',
+    description: input.description,
+    date_start: dateStart,
+  };
+
+  if (input.payrollPeriods <= 1) {
+    payload.date_end = getCurrentPayrollCutoffEndYmd(dateStart);
+  }
+
+  const createdId = await callOdooKw('hr.salary.attachment', 'create', [payload]);
+  const numericId = Number(createdId);
+
+  if (!Number.isFinite(numericId) || numericId <= 0) {
+    throw new Error('Failed to create payroll adjustment salary attachment');
+  }
+
+  return numericId;
+}
+
 // ---------------------------------------------------------------------------
 // Payslip list + detail helpers (used by the redesigned PayslipPage)
 // ---------------------------------------------------------------------------
@@ -2784,6 +2840,114 @@ export async function getAllPayslipsForUser(
 }
 
 /**
+ * Fetches all active employees for the given Odoo company IDs including their
+ * x_website_key so the caller can map back to website users.
+ */
+export async function getEmployeesForOdooCompanies(
+  odooCompanyIds: number[],
+): Promise<Array<{ id: number; name?: string | null; company_id?: [number, string] | false; x_website_key?: string | null }>> {
+  if (odooCompanyIds.length === 0) return [];
+
+  const rows = (await callOdooKw('hr.employee', 'search_read', [], {
+    domain: [
+      ['company_id', 'in', odooCompanyIds],
+      ['active', '=', true],
+    ],
+    fields: ['id', 'name', 'company_id', 'x_website_key'],
+    order: 'id asc',
+    limit: 2000,
+  })) as Array<{ id: number; name?: string | null; company_id?: [number, string] | false; x_website_key?: string | null }>;
+
+  return rows;
+}
+
+/**
+ * Fetches real (non-pending) payslips for the given Odoo company IDs within
+ * the specified date range, plus pending stubs for employees without a payslip
+ * in that period. Used by the manager payroll overview.
+ */
+export async function getAllPayslipsForBranchPeriod(
+  odooCompanyIds: number[],
+  dateFrom: string,
+  dateTo: string,
+): Promise<PayslipListItem[]> {
+  if (odooCompanyIds.length === 0) return [];
+
+  const [allEmployees, rows] = await Promise.all([
+    getEmployeesForOdooCompanies(odooCompanyIds),
+    callOdooKw('hr.payslip', 'search_read', [], {
+      domain: [
+        ['company_id', 'in', odooCompanyIds],
+        ['date_from', '>=', dateFrom],
+        ['date_to', '<=', dateTo],
+        ['state', '!=', 'cancel'],
+        ['x_view_only', '!=', true],
+      ],
+      fields: ['id', 'name', 'state', 'employee_id', 'date_from', 'date_to', 'company_id', 'net_wage'],
+      order: 'employee_id asc, id desc',
+      limit: 2000,
+    }) as Promise<OdooPayslipRow[]>,
+  ]);
+
+  // Exclude system/POS employees (Odoo names like "3000 - POS System")
+  const POS_SYSTEM_PATTERN = /\bpos\s+system\b/i;
+  const employees = allEmployees.filter(
+    (e) => !POS_SYSTEM_PATTERN.test(e.name ?? ''),
+  );
+
+  const realPayslips = (rows as OdooPayslipRow[]).map((row) => {
+    const odooCompanyId = Array.isArray(row.company_id)
+      ? row.company_id[0]
+      : (row.company_id as unknown as number);
+    const companyName = Array.isArray(row.company_id) ? row.company_id[1] : '';
+
+    return {
+      id: String(row.id),
+      name: row.name,
+      date_from: row.date_from,
+      date_to: row.date_to,
+      odoo_state: row.state,
+      status: derivePayslipStatus(row.state),
+      company_id: odooCompanyId,
+      company_name: companyName,
+      employee_id: Array.isArray(row.employee_id)
+        ? row.employee_id[0]
+        : (row.employee_id as unknown as number),
+      employee_name: Array.isArray(row.employee_id) ? row.employee_id[1] : '',
+      cutoff: resolveCutoffFromDateFrom(row.date_from),
+      is_pending: false as const,
+      net_pay: row.net_wage ?? 0,
+    };
+  });
+
+  const pendingStubs = await calculatePendingPayslipStubs(
+    employees,
+    // Pass all real payslips (including zero-pay) so the stub calculator knows
+    // those periods are already covered and won't generate duplicate stubs.
+    realPayslips.map((p) => ({
+      employee_id: p.employee_id,
+      company_id: p.company_id,
+      date_from: p.date_from,
+      date_to: p.date_to,
+      status: p.status,
+    })),
+  );
+
+  // Filter pending stubs to only those in the requested period
+  const periodStubs = pendingStubs.filter(
+    (s) => s.date_from >= dateFrom && s.date_to <= dateTo,
+  );
+
+  // Exclude zero-net-pay real payslips (uncomputed shells with no salary data)
+  // and POS system employees
+  const payslipsWithData = realPayslips.filter(
+    (p) => p.net_pay > 0 && !POS_SYSTEM_PATTERN.test(p.employee_name),
+  );
+
+  return [...periodStubs, ...payslipsWithData];
+}
+
+/**
  * Calculates synthetic "pending" payslip stubs for the current month's
  * cutoff periods that do not yet exist in the provided existingPayslips list.
  *
@@ -2959,7 +3123,7 @@ export async function calculatePendingPayslipStubs(
 
         if (hasAttendance) {
           stubs.push({
-            id: `pending-${companyId}:${range.date_from}:${cutoff}`,
+            id: `pending-${companyId}:${range.date_from}:${cutoff}:${employee.id}`,
             name: `${employeeName} | ${cutoff === 1 ? '1st' : '2nd'} Cutoff Payslip`,
             date_from: range.date_from,
             date_to: range.date_to,
@@ -3002,6 +3166,7 @@ export async function getPayslipDetailById(payslipId: number): Promise<{
   name: string;
   state: string;
   employee_id: [number, string];
+  company_id: [number, string];
   date_from: string;
   date_to: string;
   lines: Array<{
@@ -3028,12 +3193,13 @@ export async function getPayslipDetailById(payslipId: number): Promise<{
     // Read the payslip header first so we know its current state before
     // attempting any mutation.
     const slips = (await callOdooKw('hr.payslip', 'read', [[payslipId]], {
-      fields: ['id', 'name', 'state', 'employee_id', 'date_from', 'date_to'],
+      fields: ['id', 'name', 'state', 'employee_id', 'company_id', 'date_from', 'date_to'],
     })) as Array<{
       id: number;
       name: string;
       state: string;
       employee_id: [number, string];
+      company_id: [number, string];
       date_from: string;
       date_to: string;
     }>;

@@ -9,10 +9,20 @@ import type {
   PayslipListItem,
   PayslipDetailResponse,
   PayslipStatus,
+  PayrollOverviewPeriodOption,
+  PayrollOverviewResponse,
+  ValidatePayrollOverviewInput,
 } from '@omnilert/shared';
 import { SYSTEM_ROLES } from '@omnilert/shared';
 import { getEpiDashboard, getEpiLeaderboard, getEpiLeaderboardDetail } from '../services/epiDashboard.service.js';
 import { getEmployeeMetricDailySnapshots } from '../services/employeeAnalyticsSnapshot.service.js';
+import {
+  applyPayrollReviewStatusOverrides,
+  findPayrollReviewStatus,
+  loadPayrollOverviewScope,
+  listPayrollReviewStatuses,
+  validatePayrollOverview,
+} from '../services/payrollOverview.service.js';
 import {
   getEmployeeMetricEventRows,
   type RollingMetricId,
@@ -86,6 +96,7 @@ async function assertUserCanAccessPayslipBranch(
   companyId: string,
   userId: string,
   branchId: string,
+  userPermissions: string[] = [],
 ): Promise<void> {
   const masterDb = db.getDb();
 
@@ -95,6 +106,10 @@ async function assertUserCanAccessPayslipBranch(
 
   if (!branch) {
     throw new AppError(400, 'Selected branch is invalid or inactive.');
+  }
+
+  if (userPermissions.includes('payslips.manage')) {
+    return;
   }
 
   const [companyAssignments, legacyAssignments] = await Promise.all([
@@ -1001,7 +1016,7 @@ export async function getPayslipBranchUsers(req: Request, res: Response, next: N
       throw new AppError(400, 'branchId is required');
     }
 
-    await assertUserCanAccessPayslipBranch(companyId, userId, branchId);
+    await assertUserCanAccessPayslipBranch(companyId, userId, branchId, req.user!.permissions);
     const data = await listGroupedBranchUsers(companyId, branchId);
     res.json({ success: true, data });
   } catch (err) {
@@ -1025,21 +1040,30 @@ export async function getPayslipDetail(req: Request, res: Response, next: NextFu
     }
 
     if (payslipId.startsWith("pending-")) {
-      // New format: "pending-{companyId}:{date_from}:{cutoff}"
-      // Legacy format: "pending-{companyId}-{cutoff}"
+      // Formats (newest first):
+      //   "pending-{companyId}:{date_from}:{cutoff}:{employeeId}"  ← manager overview
+      //   "pending-{companyId}:{date_from}:{cutoff}"               ← employee self-service
+      //   "pending-{companyId}-{cutoff}"                           ← legacy
       let companyId: number;
       let cutoff: 1 | 2;
       let dateFrom: string | undefined;
+      let directEmployeeId: number | undefined;
 
       if (payslipId.includes(":")) {
         const parts = payslipId.split(":");
-        if (parts.length !== 3) {
+        if (parts.length === 4) {
+          // Manager overview format with employee id
+          companyId = parseInt(parts[0].replace("pending-", ""), 10);
+          dateFrom = parts[1];
+          cutoff = parseInt(parts[2], 10) as 1 | 2;
+          directEmployeeId = parseInt(parts[3], 10);
+        } else if (parts.length === 3) {
+          companyId = parseInt(parts[0].replace("pending-", ""), 10);
+          dateFrom = parts[1];
+          cutoff = parseInt(parts[2], 10) as 1 | 2;
+        } else {
           throw new AppError(400, "Invalid pending payslip id format");
         }
-        // parts[0] is "pending-{companyId}"
-        companyId = parseInt(parts[0].split("-")[1], 10);
-        dateFrom = parts[1];
-        cutoff = parseInt(parts[2], 10) as 1 | 2;
       } else {
         const parts = payslipId.split("-");
         if (parts.length !== 3) {
@@ -1053,31 +1077,49 @@ export async function getPayslipDetail(req: Request, res: Response, next: NextFu
         throw new AppError(400, "Invalid pending payslip id values");
       }
 
-      const currentUser = await masterDb("users").where({ id: userId }).select("user_key").first();
-      const userKey = currentUser?.user_key as string | undefined;
+      let employeeId: number;
+      let employeeName: string;
 
-      if (!userKey) {
-        res.json({ success: true, data: null });
-        return;
-      }
+      if (directEmployeeId !== undefined && !isNaN(directEmployeeId)) {
+        // Manager overview: employee id is encoded in the stub ID — no user lookup needed
+        employeeId = directEmployeeId;
+        employeeName = '';
+      } else {
+        // Employee self-service: resolve from the requesting user's identity
+        const currentUser = await masterDb("users").where({ id: userId }).select("user_key").first();
+        const userKey = currentUser?.user_key as string | undefined;
 
-      const employee = await getEmployeeByWebsiteUserKey(userKey, companyId);
+        if (!userKey) {
+          res.json({ success: true, data: null });
+          return;
+        }
 
-      if (!employee) {
-        res.json({ success: false, error: "Employee not found for this branch" });
-        return;
+        const employee = await getEmployeeByWebsiteUserKey(userKey, companyId);
+        if (!employee) {
+          res.json({ success: false, error: "Employee not found for this branch" });
+          return;
+        }
+        employeeId = employee.id;
+        employeeName = employee.name ?? '';
       }
 
       let payslip;
       try {
-        payslip = await getOrCreatePendingPayslipDetail(employee.id, companyId, employee.name, cutoff, dateFrom);
+        payslip = await getOrCreatePendingPayslipDetail(employeeId, companyId, employeeName, cutoff, dateFrom);
       } catch (createErr) {
         logger.error(`Failed to get/create pending payslip: ${createErr}`);
         res.json({ success: false, error: "Unable to generate payslip preview. The employee may not have an active contract." });
         return;
       }
 
-      const detail = transformPayslipToDetailResponse(payslip, "pending");
+      const reviewStatus = await findPayrollReviewStatus({
+        companyId: req.companyContext!.companyId,
+        odooCompanyId: companyId,
+        employeeOdooId: employeeId,
+        dateFrom: payslip.date_from,
+        dateTo: payslip.date_to,
+      });
+      const detail = transformPayslipToDetailResponse(payslip, reviewStatus ? 'on_hold' : "pending");
       res.json({ success: true, data: detail });
       return;
     }
@@ -1089,8 +1131,98 @@ export async function getPayslipDetail(req: Request, res: Response, next: NextFu
     }
 
     const payslip = await getPayslipDetailById(odooId);
-    const detail = transformPayslipToDetailResponse(payslip);
+    const reviewStatus = await findPayrollReviewStatus({
+      companyId: req.companyContext!.companyId,
+      odooCompanyId: payslip.company_id[0],
+      employeeOdooId: payslip.employee_id[0],
+      dateFrom: payslip.date_from,
+      dateTo: payslip.date_to,
+    });
+    const detail = transformPayslipToDetailResponse(payslip, reviewStatus ? 'on_hold' : undefined);
     res.json({ success: true, data: detail });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * GET /dashboard/payroll-overview
+ * Returns all employees' payslips for the current payroll period, scoped to
+ * the selected branch (or all branches of the company if none specified).
+ * Requires payslips.view or payslips.manage permission.
+ */
+export async function getPayrollOverview(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { companyId } = req.companyContext!;
+    const branchIdsParam = req.query.branchIds as string | undefined;
+    const periodParam = typeof req.query.period === 'string' ? req.query.period.trim() : undefined;
+    const selectedBranchIds = branchIdsParam
+      ? branchIdsParam.split(',').map((s) => s.trim()).filter(Boolean)
+      : [];
+
+    if (periodParam && periodParam !== 'current' && periodParam !== 'previous') {
+      throw new AppError(400, 'Invalid period. Must be current or previous.');
+    }
+
+    const scope = await loadPayrollOverviewScope({
+      companyId,
+      branchIds: selectedBranchIds,
+      period: (periodParam ?? 'current') as PayrollOverviewPeriodOption,
+    });
+    const reviewRows = await listPayrollReviewStatuses({
+      companyId,
+      odooCompanyIds: scope.odooCompanyIds,
+      dateFrom: scope.period.dateFrom,
+      dateTo: scope.period.dateTo,
+    });
+
+    const overriddenItems: PayslipListItem[] = applyPayrollReviewStatusOverrides(
+      scope.items,
+      reviewRows,
+    );
+
+    const data: PayrollOverviewResponse = {
+      items: overriddenItems,
+      period: scope.period,
+    };
+
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /dashboard/payroll-overview/validate
+ * Validates the current payroll scope and persists on-hold overlays for
+ * matching payslip rows that still have unresolved blockers.
+ * Requires payslips.manage permission.
+ */
+export async function validatePayrollOverviewAction(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { companyId } = req.companyContext!;
+    const payload = (req.body ?? {}) as Partial<ValidatePayrollOverviewInput>;
+    const period = typeof payload.period === 'string' ? payload.period.trim() : '';
+
+    if (period !== 'current' && period !== 'previous') {
+      throw new AppError(400, 'Invalid period. Must be current or previous.');
+    }
+
+    const branchIds = Array.isArray(payload.branchIds)
+      ? payload.branchIds
+          .filter((value): value is string => typeof value === 'string')
+          .map((value) => value.trim())
+          .filter(Boolean)
+      : undefined;
+
+    const data = await validatePayrollOverview({
+      companyId,
+      actingUserId: req.user!.sub,
+      branchIds,
+      period,
+    });
+
+    res.json({ success: true, data });
   } catch (err) {
     next(err);
   }

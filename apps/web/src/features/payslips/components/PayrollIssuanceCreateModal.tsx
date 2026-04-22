@@ -1,18 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import type { GroupedUsersResponse } from '@omnilert/shared';
 import { ArrowDownCircle, ArrowUpCircle, X } from 'lucide-react';
+import type { GroupedUsersResponse } from '@omnilert/shared';
 import type { SelectorCompanyGroup } from '@/shared/components/branchSelectorState';
 import { Button } from '@/shared/components/ui/Button';
 import { AnimatedModal } from '@/shared/components/ui/AnimatedModal';
 import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import { useAppToast } from '@/shared/hooks/useAppToast';
-import { fetchPayrollBranchUsers } from '@/features/payslips/services/payrollManagement.api';
+import {
+  createPayrollAdjustmentRequest,
+  fetchPayrollBranchUsers,
+} from '@/features/payslips/services/payrollManagement.api';
 import { PayrollEmployeeMultiSelect } from './PayrollEmployeeMultiSelect';
 import { PayrollBranchSelect } from './PayrollBranchSelect';
 import type {
   PayrollBranchOption,
-  PayrollRequestRecord,
   PayrollRequestType,
 } from './payrollIssuance.shared';
 
@@ -39,9 +41,8 @@ interface PayrollIssuanceCreateModalProps {
   open: boolean;
   branches: PayrollBranchOption[];
   branchGroups: SelectorCompanyGroup[];
-  submittedByName: string;
   onClose: () => void;
-  onSubmitted: (requests: PayrollRequestRecord[]) => void;
+  onSubmitted: (created: { id: string; companyId: string }) => void;
 }
 
 function DisabledEmployeeSelect({ placeholder }: { placeholder: string }) {
@@ -56,7 +57,6 @@ export function PayrollIssuanceCreateModal({
   open,
   branches,
   branchGroups,
-  submittedByName,
   onClose,
   onSubmitted,
 }: PayrollIssuanceCreateModalProps) {
@@ -131,21 +131,22 @@ export function PayrollIssuanceCreateModal({
     };
   }, [open, selectedBranchId, branches, usersByBranchId, showError]);
 
-  const branchEmployees = useMemo(() => {
+  const selectedBranch = branches.find((branch) => branch.id === selectedBranchId) ?? null;
+  const hasBranches = branches.length > 0;
+  const isIssuance = type === 'issuance';
+  const fieldShellClassName =
+    'group rounded-xl border border-gray-200 bg-white px-4 py-2.5 transition-all hover:border-blue-400 hover:shadow-sm focus-within:border-blue-400 focus-within:shadow-sm focus-within:ring-2 focus-within:ring-blue-500/20';
+
+  const selectedUsers = useMemo(() => {
     if (!groupedUsers) return [];
     return [
-      ...groupedUsers.management.map((user) => ({ ...user, role: 'Management' })),
-      ...groupedUsers.service_crew.map((user) => ({ ...user, role: 'Service Crew' })),
-      ...groupedUsers.other.map((user) => ({ ...user, role: 'Other' })),
-    ];
-  }, [groupedUsers]);
+      ...groupedUsers.management,
+      ...groupedUsers.service_crew,
+      ...groupedUsers.other,
+    ].filter((user) => selectedEmployeeIds.includes(user.id));
+  }, [groupedUsers, selectedEmployeeIds]);
 
-  const selectedBranch = branches.find((branch) => branch.id === selectedBranchId) ?? null;
-  const selectedEmployees = branchEmployees.filter((employee) => selectedEmployeeIds.includes(employee.id));
-  const isIssuance = type === 'issuance';
-  const hasBranches = branches.length > 0;
-
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const trimmedReason = reason.trim();
     const parsedAmount = Number.parseFloat(amount);
 
@@ -157,7 +158,7 @@ export function PayrollIssuanceCreateModal({
       showError('Please select a branch.');
       return;
     }
-    if (selectedEmployees.length === 0) {
+    if (selectedUsers.length === 0) {
       showError('Please select at least one employee.');
       return;
     }
@@ -172,32 +173,31 @@ export function PayrollIssuanceCreateModal({
 
     setSubmitting(true);
 
-    const submittedAt = new Date().toISOString();
-    const nextRequests: PayrollRequestRecord[] = selectedEmployees.map((employee, index) => ({
-      id: `local-${Date.now()}-${employee.id}-${index}`,
-      employeeId: employee.id,
-      employeeName: employee.name,
-      employeeRole: employee.role,
-      employeeAvatarUrl: employee.avatar_url,
-      branchId: selectedBranch.id,
-      branchName: selectedBranch.name,
-      companyName: selectedBranch.companyName,
-      type,
-      amount: parsedAmount,
-      reason: trimmedReason,
-      status: 'pending',
-      submittedAt,
-      submittedByName,
-    }));
+    try {
+      const created = await createPayrollAdjustmentRequest({
+        companyId: selectedBranch.companyId,
+        payload: {
+          branchId: selectedBranch.id,
+          targetUserIds: selectedEmployeeIds,
+          type,
+          totalAmount: parsedAmount,
+          reason: trimmedReason,
+          payrollPeriods: 1,
+        },
+      });
 
-    onSubmitted(nextRequests);
-    showSuccess(
-      `${nextRequests.length} ${isIssuance ? 'issuance' : 'deduction'} request${nextRequests.length === 1 ? '' : 's'} submitted.`,
-    );
-    setSubmitting(false);
+      onSubmitted({ id: created.id, companyId: selectedBranch.companyId });
+      showSuccess(
+        `${selectedUsers.length} ${isIssuance ? 'issuance' : 'deduction'} request${selectedUsers.length === 1 ? '' : 's'} submitted.`,
+      );
+    } catch (error: unknown) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to create payroll adjustment request.';
+      showError(message);
+    } finally {
+      setSubmitting(false);
+    }
   };
-
-  const fieldShellClassName = 'group rounded-xl border border-gray-200 bg-white px-4 py-2.5 transition-all hover:border-blue-400 hover:shadow-sm focus-within:border-blue-400 focus-within:shadow-sm focus-within:ring-2 focus-within:ring-blue-500/20';
 
   return (
     <AnimatePresence>
@@ -234,7 +234,11 @@ export function PayrollIssuanceCreateModal({
             </div>
 
             <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5">
-              <div className={`rounded-lg px-3.5 py-2.5 text-sm leading-relaxed ${isIssuance ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
+              <div
+                className={`rounded-lg px-3.5 py-2.5 text-sm leading-relaxed ${
+                  isIssuance ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
+                }`}
+              >
                 {isIssuance
                   ? 'The approved amount will be added as a payroll adjustment for the selected employee.'
                   : 'The approved amount will be deducted as a payroll adjustment for the selected employee.'}
@@ -252,7 +256,9 @@ export function PayrollIssuanceCreateModal({
                     setSelectedEmployeeIds([]);
                   }}
                   disabled={submitting || !hasBranches}
-                  placeholder={hasBranches ? 'Select a branch...' : 'No selected branches available'}
+                  placeholder={
+                    hasBranches ? 'Select a branch...' : 'No selected branches available'
+                  }
                 />
               </div>
 
@@ -323,7 +329,7 @@ export function PayrollIssuanceCreateModal({
                 type="button"
                 variant={isIssuance ? 'success' : 'danger'}
                 disabled={submitting}
-                onClick={handleSubmit}
+                onClick={() => void handleSubmit()}
                 className="min-w-0 flex-1"
               >
                 {isIssuance ? 'Submit Issuance' : 'Submit Deduction'}

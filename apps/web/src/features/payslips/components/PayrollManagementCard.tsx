@@ -20,7 +20,11 @@ function getStatusBadge(status: PayslipStatus): { label: string; className: stri
       return { label: 'Draft', className: 'bg-blue-50 text-blue-700 ring-blue-200' };
     case 'completed':
       return { label: 'Completed', className: 'bg-green-50 text-green-700 ring-green-200' };
+    case 'on_hold':
+      return { label: 'On Hold', className: 'bg-rose-50 text-rose-700 ring-rose-200' };
   }
+
+  return { label: 'Pending', className: 'bg-amber-50 text-amber-700 ring-amber-200' };
 }
 
 interface PayrollManagementCardProps {

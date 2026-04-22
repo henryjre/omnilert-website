@@ -3,8 +3,10 @@
  * - "pending"   : payslip period exists but no Odoo record has been generated yet
  * - "draft"     : Odoo payslip exists with state "draft"
  * - "completed" : Odoo payslip exists in any state other than draft or cancel
+ * - "on_hold"   : Omnilert review overlay has flagged this payroll item for follow-up
  */
-export type PayslipStatus = "pending" | "draft" | "completed";
+export type PayslipStatus = "pending" | "draft" | "completed" | "on_hold";
+export type PayrollOverviewPeriodOption = "current" | "previous";
 
 /**
  * Lightweight metadata item used in the payslip list.
@@ -37,11 +39,58 @@ export interface PayslipListItem {
   is_pending: boolean;
   /** Computed net pay from Odoo. Present for real Odoo payslips; absent for pending stubs. */
   net_pay?: number;
+  /** Website user avatar URL. Populated by manager overview; absent in employee self-service. */
+  avatar_url?: string | null;
 }
 
 /** Response shape for GET /dashboard/payslips */
 export interface PayslipListResponse {
   items: PayslipListItem[];
+}
+
+export interface PayrollOverviewPeriod {
+  dateFrom: string;
+  dateTo: string;
+  cutoff: 1 | 2;
+}
+
+/** Response shape for GET /dashboard/payroll-overview */
+export interface PayrollOverviewResponse {
+  items: PayslipListItem[];
+  period: PayrollOverviewPeriod;
+}
+
+export interface ValidatePayrollOverviewInput {
+  branchIds?: string[];
+  period: PayrollOverviewPeriodOption;
+}
+
+export type PayrollOverviewValidationBlockerType =
+  | "shift_authorization"
+  | "payroll_adjustment_authorization";
+
+export interface PayrollOverviewValidationSummary {
+  scannedPayslips: number;
+  blockedPayslips: number;
+  clearedPayslips: number;
+  shiftAuthorizationBlocks: number;
+  payrollAdjustmentBlocks: number;
+}
+
+export interface PayrollOverviewValidationItem {
+  odooCompanyId: number;
+  employeeOdooId: number;
+  employeeName: string;
+  avatarUrl: string | null;
+  companyName: string;
+  blockerTypes: PayrollOverviewValidationBlockerType[];
+  messages: string[];
+}
+
+export interface PayrollOverviewValidationResponse {
+  period: PayrollOverviewPeriod;
+  summary: PayrollOverviewValidationSummary;
+  items: PayrollOverviewValidationItem[];
 }
 
 /** Single salary line entry */

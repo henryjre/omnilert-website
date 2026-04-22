@@ -24,7 +24,13 @@ export function TokenPayManagementPage() {
           Manage employee token pay wallets, issuances, and account status.
         </p>
       </div>
-      <ViewToggle options={TABS} activeId={activeTab} onChange={setActiveTab} layoutId="token-pay-tabs" />
+      <ViewToggle
+        options={TABS}
+        activeId={activeTab}
+        onChange={setActiveTab}
+        layoutId="token-pay-tabs"
+        labelAboveOnMobile
+      />
       {activeTab === 'overview' && <TokenPayOverviewTab />}
       {activeTab === 'issuance' && <TokenPayIssuanceTab />}
     </div>

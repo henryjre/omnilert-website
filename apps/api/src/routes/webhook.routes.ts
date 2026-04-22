@@ -12,9 +12,11 @@ import {
   odooRegisterCashPayloadSchema,
   odooPosSessionClosePayloadSchema,
   odooPosOrderPayloadSchema,
+  payrollAdjustmentCompleteWebhookSchema,
 } from '@omnilert/shared';
 import { validateBody } from '../middleware/validateRequest.js';
 import * as webhookController from '../controllers/webhook.controller.js';
+import * as payrollAdjustmentController from '../controllers/payrollAdjustment.controller.js';
 
 const router = Router();
 
@@ -89,6 +91,12 @@ router.post(
   '/odoo/pos-session-close',
   validateBody(odooPosSessionClosePayloadSchema),
   webhookController.posSessionClose,
+);
+
+router.post(
+  '/odoo/payroll-adjustments/complete',
+  validateBody(payrollAdjustmentCompleteWebhookSchema),
+  payrollAdjustmentController.completeFromOdooWebhook,
 );
 
 export default router;

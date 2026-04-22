@@ -136,6 +136,7 @@ export function TokenPayIssuanceTab() {
             onChange={handleTabChange}
             layoutId="issuance-tabs"
             className="sm:flex-1"
+            labelAboveOnMobile
           />
 
           {canIssue && (
