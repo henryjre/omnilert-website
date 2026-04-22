@@ -17,14 +17,14 @@ import { resolveAuthorizationRequestSectionAccess } from './authorizationRequest
 import {
   FileText,
   X,
-  CheckCircle,
+  CircleCheck,
   XCircle,
   Clock,
   AlertTriangle,
   AlertCircle,
   LogOut,
   Repeat2,
-  LayoutList,
+  LayoutGrid,
   ChevronRight,
   GitBranch,
   Building2,
@@ -81,9 +81,9 @@ const STATUS_LABEL: Record<string, string> = {
 type StatusTab = 'all' | 'pending' | 'approved' | 'rejected';
 
 const STATUS_TABS: { id: StatusTab; label: string; icon: LucideIcon }[] = [
-  { id: 'all',      label: 'All',      icon: LayoutList },
+  { id: 'all',      label: 'All',      icon: LayoutGrid },
   { id: 'pending',  label: 'Pending',  icon: Clock },
-  { id: 'approved', label: 'Approved', icon: CheckCircle },
+  { id: 'approved', label: 'Approved', icon: CircleCheck },
   { id: 'rejected', label: 'Rejected', icon: XCircle },
 ];
 
@@ -337,7 +337,7 @@ function ManagementDetailPanel({
             </div>
             {request.reviewed_at && (
               <div className="flex items-start gap-2">
-                <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                <CircleCheck className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
                 <div>
                   <dt className="text-xs text-gray-500">
                     {request.status === 'approved'
@@ -372,7 +372,7 @@ function ManagementDetailPanel({
                 })}
               >
                 <span className="flex items-center justify-center gap-1.5">
-                  <CheckCircle className="h-4 w-4" />
+                  <CircleCheck className="h-4 w-4" />
                   Approve
                 </span>
               </Button>
@@ -704,7 +704,7 @@ function ServiceCrewDetailPanel({
             </div>
             {auth.resolved_at && (
               <div className="flex items-start gap-2">
-                <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                <CircleCheck className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
                 <div>
                   <dt className="text-xs text-gray-500">
                     {auth.status === 'approved'
@@ -756,7 +756,7 @@ function ServiceCrewDetailPanel({
                     }}
                   >
                     <span className="flex items-center justify-center gap-1.5">
-                      <CheckCircle className="h-4 w-4" />
+                      <CircleCheck className="h-4 w-4" />
                       Approve
                     </span>
                   </Button>

@@ -14,7 +14,7 @@ import { useAuthStore } from '@/features/auth/store/authSlice';
 import { canReviewSubmittedRequest, PERMISSIONS } from '@omnilert/shared';
 import { ImagePreviewModal } from '@/features/case-reports/components/ImagePreviewModal';
 import {
-  AlertCircle, Banknote, Calendar, CheckCircle, ChevronRight,
+  AlertCircle, Banknote, Calendar, CircleCheck, ChevronRight,
   Clock, DollarSign, FileText, GitBranch, LayoutGrid, Paperclip,
   X, XCircle, Copy, Check,
 } from 'lucide-react';
@@ -42,7 +42,7 @@ type StatusTab = 'all' | 'pending' | 'approved' | 'disbursed' | 'rejected';
 const STATUS_TABS: { id: StatusTab; label: string; icon: LucideIcon }[] = [
   { id: 'all',       label: 'All',       icon: LayoutGrid  },
   { id: 'pending',   label: 'Pending',   icon: Clock       },
-  { id: 'approved',  label: 'Approved',  icon: CheckCircle },
+  { id: 'approved',  label: 'Approved',  icon: CircleCheck },
   { id: 'disbursed', label: 'Disbursed', icon: Banknote    },
   { id: 'rejected',  label: 'Rejected',  icon: XCircle     },
 ];
@@ -348,7 +348,7 @@ function DetailPanel({ request, detailLoading, canReview, canDisburse, onClose, 
                 </div>
                 {request.reviewed_at && (
                   <div className="flex items-start gap-2">
-                    <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                    <CircleCheck className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
                     <div>
                       <dt className="text-xs text-gray-500">
                         {request.status === 'rejected' ? 'Rejected' : 'Reviewed'} by
@@ -377,7 +377,7 @@ function DetailPanel({ request, detailLoading, canReview, canDisburse, onClose, 
                   onClick={() => setConfirmModal({ action: 'approve', message: 'Confirm approval of this request?', onConfirm: handleApprove })}
                 >
                   <span className="flex items-center justify-center gap-1.5">
-                    <CheckCircle className="h-4 w-4" />
+                    <CircleCheck className="h-4 w-4" />
                     Approve
                   </span>
                 </Button>

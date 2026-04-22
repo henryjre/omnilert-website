@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import type { GroupedUsersResponse } from '@omnilert/shared';
 import { PERMISSIONS } from '@omnilert/shared';
-import { AlertTriangle, ArrowDown, ArrowUp, BarChart2, BriefcaseBusiness, CheckCircle, ChevronDown, ChevronUp, Clock, Filter, LayoutGrid, Users, XCircle } from 'lucide-react';
+import { AlarmClockOff, AlertTriangle, ArrowDown, ArrowUp, BarChart2, BriefcaseBusiness, CircleCheck, ChevronDown, ChevronUp, Clock, Filter, LayoutGrid, Users } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/shared/components/ui/Button';
 import { Card, CardBody } from '@/shared/components/ui/Card';
@@ -30,8 +30,8 @@ type StatusTab = 'all' | 'pending' | 'completed' | 'expired';
 const STATUS_TABS: { id: StatusTab; label: string; icon: LucideIcon }[] = [
   { id: 'all',       label: 'All',       icon: LayoutGrid  },
   { id: 'pending',   label: 'Pending',   icon: Clock       },
-  { id: 'completed', label: 'Completed', icon: CheckCircle },
-  { id: 'expired',   label: 'Expired',   icon: XCircle     },
+  { id: 'completed', label: 'Completed', icon: CircleCheck },
+  { id: 'expired',   label: 'Expired',   icon: AlarmClockOff },
 ];
 
 const DEFAULT_FILTERS: PeerEvalFilters = { sort_order: 'desc' };

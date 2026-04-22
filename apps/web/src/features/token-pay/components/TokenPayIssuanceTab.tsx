@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { CheckCircle, Clock, LayoutGrid, Plus, Send, XCircle } from 'lucide-react';
+import { CircleCheck, Clock, LayoutGrid, Plus, Send, XCircle } from 'lucide-react';
 import { PERMISSIONS } from '@omnilert/shared';
 import type { TokenPayIssuanceRequest } from '@omnilert/shared';
 import { Button } from '@/shared/components/ui/Button';
@@ -21,7 +21,7 @@ type StatusTab = 'all' | 'pending' | 'completed' | 'rejected';
 const STATUS_TABS = [
   { id: 'all' as StatusTab,       label: 'All',      icon: LayoutGrid  },
   { id: 'pending' as StatusTab,   label: 'Pending',  icon: Clock       },
-  { id: 'completed' as StatusTab, label: 'Approved', icon: CheckCircle },
+  { id: 'completed' as StatusTab, label: 'Approved', icon: CircleCheck },
   { id: 'rejected' as StatusTab,  label: 'Rejected', icon: XCircle     },
 ];
 

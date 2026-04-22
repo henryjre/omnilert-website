@@ -1,4 +1,4 @@
-import { CheckCircle2, Clock, FileEdit } from 'lucide-react';
+import { CircleCheck, Clock, FileEdit } from 'lucide-react';
 import { Pagination } from '@/shared/components/ui/Pagination';
 import { ViewToggle, type ViewOption } from '@/shared/components/ui/ViewToggle';
 import { PayslipAdjustmentCard } from './PayslipAdjustmentCard';
@@ -11,7 +11,7 @@ import {
 const STATUS_TABS: ViewOption<PayslipAdjustmentStatus>[] = [
   { id: 'pending', label: 'Pending', icon: Clock },
   { id: 'in_progress', label: 'In Progress', icon: FileEdit },
-  { id: 'completed', label: 'Completed', icon: CheckCircle2 },
+  { id: 'completed', label: 'Completed', icon: CircleCheck },
 ];
 
 function PayslipAdjustmentCardSkeleton() {

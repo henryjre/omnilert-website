@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Banknote, CheckCircle, TrendingUp } from 'lucide-react';
+import { Banknote, CircleCheck, TrendingUp } from 'lucide-react';
 
 interface AuditorRewardCardProps {
   /** Total earnings for the current period */
@@ -107,7 +107,7 @@ export function AuditorRewardCard({
           {/* Stats row */}
           <div className="mt-4 flex items-center gap-4">
             <div className="flex items-center gap-1.5">
-              <CheckCircle className="h-3 w-3 text-emerald-300/70" />
+              <CircleCheck className="h-3 w-3 text-emerald-300/70" />
               <span className="text-[11px] font-semibold text-white/70">
                 <span className="text-white font-bold">{auditsCompleted}</span> audits
               </span>

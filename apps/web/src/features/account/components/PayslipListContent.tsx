@@ -1,6 +1,6 @@
 import React from "react";
 import type { PayslipListItem, PayslipStatus } from "@omnilert/shared";
-import { FileText, LayoutGrid, Clock, FileEdit, CheckCircle2 } from "lucide-react";
+import { FileText, LayoutGrid, Clock, FileEdit, CircleCheck } from "lucide-react";
 import { Pagination } from "../../../shared/components/ui/Pagination";
 import { ViewToggle, type ViewOption } from "@/shared/components/ui/ViewToggle";
 import { PayslipCard } from "./PayslipCard";
@@ -45,7 +45,7 @@ const STATUS_TABS: ViewOption<StatusFilter>[] = [
   { id: "all", label: "All", icon: LayoutGrid },
   { id: "pending", label: "Pending", icon: Clock },
   { id: "draft", label: "Draft", icon: FileEdit },
-  { id: "completed", label: "Completed", icon: CheckCircle2 },
+  { id: "completed", label: "Completed", icon: CircleCheck },
 ];
 
 interface PayslipListContentProps {

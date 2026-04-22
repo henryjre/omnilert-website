@@ -2,7 +2,7 @@ import React, { useState, memo } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import {
   Building2,
-  CheckCircle,
+  CircleCheck,
   ChevronRight,
   Clock,
   GitBranch,
@@ -166,7 +166,7 @@ export const SessionCard = memo(({ session, branchInfo, onUpdate, onOpenDetail }
                   className="w-full"
                   size="sm"
                 >
-                  <CheckCircle className="mr-1.5 h-3.5 w-3.5" />
+                  <CircleCheck className="mr-1.5 h-3.5 w-3.5" />
                   {actionLoading ? 'Processing...' : 'Audit Complete'}
                 </Button>
               </CardFooter>

@@ -14,7 +14,7 @@ import type { ViewOption } from '@/shared/components/ui/ViewToggle';
 import {
   AlertTriangle,
   CalendarDays,
-  CheckCircle2,
+  CircleCheck,
   ChevronDown,
   Clock,
   FileEdit,
@@ -51,7 +51,7 @@ const STATUS_TABS: ViewOption<PayrollOverviewStatusTab>[] = [
   { id: 'all', label: 'All', icon: LayoutGrid },
   { id: 'pending', label: 'Pending', icon: Clock },
   { id: 'draft', label: 'Draft', icon: FileEdit },
-  { id: 'completed', label: 'Completed', icon: CheckCircle2 },
+  { id: 'completed', label: 'Completed', icon: CircleCheck },
   { id: 'on_hold', label: 'On Hold', icon: AlertTriangle },
 ];
 

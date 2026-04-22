@@ -18,7 +18,7 @@ import {
   type VerificationType,
 } from './employeeVerificationTabAccess';
 import {
-  AlertCircle, Calendar, CheckCircle, ClipboardCheck, Clock,
+  AlertCircle, Calendar, CircleCheck, ClipboardCheck, Clock,
   Copy, Check, CreditCard, ExternalLink, IdCard, Landmark,
   LayoutGrid, Mail, User, UserRoundPlus, Users, X, XCircle,
 } from 'lucide-react';
@@ -74,7 +74,7 @@ type StatusFilter = 'all' | VerificationStatus;
 const STATUS_TABS: { id: StatusFilter; label: string; icon: LucideIcon }[] = [
   { id: 'all',      label: 'All',      icon: LayoutGrid  },
   { id: 'pending',  label: 'Pending',  icon: Clock       },
-  { id: 'approved', label: 'Approved', icon: CheckCircle },
+  { id: 'approved', label: 'Approved', icon: CircleCheck },
   { id: 'rejected', label: 'Rejected', icon: XCircle     },
 ];
 
@@ -1879,7 +1879,7 @@ export function EmployeeVerificationsPage() {
                       }
                     >
                       <span className="flex items-center justify-center gap-1.5">
-                        <CheckCircle className="h-4 w-4" />
+                        <CircleCheck className="h-4 w-4" />
                         Approve
                       </span>
                     </Button>

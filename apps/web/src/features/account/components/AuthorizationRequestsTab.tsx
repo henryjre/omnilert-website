@@ -17,7 +17,7 @@ import { useAppToast } from '@/shared/hooks/useAppToast';
 import { PERMISSIONS } from '@omnilert/shared';
 import {
   FileText, X, Plus, ChevronRight,
-  LayoutGrid, Clock, CheckCircle, XCircle,
+  LayoutGrid, Clock, CircleCheck, XCircle,
   GitBranch, Calendar, DollarSign, Landmark, AlertCircle,
   Copy, Check,
 } from 'lucide-react';
@@ -64,7 +64,7 @@ const STATUS_VARIANT: Record<string, 'success' | 'danger' | 'warning'> = {
 const STATUS_TABS: ViewOption<StatusFilter>[] = [
   { id: 'all',      label: 'All',      icon: LayoutGrid  },
   { id: 'pending',  label: 'Pending',  icon: Clock       },
-  { id: 'approved', label: 'Approved', icon: CheckCircle },
+  { id: 'approved', label: 'Approved', icon: CircleCheck },
   { id: 'rejected', label: 'Rejected', icon: XCircle     },
 ];
 
@@ -486,7 +486,7 @@ function AuthRequestDetailPanel({ request, loading, onClose }: AuthRequestDetail
               </div>
               {request.reviewed_at && (
                 <div className="flex items-start gap-2">
-                  <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                  <CircleCheck className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
                   <div>
                     <dt className="text-xs text-gray-500">
                       {request.status === 'rejected' ? 'Rejected' : 'Approved'} by

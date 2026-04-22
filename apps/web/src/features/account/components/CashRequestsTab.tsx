@@ -18,7 +18,7 @@ import { useAppToast } from '@/shared/hooks/useAppToast';
 import { PERMISSIONS } from '@omnilert/shared';
 import {
   DollarSign, X, Plus, Paperclip, ChevronRight,
-  LayoutGrid, Clock, CheckCircle, XCircle, Banknote,
+  LayoutGrid, Clock, CircleCheck, XCircle, Banknote,
   GitBranch, Calendar, AlertCircle, FileText,
 } from 'lucide-react';
 
@@ -70,7 +70,7 @@ const STATUS_VARIANT: Record<string, 'success' | 'danger' | 'warning'> = {
 const STATUS_TABS: ViewOption<StatusFilter>[] = [
   { id: 'all',       label: 'All',       icon: LayoutGrid  },
   { id: 'pending',   label: 'Pending',   icon: Clock       },
-  { id: 'approved',  label: 'Approved',  icon: CheckCircle },
+  { id: 'approved',  label: 'Approved',  icon: CircleCheck },
   { id: 'disbursed', label: 'Disbursed', icon: Banknote    },
   { id: 'rejected',  label: 'Rejected',  icon: XCircle     },
 ];
@@ -520,7 +520,7 @@ function CashRequestDetailPanel({ request, loading, onClose, onViewAttachment }:
               </div>
               {request.reviewed_at && (
                 <div className="flex items-start gap-2">
-                  <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                  <CircleCheck className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
                   <div>
                     <dt className="text-xs text-gray-500">
                       {request.status === 'rejected' ? 'Rejected' : 'Reviewed'} by

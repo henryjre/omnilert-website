@@ -12,7 +12,7 @@ import { useAppToast } from '@/shared/hooks/useAppToast';
 import { useAuthStore } from '@/features/auth/store/authSlice';
 import { useBranchStore } from '@/shared/store/branchStore';
 import { PERMISSIONS } from '@omnilert/shared';
-import { AlertTriangle, BadgeCheck, Building2, Check, ChevronDown, ChevronUp, Clock3, ExternalLink, Filter, GitBranch, Hash, LogOut, MapPin, Phone, ShieldOff, UserCheck, UserMinus, Users, X } from 'lucide-react';
+import { AlertTriangle, BadgeCheck, Ban, Building2, Check, ChevronDown, ChevronUp, Clock3, ExternalLink, Filter, GitBranch, Hash, MapPin, Phone, UserCheck, UserMinus, Users, UserX, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 type RequirementStatus = 'complete' | 'rejected' | 'verification' | 'pending';
@@ -1336,9 +1336,9 @@ export function EmployeeProfilesPage() {
   const STATUS_TABS: Array<{ id: StatusFilter; label: string; icon: LucideIcon }> = [
     { id: 'all', label: 'All', icon: Users },
     { id: 'active', label: 'Active', icon: UserCheck },
-    { id: 'resigned', label: 'Resigned', icon: LogOut },
-    { id: 'inactive', label: 'Inactive', icon: UserMinus },
-    { id: 'suspended', label: 'Suspended', icon: ShieldOff },
+    { id: 'resigned', label: 'Resigned', icon: UserMinus },
+    { id: 'inactive', label: 'Inactive', icon: UserX },
+    { id: 'suspended', label: 'Suspended', icon: Ban },
   ];
 
   return (

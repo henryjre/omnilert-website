@@ -12,7 +12,7 @@ import type {
 } from '@omnilert/shared';
 import { PERMISSIONS } from '@omnilert/shared';
 import { AnimatePresence, motion } from 'framer-motion';
-import { AlertTriangle, CheckCircle, CheckCircle2, ClipboardList, Clock, LayoutGrid, Loader2, ShieldCheck, Star, X, XCircle } from 'lucide-react';
+import { AlertTriangle, CircleCheck, CheckCircle2, ClipboardList, Clock, LayoutGrid, Loader, ShieldCheck, Star, X, XCircle } from 'lucide-react';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useSocket } from '@/shared/hooks/useSocket';
 import { useAppToast } from '@/shared/hooks/useAppToast';
@@ -40,14 +40,14 @@ const STATUS_TABS: ViewOption<StoreAuditStatus>[] = [
   {
     id: 'processing',
     label: 'Processing',
-    icon: Loader2,
+    icon: Loader,
     activeClassName: 'text-amber-600',
     activeIndicatorClassName: 'bg-amber-500',
   },
   {
     id: 'completed',
     label: 'Completed',
-    icon: CheckCircle,
+    icon: CircleCheck,
     activeClassName: 'text-green-600',
     activeIndicatorClassName: 'bg-green-500',
   },
@@ -949,5 +949,4 @@ export function StoreAuditsPage() {
     </>
   );
 }
-
 

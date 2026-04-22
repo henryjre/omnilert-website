@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import { Building2, CheckCircle, Clock, DollarSign, GitBranch, X } from 'lucide-react';
+import { Building2, CircleCheck, Clock, DollarSign, GitBranch, X } from 'lucide-react';
 import { Badge } from '@/shared/components/ui/Badge';
 import { Button } from '@/shared/components/ui/Button';
 import { Spinner } from '@/shared/components/ui/Spinner';
@@ -350,7 +350,7 @@ export function SessionDetailPanel({
               {actionLoading ? (
                 <Spinner size="sm" className="mr-2" />
               ) : (
-                <CheckCircle className="mr-2 h-4 w-4" />
+                <CircleCheck className="mr-2 h-4 w-4" />
               )}
               {actionLoading ? 'Processing...' : 'Audit Complete'}
             </Button>

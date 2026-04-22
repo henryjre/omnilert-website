@@ -8,7 +8,7 @@ import { useAuth } from '@/features/auth/hooks/useAuth';
 import {
   ArrowDown,
   ArrowUp,
-  CheckCircle2,
+  CircleCheck,
   Clock,
   FileText,
   Filter,
@@ -60,7 +60,7 @@ const STATUS_TABS: { id: StatusTab; label: string; icon: LucideIcon }[] = [
   { id: 'discussion',           label: 'Discussion',           icon: MessageCircle },
   { id: 'issuance',             label: 'Issuance',             icon: FileText      },
   { id: 'disciplinary_meeting', label: 'Disciplinary Meeting', icon: Users         },
-  { id: 'completed',            label: 'Completed',            icon: CheckCircle2  },
+  { id: 'completed',            label: 'Completed',            icon: CircleCheck   },
   { id: 'rejected',             label: 'Rejected',             icon: XCircle       },
 ];
 

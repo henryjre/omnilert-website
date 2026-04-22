@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import type { GroupedUsersResponse } from '@omnilert/shared';
 import { PERMISSIONS, canReviewSubmittedRequest } from '@omnilert/shared';
-import { CheckCircle, Clock, FileCog, FileEdit, Plus, Send, UserCheck, XCircle } from 'lucide-react';
+import { CircleCheck, Clock, LayoutGrid, Loader, Plus, Send, UserCheck, XCircle } from 'lucide-react';
 import { Button } from '@/shared/components/ui/Button';
 import { Pagination } from '@/shared/components/ui/Pagination';
 import { Spinner } from '@/shared/components/ui/Spinner';
@@ -35,12 +35,12 @@ const PAGE_SIZE = 10;
 const SYNC_LIMIT = 200;
 
 const STATUS_TABS: ViewOption<PayrollRequestStatusTab>[] = [
-  { id: 'all', label: 'All', icon: FileCog },
+  { id: 'all', label: 'All', icon: LayoutGrid },
   { id: 'pending', label: 'Pending', icon: Clock },
-  { id: 'processing', label: 'Processing', icon: FileEdit },
+  { id: 'processing', label: 'Processing', icon: Loader },
   { id: 'employee_approval', label: 'Employee Approval', icon: UserCheck },
   { id: 'in_progress', label: 'In Progress', icon: Send },
-  { id: 'completed', label: 'Completed', icon: CheckCircle },
+  { id: 'completed', label: 'Completed', icon: CircleCheck },
   { id: 'rejected', label: 'Rejected', icon: XCircle },
 ];
 

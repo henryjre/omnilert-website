@@ -31,10 +31,11 @@ import {
   BadgeCheck,
   Briefcase,
   Calendar,
-  CheckCircle,
+  CircleCheck,
   ChevronDown,
   ChevronUp,
   ArrowLeftRight,
+  CalendarClock,
   Clock,
   Coffee,
   Filter,
@@ -42,6 +43,7 @@ import {
   LogIn,
   LogOut,
   MapPin,
+  PlayCircle,
   RefreshCw,
   Square,
   X,
@@ -455,7 +457,7 @@ const AuthorizationCard = memo(
                 onClick={() => setShowOvertimeModal(true)}
               >
                 <span className="flex items-center gap-1">
-                  <CheckCircle className="h-3.5 w-3.5" /> Approve
+                  <CircleCheck className="h-3.5 w-3.5" /> Approve
                 </span>
               </Button>
               <Button
@@ -493,7 +495,7 @@ const AuthorizationCard = memo(
                 'Approving...'
               ) : (
                 <span className="flex items-center gap-1">
-                  <CheckCircle className="h-3.5 w-3.5" /> Approve
+                  <CircleCheck className="h-3.5 w-3.5" /> Approve
                 </span>
               )}
             </Button>
@@ -803,7 +805,7 @@ const LogEntry = memo(
               {changes?.auth_type === 'shift_exchange' ? (
                 <ArrowLeftRight className="h-4 w-4 text-orange-600" />
               ) : isApproved ? (
-                <CheckCircle className="h-4 w-4 text-green-600" />
+                <CircleCheck className="h-4 w-4 text-green-600" />
               ) : isRejected ? (
                 <XCircle className="h-4 w-4 text-red-600" />
               ) : (
@@ -952,7 +954,7 @@ const LogEntry = memo(
         <div className="flex gap-3">
           <div className="flex flex-col items-center">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-100">
-              <CheckCircle className="h-4 w-4 text-green-600" />
+              <CircleCheck className="h-4 w-4 text-green-600" />
             </div>
             {!isLast && <div className="w-px flex-1 bg-gray-200" />}
           </div>
@@ -2294,9 +2296,9 @@ export function ScheduleTab() {
 
   const TABS: ViewOption<TabType>[] = [
     { id: 'all', label: 'All', icon: LayoutGrid },
-    { id: 'active', label: 'Active', icon: CheckCircle },
-    { id: 'open', label: 'Upcoming', icon: Clock },
-    { id: 'ended', label: 'Closed', icon: XCircle },
+    { id: 'active', label: 'Active', icon: PlayCircle },
+    { id: 'open', label: 'Upcoming', icon: CalendarClock },
+    { id: 'ended', label: 'Closed', icon: CircleCheck },
   ];
 
   const hasActiveFilters =
