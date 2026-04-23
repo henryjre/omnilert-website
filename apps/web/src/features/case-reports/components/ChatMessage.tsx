@@ -1,10 +1,12 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion, useMotionValue, animate } from 'framer-motion';
 import type { CaseMessage } from '@omnilert/shared';
-import { Download, Reply } from 'lucide-react';
+import { Download, Reply, Paperclip } from 'lucide-react';
 import { EmojiPicker } from './EmojiPicker';
 import { MessageActionMenu } from './MessageActionMenu';
 import { MessageDrawer } from './MessageDrawer';
+import { MessageReactionBadge } from './MessageReactionBadge';
+import { MessageReactionsOverlay } from './MessageReactionsOverlay';
 import type { MentionableUser, MentionableRole } from '../services/caseReport.api';
 
 // ── Avatar helpers ────────────────────────────────────────────────────────────
@@ -60,9 +62,12 @@ interface ChatMessageProps {
   onDelete: (messageId: string) => Promise<void>;
   currentUserRoleIds?: string[];
   isGrouped?: boolean;
+  isFollowedByGrouped?: boolean;
   isPending?: boolean;
   isReplyTarget?: boolean;
   isFlashing?: boolean;
+  isTimestampVisible?: boolean;
+  onTimestampTap?: (messageId: string) => void;
   onScrollToMessage: (messageId: string) => void;
   users?: MentionableUser[];
   roles?: MentionableRole[];
@@ -89,10 +94,13 @@ export function ChatMessage({
   onEdit,
   onDelete,
   currentUserRoleIds,
-  isGrouped,
+  isGrouped = false,
+  isFollowedByGrouped = false,
   isPending,
   isReplyTarget,
   isFlashing,
+  isTimestampVisible = false,
+  onTimestampTap,
   onScrollToMessage,
   users,
   roles,
@@ -103,6 +111,9 @@ export function ChatMessage({
   const [menuOpen, setMenuOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+  const [reactionViewerOpen, setReactionViewerOpen] = useState(false);
+  const [reactionViewerMode, setReactionViewerMode] = useState<'desktop' | 'mobile'>('desktop');
+  const [pendingReactionEmoji, setPendingReactionEmoji] = useState<string | null>(null);
 
   // ── Portal trigger rects ──────────────────────────────────────────────────
 
@@ -116,25 +127,31 @@ export function ChatMessage({
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isLongPressing, setIsLongPressing] = useState(false);
+  const didMoveRef = useRef(false);
+  const didLongPressRef = useRef(false);
 
   // ── Swipe-to-reply state ──────────────────────────────────────────────────
 
   const swipeX = useMotionValue(0);
   const [swipeProgress, setSwipeProgress] = useState(0); // 0–1 for reply icon opacity
   const touchStartRef = useRef<{ x: number; y: number; locked: 'h' | 'v' | null } | null>(null);
+  const isOwn = message.user_id === currentUserId;
 
   // ── Long press handlers ───────────────────────────────────────────────────
 
   function handlePointerDown(e: React.PointerEvent) {
     if (e.pointerType !== 'touch') return;
+    didMoveRef.current = false;
+    didLongPressRef.current = false;
     highlightTimer.current = setTimeout(() => setIsLongPressing(true), 150);
     longPressTimer.current = setTimeout(() => {
+      didLongPressRef.current = true;
       setDrawerOpen(true);
       setIsLongPressing(false);
     }, 500);
   }
 
-  function handlePointerUp() {
+  function handlePointerUp(e: React.PointerEvent) {
     if (highlightTimer.current) {
       clearTimeout(highlightTimer.current);
       highlightTimer.current = null;
@@ -144,6 +161,15 @@ export function ChatMessage({
       longPressTimer.current = null;
     }
     setIsLongPressing(false);
+
+    if (
+      e.pointerType === 'touch' &&
+      !didMoveRef.current &&
+      !didLongPressRef.current &&
+      !shouldIgnoreTimestampToggle(e.target)
+    ) {
+      onTimestampTap?.(message.id);
+    }
   }
 
   function handlePointerCancel() {
@@ -156,6 +182,8 @@ export function ChatMessage({
       longPressTimer.current = null;
     }
     setIsLongPressing(false);
+    didMoveRef.current = false;
+    didLongPressRef.current = false;
   }
 
   // ── Touch / swipe handlers ────────────────────────────────────────────────
@@ -178,13 +206,16 @@ export function ChatMessage({
     if (start.locked === null && Math.abs(deltaX) + Math.abs(deltaY) > 10) {
       start.locked = Math.abs(deltaX) >= Math.abs(deltaY) ? 'h' : 'v';
       touchStartRef.current = { ...start };
+      didMoveRef.current = true;
     }
 
     if (start.locked === 'v') return;
 
-    if (start.locked === 'h' && deltaX < 0) {
+    const isSwipeDirectionMatch = isOwn ? deltaX < 0 : deltaX > 0;
+
+    if (start.locked === 'h' && isSwipeDirectionMatch) {
       e.preventDefault();
-      const clamped = Math.max(deltaX, -80);
+      const clamped = isOwn ? Math.max(deltaX, -80) : Math.min(deltaX, 80);
       swipeX.set(clamped);
       setSwipeProgress(Math.min(1, Math.abs(clamped) / 60));
       // Cancel long-press when swiping
@@ -201,10 +232,24 @@ export function ChatMessage({
   }
 
   function handleTouchEnd() {
-    if (swipeX.get() < -60) onReply(message);
+    const swipeValue = swipeX.get();
+    if ((isOwn && swipeValue < -60) || (!isOwn && swipeValue > 60)) onReply(message);
     setSwipeProgress(0);
     void animate(swipeX, 0, { type: 'spring', stiffness: 400, damping: 30 });
     touchStartRef.current = null;
+  }
+
+  function shouldIgnoreTimestampToggle(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) return false;
+
+    const bubble = target.closest('[data-message-bubble-id]');
+    if (!bubble) return true;
+
+    return Boolean(
+      target.closest(
+        'button, a, input, textarea, select, label, [role="button"], [data-no-message-tap]',
+      ),
+    );
   }
 
   // ── Delete handler ────────────────────────────────────────────────────────
@@ -255,11 +300,14 @@ export function ChatMessage({
           (r) => r.id === mentionObj?.mentioned_role_id || r.name === name,
         );
         const color = roleFromList?.color ?? undefined;
+        const ownMentionStyle = isOwn
+          ? { backgroundColor: color ? `${color}33` : 'rgba(255,255,255,0.16)', color: '#fff' }
+          : { backgroundColor: color ? `${color}20` : undefined, color };
         return (
           <span
             key={i}
             className="rounded px-1 font-medium"
-            style={{ backgroundColor: color ? color + '20' : undefined, color }}
+            style={ownMentionStyle}
           >
             {part}
           </span>
@@ -267,7 +315,14 @@ export function ChatMessage({
       }
       if (matchedUser || mentionObj?.mentioned_user_id) {
         return (
-          <span key={i} className="rounded bg-primary-100 px-1 font-medium text-primary-700">
+          <span
+            key={i}
+            className={
+              isOwn
+                ? 'rounded bg-white/15 px-1 font-medium text-white'
+                : 'rounded bg-primary-100 px-1 font-medium text-primary-700'
+            }
+          >
             {part}
           </span>
         );
@@ -283,6 +338,165 @@ export function ChatMessage({
       (m.mentioned_user_id && m.mentioned_user_id === currentUserId) ||
       (m.mentioned_role_id && currentUserRoleIds?.includes(m.mentioned_role_id)),
   );
+  const showAvatar = !isOwn && !isFollowedByGrouped;
+  const showSenderName = !isOwn && !isGrouped && !message.parent_message_id;
+  const showBubbleTail = !isFollowedByGrouped;
+  const hasReactions = message.reactions.length > 0;
+  const bubbleTailClass = showBubbleTail
+    ? isOwn
+      ? 'rounded-br-[4px]'
+      : 'rounded-bl-[4px]'
+    : '';
+
+  const mediaItems = message.attachments?.filter((a) => {
+    return /\.(png|jpe?g|gif|webp|svg|mp4|webm|ogg|mov)$/i.test(a.file_name) ||
+           a.content_type?.startsWith('image/') ||
+           a.content_type?.startsWith('video/');
+  }) || [];
+  
+  const fileItems = message.attachments?.filter((a) => !mediaItems.includes(a)) || [];
+  const isOnlyMedia = !message.content && mediaItems.length > 0 && fileItems.length === 0;
+
+  const normalBubbleClass = isOnlyMedia 
+    ? 'bg-transparent text-gray-900 border border-transparent'
+    : `${isOwn ? 'bg-primary-600 text-white' : 'bg-gray-200 text-gray-900'} ${bubbleTailClass} px-3.5 py-2`;
+
+  const neutralBubbleClass = `bg-gray-200 text-gray-500 ${bubbleTailClass}`;
+  const timestampClass = `w-full overflow-hidden text-[10px] text-gray-400 transition-[max-height,margin,opacity] duration-150 ${
+    isTimestampVisible ? 'mt-1 max-h-6 opacity-100' : 'max-h-0 opacity-0'
+  } ${isOwn ? 'text-right' : 'text-left'}`;
+
+  function renderAvatar(opacityClass = '') {
+    if (message.user_avatar) {
+      return (
+        <img
+          src={message.user_avatar}
+          alt={message.user_name ?? ''}
+          className={`h-10 w-10 rounded-full object-cover ${opacityClass}`.trim()}
+        />
+      );
+    }
+
+    return (
+      <div
+        className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold text-white ${opacityClass}`.trim()}
+        style={{ backgroundColor: getAvatarColor(message.user_name ?? 'User') }}
+      >
+        {getInitials(message.user_name ?? 'User')}
+      </div>
+    );
+  }
+
+  function renderDesktopActions() {
+    if (chatLocked) return null;
+
+    return (
+      <div
+        className={`absolute top-1/2 -translate-y-1/2 z-10 hidden items-center gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-focus-within:pointer-events-auto sm:flex sm:group-hover:opacity-100 ${isOwn ? 'right-full mr-2 flex-row-reverse' : 'left-full ml-2 flex-row'} pointer-events-none sm:group-hover:pointer-events-auto whitespace-nowrap`}
+      >
+        <div className="relative">
+          <button
+            ref={emojiTriggerRef}
+            type="button"
+            onClick={() => {
+              setEmojiTriggerRect(emojiTriggerRef.current?.getBoundingClientRect() ?? null);
+              setEmojiPickerOpen((v) => !v);
+            }}
+            className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            title="Add reaction"
+          >
+            😊
+          </button>
+          {emojiPickerOpen && (
+            <EmojiPicker
+              onSelect={(emoji) => {
+                onReact(message.id, emoji);
+                setEmojiPickerOpen(false);
+              }}
+              onClose={() => setEmojiPickerOpen(false)}
+              placement="above"
+              portalMode={true}
+              triggerRect={emojiTriggerRect}
+            />
+          )}
+        </div>
+        <div className="relative">
+          <button
+            ref={menuTriggerRef}
+            type="button"
+            onClick={() => {
+              setMenuTriggerRect(menuTriggerRef.current?.getBoundingClientRect() ?? null);
+              setMenuOpen((v) => !v);
+            }}
+            className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            title="More actions"
+          >
+            ⋯
+          </button>
+          {menuOpen && (
+            <MessageActionMenu
+              isOwnMessage={isOwn}
+              canManage={canManage}
+              chatLocked={chatLocked}
+              onReply={() => onReply(message)}
+              onCopyText={() => {
+                void navigator.clipboard.writeText(message.content);
+              }}
+              onAddReaction={() => {
+                setMenuOpen(false);
+                setEmojiPickerOpen(true);
+              }}
+              onEdit={() => {
+                setEditContent(message.content);
+                setIsEditing(true);
+              }}
+              onDelete={handleDelete}
+              onClose={() => setMenuOpen(false)}
+              portalMode={true}
+              triggerRect={menuTriggerRect}
+            />
+          )}
+        </div>
+        <span className="mx-1 mt-[1px] text-[11px] font-medium text-gray-400/80">
+          {formatCompactTime(message.created_at)}
+          {message.is_edited && <span className="ml-[3px] italic">edited</span>}
+        </span>
+      </div>
+    );
+  }
+
+  function openReactionViewer() {
+    const isMobileViewport =
+      typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches;
+    setReactionViewerMode(isMobileViewport ? 'mobile' : 'desktop');
+    setReactionViewerOpen(true);
+  }
+
+  function handleRemoveReaction(emoji: string) {
+    if (pendingReactionEmoji === emoji) return;
+    setPendingReactionEmoji(emoji);
+    onReact(message.id, emoji);
+  }
+
+  useEffect(() => {
+    if (!pendingReactionEmoji) return;
+
+    const stillHasReaction = message.reactions.some(
+      (reaction) =>
+        reaction.emoji === pendingReactionEmoji &&
+        reaction.users.some((user) => user.id === currentUserId),
+    );
+
+    if (!stillHasReaction) {
+      setPendingReactionEmoji(null);
+    }
+  }, [currentUserId, message.reactions, pendingReactionEmoji]);
+
+  useEffect(() => {
+    if (!pendingReactionEmoji) return;
+    const timeout = setTimeout(() => setPendingReactionEmoji(null), 1500);
+    return () => clearTimeout(timeout);
+  }, [pendingReactionEmoji]);
 
   // ── System message ────────────────────────────────────────────────────────
 
@@ -300,53 +514,45 @@ export function ChatMessage({
 
   if (isPending && !message.is_deleted) {
     return (
-      <div data-message-id={message.id} className="flex gap-3 rounded-xl py-0.5 opacity-60">
-        {isGrouped ? (
-          <div className="w-10 shrink-0" />
-        ) : (
-          <div className="shrink-0">
-            {message.user_avatar ? (
-              <img
-                src={message.user_avatar}
-                alt={message.user_name ?? ''}
-                className="h-10 w-10 rounded-full object-cover opacity-50"
-              />
-            ) : (
-              <div
-                className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold text-white opacity-50"
-                style={{ backgroundColor: getAvatarColor(message.user_name ?? 'User') }}
-              >
-                {getInitials(message.user_name ?? 'User')}
-              </div>
-            )}
-          </div>
-        )}
-        <div className="min-w-0 flex-1">
-          {!isGrouped && (
-            <div className="flex flex-wrap items-baseline gap-2">
-              <span className="text-sm font-semibold text-gray-400">
-                {message.user_name ?? 'Unknown'}
-              </span>
-              <span className="text-xs text-gray-300">Sending…</span>
+      <div
+        data-message-id={message.id}
+        className={`flex ${isOwn ? 'justify-end' : 'justify-start gap-2'} py-0.5 opacity-60`}
+      >
+        {!isOwn &&
+          (showAvatar ? (
+            <div className={`shrink-0 self-end`}>
+              {renderAvatar('opacity-50')}
             </div>
-          )}
-          <div className={`flex items-center gap-2 ${isGrouped ? '' : 'mt-0.5'}`}>
-            <span className="flex items-end gap-[3px] pb-0.5">
-              {[0, 1, 2].map((i) => (
-                <motion.span
-                  key={i}
-                  className="block h-1.5 w-1.5 rounded-full bg-gray-400"
-                  animate={{ y: [0, -4, 0] }}
-                  transition={{
-                    duration: 0.6,
-                    repeat: Infinity,
-                    delay: i * 0.15,
-                    ease: 'easeInOut',
-                  }}
-                />
-              ))}
+          ) : (
+            <div className="w-10 shrink-0" />
+          ))}
+
+        <div className={`flex min-w-0 max-w-[75%] flex-col ${isOwn ? 'items-end' : 'items-start'}`}>
+          {showSenderName && (
+            <span className="mb-0.5 text-xs font-semibold text-gray-400">
+              {message.user_name ?? 'Unknown'}
             </span>
-            <p className="text-sm italic text-gray-400">sending a message...</p>
+          )}
+
+          <div className={`w-fit max-w-full rounded-2xl px-4 py-2 ${neutralBubbleClass}`}>
+            <div className="flex items-center gap-2">
+              <span className="flex items-end gap-[3px] pb-0.5">
+                {[0, 1, 2].map((i) => (
+                  <motion.span
+                    key={i}
+                    className="block h-1.5 w-1.5 rounded-full bg-gray-400"
+                    animate={{ y: [0, -4, 0] }}
+                    transition={{
+                      duration: 0.6,
+                      repeat: Infinity,
+                      delay: i * 0.15,
+                      ease: 'easeInOut',
+                    }}
+                  />
+                ))}
+              </span>
+              <p className="text-sm italic text-gray-400">sending a message...</p>
+            </div>
           </div>
         </div>
       </div>
@@ -359,43 +565,31 @@ export function ChatMessage({
     return (
       <div
         data-message-id={message.id}
-        className={`flex gap-3 rounded-xl py-0.5 ${isPending ? 'opacity-60' : ''}`}
+        className={`group flex ${isOwn ? 'justify-end' : 'justify-start gap-2'} py-0.5 ${
+          isPending ? 'opacity-60' : ''
+        }`}
       >
-        {isGrouped ? (
-          /* Grouped: narrow gutter, no avatar */
-          <div className="w-10 shrink-0" />
-        ) : (
-          /* First in group: show avatar at 50% opacity */
-          <div className="shrink-0">
-            {message.user_avatar ? (
-              <img
-                src={message.user_avatar}
-                alt={message.user_name ?? ''}
-                className="h-10 w-10 rounded-full object-cover opacity-50"
-              />
-            ) : (
-              <div
-                className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold text-white opacity-50"
-                style={{ backgroundColor: getAvatarColor(message.user_name ?? 'User') }}
-              >
-                {getInitials(message.user_name ?? 'User')}
-              </div>
-            )}
-          </div>
-        )}
-        {/* Right column */}
-        <div className="min-w-0 flex-1">
-          {!isGrouped && (
-            <div className="flex flex-wrap items-baseline gap-2">
-              <span className="text-sm font-semibold text-gray-400">
-                {message.user_name ?? 'Unknown'}
-              </span>
-              <span className="text-xs text-gray-300">{formatTimestamp(message.created_at)}</span>
+        {!isOwn &&
+          (showAvatar ? (
+            <div className={`shrink-0 self-end`}>
+              {renderAvatar('opacity-50')}
             </div>
+          ) : (
+            <div className="w-10 shrink-0" />
+          ))}
+
+        <div className={`flex min-w-0 max-w-[75%] flex-col ${isOwn ? 'items-end' : 'items-start'}`}>
+          {showSenderName && (
+            <span className="mb-0.5 text-xs font-semibold text-gray-400">
+              {message.user_name ?? 'Unknown'}
+            </span>
           )}
-          <p className={`text-sm italic text-gray-400 ${isGrouped ? '' : 'mt-0.5'}`}>
-            {message.content}
-          </p>
+
+          <div className={`w-fit max-w-full rounded-2xl px-4 py-2 italic ${neutralBubbleClass}`}>
+            <p className="text-sm text-gray-400">{message.content}</p>
+          </div>
+
+          <div className={timestampClass}>{formatTimestamp(message.created_at)}</div>
         </div>
       </div>
     );
@@ -407,7 +601,7 @@ export function ChatMessage({
     <div data-message-id={message.id} className="relative overflow-hidden">
       {/* Reply icon revealed by swipe */}
       <div
-        className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-gray-400"
+        className={`pointer-events-none absolute ${isOwn ? 'right-2' : 'left-2'} top-1/2 -translate-y-1/2 text-gray-400`}
         style={{ opacity: swipeProgress }}
       >
         <Reply className="h-5 w-5" />
@@ -433,7 +627,9 @@ export function ChatMessage({
             : { type: 'spring', stiffness: 400, damping: 25 }
         }
         style={{ x: swipeX, userSelect: 'none', WebkitUserSelect: 'none' }}
-        className={`group relative flex gap-3 rounded-xl select-none sm:hover:bg-gray-50 ${isGrouped ? 'py-0.5' : 'py-1'}`}
+        className={`group relative flex rounded-xl select-none sm:hover:bg-gray-50 ${
+          isOwn ? 'justify-end' : 'justify-start gap-2'
+        } ${isGrouped ? 'py-px' : 'py-0.5'}`}
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
@@ -441,280 +637,218 @@ export function ChatMessage({
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
-        {/* Avatar or compact-time gutter */}
-        {isGrouped ? (
-          /* Grouped message: show compact time on hover, no avatar */
-          <div className="w-10 shrink-0 self-center text-right">
-            <span className="invisible whitespace-nowrap text-[10px] text-gray-400 group-hover:visible">
-              {formatCompactTime(message.created_at)}
-            </span>
-          </div>
-        ) : (
-          <div className="shrink-0">
-            {message.user_avatar ? (
-              <img
-                src={message.user_avatar}
-                alt={message.user_name ?? ''}
-                className="h-10 w-10 rounded-full object-cover"
-              />
-            ) : (
-              <div
-                className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold text-white"
-                style={{ backgroundColor: getAvatarColor(message.user_name ?? 'User') }}
-              >
-                {getInitials(message.user_name ?? 'User')}
-              </div>
-            )}
-          </div>
-        )}
+        {!isOwn &&
+          (showAvatar ? (
+            <div className={`shrink-0 self-end ${hasReactions ? 'mb-[14px]' : ''}`}>{renderAvatar()}</div>
+          ) : (
+            <div className="w-10 shrink-0" />
+          ))}
 
-        {/* Right column */}
-        <div className="min-w-0 flex-1">
-          {/* Name + timestamp — only for first message in a group */}
-          {!isGrouped && (
-            <div className="flex flex-wrap items-baseline gap-2">
-              <span className="text-sm font-semibold text-gray-900">
-                {message.user_name ?? 'Unknown'}
-              </span>
-              <span className="text-xs text-gray-400">{formatTimestamp(message.created_at)}</span>
-              {message.is_edited && <span className="text-xs italic text-gray-400">edited</span>}
-            </div>
+        <div className={`relative flex min-w-0 max-w-[75%] flex-col ${isOwn ? 'items-end' : 'items-start'}`}>
+          {renderDesktopActions()}
+
+          {showSenderName && (
+            <span className="mb-0.5 text-xs font-semibold text-gray-500">
+              {message.user_name ?? 'Unknown'}
+            </span>
           )}
 
-          {/* Quoted reply block */}
-          {message.parent_message_id &&
-            (() => {
-              const parent = findInTree(allMessages, message.parent_message_id);
-              return (
+          {message.parent_message_id && (() => {
+            const parent = findInTree(allMessages, message.parent_message_id);
+            if (!parent) return null;
+
+            let replyContextText = '';
+            if (isOwn && parent.user_id === currentUserId) {
+              replyContextText = 'You replied to yourself';
+            } else if (isOwn) {
+              replyContextText = `You replied to ${parent.user_name || 'someone'}`;
+            } else if (parent.user_id === currentUserId) {
+              replyContextText = `${message.user_name || 'Someone'} replied to you`;
+            } else {
+              replyContextText = `${message.user_name || 'Someone'} replied to ${parent.user_name || 'someone'}`;
+            }
+
+            const hasMedia = parent.attachments.length > 0;
+            const isImage = hasMedia && /\.(png|jpe?g|gif|webp|svg)$/i.test(parent.attachments[0].file_name);
+
+            return (
+              <div className={`mb-[-14px] flex w-full flex-col ${isOwn ? 'items-end' : 'items-start'} ${showSenderName ? 'mt-1' : ''}`} data-no-message-tap>
+                <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-gray-600">
+                  <svg fill="currentColor" viewBox="0 0 24 24" className="h-[14px] w-[14px] opacity-80">
+                    <path d="M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z" />
+                  </svg>
+                  <span>{replyContextText}</span>
+                </div>
                 <div
-                  className="mt-1 cursor-pointer border-l-2 border-gray-300 pl-2 hover:border-primary-400"
+                  className={`max-w-[85%] cursor-pointer truncate rounded-2xl bg-gray-100 ${
+                    hasMedia ? 'p-1 pb-[18px]' : 'px-3.5 pb-[20px] pt-[8px]'
+                  } text-[13px] text-gray-500 transition-colors hover:bg-gray-200`}
                   onClick={() => onScrollToMessage(message.parent_message_id!)}
                 >
-                  <p className="text-xs font-medium text-gray-500">
-                    {parent ? (parent.user_name ?? 'Unknown') : 'Unknown'}
-                  </p>
-                  <p className="truncate text-xs text-gray-400">
-                    {parent ? parent.content : '(message deleted)'}
-                  </p>
+                  {hasMedia ? (
+                    isImage ? (
+                      <img src={parent.attachments[0].file_url} className="h-24 w-auto rounded-xl object-contain opacity-70" alt="attachment" />
+                    ) : (
+                      <span className="px-3 py-1 font-medium">Attachment</span>
+                    )
+                  ) : (
+                    parent.content ? parent.content : <span className="italic">(message deleted)</span>
+                  )}
                 </div>
-              );
-            })()}
-
-          {/* Message content or inline edit */}
-          {isEditing ? (
-            <div className="mt-1">
-              <textarea
-                value={editContent}
-                onChange={(e) => setEditContent(e.target.value)}
-                rows={3}
-                className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                autoFocus
-              />
-              <div className="mt-1 flex gap-2">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await onEdit(message.id, editContent);
-                    setIsEditing(false);
-                  }}
-                  disabled={!editContent.trim()}
-                  className="rounded-lg bg-primary-600 px-3 py-1 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-50"
-                >
-                  Save
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsEditing(false)}
-                  className="rounded-lg border border-gray-300 px-3 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
               </div>
-            </div>
-          ) : (
-            <p className="mt-0.5 whitespace-pre-wrap text-sm leading-6 text-gray-700">
-              {renderContent(message.content)}
-              {isGrouped && message.is_edited && (
-                <span className="ml-1 text-xs italic text-gray-400">edited</span>
+            );
+          })()}
+
+          <div className={`relative z-10 ${isEditing ? 'w-full' : 'w-fit max-w-full'} ${hasReactions ? 'mb-[14px]' : ''}`}>
+            <div
+              data-message-bubble-id={message.id}
+              className={`rounded-[18px] ${isEditing ? 'w-full' : ''} ${normalBubbleClass}`}
+            >
+              {isEditing ? (
+                <div>
+                  <textarea
+                    value={editContent}
+                    onChange={(e) => setEditContent(e.target.value)}
+                    rows={3}
+                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    autoFocus
+                  />
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await onEdit(message.id, editContent);
+                        setIsEditing(false);
+                      }}
+                      disabled={!editContent.trim()}
+                      className="rounded-lg bg-primary-600 px-3 py-1 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditing(false)}
+                      className="rounded-lg border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className={`whitespace-pre-wrap text-sm leading-6 ${isOwn ? 'text-white' : 'text-gray-700'}`}>
+                  {renderContent(message.content)}
+                </p>
               )}
-            </p>
-          )}
 
-          {/* Attachments */}
-          {message.attachments.length > 0 &&
-            (() => {
-              const mediaItems = message.attachments
-                .filter((a) => {
-                  const isImg =
-                    /\.(png|jpe?g|gif|webp|svg)$/i.test(a.file_name) ||
-                    a.content_type?.startsWith('image/');
-                  const isVid =
-                    /\.(mp4|webm|ogg|mov)$/i.test(a.file_name) ||
-                    a.content_type?.startsWith('video/');
-                  return isImg || isVid;
-                })
-                .map((a) => ({ url: a.file_url, fileName: a.file_name }));
-
-              return (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {message.attachments.map((att) => {
-                    const isImage =
-                      /\.(png|jpe?g|gif|webp|svg)$/i.test(att.file_name) ||
-                      att.content_type?.startsWith('image/');
-                    const isVideo =
-                      /\.(mp4|webm|ogg|mov)$/i.test(att.file_name) ||
-                      att.content_type?.startsWith('video/');
-                    const mediaIndex = mediaItems.findIndex((m) => m.url === att.file_url);
-
-                    if (isImage) {
+              {mediaItems.length > 0 && (
+                <div className={`${message.content ? 'mt-2' : ''}`}>
+                  {(() => {
+                    const renderItem = (att: any, index: number, customClass: string) => {
+                      const isImg = /\.(png|jpe?g|gif|webp|svg)$/i.test(att.file_name) || att.content_type?.startsWith('image/');
+                      const mediaMap = mediaItems.map(m => ({ url: m.file_url, fileName: m.file_name }));
+                      
                       return (
-                        <img
-                          key={att.id}
-                          src={att.file_url}
-                          alt={att.file_name}
-                          className="max-h-[180px] max-w-[240px] cursor-pointer rounded-xl object-cover hover:opacity-90"
-                          onClick={() => onPreviewImage?.(mediaItems, mediaIndex)}
-                        />
+                        <div 
+                          key={att.id} 
+                          data-no-message-tap 
+                          className={`relative overflow-hidden cursor-pointer ${customClass}`}
+                          onClick={() => onPreviewImage?.(mediaMap, index)}
+                        >
+                          {isImg ? (
+                            <img src={att.file_url} className="w-full h-full object-cover select-none" alt="" />
+                          ) : (
+                            <>
+                              <video src={att.file_url} className="w-full h-full object-cover opacity-90 select-none bg-black" />
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white">
+                                  <svg viewBox="0 0 24 24" fill="currentColor" className="ml-1 h-5 w-5">
+                                    <path d="M8 5v14l11-7z" />
+                                  </svg>
+                                </div>
+                              </div>
+                            </>
+                          )}
+                          {index === 3 && mediaItems.length > 4 && (
+                            <div className="absolute inset-0 bg-black/50 flex items-center justify-center font-bold text-white text-2xl">
+                              +{mediaItems.length - 4}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    };
+
+                    if (mediaItems.length === 1) {
+                      return (
+                        <div className="flex max-w-[280px]">
+                          {renderItem(mediaItems[0], 0, `w-full min-h-[160px] max-h-[300px] ${isOnlyMedia ? 'rounded-[18px]' : 'rounded-xl'} hover:opacity-90`)}
+                        </div>
+                      );
+                    }
+                    
+                    if (mediaItems.length === 2) {
+                      return (
+                        <div className={`grid grid-cols-2 gap-0.5 max-w-[280px] ${isOnlyMedia ? 'rounded-[18px]' : 'rounded-xl'} overflow-hidden`}>
+                          {renderItem(mediaItems[0], 0, 'aspect-[3/4] hover:opacity-90')}
+                          {renderItem(mediaItems[1], 1, 'aspect-[3/4] hover:opacity-90')}
+                        </div>
                       );
                     }
 
-                    if (isVideo) {
+                    if (mediaItems.length === 3) {
                       return (
-                        <div
-                          key={att.id}
-                          className="relative cursor-pointer overflow-hidden rounded-xl bg-black"
-                          style={{ maxWidth: 240, maxHeight: 180 }}
-                          onClick={() => onPreviewImage?.(mediaItems, mediaIndex)}
-                        >
-                          <video
-                            src={att.file_url}
-                            className="max-h-[180px] max-w-[240px] object-cover opacity-80"
-                            muted
-                            preload="metadata"
-                          />
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-black/60 text-white">
-                              <svg
-                                viewBox="0 0 24 24"
-                                fill="currentColor"
-                                className="h-5 w-5 pl-0.5"
-                              >
-                                <path d="M8 5v14l11-7z" />
-                              </svg>
-                            </div>
-                          </div>
+                        <div className={`grid grid-cols-2 gap-0.5 max-w-[280px] ${isOnlyMedia ? 'rounded-[18px]' : 'rounded-xl'} overflow-hidden`}>
+                          {renderItem(mediaItems[0], 0, 'col-span-2 aspect-[2/1] hover:opacity-90')}
+                          {renderItem(mediaItems[1], 1, 'aspect-square hover:opacity-90')}
+                          {renderItem(mediaItems[2], 2, 'aspect-square hover:opacity-90')}
                         </div>
                       );
                     }
 
                     return (
-                      <a
-                        key={att.id}
-                        href={att.file_url}
-                        download={att.file_name}
-                        className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-primary-700 hover:bg-gray-100"
-                      >
-                        <Download className="h-3.5 w-3.5" />
-                        {att.file_name}
-                      </a>
+                      <div className={`grid grid-cols-2 gap-0.5 max-w-[280px] ${isOnlyMedia ? 'rounded-[18px]' : 'rounded-xl'} overflow-hidden`}>
+                        {renderItem(mediaItems[0], 0, 'aspect-square hover:opacity-90')}
+                        {renderItem(mediaItems[1], 1, 'aspect-square hover:opacity-90')}
+                        {renderItem(mediaItems[2], 2, 'aspect-square hover:opacity-90')}
+                        {renderItem(mediaItems[3], 3, 'aspect-square hover:opacity-90')}
+                      </div>
                     );
-                  })}
+                  })()}
                 </div>
-              );
-            })()}
+              )}
 
-          {/* Reaction pills */}
-          {message.reactions.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {message.reactions.map((reaction) => {
-                const reacted = reaction.users.some((u) => u.id === currentUserId);
-                return (
-                  <button
-                    key={reaction.emoji}
-                    type="button"
-                    onClick={() => onReact(message.id, reaction.emoji)}
-                    className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors ${
-                      reacted
-                        ? 'border-primary-300 bg-primary-50 text-primary-700'
-                        : 'border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100'
-                    }`}
-                  >
-                    {reaction.emoji} <span>{reaction.users.length}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Desktop: smiley + ⋯ button — hover only, never on mobile */}
-        {!chatLocked && (
-          <div className="absolute right-0 top-1 hidden items-center gap-1 sm:group-hover:flex">
-            <div className="relative">
-              <button
-                ref={emojiTriggerRef}
-                type="button"
-                onClick={() => {
-                  setEmojiTriggerRect(emojiTriggerRef.current?.getBoundingClientRect() ?? null);
-                  setEmojiPickerOpen((v) => !v);
-                }}
-                className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-                title="Add reaction"
-              >
-                😊
-              </button>
-              {emojiPickerOpen && (
-                <EmojiPicker
-                  onSelect={(emoji) => {
-                    onReact(message.id, emoji);
-                    setEmojiPickerOpen(false);
-                  }}
-                  onClose={() => setEmojiPickerOpen(false)}
-                  placement="above"
-                  portalMode={true}
-                  triggerRect={emojiTriggerRect}
-                />
+              {fileItems.length > 0 && (
+                <div className={`${message.content || mediaItems.length > 0 ? 'mt-2' : ''} flex flex-col gap-1.5`}>
+                  {fileItems.map((att) => (
+                    <a
+                      key={att.id}
+                      data-no-message-tap
+                      href={att.file_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm transition-colors ${
+                        isOwn
+                          ? 'border-white/20 bg-white/10 text-white hover:bg-white/20'
+                          : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <Paperclip className="h-4 w-4 shrink-0" />
+                      <span className="truncate font-medium">{att.file_name}</span>
+                    </a>
+                  ))}
+                </div>
               )}
             </div>
-            <div className="relative">
-              <button
-                ref={menuTriggerRef}
-                type="button"
-                onClick={() => {
-                  setMenuTriggerRect(menuTriggerRef.current?.getBoundingClientRect() ?? null);
-                  setMenuOpen((v) => !v);
-                }}
-                className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-                title="More actions"
-              >
-                ⋯
-              </button>
-              {menuOpen && (
-                <MessageActionMenu
-                  isOwnMessage={message.user_id === currentUserId}
-                  canManage={canManage}
-                  chatLocked={chatLocked}
-                  onReply={() => onReply(message)}
-                  onCopyText={() => {
-                    void navigator.clipboard.writeText(message.content);
-                  }}
-                  onAddReaction={() => {
-                    setMenuOpen(false);
-                    setEmojiPickerOpen(true);
-                  }}
-                  onEdit={() => {
-                    setEditContent(message.content);
-                    setIsEditing(true);
-                  }}
-                  onDelete={handleDelete}
-                  onClose={() => setMenuOpen(false)}
-                  portalMode={true}
-                  triggerRect={menuTriggerRect}
-                />
-              )}
-            </div>
+
+            {hasReactions && (
+              <MessageReactionBadge reactions={message.reactions} onClick={openReactionViewer} isOwn={isOwn} />
+            )}
           </div>
-        )}
+
+          <div className={timestampClass}>
+            {formatCompactTime(message.created_at)}
+            {message.is_edited && <span className="ml-1 italic">edited</span>}
+          </div>
+        </div>
       </motion.div>
 
       {/* Mobile drawer — outside the transform div so fixed positioning works correctly */}
@@ -740,6 +874,19 @@ export function ChatMessage({
         }}
         onDelete={handleDelete}
         onClose={() => setDrawerOpen(false)}
+      />
+      <MessageReactionsOverlay
+        isOpen={reactionViewerOpen}
+        mode={reactionViewerMode}
+        reactions={message.reactions}
+        users={users}
+        currentUserId={currentUserId}
+        pendingEmoji={pendingReactionEmoji}
+        onRemoveReaction={handleRemoveReaction}
+        onClose={() => {
+          setReactionViewerOpen(false);
+          setPendingReactionEmoji(null);
+        }}
       />
     </div>
   );

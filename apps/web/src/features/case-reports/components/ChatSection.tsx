@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useEffect } from 'react';
+import { useRef, useState, useCallback, useEffect, Fragment } from 'react';
 import type { CaseMessage } from '@omnilert/shared';
 import { AtSign, Paperclip, Send, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -76,6 +76,7 @@ export function ChatSection({
   const [mentionTokens, setMentionTokens] = useState<{ token: string; color?: string }[]>([]);
   const [previewMedia, setPreviewMedia] = useState<{ items: { url: string; fileName: string }[]; index: number } | null>(null);
   const [flashMessageId, setFlashMessageId] = useState<string | null>(null);
+  const [visibleTimestampMessageId, setVisibleTimestampMessageId] = useState<string | null>(null);
   const initialFlashFiredRef = useRef(false);
 
   useEffect(() => {
@@ -129,6 +130,27 @@ export function ChatSection({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length, initialFlashMessageId]);
 
+  useEffect(() => {
+    if (!visibleTimestampMessageId) return;
+
+    function handleDocumentPointerDown(e: PointerEvent) {
+      if (!(e.target instanceof HTMLElement)) {
+        setVisibleTimestampMessageId(null);
+        return;
+      }
+
+      const bubble = e.target.closest('[data-message-bubble-id]');
+      if (!bubble) {
+        setVisibleTimestampMessageId(null);
+      }
+    }
+
+    document.addEventListener('pointerdown', handleDocumentPointerDown, true);
+    return () => {
+      document.removeEventListener('pointerdown', handleDocumentPointerDown, true);
+    };
+  }, [visibleTimestampMessageId]);
+
   function handleScroll() {
     if (overlayRef.current && textareaRef.current) {
       overlayRef.current.scrollTop = textareaRef.current.scrollTop;
@@ -172,21 +194,47 @@ export function ChatSection({
 
   return (
     <div className={`flex h-full flex-col${className ? ` ${className}` : ''}`}>
-      <div ref={scrollContainerRef} className="flex-1 space-y-1 overflow-y-auto pr-1">
+      <div ref={scrollContainerRef} className="flex-1 space-y-0.5 overflow-y-auto">
         {messages.map((message, index) => {
           const prev = index > 0 ? messages[index - 1] : null;
+          const next = index < messages.length - 1 ? messages[index + 1] : null;
           const isGrouped =
             !message.is_system &&
             !message.is_deleted &&
             prev !== null &&
             !prev.is_system &&
             prev.user_id === message.user_id &&
-            new Date(message.created_at).getTime() - new Date(prev.created_at).getTime() < 5 * 60 * 1000;
+            new Date(message.created_at).getTime() - new Date(prev.created_at).getTime() < 10 * 60 * 1000;
+          const isFollowedByGrouped =
+            !message.is_system &&
+            !message.is_deleted &&
+            next !== null &&
+            !next.is_system &&
+            !next.is_deleted &&
+            next.user_id === message.user_id &&
+            new Date(next.created_at).getTime() - new Date(message.created_at).getTime() < 10 * 60 * 1000;
+
+          const showTopTimestamp =
+            !message.is_system &&
+            (prev === null ||
+              new Date(message.created_at).getTime() - new Date(prev.created_at).getTime() >= 10 * 60 * 1000);
 
           return (
-            <ChatMessage
-              key={message.id}
-              message={message}
+            <Fragment key={message.id}>
+              {showTopTimestamp && (
+                <div className="py-3 flex justify-center">
+                  <span className="text-[11px] font-semibold text-gray-400">
+                    {new Date(message.created_at).toLocaleString(undefined, {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: 'numeric',
+                      minute: '2-digit',
+                    })}
+                  </span>
+                </div>
+              )}
+              <ChatMessage
+                message={message}
               currentUserId={currentUserId}
               currentUserRoleIds={currentUserRoleIds}
               canManage={canManage}
@@ -195,9 +243,16 @@ export function ChatSection({
               users={users}
               roles={roles}
               isGrouped={isGrouped}
+              isFollowedByGrouped={isFollowedByGrouped}
               isPending={message.isPending}
               isReplyTarget={replyTo?.id === message.id}
               isFlashing={flashMessageId === message.id}
+              isTimestampVisible={visibleTimestampMessageId === message.id}
+              onTimestampTap={(messageId) =>
+                setVisibleTimestampMessageId((current) =>
+                  current === messageId ? current : messageId,
+                )
+              }
               onReply={setReplyTo}
               onReact={(messageId, emoji) => void onReact(messageId, emoji)}
               onEdit={onEdit}
@@ -205,6 +260,7 @@ export function ChatSection({
               onScrollToMessage={handleScrollToMessage}
               onPreviewImage={(items, index) => setPreviewMedia({ items, index })}
             />
+          </Fragment>
           );
         })}
         <div ref={messagesEndRef} />
