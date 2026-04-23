@@ -612,15 +612,11 @@ export function ChatMessage({
         animate={
           isFlashing
             ? { scale: 1, backgroundColor: '#fde68a' }
-            : isReplyTarget
-              ? { scale: 1, backgroundColor: '#fef3c7' }
-              : isMentioned
-                ? { scale: 1, backgroundColor: '#ede9fe' }
-                : isLongPressing
-                  ? { scale: 1.03, backgroundColor: '#f3f4f6' }
-                  : { scale: 1, backgroundColor: '#ffffff' }
+            : isLongPressing
+              ? { scale: 1.03, backgroundColor: '#f3f4f6' }
+              : { scale: 1, backgroundColor: 'rgba(255, 255, 255, 0)' }
         }
-        initial={{ scale: 1, backgroundColor: isMentioned ? '#ede9fe' : '#ffffff' }}
+        initial={{ scale: 1, backgroundColor: 'rgba(255, 255, 255, 0)' }}
         transition={
           isFlashing || isLongPressing
             ? { duration: 0.2 }
