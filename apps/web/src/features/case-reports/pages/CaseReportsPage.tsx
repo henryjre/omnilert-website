@@ -92,7 +92,7 @@ function CaseReportSkeleton() {
 export function CaseReportsPage() {
   const socket = useSocket('/case-reports');
   const { hasAnyPermission, hasPermission } = usePermission();
-  const { error: showErrorToast } = useAppToast();
+  const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
@@ -725,6 +725,7 @@ export function CaseReportsPage() {
           setShowRequestVNModal(false);
           void fetchReports(true);
           if (selectedCaseId) void fetchDetail(selectedCaseId);
+          showSuccessToast('Violation notice requested successfully.');
         }}
         groupedUsers={groupedUsers}
         loadingUsers={loadingGroupedUsers}

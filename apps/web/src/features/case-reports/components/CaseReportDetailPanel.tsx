@@ -592,18 +592,7 @@ export function CaseReportDetailPanel({
                       variant="danger"
                       className="w-full justify-center sm:w-auto"
                       disabled={requestingVN}
-                      onClick={async () => {
-                        setRequestingVN(true);
-                        try {
-                          await onRequestVN();
-                          showSuccessToast("Violation notice requested.");
-                        } catch (err: unknown) {
-                          const message = getApiErrorMessage(err, "Failed to request violation notice.");
-                          showErrorToast(message);
-                        } finally {
-                          setRequestingVN(false);
-                        }
-                      }}
+                      onClick={() => void onRequestVN()}
                     >
                       {requestingVN ? 'Requesting…' : 'Request VN'}
                     </Button>
