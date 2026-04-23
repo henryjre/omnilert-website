@@ -1,6 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
 import { db } from '../config/database.js';
-import { getIO } from '../config/socket.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import { getEmployeeByWebsiteUserKey, getEmployeePayslipData, createViewOnlyPayslip, getEmployeeEPIData, getEmployeeAuditRatings, getAllEmployeesWithEPI, getAllPayslipsForUser, calculatePendingPayslipStubs, getPayslipDetailById, getOrCreatePendingPayslipDetail, getEmployeesForWebsiteUserKey } from '../services/odoo.service.js';
@@ -599,58 +598,6 @@ async function getLatestAttendanceWebhookEventForWebsiteUserKey(
   return parseLatestAttendanceWebhookEvent(row as LatestAttendanceWebhookEventRow);
 }
 
-async function reconcileRoleDisableScopeFromActiveAttendance(input: {
-  userId: string;
-  activeCompanyId: number;
-}): Promise<boolean> {
-  const roleRows = await db.getDb()('user_roles as ur')
-    .join('roles as r', 'ur.role_id', 'r.id')
-    .where('ur.user_id', input.userId)
-    .select('r.id as roleId', 'r.name as roleName') as Array<{ roleId: string; roleName: string }>;
-
-  const roleByName = new Map<string, { roleId: string; roleName: string }>(
-    roleRows.map((role) => [role.roleName, role]),
-  );
-
-  if (roleByName.has(SYSTEM_ROLES.ADMINISTRATOR)) {
-    return false;
-  }
-
-  const activeRoleName = input.activeCompanyId === 1
-    ? SYSTEM_ROLES.MANAGEMENT
-    : SYSTEM_ROLES.SERVICE_CREW;
-  const oppositeRoleName = activeRoleName === SYSTEM_ROLES.MANAGEMENT
-    ? SYSTEM_ROLES.SERVICE_CREW
-    : SYSTEM_ROLES.MANAGEMENT;
-
-  const activeRole = roleByName.get(activeRoleName);
-  const oppositeRole = roleByName.get(oppositeRoleName);
-  if (!activeRole) {
-    return false;
-  }
-
-  // Keep the active role enabled and disable the opposite role immediately.
-  const enableCount = Number(await db.getDb()('user_role_disables')
-    .where({ user_id: input.userId, role_id: activeRole.roleId })
-    .delete());
-
-  let disableChanged = 0;
-  if (oppositeRole) {
-    const insertResult = await db.getDb()('user_role_disables')
-      .insert({
-        user_id: input.userId,
-        role_id: oppositeRole.roleId,
-        created_at: new Date(),
-        updated_at: new Date(),
-      })
-      .onConflict(['user_id', 'role_id'])
-      .ignore();
-    disableChanged = Array.isArray(insertResult) ? insertResult.length : Number(insertResult ?? 0);
-  }
-
-  return enableCount > 0 || disableChanged > 0;
-}
-
 export async function getCheckInStatus(req: Request, res: Response, next: NextFunction) {
   try {
     const userId = req.user!.sub;
@@ -666,38 +613,8 @@ export async function getCheckInStatus(req: Request, res: Response, next: NextFu
 
     const latestAttendanceEvent = await getLatestAttendanceWebhookEventForWebsiteUserKey(userKey);
     if (!latestAttendanceEvent || !latestAttendanceEvent.checkedIn) {
-      const clearedCount = Number(await db.getDb()('user_role_disables')
-        .where({ user_id: userId })
-        .delete());
-      if (clearedCount > 0) {
-        try {
-          getIO()
-            .of('/user-events')
-            .to(`user:${userId}`)
-            .emit('user:auth-scope-updated', { userId });
-        } catch {
-          // Socket server may be unavailable during startup/tests.
-        }
-      }
       res.json({ success: true, data: buildCheckedOutStatus() });
       return;
-    }
-
-    if (latestAttendanceEvent.activeCompanyId !== null) {
-      const roleScopeChanged = await reconcileRoleDisableScopeFromActiveAttendance({
-        userId,
-        activeCompanyId: latestAttendanceEvent.activeCompanyId,
-      });
-      if (roleScopeChanged) {
-        try {
-          getIO()
-            .of('/user-events')
-            .to(`user:${userId}`)
-            .emit('user:auth-scope-updated', { userId });
-        } catch {
-          // Socket server may be unavailable during startup/tests.
-        }
-      }
     }
 
     const activeShift = await db.getDb()('employee_shifts')

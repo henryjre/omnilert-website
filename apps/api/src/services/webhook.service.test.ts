@@ -1300,7 +1300,7 @@ test('createAttendanceProcessor keeps tardiness on the normal authorization path
   assert.equal(harness.auths[0]?.status, 'pending');
 });
 
-test('createAttendanceProcessor keeps early check-out on the normal authorization path when attendance overlaps the shift', async () => {
+test('createAttendanceProcessor keeps early check-out on the normal authorization path when attendance overlaps the shift', async (t) => {
   const plannedShift = createShift({
     id: 'shift-104',
     odoo_shift_id: 104,
@@ -1315,6 +1315,7 @@ test('createAttendanceProcessor keeps early check-out on the normal authorizatio
     websiteUserKey: 'website-user-1',
     resolvedUserId: 'user-1',
   });
+  installHarnessDb(harness, (cleanup) => t.after(cleanup));
   const processAttendance = createAttendanceProcessor(harness.deps as any);
 
   await processAttendance({
@@ -1336,7 +1337,7 @@ test('createAttendanceProcessor keeps early check-out on the normal authorizatio
   assert.equal(plannedShift.pending_approvals, 1);
 });
 
-test('createAttendanceProcessor keeps late check-out on the normal authorization path when attendance overlaps the shift', async () => {
+test('createAttendanceProcessor keeps late check-out on the normal authorization path when attendance overlaps the shift', async (t) => {
   const plannedShift = createShift({
     id: 'shift-105',
     odoo_shift_id: 105,
@@ -1351,6 +1352,7 @@ test('createAttendanceProcessor keeps late check-out on the normal authorization
     websiteUserKey: 'website-user-1',
     resolvedUserId: 'user-1',
   });
+  installHarnessDb(harness, (cleanup) => t.after(cleanup));
   const processAttendance = createAttendanceProcessor(harness.deps as any);
 
   await processAttendance({
@@ -1438,10 +1440,11 @@ test('createAttendanceProcessor management check-in starts a break for mapped se
     '2026-03-20T01:00:00.000Z',
   );
 
-  const disabled = harness.disabledRoleIdsByUserId.get('user-1');
-  assert.ok(disabled?.has('role-service-crew'));
-  assert.equal(disabled?.has('role-management'), false);
-  assert.ok(harness.socketEvents.some((evt) => evt.event === 'user:auth-scope-updated'));
+  assert.equal(harness.disabledRoleIdsByUserId.get('user-1')?.size ?? 0, 0);
+  assert.equal(
+    harness.socketEvents.some((evt) => evt.event === 'user:auth-scope-updated'),
+    false,
+  );
 });
 
 test('createAttendanceProcessor management check-in falls back to checkout when the interrupted service crew attendance is unmapped', async () => {
@@ -1605,7 +1608,7 @@ test('createAttendanceProcessor management checkout auto-ends linked break activ
   );
 });
 
-test('createAttendanceProcessor management checkout reverts role scope to service crew when only service crew attendance remains active', async () => {
+test('createAttendanceProcessor management checkout leaves temporarily disabled roles untouched when only service crew attendance remains active', async () => {
   const serviceShift = createShift({
     id: 'shift-service-revert',
     odoo_shift_id: 91402,
@@ -1663,11 +1666,11 @@ test('createAttendanceProcessor management checkout reverts role scope to servic
   });
 
   const disabled = harness.disabledRoleIdsByUserId.get('user-1');
-  assert.ok(disabled?.has('role-management'));
-  assert.equal(disabled?.has('role-service-crew'), false);
-  assert.ok(
+  assert.equal(disabled?.has('role-management'), false);
+  assert.ok(disabled?.has('role-service-crew'));
+  assert.equal(
     harness.socketEvents.some((evt) => evt.event === 'user:auth-scope-updated'),
-    'role restoration should emit user:auth-scope-updated',
+    false,
   );
 });
 
@@ -2132,7 +2135,7 @@ test('createAttendanceProcessor checkout leaves break rows retryable when the ty
   assert.equal(harness.activities[0]?.is_calculated, false);
 });
 
-test('createAttendanceProcessor service crew check-in disables management and checks out active management attendance only', async () => {
+test('createAttendanceProcessor service crew check-in checks out active management attendance without mutating disabled roles', async () => {
   const harness = createAttendanceHarness({
     websiteUserKey: 'website-user-1',
     resolvedUserId: 'user-1',
@@ -2165,10 +2168,11 @@ test('createAttendanceProcessor service crew check-in disables management and ch
   assert.equal(harness.checkoutOps.length, 1);
   assert.deepEqual(harness.checkoutOps[0]?.attendanceIds, [9202]);
 
-  const disabled = harness.disabledRoleIdsByUserId.get('user-1');
-  assert.ok(disabled?.has('role-management'));
-  assert.equal(disabled?.has('role-service-crew'), false);
-  assert.ok(harness.socketEvents.some((evt) => evt.event === 'user:auth-scope-updated'));
+  assert.equal(harness.disabledRoleIdsByUserId.get('user-1')?.size ?? 0, 0);
+  assert.equal(
+    harness.socketEvents.some((evt) => evt.event === 'user:auth-scope-updated'),
+    false,
+  );
 });
 
 test('createAttendanceProcessor skips role gating and auto-checkout for administrator users', async () => {
@@ -2246,7 +2250,7 @@ test('createAttendanceProcessor skips role gating and auto-checkout when user la
   assert.ok(harness.socketEvents.some((evt) => evt.event === 'user:check-in-status-updated'));
 });
 
-test('createAttendanceProcessor checkout re-enables all temporarily disabled roles when no active attendance remains', async () => {
+test('createAttendanceProcessor checkout leaves temporarily disabled roles untouched when no active attendance remains', async (t) => {
   const harness = createAttendanceHarness({
     websiteUserKey: 'website-user-1',
     resolvedUserId: 'user-1',
@@ -2263,6 +2267,7 @@ test('createAttendanceProcessor checkout re-enables all temporarily disabled rol
       'website-user-1': [],
     },
   });
+  installHarnessDb(harness, (cleanup) => t.after(cleanup));
   const processAttendance = createAttendanceProcessor(harness.deps as any);
 
   await processAttendance({
@@ -2277,8 +2282,11 @@ test('createAttendanceProcessor checkout re-enables all temporarily disabled rol
     x_website_key: 'website-user-1',
   });
 
-  assert.equal(harness.disabledRoleIdsByUserId.get('user-1')?.size ?? 0, 0);
-  assert.ok(harness.socketEvents.some((evt) => evt.event === 'user:auth-scope-updated'));
+  assert.equal(harness.disabledRoleIdsByUserId.get('user-1')?.size ?? 0, 2);
+  assert.equal(
+    harness.socketEvents.some((evt) => evt.event === 'user:auth-scope-updated'),
+    false,
+  );
 });
 
 test('createAttendanceProcessor persists resolved website key on shift logs when webhook payload omits x_website_key', async () => {
@@ -2381,15 +2389,12 @@ test('emitAttendanceSocketEvent routes shift events to /employee-shifts namespac
 });
 
 // ---------------------------------------------------------------------------
-// Regression: dual-role user check-in permission gating
-// Verifies the exact socket event and room that the frontend relies on to
-// trigger a JWT refresh after role-scope changes.
+// Regression: dual-role user check-in realtime updates
+// Verifies the attendance processor still emits the check-in status event to
+// the correct namespace/room without emitting auth-scope refresh events.
 // ---------------------------------------------------------------------------
 
-test('service crew check-in emits user:auth-scope-updated to /user-events/user:<id> with correct userId', async () => {
-  // This is the exact event the frontend TopBar listens to in order to refresh
-  // the JWT. If the namespace, room, or userId payload is wrong, the token
-  // refresh never fires and Management permissions remain active.
+test('service crew check-in emits user:check-in-status-updated to /user-events/user:<id> with correct userId', async () => {
   const harness = createAttendanceHarness({
     websiteUserKey: 'wk-dual',
     resolvedUserId: 'user-dual',
@@ -2427,20 +2432,22 @@ test('service crew check-in emits user:auth-scope-updated to /user-events/user:<
     x_website_key: 'wk-dual',
   });
 
-  // Management role must be disabled
-  const disabled = harness.disabledRoleIdsByUserId.get('user-dual');
-  assert.ok(disabled?.has('role-management'), 'Management role must be in user_role_disables');
-  assert.equal(disabled?.has('role-service-crew'), false, 'Service Crew role must NOT be disabled');
-
-  // user:auth-scope-updated must be emitted to the correct namespace and room
+  assert.equal(harness.disabledRoleIdsByUserId.get('user-dual')?.size ?? 0, 0);
   const authScopeEmit = socketHarness.emits.find((e) => e.event === 'user:auth-scope-updated');
-  assert.ok(authScopeEmit, 'user:auth-scope-updated must be emitted');
-  assert.equal(authScopeEmit?.namespace, '/user-events', 'must target /user-events namespace');
-  assert.equal(authScopeEmit?.room, 'user:user-dual', 'must target user:<id> room');
-  assert.deepEqual(authScopeEmit?.payload, { userId: 'user-dual' }, 'payload must contain userId');
+  assert.equal(authScopeEmit, undefined, 'user:auth-scope-updated must not be emitted');
+
+  const checkInStatusEmit = socketHarness.emits.find((e) => e.event === 'user:check-in-status-updated');
+  assert.ok(checkInStatusEmit, 'user:check-in-status-updated must be emitted');
+  assert.equal(checkInStatusEmit?.namespace, '/user-events', 'must target /user-events namespace');
+  assert.equal(checkInStatusEmit?.room, 'user:user-dual', 'must target user:<id> room');
+  assert.deepEqual(
+    checkInStatusEmit?.payload,
+    { userId: 'user-dual' },
+    'payload must contain userId',
+  );
 });
 
-test('management check-in emits user:auth-scope-updated to /user-events/user:<id> with correct userId', async () => {
+test('management check-in emits user:check-in-status-updated to /user-events/user:<id> with correct userId', async () => {
   const harness = createAttendanceHarness({
     websiteUserKey: 'wk-dual-mgmt',
     resolvedUserId: 'user-dual-mgmt',
@@ -2476,18 +2483,16 @@ test('management check-in emits user:auth-scope-updated to /user-events/user:<id
     x_website_key: 'wk-dual-mgmt',
   });
 
-  // Service Crew role must be disabled
-  const disabled = harness.disabledRoleIdsByUserId.get('user-dual-mgmt');
-  assert.ok(disabled?.has('role-service-crew'), 'Service Crew role must be in user_role_disables');
-  assert.equal(disabled?.has('role-management'), false, 'Management role must NOT be disabled');
-
-  // user:auth-scope-updated must be emitted to the correct namespace and room
+  assert.equal(harness.disabledRoleIdsByUserId.get('user-dual-mgmt')?.size ?? 0, 0);
   const authScopeEmit = socketHarness.emits.find((e) => e.event === 'user:auth-scope-updated');
-  assert.ok(authScopeEmit, 'user:auth-scope-updated must be emitted');
-  assert.equal(authScopeEmit?.namespace, '/user-events', 'must target /user-events namespace');
-  assert.equal(authScopeEmit?.room, 'user:user-dual-mgmt', 'must target user:<id> room');
+  assert.equal(authScopeEmit, undefined, 'user:auth-scope-updated must not be emitted');
+
+  const checkInStatusEmit = socketHarness.emits.find((e) => e.event === 'user:check-in-status-updated');
+  assert.ok(checkInStatusEmit, 'user:check-in-status-updated must be emitted');
+  assert.equal(checkInStatusEmit?.namespace, '/user-events', 'must target /user-events namespace');
+  assert.equal(checkInStatusEmit?.room, 'user:user-dual-mgmt', 'must target user:<id> room');
   assert.deepEqual(
-    authScopeEmit?.payload,
+    checkInStatusEmit?.payload,
     { userId: 'user-dual-mgmt' },
     'payload must contain userId',
   );

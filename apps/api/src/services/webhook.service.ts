@@ -963,10 +963,6 @@ function parseRecord(value: unknown): Record<string, unknown> {
   }
 }
 
-function resolveOppositeRoleType(roleType: CheckInRoleType): CheckInRoleType {
-  return roleType === SYSTEM_ROLES.MANAGEMENT ? SYSTEM_ROLES.SERVICE_CREW : SYSTEM_ROLES.MANAGEMENT;
-}
-
 async function defaultResolveAttendanceIdentity(
   payload: AttendancePayload,
 ): Promise<ResolvedAttendanceIdentity> {
@@ -1540,57 +1536,7 @@ async function syncBreakWorkEntryToDateTotal(input: {
   }
 }
 
-async function finalizeRoleScopeAfterCheckOut(input: {
-  deps: AttendanceProcessorDeps;
-  payload: AttendancePayload;
-  userId: string;
-  websiteUserKey: string;
-}): Promise<void> {
-  const { deps, payload, userId, websiteUserKey } = input;
-  const activeAttendances = await deps.listActiveAttendancesByWebsiteUserKey(websiteUserKey);
-
-  if (activeAttendances.length === 0) {
-    const clearedCount = await deps.clearUserDisabledRoles(userId);
-    if (clearedCount > 0) {
-      deps.emitSocketEvent('user:auth-scope-updated', { userId });
-    }
-    return;
-  }
-
-  if (resolveCheckInRoleType(payload.x_company_id) !== SYSTEM_ROLES.MANAGEMENT) {
-    return;
-  }
-
-  const roleMembership = await deps.listUserRoleMembership(userId);
-  if (roleMembership.some((role) => role.roleName === SYSTEM_ROLES.ADMINISTRATOR)) {
-    return;
-  }
-
-  const hasManagementAttendance = activeAttendances.some(
-    (attendance) => resolveCheckInRoleType(attendance.company_id) === SYSTEM_ROLES.MANAGEMENT,
-  );
-  const hasServiceCrewAttendance = activeAttendances.some(
-    (attendance) => resolveCheckInRoleType(attendance.company_id) === SYSTEM_ROLES.SERVICE_CREW,
-  );
-
-  if (!hasServiceCrewAttendance || hasManagementAttendance) {
-    return;
-  }
-
-  const roleByName = new Map(roleMembership.map((role) => [role.roleName, role]));
-  const managementRole = roleByName.get(SYSTEM_ROLES.MANAGEMENT);
-  const serviceCrewRole = roleByName.get(SYSTEM_ROLES.SERVICE_CREW);
-
-  if (!managementRole || !serviceCrewRole) {
-    return;
-  }
-
-  await deps.enableUserRole(userId, serviceCrewRole.roleId);
-  await deps.disableUserRole(userId, managementRole.roleId);
-  deps.emitSocketEvent('user:auth-scope-updated', { userId });
-}
-
-async function applyCheckInRoleScopeAndAttendanceGuard(input: {
+async function applyCheckInAttendanceGuard(input: {
   deps: AttendanceProcessorDeps;
   payload: AttendancePayload;
   checkInTime: Date;
@@ -1614,17 +1560,10 @@ async function applyCheckInRoleScopeAndAttendanceGuard(input: {
   }
 
   const checkInRoleType = resolveCheckInRoleType(payload.x_company_id);
-  const oppositeRoleType = resolveOppositeRoleType(checkInRoleType);
   const checkInRole = roleByName.get(checkInRoleType);
-  const oppositeRole = roleByName.get(oppositeRoleType);
 
   if (!checkInRole) {
     return;
-  }
-
-  await deps.enableUserRole(userId, checkInRole.roleId);
-  if (oppositeRole) {
-    await deps.disableUserRole(userId, oppositeRole.roleId);
   }
 
   const activeAttendances = await deps.listActiveAttendancesByWebsiteUserKey(websiteUserKey);
@@ -1661,8 +1600,6 @@ async function applyCheckInRoleScopeAndAttendanceGuard(input: {
   if (attendanceIdsToCheckOut.length > 0) {
     await deps.checkOutAttendancesByIds(attendanceIdsToCheckOut, checkInTime);
   }
-
-  deps.emitSocketEvent('user:auth-scope-updated', { userId });
 }
 
 export function createAttendanceProcessor(overrides: Partial<AttendanceProcessorDeps> = {}) {
@@ -1727,7 +1664,7 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
     const allowsInterimDuty = payload.x_company_id !== 1;
 
     if (!isCheckOut) {
-      await applyCheckInRoleScopeAndAttendanceGuard({
+      await applyCheckInAttendanceGuard({
         deps,
         payload,
         checkInTime: eventTime,
@@ -2208,13 +2145,6 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
           endedAt: eventTime,
         });
       }
-
-      await finalizeRoleScopeAfterCheckOut({
-        deps,
-        payload,
-        userId: resolvedIdentity.userId,
-        websiteUserKey: resolvedIdentity.websiteUserKey,
-      });
     }
 
     deps.emitSocketEvent('shift:log-new', {
