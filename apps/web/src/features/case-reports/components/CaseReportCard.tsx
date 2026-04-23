@@ -27,7 +27,7 @@ export function CaseReportCard({ report, selected, onSelect }: CaseReportCardPro
     <button
       type="button"
       onClick={onSelect}
-      className={`flex h-full w-full flex-col rounded-xl border bg-white p-4 text-left transition-shadow hover:shadow-md ${
+      className={`flex h-full w-full min-w-0 flex-col rounded-xl border bg-white p-4 text-left transition-shadow hover:shadow-md ${
         selected ? 'border-primary-400 ring-2 ring-primary-200' : 'border-gray-200'
       }`}
     >
@@ -37,7 +37,9 @@ export function CaseReportCard({ report, selected, onSelect }: CaseReportCardPro
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-400">
             Case {String(report.case_number).padStart(4, '0')}
           </p>
-          <h3 className="mt-0.5 truncate font-semibold text-gray-900">{report.title}</h3>
+          <h3 className="mt-0.5 line-clamp-2 break-words font-semibold text-gray-900">
+            {report.title}
+          </h3>
         </div>
         <Badge variant={report.status === 'open' ? 'success' : 'default'}>
           {report.status === 'open' ? 'Open' : 'Closed'}

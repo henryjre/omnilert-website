@@ -290,6 +290,15 @@ export function CaseReportDetailPanel({
                       Info
                     </h3>
                     <dl className="space-y-2.5">
+                      <div className="flex items-start gap-2">
+                        <FileWarning className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                        <div className="min-w-0">
+                          <dt className="text-xs text-gray-500">Case Title</dt>
+                          <dd className="break-words text-sm font-medium text-gray-900">
+                            {report.title}
+                          </dd>
+                        </div>
+                      </div>
                       {report.company_name && (
                         <div className="flex items-start gap-2">
                           <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />

@@ -357,7 +357,7 @@ export function CaseReportsPage() {
           />
 
           {/* Controls */}
-          <div className="flex w-full items-center gap-2 sm:w-auto">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
             {canCreate && (
               <button
                 type="button"
@@ -371,7 +371,7 @@ export function CaseReportsPage() {
             <button
               type="button"
               onClick={toggleFilters}
-              className={`flex w-full items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors sm:w-auto ${
+              className={`flex w-full items-center justify-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors sm:w-auto sm:justify-start ${
                 hasActiveFilters
                   ? 'border-primary-300 bg-primary-50 text-primary-700'
                   : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50'

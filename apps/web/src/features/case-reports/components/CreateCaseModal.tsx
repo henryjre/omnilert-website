@@ -1,13 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '@/shared/components/ui/Button';
 import { AnimatedModal } from '@/shared/components/ui/AnimatedModal';
-import { CompanyBranchPicker } from '@/shared/components/CompanyBranchPicker';
 import type { SelectorCompanyGroup } from '@/shared/components/branchSelectorState';
 import { buildSelectorCompanyGroupsFromSnapshots } from '@/shared/components/branchSelectorState';
 import { useAuthStore } from '@/features/auth/store/authSlice';
 import { useAppToast } from '@/shared/hooks/useAppToast';
-import type { CompanyBranchValue } from '@/shared/components/CompanyBranchPicker';
+import { PayrollBranchSelect } from '@/features/payslips/components/PayrollBranchSelect';
 import { listCreateCaseReportBranches } from '../services/caseReport.api';
 
 interface CreateCaseModalProps {
@@ -27,12 +26,19 @@ const LABEL_CLS = 'block text-sm font-medium text-gray-700';
 export function CreateCaseModal({ onClose, onSubmit }: CreateCaseModalProps) {
   const companySlug = useAuthStore((state) => state.companySlug);
   const { error: showErrorToast } = useAppToast();
-  const [branchValue, setBranchValue] = useState<CompanyBranchValue | null>(null);
+  const [selectedBranchId, setSelectedBranchId] = useState('');
   const [companyBranchGroups, setCompanyBranchGroups] = useState<SelectorCompanyGroup[]>([]);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [loadingBranchOptions, setLoadingBranchOptions] = useState(true);
+  const selectedBranch = useMemo(
+    () =>
+      companyBranchGroups
+        .flatMap((group) => group.branches)
+        .find((branch) => branch.id === selectedBranchId) ?? null,
+    [companyBranchGroups, selectedBranchId],
+  );
 
   useEffect(() => {
     let isActive = true;
@@ -80,14 +86,20 @@ export function CreateCaseModal({ onClose, onSubmit }: CreateCaseModalProps) {
       {/* Body */}
       <div className="space-y-4 p-6">
         {/* Branch picker */}
-        <CompanyBranchPicker
-          companyBranchGroups={companyBranchGroups}
-          label="Branch"
-          value={branchValue}
-          onChange={setBranchValue}
-          placeholder={loadingBranchOptions ? 'Loading branches...' : 'Select the branch this case belongs to'}
-          disabled={submitting || loadingBranchOptions}
-        />
+        <div>
+          <label className="mb-1 block text-sm font-medium text-gray-700">Branch</label>
+          <PayrollBranchSelect
+            groups={companyBranchGroups}
+            selectedBranchId={selectedBranchId}
+            onSelect={setSelectedBranchId}
+            placeholder={
+              loadingBranchOptions
+                ? 'Loading branches...'
+                : 'Select the branch this case belongs to'
+            }
+            disabled={submitting || loadingBranchOptions}
+          />
+        </div>
 
         {/* Title */}
         <div className="space-y-1">
@@ -123,19 +135,25 @@ export function CreateCaseModal({ onClose, onSubmit }: CreateCaseModalProps) {
           Cancel
         </Button>
         <Button
-          disabled={submitting || loadingBranchOptions || !branchValue || !title.trim() || !description.trim()}
+          disabled={
+            submitting
+            || loadingBranchOptions
+            || !selectedBranch
+            || !title.trim()
+            || !description.trim()
+          }
           onClick={async () => {
             setSubmitting(true);
             try {
               await onSubmit({
                 title,
                 description,
-                companyId: branchValue?.companyId ?? null,
-                branchId: branchValue?.branchId ?? null,
+                companyId: selectedBranch?.companyId ?? null,
+                branchId: selectedBranch?.id ?? null,
               });
               setTitle('');
               setDescription('');
-              setBranchValue(null);
+              setSelectedBranchId('');
               onClose();
             } finally {
               setSubmitting(false);
@@ -148,4 +166,3 @@ export function CreateCaseModal({ onClose, onSubmit }: CreateCaseModalProps) {
     </AnimatedModal>
   );
 }
-
