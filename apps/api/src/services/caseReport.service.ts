@@ -60,6 +60,8 @@ type CaseMessageRow = {
   updated_at: Date | string;
 };
 
+type CaseReplyParentRow = Pick<CaseMessageRow, 'id' | 'case_id' | 'user_id' | 'is_system'>;
+
 type CaseAttachmentRow = {
   id: string;
   case_id: string;
@@ -308,6 +310,102 @@ async function resolveUserNames(userIds: string[]): Promise<Record<string, strin
       String(user.email ?? 'Unknown User');
   }
   return map;
+}
+
+type CaseReplyNotificationDeps = {
+  getParentMessage: (input: {
+    caseId: string;
+    parentMessageId: string;
+  }) => Promise<CaseReplyParentRow | null>;
+  getParticipant: (input: {
+    caseId: string;
+    userId: string;
+  }) => Promise<Pick<CaseParticipantRow, 'is_joined' | 'is_muted'> | null>;
+  upsertParticipant: typeof upsertParticipant;
+  resolveUserNames: typeof resolveUserNames;
+  dispatchNotification: typeof createAndDispatchNotification;
+};
+
+const defaultCaseReplyNotificationDeps: CaseReplyNotificationDeps = {
+  getParentMessage: async ({ caseId, parentMessageId }) => {
+    const row = await db
+      .getDb()('case_messages')
+      .where({ id: parentMessageId, case_id: caseId })
+      .first('id', 'case_id', 'user_id', 'is_system');
+    return (row as CaseReplyParentRow | undefined) ?? null;
+  },
+  getParticipant: async ({ caseId, userId }) => {
+    const row = await db
+      .getDb()('case_participants')
+      .where({ case_id: caseId, user_id: userId })
+      .first('is_joined', 'is_muted');
+    return (row as Pick<CaseParticipantRow, 'is_joined' | 'is_muted'> | undefined) ?? null;
+  },
+  upsertParticipant,
+  resolveUserNames,
+  dispatchNotification: createAndDispatchNotification,
+};
+
+export async function resolveCaseReplyParentMessage(
+  input: {
+    caseId: string;
+    parentMessageId?: string;
+  },
+  deps: Pick<CaseReplyNotificationDeps, 'getParentMessage'> = defaultCaseReplyNotificationDeps,
+): Promise<CaseReplyParentRow | null> {
+  if (!input.parentMessageId) return null;
+
+  const parentMessage = await deps.getParentMessage({
+    caseId: input.caseId,
+    parentMessageId: input.parentMessageId,
+  });
+
+  if (!parentMessage) {
+    throw new AppError(404, 'Parent message not found');
+  }
+
+  if (parentMessage.is_system) {
+    throw new AppError(400, 'Cannot reply to system messages');
+  }
+
+  return parentMessage;
+}
+
+export async function notifyReplyRecipientForCaseMessage(
+  input: {
+    caseId: string;
+    messageId: string;
+    senderId: string;
+    parentMessage: CaseReplyParentRow | null;
+  },
+  deps: CaseReplyNotificationDeps = defaultCaseReplyNotificationDeps,
+): Promise<string[]> {
+  if (!input.parentMessage) return [];
+
+  const recipientUserId = String(input.parentMessage.user_id);
+  if (recipientUserId === input.senderId) return [];
+
+  const participant = await deps.getParticipant({
+    caseId: input.caseId,
+    userId: recipientUserId,
+  });
+
+  if (participant?.is_muted) return [];
+
+  await deps.upsertParticipant(input.caseId, recipientUserId, { is_joined: true });
+
+  const senderNames = await deps.resolveUserNames([input.senderId]);
+  const senderName = senderNames[input.senderId] ?? 'Someone';
+
+  await deps.dispatchNotification({
+    userId: recipientUserId,
+    title: 'Case Report Reply',
+    message: `${senderName} replied to your message in a case report.`,
+    type: 'info',
+    linkUrl: `/case-reports?caseId=${input.caseId}&messageId=${input.messageId}`,
+  });
+
+  return [recipientUserId];
 }
 
 async function resolveCompanyUsers(companyId: string): Promise<MentionableUser[]> {
@@ -569,6 +667,7 @@ async function maybeNotifyMentionedUsers(input: {
   senderId: string;
   mentionedUserIds: string[];
   mentionedRoleIds: string[];
+  excludedUserIds?: string[];
 }): Promise<void> {
   const masterDb = db.getDb();
   const roleMentionUsers =
@@ -585,7 +684,7 @@ async function maybeNotifyMentionedUsers(input: {
 
   const targets = Array.from(
     new Set([...input.mentionedUserIds, ...roleMentionUsers.map((row: any) => String(row.id))]),
-  ).filter((id) => id !== input.senderId);
+  ).filter((id) => id !== input.senderId && !(input.excludedUserIds ?? []).includes(id));
 
   if (targets.length === 0) return;
 
@@ -1111,6 +1210,10 @@ export async function sendMessage(input: {
   if (input.files.some((file) => !isAllowedMessageAttachment(file.mimetype))) {
     throw new AppError(400, 'Unsupported attachment type');
   }
+  const parentMessage = await resolveCaseReplyParentMessage({
+    caseId: input.caseId,
+    parentMessageId: input.parentMessageId,
+  });
 
   let messageId = '';
   await db.getDb().transaction(async (trx) => {
@@ -1124,7 +1227,7 @@ export async function sendMessage(input: {
         case_id: input.caseId,
         user_id: input.userId,
         content,
-        parent_message_id: input.parentMessageId ?? null,
+        parent_message_id: parentMessage?.id ?? null,
       })
       .returning('*');
     messageId = String(created.id);
@@ -1168,6 +1271,13 @@ export async function sendMessage(input: {
     }
   });
 
+  const replyNotifiedUserIds = await notifyReplyRecipientForCaseMessage({
+    caseId: input.caseId,
+    messageId,
+    senderId: input.userId,
+    parentMessage,
+  });
+
   await maybeNotifyMentionedUsers({
     companyId: input.companyId,
     caseId: input.caseId,
@@ -1175,6 +1285,7 @@ export async function sendMessage(input: {
     senderId: input.userId,
     mentionedUserIds: input.mentionedUserIds,
     mentionedRoleIds: input.mentionedRoleIds,
+    excludedUserIds: replyNotifiedUserIds,
   });
 
   const roots = await buildCaseMessageTree(input.caseId);

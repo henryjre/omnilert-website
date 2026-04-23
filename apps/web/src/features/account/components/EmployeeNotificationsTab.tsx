@@ -101,6 +101,12 @@ function getAuthId(linkUrl: string | null | undefined): string | null {
   return match?.[1] ?? null;
 }
 
+function getMessageId(linkUrl: string | null | undefined): string | null {
+  if (!linkUrl) return null;
+  const match = linkUrl.match(/[?&]messageId=([0-9a-f-]{36})/i);
+  return match?.[1] ?? null;
+}
+
 function getShiftId(linkUrl: string | null | undefined): string | null {
   if (!linkUrl) return null;
   const match = linkUrl.match(/[?&]shiftId=([0-9a-f-]{36})/i);
@@ -246,7 +252,7 @@ export function EmployeeNotificationsTab() {
       navigate('/account/profile');
       return;
     }
-    if (linkUrl.startsWith('/case-reports')) {
+    if (linkUrl.startsWith('/case-reports') || linkUrl.startsWith('/violation-notices')) {
       navigate(linkUrl);
       return;
     }
@@ -365,9 +371,13 @@ export function EmployeeNotificationsTab() {
           const shiftExchangeId = getShiftExchangeId(n.link_url);
           const peerEvaluationId = getPeerEvaluationId(n.link_url);
           const shiftId = getShiftId(n.link_url);
+          const messageId = getMessageId(n.link_url);
           const authId = getAuthId(n.link_url);
           const requestId = getRequestId(n.link_url);
           const payslipAdjustmentId = getPayslipAdjustmentId(n.link_url);
+          const isDiscussionLink =
+            typeof n.link_url === 'string' &&
+            (n.link_url.startsWith('/case-reports') || n.link_url.startsWith('/violation-notices'));
           const isAuthRequestLink = typeof n.link_url === "string" && n.link_url.startsWith("/account/authorization-requests");
           const isCashRequestLink = typeof n.link_url === "string" && n.link_url.startsWith("/account/cash-requests");
           return (
@@ -398,6 +408,16 @@ export function EmployeeNotificationsTab() {
 
                   {/* Action buttons — below text on mobile, right column on desktop */}
                   <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    {messageId && isDiscussionLink && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => { void handleOpenNotificationLink(n); }}
+                        className="text-xs"
+                      >
+                        View Reply
+                      </Button>
+                    )}
                     {authId && (
                       <Button
                         variant="secondary"

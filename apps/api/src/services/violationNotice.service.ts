@@ -61,6 +61,8 @@ type VNMessageRow = {
   updated_at: Date | string;
 };
 
+type VNReplyParentRow = Pick<VNMessageRow, 'id' | 'violation_notice_id' | 'user_id' | 'type'>;
+
 type VNParticipantRow = {
   violation_notice_id: string;
   user_id: string;
@@ -228,6 +230,102 @@ async function resolveUserNames(userIds: string[]): Promise<Record<string, strin
       String(user.email ?? 'Unknown User');
   }
   return map;
+}
+
+type VNReplyNotificationDeps = {
+  getParentMessage: (input: {
+    vnId: string;
+    parentMessageId: string;
+  }) => Promise<VNReplyParentRow | null>;
+  getParticipant: (input: {
+    vnId: string;
+    userId: string;
+  }) => Promise<Pick<VNParticipantRow, 'is_joined' | 'is_muted'> | null>;
+  upsertParticipant: typeof upsertParticipant;
+  resolveUserNames: typeof resolveUserNames;
+  dispatchNotification: typeof createAndDispatchNotification;
+};
+
+const defaultVNReplyNotificationDeps: VNReplyNotificationDeps = {
+  getParentMessage: async ({ vnId, parentMessageId }) => {
+    const row = await db
+      .getDb()('violation_notice_messages')
+      .where({ id: parentMessageId, violation_notice_id: vnId })
+      .first('id', 'violation_notice_id', 'user_id', 'type');
+    return (row as VNReplyParentRow | undefined) ?? null;
+  },
+  getParticipant: async ({ vnId, userId }) => {
+    const row = await db
+      .getDb()('violation_notice_participants')
+      .where({ violation_notice_id: vnId, user_id: userId })
+      .first('is_joined', 'is_muted');
+    return (row as Pick<VNParticipantRow, 'is_joined' | 'is_muted'> | undefined) ?? null;
+  },
+  upsertParticipant,
+  resolveUserNames,
+  dispatchNotification: createAndDispatchNotification,
+};
+
+export async function resolveVNReplyParentMessage(
+  input: {
+    vnId: string;
+    parentMessageId?: string;
+  },
+  deps: Pick<VNReplyNotificationDeps, 'getParentMessage'> = defaultVNReplyNotificationDeps,
+): Promise<VNReplyParentRow | null> {
+  if (!input.parentMessageId) return null;
+
+  const parentMessage = await deps.getParentMessage({
+    vnId: input.vnId,
+    parentMessageId: input.parentMessageId,
+  });
+
+  if (!parentMessage) {
+    throw new AppError(404, 'Parent message not found');
+  }
+
+  if (parentMessage.type === 'system') {
+    throw new AppError(400, 'Cannot reply to system messages');
+  }
+
+  return parentMessage;
+}
+
+export async function notifyReplyRecipientForVNMessage(
+  input: {
+    vnId: string;
+    messageId: string;
+    senderId: string;
+    parentMessage: VNReplyParentRow | null;
+  },
+  deps: VNReplyNotificationDeps = defaultVNReplyNotificationDeps,
+): Promise<string[]> {
+  if (!input.parentMessage) return [];
+
+  const recipientUserId = String(input.parentMessage.user_id);
+  if (recipientUserId === input.senderId) return [];
+
+  const participant = await deps.getParticipant({
+    vnId: input.vnId,
+    userId: recipientUserId,
+  });
+
+  if (participant?.is_muted) return [];
+
+  await deps.upsertParticipant(input.vnId, recipientUserId, { is_joined: true });
+
+  const senderNames = await deps.resolveUserNames([input.senderId]);
+  const senderName = senderNames[input.senderId] ?? 'Someone';
+
+  await deps.dispatchNotification({
+    userId: recipientUserId,
+    title: 'Violation Notice Reply',
+    message: `${senderName} replied to your message in a violation notice.`,
+    type: 'info',
+    linkUrl: `/violation-notices?vnId=${input.vnId}&messageId=${input.messageId}`,
+  });
+
+  return [recipientUserId];
 }
 
 async function resolveMessageDecorations(messageIds: string[]): Promise<{
@@ -545,6 +643,7 @@ async function maybeNotifyMentionedUsers(input: {
   senderId: string;
   mentionedUserIds: string[];
   mentionedRoleIds: string[];
+  excludedUserIds?: string[];
 }): Promise<void> {
   const masterDb = db.getDb();
   const roleMentionUsers =
@@ -561,7 +660,7 @@ async function maybeNotifyMentionedUsers(input: {
 
   const targets = Array.from(
     new Set([...input.mentionedUserIds, ...roleMentionUsers.map((row: any) => String(row.id))]),
-  ).filter((id) => id !== input.senderId);
+  ).filter((id) => id !== input.senderId && !(input.excludedUserIds ?? []).includes(id));
 
   if (targets.length === 0) return;
 
@@ -1179,6 +1278,10 @@ export async function sendMessage(input: {
   if (input.files.some((file) => !isAllowedMessageAttachment(file.mimetype))) {
     throw new AppError(400, 'Unsupported attachment type');
   }
+  const parentMessage = await resolveVNReplyParentMessage({
+    vnId: input.vnId,
+    parentMessageId: input.parentMessageId,
+  });
 
   const vn = await getVNOrThrow(input.vnId);
   const vnNumberPadded = String(vn.vn_number).padStart(4, '0');
@@ -1196,7 +1299,7 @@ export async function sendMessage(input: {
         user_id: input.userId,
         content,
         type: 'message',
-        parent_message_id: input.parentMessageId ?? null,
+        parent_message_id: parentMessage?.id ?? null,
       })
       .returning('*');
     messageId = String(created.id);
@@ -1240,6 +1343,13 @@ export async function sendMessage(input: {
     }
   });
 
+  const replyNotifiedUserIds = await notifyReplyRecipientForVNMessage({
+    vnId: input.vnId,
+    messageId,
+    senderId: input.userId,
+    parentMessage,
+  });
+
   await maybeNotifyMentionedUsers({
     companyId: input.companyId,
     vnId: input.vnId,
@@ -1247,6 +1357,7 @@ export async function sendMessage(input: {
     senderId: input.userId,
     mentionedUserIds: input.mentionedUserIds,
     mentionedRoleIds: input.mentionedRoleIds,
+    excludedUserIds: replyNotifiedUserIds,
   });
 
   const messages = await buildVNMessageList(input.vnId);
