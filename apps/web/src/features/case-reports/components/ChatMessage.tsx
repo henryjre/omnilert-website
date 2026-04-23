@@ -432,8 +432,8 @@ export function ChatMessage({
             ? { duration: 0.2 }
             : { type: 'spring', stiffness: 400, damping: 25 }
         }
-        style={{ x: swipeX }}
-        className={`group relative flex gap-3 rounded-xl sm:hover:bg-gray-50 ${isGrouped ? 'py-0.5' : 'py-1'}`}
+        style={{ x: swipeX, userSelect: 'none', WebkitUserSelect: 'none' }}
+        className={`group relative flex gap-3 rounded-xl select-none sm:hover:bg-gray-50 ${isGrouped ? 'py-0.5' : 'py-1'}`}
         onPointerDown={handlePointerDown}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}

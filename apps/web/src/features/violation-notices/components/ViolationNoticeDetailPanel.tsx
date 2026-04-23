@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import type {
   ViolationNoticeDetail,
@@ -12,7 +12,6 @@ import {
   Building2,
   CalendarDays,
   CheckCircle2,
-  ChevronDown,
   ExternalLink,
   File,
   FileCheck,
@@ -20,6 +19,7 @@ import {
   FileX,
   GitBranch,
   LogOut,
+  MessageCircle,
   MoreHorizontal,
   TrendingDown,
   TriangleAlert,
@@ -30,6 +30,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { Badge } from '@/shared/components/ui/Badge';
 import { Button } from '@/shared/components/ui/Button';
+import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import { useAppToast } from '@/shared/hooks/useAppToast';
 import type { MentionableRole, MentionableUser } from '../../case-reports/services/caseReport.api';
 import { ChatSection } from '../../case-reports/components/ChatSection';
@@ -88,6 +89,12 @@ function formatDate(value: string | null) {
   });
 }
 
+const detailPanelTabSlideTransition = {
+  type: 'spring',
+  stiffness: 300,
+  damping: 30,
+} as const;
+
 function getStatusVariant(status: ViolationNoticeStatus): 'success' | 'danger' | 'warning' | 'default' {
   switch (status) {
     case 'queued': return 'warning';
@@ -119,10 +126,6 @@ function isImageFile(name: string) {
 
 function isVideoFile(name: string) {
   return /\.(mp4|webm|ogg|mov)$/i.test(name);
-}
-
-function isMediaFile(name: string) {
-  return isImageFile(name) || isVideoFile(name);
 }
 
 function getApiErrorMessage(err: unknown, fallback: string): string {
@@ -171,7 +174,6 @@ export function ViolationNoticeDetailPanel({
   const issuanceFileRef = useRef<HTMLInputElement | null>(null);
   const disciplinaryFileRef = useRef<HTMLInputElement | null>(null);
 
-  const [detailsVisible, setDetailsVisible] = useState(true);
   const [rejectMode, setRejectMode] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
   const [actionLoading, setActionLoading] = useState(false);
@@ -182,6 +184,24 @@ export function ViolationNoticeDetailPanel({
   const [pendingDisciplinaryFiles, setPendingDisciplinaryFiles] = useState<PendingFile[]>([]);
   const [disciplinaryPreviewItems, setDisciplinaryPreviewItems] = useState<{ url: string; fileName: string }[] | null>(null);
   const [disciplinaryPreviewIndex, setDisciplinaryPreviewIndex] = useState(0);
+
+  const defaultTab = initialFlashMessageId
+    ? 'discussion'
+    : vn.is_joined
+      ? 'discussion'
+      : 'details';
+  const [activeTab, setActiveTab] = useState<'details' | 'discussion'>(defaultTab as 'details' | 'discussion');
+  const isDiscussionTab = activeTab === 'discussion';
+
+  // Reset the default tab whenever a different violation notice opens.
+  useEffect(() => {
+    if (initialFlashMessageId) {
+      setActiveTab('discussion');
+      return;
+    }
+
+    setActiveTab(vn.is_joined ? 'discussion' : 'details');
+  }, [vn.id, initialFlashMessageId]);
 
   // Adapt VN messages to CaseMessage shape expected by ChatSection
   const adaptedMessages = messages.map((msg) => ({
@@ -390,20 +410,34 @@ export function ViolationNoticeDetailPanel({
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col">
+      {/* ── Tab bar ─────────────────────────────────────────────────────────── */}
+      <ViewToggle
+        options={[
+          { id: 'details', label: 'Details', icon: FileText },
+          { id: 'discussion', label: 'Discussion', icon: MessageCircle },
+        ]}
+        activeId={activeTab}
+        onChange={(id) => setActiveTab(id as 'details' | 'discussion')}
+        size="default"
+        showIcons={true}
+        showLabelOnMobile={true}
+      />
 
-        {/* ── Collapsible details ──────────────────────────────────────────── */}
-        <AnimatePresence initial={false}>
-          {detailsVisible && (
-            <motion.div
-              key="details"
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.25, ease: 'easeInOut' }}
-              style={{ overflow: 'hidden' }}
-            >
-              <div className="max-h-[50vh] space-y-5 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+
+        {/* ── Details tab content ──────────────────────────────────────────── */}
+        <motion.div
+          initial={false}
+          animate={{ x: isDiscussionTab ? '-100%' : 0, opacity: isDiscussionTab ? 0 : 1 }}
+          transition={detailPanelTabSlideTransition}
+          className="flex min-h-0 flex-1 flex-col"
+          style={{
+            pointerEvents: isDiscussionTab ? 'none' : 'auto',
+            willChange: 'transform',
+          }}
+          aria-hidden={isDiscussionTab}
+        >
+          <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
 
                 {/* ── Info ──────────────────────────────────────────────── */}
                 <section>
@@ -576,7 +610,6 @@ export function ViolationNoticeDetailPanel({
                       Disciplinary Meeting Proof
                     </h3>
 
-                    {/* Media thumbnails gallery */}
                     {(() => {
                       const confirmedItems = vn.disciplinary_file_url
                         ? [{ url: vn.disciplinary_file_url, fileName: vn.disciplinary_file_name ?? 'Proof' }]
@@ -587,7 +620,6 @@ export function ViolationNoticeDetailPanel({
                         <div className="space-y-3">
                           {hasMedia ? (
                             <div className="flex flex-wrap gap-2">
-                              {/* Confirmed media */}
                               {confirmedItems.map((item, idx) => (
                                 <div key={item.url} className="group relative">
                                   <button
@@ -613,7 +645,6 @@ export function ViolationNoticeDetailPanel({
                                 </div>
                               ))}
 
-                              {/* Pending uploading */}
                               {pendingDisciplinaryFiles.map((p) => (
                                 <div key={p.tempId} className="relative h-20 w-20 overflow-hidden rounded-xl border border-gray-200 bg-gray-100">
                                   {p.previewUrl && (
@@ -655,7 +686,6 @@ export function ViolationNoticeDetailPanel({
                       onChange={(e) => void handleDisciplinaryFileChange(e)}
                     />
 
-                    {/* Complete VN */}
                     {canComplete && vn.status === 'disciplinary_meeting' && vn.disciplinary_file_url && (
                       <div className="mt-3 space-y-3">
                         <div>
@@ -682,14 +712,14 @@ export function ViolationNoticeDetailPanel({
                 {/* ── Status action area ──────────────────────────────── */}
                 <section>
                   {vn.status === 'queued' && (
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-col gap-2 sm:flex-row">
                       {canConfirm && (
-                        <Button onClick={() => void handleConfirm()} disabled={actionLoading}>
+                        <Button className="w-full justify-center sm:w-auto" onClick={() => void handleConfirm()} disabled={actionLoading}>
                           Confirm VN
                         </Button>
                       )}
                       {canReject && !rejectMode && (
-                        <Button variant="danger" onClick={() => setRejectMode(true)} disabled={actionLoading}>
+                        <Button variant="danger" className="w-full justify-center sm:w-auto" onClick={() => setRejectMode(true)} disabled={actionLoading}>
                           Reject
                         </Button>
                       )}
@@ -697,14 +727,14 @@ export function ViolationNoticeDetailPanel({
                   )}
 
                   {vn.status === 'discussion' && (
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-col gap-2 sm:flex-row">
                       {canIssue && (
-                        <Button onClick={() => void handleIssue()} disabled={actionLoading}>
+                        <Button className="w-full justify-center sm:w-auto" onClick={() => void handleIssue()} disabled={actionLoading}>
                           Issue VN
                         </Button>
                       )}
                       {canReject && !rejectMode && (
-                        <Button variant="danger" onClick={() => setRejectMode(true)} disabled={actionLoading}>
+                        <Button variant="danger" className="w-full justify-center sm:w-auto" onClick={() => setRejectMode(true)} disabled={actionLoading}>
                           Reject VN
                         </Button>
                       )}
@@ -759,7 +789,6 @@ export function ViolationNoticeDetailPanel({
                     </div>
                   )}
 
-                  {/* Inline reject form */}
                   {rejectMode && (
                     <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 p-4 space-y-3">
                       <p className="text-sm font-medium text-red-700">Provide a rejection reason:</p>
@@ -770,9 +799,10 @@ export function ViolationNoticeDetailPanel({
                         className="w-full rounded-xl border border-red-300 bg-white px-3 py-2 text-sm outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
                         placeholder="Enter reason for rejection..."
                       />
-                      <div className="flex gap-2">
+                      <div className="flex flex-col gap-2 sm:flex-row">
                         <Button
                           variant="danger"
+                          className="w-full justify-center sm:w-auto"
                           onClick={() => void handleRejectConfirm()}
                           disabled={actionLoading || !rejectionReason.trim()}
                         >
@@ -780,6 +810,7 @@ export function ViolationNoticeDetailPanel({
                         </Button>
                         <Button
                           variant="secondary"
+                          className="w-full justify-center sm:w-auto"
                           onClick={() => { setRejectMode(false); setRejectionReason(''); }}
                           disabled={actionLoading}
                         >
@@ -789,30 +820,21 @@ export function ViolationNoticeDetailPanel({
                     </div>
                   )}
                 </section>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* ── Chat area ─────────────────────────────────────────────────────── */}
-        <div className="flex min-h-0 flex-1 flex-col border-t border-gray-200 px-4 py-3 sm:px-6 sm:py-4">
-          {/* Toggle bar */}
-          <div className="mb-2 flex justify-center">
-            <button
-              type="button"
-              onClick={() => setDetailsVisible((v) => !v)}
-              className="flex items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-0.5 text-xs text-gray-400 shadow-sm hover:bg-gray-50 hover:text-gray-600"
-            >
-              <motion.span
-                animate={{ rotate: detailsVisible ? 180 : 0 }}
-                transition={{ duration: 0.25, ease: 'easeInOut' }}
-                style={{ display: 'inline-flex' }}
-              >
-                <ChevronDown className="h-3.5 w-3.5" />
-              </motion.span>
-              {detailsVisible ? 'Hide details' : 'Show details'}
-            </button>
           </div>
+        </motion.div>
+
+        {/* ── Discussion tab — always mounted, slides in from right / out to right ── */}
+        <motion.div
+          initial={false}
+          animate={{ x: isDiscussionTab ? 0 : '100%', opacity: isDiscussionTab ? 1 : 0 }}
+          transition={detailPanelTabSlideTransition}
+          style={{
+            pointerEvents: isDiscussionTab ? 'auto' : 'none',
+            willChange: 'transform',
+          }}
+          className="absolute inset-0 z-10 flex min-h-0 flex-1 flex-col bg-white px-4 py-3 sm:px-6 sm:py-4"
+          aria-hidden={!isDiscussionTab}
+        >
           <ChatSection
             className="min-h-0 flex-1"
             messages={adaptedMessages as unknown as Parameters<typeof ChatSection>[0]['messages']}
@@ -831,7 +853,7 @@ export function ViolationNoticeDetailPanel({
             onEdit={onEditMessage}
             onDelete={onDeleteMessage}
           />
-        </div>
+        </motion.div>
       </div>
 
       {/* Disciplinary proof lightbox */}
@@ -844,4 +866,3 @@ export function ViolationNoticeDetailPanel({
     </div>
   );
 }
-

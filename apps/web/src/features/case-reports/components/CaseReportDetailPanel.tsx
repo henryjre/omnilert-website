@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import type { CaseAttachment, CaseMessage } from '@omnilert/shared';
@@ -8,12 +8,12 @@ import {
   Building2,
   CalendarDays,
   CheckCircle2,
-  ChevronDown,
   ExternalLink,
   File,
   FileWarning,
   GitBranch,
   LogOut,
+  MessageCircle,
   MoreHorizontal,
   Paperclip,
   User,
@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/shared/components/ui/Badge';
 import { Button } from '@/shared/components/ui/Button';
+import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import { useAppToast } from '@/shared/hooks/useAppToast';
 import type { CaseReportDetail, MentionableRole, MentionableUser } from '../services/caseReport.api';
 import { ChatSection } from './ChatSection';
@@ -102,6 +103,12 @@ function formatDate(value: string | null) {
   });
 }
 
+const detailPanelTabSlideTransition = {
+  type: 'spring',
+  stiffness: 300,
+  damping: 30,
+} as const;
+
 export function CaseReportDetailPanel({
   report,
   messages,
@@ -132,13 +139,32 @@ export function CaseReportDetailPanel({
   const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const [editingField, setEditingField] = useState<'corrective_action' | 'resolution' | null>(null);
-  const [detailsVisible, setDetailsVisible] = useState(true);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [closingCase, setClosingCase] = useState(false);
   const [requestingVN, setRequestingVN] = useState(false);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [previewItems, setPreviewItems] = useState<{ url: string; fileName: string }[] | null>(null);
   const [previewIndex, setPreviewIndex] = useState(0);
+
+  const defaultTab = initialFlashMessageId
+    ? 'discussion'
+    : report?.is_joined
+      ? 'discussion'
+      : 'details';
+  const [activeTab, setActiveTab] = useState<'details' | 'discussion'>(defaultTab as 'details' | 'discussion');
+  const isDiscussionTab = activeTab === 'discussion';
+
+  // Reset the default tab whenever a different report opens.
+  useEffect(() => {
+    if (!report) return;
+
+    if (initialFlashMessageId) {
+      setActiveTab('discussion');
+      return;
+    }
+
+    setActiveTab(report.is_joined ? 'discussion' : 'details');
+  }, [report?.id, initialFlashMessageId]);
 
   const chatLocked = useMemo(
     () => report?.status === 'closed' && !canManage,
@@ -229,20 +255,34 @@ export function CaseReportDetailPanel({
           </div>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col">
+        {/* ── Tab bar ────────────────────────────────────────────────── */}
+        <ViewToggle
+          options={[
+            { id: 'details', label: 'Details', icon: FileWarning },
+            { id: 'discussion', label: 'Discussion', icon: MessageCircle },
+          ]}
+          activeId={activeTab}
+          onChange={(id) => setActiveTab(id as 'details' | 'discussion')}
+          size="default"
+          showIcons={true}
+          showLabelOnMobile={true}
+        />
 
-          {/* ── Collapsible details ────────────────────────────────────── */}
-          <AnimatePresence initial={false}>
-            {detailsVisible && (
-              <motion.div
-                key="details"
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.25, ease: 'easeInOut' }}
-                style={{ overflow: 'hidden' }}
-              >
-                <div className="max-h-[50vh] space-y-5 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+
+          {/* ── Details tab content ────────────────────────────────────── */}
+          <motion.div
+            initial={false}
+            animate={{ x: isDiscussionTab ? '-100%' : 0, opacity: isDiscussionTab ? 0 : 1 }}
+            transition={detailPanelTabSlideTransition}
+            className="flex min-h-0 flex-1 flex-col"
+            style={{
+              pointerEvents: isDiscussionTab ? 'none' : 'auto',
+              willChange: 'transform',
+            }}
+            aria-hidden={isDiscussionTab}
+          >
+            <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
 
                   {/* ── Info ──────────────────────────────────────────── */}
                   <section>
@@ -515,73 +555,66 @@ export function CaseReportDetailPanel({
 
                 </div>
 
-                {/* ── Action footer (inside collapsible) ──────────────── */}
-                {((isCreator || canManage) && report.status !== 'closed') || (canRequestVN && !report.vn_requested && !report.linked_vn_id) ? (
-                  <div className="flex flex-wrap gap-2 border-t border-gray-100 px-4 py-3 sm:px-6">
-                    {(isCreator || canManage) && report.status !== 'closed' && (
-                      <Button
-                        disabled={closingCase || !canClose || !report.corrective_action || !report.resolution}
-                        onClick={async () => {
-                          setClosingCase(true);
-                          try {
-                            await onCloseCase();
-                            showSuccessToast("Case closed successfully.");
-                          } catch (err: unknown) {
-                            const message = getApiErrorMessage(err, "Failed to close case.");
-                            showErrorToast(message);
-                          } finally {
-                            setClosingCase(false);
-                          }
-                        }}
-                      >
-                        {closingCase ? 'Closing…' : 'Close Case'}
-                      </Button>
-                    )}
-                    {canRequestVN && !report.vn_requested && !report.linked_vn_id && (
-                      <Button
-                        variant="danger"
-                        disabled={requestingVN}
-                        onClick={async () => {
-                          setRequestingVN(true);
-                          try {
-                            await onRequestVN();
-                            showSuccessToast("Violation notice requested.");
-                          } catch (err: unknown) {
-                            const message = getApiErrorMessage(err, "Failed to request violation notice.");
-                            showErrorToast(message);
-                          } finally {
-                            setRequestingVN(false);
-                          }
-                        }}
-                      >
-                        {requestingVN ? 'Requesting…' : 'Request VN'}
-                      </Button>
-                    )}
-                  </div>
-                ) : null}
-              </motion.div>
-            )}
-          </AnimatePresence>
+              {/* ── Action footer ──────────────────────────────────── */}
+              {((isCreator || canManage) && report.status !== 'closed') || (canRequestVN && !report.vn_requested && !report.linked_vn_id) ? (
+                <div className="flex flex-col gap-2 border-t border-gray-100 px-4 py-3 sm:flex-row sm:px-6">
+                  {(isCreator || canManage) && report.status !== 'closed' && (
+                    <Button
+                      className="w-full justify-center sm:w-auto"
+                      disabled={closingCase || !canClose || !report.corrective_action || !report.resolution}
+                      onClick={async () => {
+                        setClosingCase(true);
+                        try {
+                          await onCloseCase();
+                          showSuccessToast("Case closed successfully.");
+                        } catch (err: unknown) {
+                          const message = getApiErrorMessage(err, "Failed to close case.");
+                          showErrorToast(message);
+                        } finally {
+                          setClosingCase(false);
+                        }
+                      }}
+                    >
+                      {closingCase ? 'Closing…' : 'Close Case'}
+                    </Button>
+                  )}
+                  {canRequestVN && !report.vn_requested && !report.linked_vn_id && (
+                    <Button
+                      variant="danger"
+                      className="w-full justify-center sm:w-auto"
+                      disabled={requestingVN}
+                      onClick={async () => {
+                        setRequestingVN(true);
+                        try {
+                          await onRequestVN();
+                          showSuccessToast("Violation notice requested.");
+                        } catch (err: unknown) {
+                          const message = getApiErrorMessage(err, "Failed to request violation notice.");
+                          showErrorToast(message);
+                        } finally {
+                          setRequestingVN(false);
+                        }
+                      }}
+                    >
+                      {requestingVN ? 'Requesting…' : 'Request VN'}
+                    </Button>
+                  )}
+                </div>
+              ) : null}
+          </motion.div>
 
-          {/* ── Chat area ───────────────────────────────────────────────── */}
-          <div className="flex min-h-0 flex-1 flex-col border-t border-gray-200 px-4 py-3 sm:px-6 sm:py-4">
-            {/* Toggle bar */}
-            <div className="mb-2 flex justify-center">
-              <button
-                type="button"
-                onClick={() => setDetailsVisible((v) => !v)}
-                className="flex items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-0.5 text-xs text-gray-400 shadow-sm hover:bg-gray-50 hover:text-gray-600"
-              >
-                <motion.span
-                  animate={{ rotate: detailsVisible ? 180 : 0 }}
-                  transition={{ duration: 0.25, ease: 'easeInOut' }}
-                  style={{ display: 'inline-flex' }}
-                >
-                  <ChevronDown className="h-3.5 w-3.5" />
-                </motion.span>
-                {detailsVisible ? 'Hide details' : 'Show details'}
-              </button>
-            </div>
+          {/* ── Discussion tab — always mounted, slides in from right / out to right ── */}
+          <motion.div
+            initial={false}
+            animate={{ x: isDiscussionTab ? 0 : '100%', opacity: isDiscussionTab ? 1 : 0 }}
+            transition={detailPanelTabSlideTransition}
+            style={{
+              pointerEvents: isDiscussionTab ? 'auto' : 'none',
+              willChange: 'transform',
+            }}
+            className="absolute inset-0 z-10 flex min-h-0 flex-1 flex-col bg-white px-4 py-3 sm:px-6 sm:py-4"
+            aria-hidden={!isDiscussionTab}
+          >
             <ChatSection
               className="min-h-0 flex-1"
               messages={messages}
@@ -599,7 +632,7 @@ export function CaseReportDetailPanel({
               onEdit={onEditMessage}
               onDelete={onDeleteMessage}
             />
-          </div>
+          </motion.div>
         </div>
       </div>
 

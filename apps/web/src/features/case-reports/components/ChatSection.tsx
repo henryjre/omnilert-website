@@ -1,12 +1,19 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import type { CaseMessage } from '@omnilert/shared';
 import { AtSign, Paperclip, Send, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/shared/components/ui/Button';
 import type { MentionableRole, MentionableUser } from '../services/caseReport.api';
 import { MentionPicker } from './MentionPicker';
 import { ChatMessage } from './ChatMessage';
 import { ImagePreviewModal } from './ImagePreviewModal';
 import { normalizeFileForUpload } from '@/shared/utils/fileUpload';
+import { FileThumbnail } from '@/shared/components/ui/FileThumbnail';
+
+function autoResizeTextarea(el: HTMLTextAreaElement) {
+  el.style.height = 'auto';
+  el.style.height = `${Math.min(el.scrollHeight, 5 * 20 + 16)}px`;
+}
 
 interface ChatSectionProps {
   className?: string;
@@ -32,8 +39,6 @@ interface ChatSectionProps {
   onEdit: (messageId: string, newContent: string) => Promise<void>;
   onDelete: (messageId: string) => Promise<void>;
 }
-
-import { FileThumbnail } from '@/shared/components/ui/FileThumbnail';
 
 export function ChatSection({
   className,
@@ -68,16 +73,11 @@ export function ChatSection({
   const [mentionAtIndex, setMentionAtIndex] = useState<number>(-1);
   const [mentionedUserIds, setMentionedUserIds] = useState<string[]>([]);
   const [mentionedRoleIds, setMentionedRoleIds] = useState<string[]>([]);
-  // Track inserted mentions for highlight: { token: string; color?: string }[]
   const [mentionTokens, setMentionTokens] = useState<{ token: string; color?: string }[]>([]);
   const [previewMedia, setPreviewMedia] = useState<{ items: { url: string; fileName: string }[]; index: number } | null>(null);
   const [flashMessageId, setFlashMessageId] = useState<string | null>(null);
   const initialFlashFiredRef = useRef(false);
 
-  // Auto-scroll to bottom when messages change:
-  // - always on initial load
-  // - always after the user sends a message
-  // - when already near the bottom (within 120px)
   useEffect(() => {
     const container = scrollContainerRef.current;
     const end = messagesEndRef.current;
@@ -92,7 +92,6 @@ export function ChatSection({
     if (nearBottom) end.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Focus the textarea whenever a reply is set
   useEffect(() => {
     if (replyTo) textareaRef.current?.focus();
   }, [replyTo]);
@@ -109,14 +108,15 @@ export function ChatSection({
     setMentionedUserIds([]);
     setMentionedRoleIds([]);
     setMentionTokens([]);
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
   }, [chatLocked, content, files, replyTo, mentionedUserIds, mentionedRoleIds, onSend]);
 
-  // When messages load and an initialFlashMessageId is set, scroll + flash to it once
   useEffect(() => {
     if (!initialFlashMessageId || initialFlashFiredRef.current || messages.length === 0) return;
     initialFlashFiredRef.current = true;
     const targetId = initialFlashMessageId;
-    // Give the DOM a tick to render messages before scrolling
     setTimeout(() => {
       const el = document.querySelector(`[data-message-id="${targetId}"]`);
       if (el) {
@@ -129,18 +129,15 @@ export function ChatSection({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length, initialFlashMessageId]);
 
-  // Sync overlay scroll with textarea scroll
   function handleScroll() {
     if (overlayRef.current && textareaRef.current) {
       overlayRef.current.scrollTop = textareaRef.current.scrollTop;
     }
   }
 
-  // Build highlighted JSX from content + known mention tokens
   const renderHighlightedContent = useCallback((text: string, tokens: { token: string; color?: string }[]) => {
     if (tokens.length === 0) return <span>{text}</span>;
 
-    // Build a regex that matches any known mention token
     const escaped = tokens.map((t) => t.token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     const pattern = new RegExp(`(${escaped.join('|')})`, 'g');
     const parts = text.split(pattern);
@@ -219,7 +216,7 @@ export function ChatSection({
         </p>
       )}
 
-      <div className={`relative mt-4 border-t border-gray-200 pb-[env(safe-area-inset-bottom)] pt-4${isClosed ? ' hidden' : ''}`}>
+      <div className={`relative mt-4 border-t border-gray-200 pb-[env(safe-area-inset-bottom)] pt-3${isClosed ? ' hidden' : ''}`}>
         <MentionPicker
           isOpen={mentionOpen}
           query={mentionQuery}
@@ -252,13 +249,22 @@ export function ChatSection({
         />
 
         {replyTo && (
-          <div className="mb-3 flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-600">
-            <span>Replying to {replyTo.user_name}: {replyTo.content.slice(0, 60)}</span>
-            <button type="button" onClick={() => setReplyTo(null)}><X className="h-4 w-4" /></button>
+          <div className="mb-2 flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2 text-sm text-gray-600">
+            <span className="truncate">
+              Replying to <span className="font-medium">{replyTo.user_name}</span>: {replyTo.content.slice(0, 60)}
+            </span>
+            <button
+              type="button"
+              onClick={() => setReplyTo(null)}
+              className="ml-2 shrink-0 text-gray-400 hover:text-gray-600"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
         )}
+
         {files.length > 0 && (
-          <div className="mb-3 flex flex-wrap gap-2">
+          <div className="mb-2 flex flex-wrap gap-2">
             {files.map((file) => (
               <FileThumbnail
                 key={`${file.name}-${file.size}-${file.lastModified}`}
@@ -269,18 +275,46 @@ export function ChatSection({
           </div>
         )}
 
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-          <div className="relative min-h-[48px] flex-1 sm:min-h-[96px]">
+        {/* WhatsApp-style single-row composer */}
+        <div className="flex items-end gap-1 rounded-2xl border border-gray-200 bg-white px-2 py-1.5 shadow-[0_-1px_0_0_rgba(0,0,0,0.04)]">
+          <AnimatePresence initial={false}>
+            {!content && (
+              <motion.button
+                key="mention-btn"
+                type="button"
+                initial={{ width: 0, opacity: 0 }}
+                animate={{ width: 'auto', opacity: 1 }}
+                exit={{ width: 0, opacity: 0 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 35 }}
+                onClick={() => setMentionOpen((current) => !current)}
+                disabled={chatLocked}
+                className="shrink-0 overflow-hidden rounded-xl p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-40"
+                title="Mention someone"
+              >
+                <AtSign className="h-5 w-5" />
+              </motion.button>
+            )}
+          </AnimatePresence>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={chatLocked}
+            className="shrink-0 rounded-xl p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-40"
+            title="Attach file"
+          >
+            <Paperclip className="h-5 w-5" />
+          </button>
+
+          <div className="relative min-w-0 flex-1">
             {/* Highlight overlay — sits behind the transparent textarea */}
             <div
               ref={overlayRef}
               aria-hidden
-              className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm sm:py-3"
-              style={{ fontFamily: 'inherit', lineHeight: 'inherit', wordBreak: 'break-word' }}
+              className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-2 py-2 text-sm"
+              style={{ fontFamily: 'inherit', lineHeight: '1.25rem', wordBreak: 'break-word' }}
             >
               {renderHighlightedContent(content, mentionTokens)}
-              {/* Trailing space to keep height stable */}
-              {'\u200b'}
+              {'​'}
             </div>
             <textarea
               ref={textareaRef}
@@ -301,21 +335,15 @@ export function ChatSection({
                 }
 
                 if (newFiles.length > 0) {
-                  // To "be uploaded" immediately, we trigger the send logic with the new files.
-                  // We combine them with any existing files in the current composer.
                   const allFiles = [...files, ...newFiles];
-                  
-                  // Trigger send
                   justSentRef.current = true;
                   await onSend({
                     content,
                     parentMessageId: replyTo?.id ?? null,
                     mentionedUserIds,
                     mentionedRoleIds,
-                    files: allFiles
+                    files: allFiles,
                   });
-
-                  // Clear states (similar to handleSend)
                   setContent('');
                   setFiles([]);
                   setReplyTo(null);
@@ -324,12 +352,13 @@ export function ChatSection({
                   setMentionedUserIds([]);
                   setMentionedRoleIds([]);
                   setMentionTokens([]);
+                  if (textareaRef.current) textareaRef.current.style.height = 'auto';
                 }
               }}
               onChange={(event) => {
                 const next = event.target.value;
                 setContent(next);
-                // Find the last @ that has no space after it (active mention)
+                autoResizeTextarea(event.target);
                 const cursor = event.target.selectionStart ?? next.length;
                 const before = next.slice(0, cursor);
                 const atIdx = before.lastIndexOf('@');
@@ -344,35 +373,32 @@ export function ChatSection({
                 }
               }}
               onKeyDown={(e) => {
-                // Enter sends on desktop; Shift+Enter inserts newline; mobile never triggers this path
                 if (e.key === 'Enter' && !e.shiftKey && !('ontouchstart' in window)) {
                   e.preventDefault();
                   void handleSend();
                 }
               }}
               onScroll={handleScroll}
-              rows={2}
+              rows={1}
               disabled={chatLocked}
-              className="relative min-h-[48px] w-full rounded-2xl border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 disabled:bg-gray-50 sm:min-h-[96px] sm:py-3"
-              style={content ? { caretColor: 'black', color: 'transparent', WebkitTextFillColor: 'transparent' } : {}}
-              placeholder={chatLocked ? 'Chat is locked for this case' : 'Write a message...'}
+              className="w-full resize-none bg-transparent px-2 py-2 text-sm outline-none disabled:opacity-50"
+              style={{
+                lineHeight: '1.25rem',
+                ...(content ? { caretColor: 'black', color: 'transparent', WebkitTextFillColor: 'transparent' } : {}),
+              }}
+              placeholder={chatLocked ? 'Chat is locked' : 'Write a message...'}
             />
           </div>
-          <div className="flex flex-row gap-2 self-end sm:flex-col">
-            <Button variant="secondary" onClick={() => setMentionOpen((current) => !current)} disabled={chatLocked}>
-              <AtSign className="h-4 w-4" />
-            </Button>
-            <Button variant="secondary" onClick={() => fileInputRef.current?.click()} disabled={chatLocked}>
-              <Paperclip className="h-4 w-4" />
-            </Button>
-            <Button
-              onClick={() => void handleSend()}
-              disabled={chatLocked || (!content.trim() && files.length === 0)}
-            >
-              <Send className="h-4 w-4" />
-            </Button>
-          </div>
+
+          <Button
+            onClick={() => void handleSend()}
+            disabled={chatLocked || (!content.trim() && files.length === 0)}
+            className="shrink-0 rounded-xl"
+          >
+            <Send className="h-4 w-4" />
+          </Button>
         </div>
+
         <input
           ref={fileInputRef}
           type="file"
@@ -382,7 +408,7 @@ export function ChatSection({
             const raw = Array.from(event.target.files ?? []);
             const normalized = await Promise.all(raw.map(normalizeFileForUpload));
             setFiles((current) => [...current, ...normalized]);
-            event.target.value = ''; // Reset to allow same file selection
+            event.target.value = '';
           }}
         />
       </div>
