@@ -1,6 +1,6 @@
 import { useRef, useState, useCallback, useEffect, Fragment } from 'react';
 import type { CaseMessage } from '@omnilert/shared';
-import { AtSign, Paperclip, Send, X } from 'lucide-react';
+import { Paperclip, Send, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/shared/components/ui/Button';
 import type { MentionableRole, MentionableUser } from '../services/caseReport.api';
@@ -332,26 +332,12 @@ export function ChatSection({
         )}
 
         {/* WhatsApp-style single-row composer */}
-        <div className="flex items-end gap-1 rounded-2xl border border-gray-200 bg-white px-2 py-1.5 shadow-[0_-1px_0_0_rgba(0,0,0,0.04)]">
-          <AnimatePresence initial={false}>
-            {!content && (
-              <motion.button
-                key="mention-btn"
-                type="button"
-                initial={{ width: 0, opacity: 0 }}
-                animate={{ width: 'auto', opacity: 1 }}
-                exit={{ width: 0, opacity: 0 }}
-                transition={{ type: 'spring', stiffness: 400, damping: 35 }}
-                onClick={() => setMentionOpen((current) => !current)}
-                disabled={chatLocked}
-                className="shrink-0 overflow-hidden rounded-xl p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-40"
-                title="Mention someone"
-              >
-                <AtSign className="h-5 w-5" />
-              </motion.button>
-            )}
-          </AnimatePresence>
-          <button
+        <motion.div
+          layout
+          className="flex items-end gap-1 rounded-2xl border border-gray-200 bg-white px-2 py-1.5 shadow-[0_-1px_0_0_rgba(0,0,0,0.04)]"
+        >
+          <motion.button
+            layout
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={chatLocked}
@@ -359,9 +345,9 @@ export function ChatSection({
             title="Attach file"
           >
             <Paperclip className="h-5 w-5" />
-          </button>
+          </motion.button>
 
-          <div className="relative min-w-0 flex-1">
+          <motion.div layout className="relative min-w-0 flex-1">
             {/* Highlight overlay — sits behind the transparent textarea */}
             <div
               ref={overlayRef}
@@ -391,24 +377,7 @@ export function ChatSection({
                 }
 
                 if (newFiles.length > 0) {
-                  const allFiles = [...files, ...newFiles];
-                  justSentRef.current = true;
-                  await onSend({
-                    content,
-                    parentMessageId: replyTo?.id ?? null,
-                    mentionedUserIds,
-                    mentionedRoleIds,
-                    files: allFiles,
-                  });
-                  setContent('');
-                  setFiles([]);
-                  setReplyTo(null);
-                  setMentionOpen(false);
-                  setMentionQuery('');
-                  setMentionedUserIds([]);
-                  setMentionedRoleIds([]);
-                  setMentionTokens([]);
-                  if (textareaRef.current) textareaRef.current.style.height = 'auto';
+                  setFiles((current) => [...current, ...newFiles]);
                 }
               }}
               onChange={(event) => {
@@ -444,16 +413,18 @@ export function ChatSection({
               }}
               placeholder={chatLocked ? 'Chat is locked' : 'Write a message...'}
             />
-          </div>
+          </motion.div>
 
-          <Button
-            onClick={() => void handleSend()}
-            disabled={chatLocked || (!content.trim() && files.length === 0)}
-            className="shrink-0 rounded-xl"
-          >
-            <Send className="h-4 w-4" />
-          </Button>
-        </div>
+          <motion.div layout>
+            <Button
+              onClick={() => void handleSend()}
+              disabled={chatLocked || (!content.trim() && files.length === 0)}
+              className="shrink-0 rounded-xl"
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+          </motion.div>
+        </motion.div>
 
         <input
           ref={fileInputRef}
