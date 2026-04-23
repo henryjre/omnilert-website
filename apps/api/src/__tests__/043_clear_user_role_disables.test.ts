@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import { test } from 'vitest';
 
-const migration = await import('./043_clear_user_role_disables.js');
+const migration = await import('../migrations/043_clear_user_role_disables.js');
 
 test('043_clear_user_role_disables up deletes all rows from user_role_disables', async () => {
   const calls: Array<{ tableName: string; method: string }> = [];
