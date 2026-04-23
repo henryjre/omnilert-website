@@ -1,12 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import type { ViolationNotice, GroupedUsersResponse } from '@omnilert/shared';
 import { Button } from '@/shared/components/ui/Button';
 import { AnimatedModal } from '@/shared/components/ui/AnimatedModal';
-import { CompanyBranchPicker } from '@/shared/components/CompanyBranchPicker';
-import type { CompanyBranchValue } from '@/shared/components/CompanyBranchPicker';
 import { useAppToast } from '@/shared/hooks/useAppToast';
+import { useBranchStore } from '@/shared/store/branchStore';
+import { PayrollBranchSelect } from '@/features/payslips/components/PayrollBranchSelect';
 import { createViolationNotice, getGroupedUsers } from '../services/violationNotice.api';
 import { GroupedUserSelect } from './GroupedUserSelect';
 
@@ -26,13 +26,21 @@ export function CreateVNModal({
   onCreated,
 }: CreateVNModalProps) {
   const { success: showSuccessToast, error: showErrorToast } = useAppToast();
-  const [branchValue, setBranchValue] = useState<CompanyBranchValue | null>(null);
+  const companyBranchGroups = useBranchStore((state) => state.companyBranchGroups);
+  const [selectedBranchId, setSelectedBranchId] = useState('');
   const [description, setDescription] = useState('');
   const [targetUserIds, setTargetUserIds] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [groupedUsers, setGroupedUsers] = useState<GroupedUsersResponse | null>(null);
   const [loadingUsers, setLoadingUsers] = useState(false);
+  const selectedBranch = useMemo(
+    () =>
+      companyBranchGroups
+        .flatMap((group) => group.branches)
+        .find((branch) => branch.id === selectedBranchId) ?? null,
+    [companyBranchGroups, selectedBranchId],
+  );
 
   function getApiErrorMessage(err: unknown, fallback: string): string {
     if (err instanceof Error) return err.message || fallback;
@@ -56,24 +64,27 @@ export function CreateVNModal({
       .finally(() => setLoadingUsers(false));
   }, [isOpen]);
 
-  const canSubmit = description.trim().length > 0 && targetUserIds.length > 0 && branchValue !== null && !submitting;
+  const canSubmit =
+    description.trim().length > 0
+    && targetUserIds.length > 0
+    && selectedBranch !== null
+    && !submitting;
 
   async function handleSubmit() {
     if (!canSubmit) return;
     setSubmitting(true);
     setError('');
     try {
-      console.log('[CreateVNModal] submit branchValue:', JSON.stringify(branchValue));
       const vn = await createViolationNotice({
         description: description.trim(),
         targetUserIds,
-        branchId: branchValue?.branchId ?? null,
+        branchId: selectedBranch?.id ?? null,
       });
       showSuccessToast("Violation notice created.");
       onCreated(vn);
       setDescription('');
       setTargetUserIds([]);
-      setBranchValue(null);
+      setSelectedBranchId('');
       onClose();
     } catch (err: unknown) {
       const message = getApiErrorMessage(err, "Failed to create violation notice.");
@@ -88,7 +99,7 @@ export function CreateVNModal({
     if (submitting) return;
     setDescription('');
     setTargetUserIds([]);
-    setBranchValue(null);
+    setSelectedBranchId('');
     setError('');
     onClose();
   }
@@ -114,13 +125,16 @@ export function CreateVNModal({
           {/* Body */}
           <div className="space-y-4 p-6">
             {/* Branch picker */}
-            <CompanyBranchPicker
-              label="Branch"
-              value={branchValue}
-              onChange={setBranchValue}
-              placeholder="Select the branch this VN belongs to"
-              disabled={submitting}
-            />
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Branch</label>
+              <PayrollBranchSelect
+                groups={companyBranchGroups}
+                selectedBranchId={selectedBranchId}
+                onSelect={setSelectedBranchId}
+                placeholder="Select the branch this VN belongs to"
+                disabled={submitting}
+              />
+            </div>
 
             {/* Target Employees */}
             <div className="space-y-1">

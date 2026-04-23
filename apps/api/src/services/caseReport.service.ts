@@ -84,19 +84,25 @@ type CaseCreateBranchRow = {
   company_id: string;
   company_name: string;
   company_slug: string;
+  company_logo_url: string | null;
+  company_theme_color: string | null;
   branch_id: string;
   branch_name: string;
   odoo_branch_id: string | null;
+  is_main_branch: boolean;
 };
 
 export type CaseCreateBranchGroup = {
   id: string;
   name: string;
   slug: string | null;
+  logoUrl: string | null;
+  themeColor: string | null;
   branches: Array<{
     id: string;
     name: string;
     odoo_branch_id: string | null;
+    is_main_branch: boolean;
   }>;
 };
 
@@ -887,9 +893,12 @@ export async function listCreateBranches(input: {
           'c.id as company_id',
           'c.name as company_name',
           'c.slug as company_slug',
+          'c.logo_url as company_logo_url',
+          'c.theme_color as company_theme_color',
           'b.id as branch_id',
           'b.name as branch_name',
           'b.odoo_branch_id',
+          'b.is_main_branch',
         )
         .orderBy('c.name', 'asc')
         .orderBy('b.name', 'asc')
@@ -906,9 +915,12 @@ export async function listCreateBranches(input: {
           'c.id as company_id',
           'c.name as company_name',
           'c.slug as company_slug',
+          'c.logo_url as company_logo_url',
+          'c.theme_color as company_theme_color',
           'b.id as branch_id',
           'b.name as branch_name',
           'b.odoo_branch_id',
+          'b.is_main_branch',
         )
         .orderBy('c.name', 'asc')
         .orderBy('b.name', 'asc');
@@ -921,6 +933,8 @@ export async function listCreateBranches(input: {
         id: String(row.company_id),
         name: String(row.company_name),
         slug: row.company_slug ? String(row.company_slug) : null,
+        logoUrl: row.company_logo_url ? String(row.company_logo_url) : null,
+        themeColor: row.company_theme_color ? String(row.company_theme_color) : null,
         branches: [],
       };
       groupMap.set(row.company_id, group);
@@ -931,6 +945,7 @@ export async function listCreateBranches(input: {
         id: String(row.branch_id),
         name: String(row.branch_name),
         odoo_branch_id: row.odoo_branch_id ? String(row.odoo_branch_id) : null,
+        is_main_branch: Boolean(row.is_main_branch),
       });
     }
   }
