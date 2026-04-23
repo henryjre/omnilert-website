@@ -1,8 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { CaseMessage } from '@omnilert/shared';
 
-const FIXED_EMOJIS = ['✅', '❤️', '🤣', '🙏', '👌', '😭', '😊'] as const;
+import Picker from 'emoji-picker-react';
+import { Plus } from 'lucide-react';
+import { useMostUsedEmojis } from '@/shared/hooks/useMostUsedEmojis';
 
 interface MessageDrawerProps {
   isOpen: boolean;
@@ -17,6 +19,7 @@ interface MessageDrawerProps {
   onEdit: () => void;
   onDelete: () => void;
   onClose: () => void;
+  copyLabel?: string;
 }
 
 export function MessageDrawer({
@@ -32,14 +35,19 @@ export function MessageDrawer({
   onEdit,
   onDelete,
   onClose,
+  copyLabel = 'Copy Text',
 }: MessageDrawerProps) {
   const isOwnMessage = message.user_id === currentUserId;
+
+  const [showFullPicker, setShowFullPicker] = useState(false);
+  const { mostUsed, addEmoji } = useMostUsedEmojis(6);
 
   useEffect(() => {
     if (isOpen) {
       document.body.classList.add('overflow-hidden');
     } else {
       document.body.classList.remove('overflow-hidden');
+      setShowFullPicker(false); // Reset picker state when closing
     }
     return () => document.body.classList.remove('overflow-hidden');
   }, [isOpen]);
@@ -83,45 +91,72 @@ export function MessageDrawer({
               <div className="h-1 w-10 rounded-full bg-gray-300" />
             </div>
 
-            {/* Emoji row */}
-            <div className="flex justify-around border-b border-gray-100 px-4 pb-3">
-              {FIXED_EMOJIS.map((emoji) => (
-                <button
-                  key={emoji}
-                  type="button"
-                  onClick={() => handleAction(() => onReact(emoji))}
-                  className={`flex flex-col items-center gap-1 rounded-xl p-2 transition-colors ${
-                    userHasReacted(emoji)
-                      ? 'bg-primary-50 ring-1 ring-primary-400'
-                      : 'hover:bg-gray-100'
-                  }`}
-                >
-                  <span className="text-2xl leading-none">{emoji}</span>
-                </button>
-              ))}
-            </div>
+            {showFullPicker ? (
+              <div className="flex justify-center p-2 pb-[env(safe-area-inset-bottom)]">
+                <Picker
+                  onEmojiClick={(emojiData) => {
+                    addEmoji(emojiData.emoji);
+                    handleAction(() => onReact(emojiData.emoji));
+                  }}
+                  lazyLoadEmojis={true}
+                  searchDisabled={false}
+                  skinTonesDisabled={true}
+                  width="100%"
+                />
+              </div>
+            ) : (
+              <>
+                {/* Emoji row */}
+                <div className="flex justify-around border-b border-gray-100 px-2 pb-3">
+                  {mostUsed.map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => {
+                        addEmoji(emoji);
+                        handleAction(() => onReact(emoji));
+                      }}
+                      className={`flex flex-col items-center gap-1 rounded-xl p-2 transition-colors ${
+                        userHasReacted(emoji)
+                          ? 'bg-primary-50 ring-1 ring-primary-400'
+                          : 'hover:bg-gray-100'
+                      }`}
+                    >
+                      <span className="text-2xl leading-none">{emoji}</span>
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setShowFullPicker(true)}
+                    className="flex flex-col items-center justify-center gap-1 rounded-xl p-2 text-gray-500 hover:bg-gray-100"
+                  >
+                    <Plus className="h-[24px] w-[24px]" />
+                  </button>
+                </div>
 
-            {/* Action list */}
-            <div className="divide-y divide-gray-100 pb-[env(safe-area-inset-bottom)]">
-              {!chatLocked && (
-                <button type="button" className={itemClass} onClick={() => handleAction(onReply)}>
-                  Reply
-                </button>
-              )}
-              <button type="button" className={itemClass} onClick={() => handleAction(onCopyText)}>
-                Copy Text
-              </button>
-              {isOwnMessage && !chatLocked && (
-                <button type="button" className={itemClass} onClick={() => handleAction(onEdit)}>
-                  Edit Message
-                </button>
-              )}
-              {(isOwnMessage || canManage) && (
-                <button type="button" className={dangerClass} onClick={() => handleAction(onDelete)}>
-                  Delete Message
-                </button>
-              )}
-            </div>
+                {/* Action list */}
+                <div className="divide-y divide-gray-100 pb-[env(safe-area-inset-bottom)]">
+                  {!chatLocked && (
+                    <button type="button" className={itemClass} onClick={() => handleAction(onReply)}>
+                      Reply
+                    </button>
+                  )}
+                  <button type="button" className={itemClass} onClick={() => handleAction(onCopyText)}>
+                    {copyLabel}
+                  </button>
+                  {isOwnMessage && !chatLocked && (
+                    <button type="button" className={itemClass} onClick={() => handleAction(onEdit)}>
+                      Edit Message
+                    </button>
+                  )}
+                  {(isOwnMessage || canManage) && (
+                    <button type="button" className={dangerClass} onClick={() => handleAction(onDelete)}>
+                      Delete Message
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
           </motion.div>
         </>
       )}

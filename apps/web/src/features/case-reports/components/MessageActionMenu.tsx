@@ -13,6 +13,7 @@ interface MessageActionMenuProps {
   onClose: () => void;
   triggerRect?: DOMRect | null;
   portalMode?: boolean;
+  copyLabel?: string;
 }
 
 export function MessageActionMenu({
@@ -27,6 +28,7 @@ export function MessageActionMenu({
   onClose,
   triggerRect,
   portalMode,
+  copyLabel = 'Copy Text',
 }: MessageActionMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -62,7 +64,7 @@ export function MessageActionMenu({
         </button>
       )}
       <button type="button" className={itemClass} onClick={() => { onCopyText(); onClose(); }}>
-        Copy Text
+        {copyLabel}
       </button>
       {!chatLocked && (
         <button type="button" className={itemClass} onClick={() => { onAddReaction(); onClose(); }}>
@@ -91,7 +93,7 @@ export function MessageActionMenu({
         </button>
       )}
       <button type="button" className={itemClass} onClick={() => { onCopyText(); onClose(); }}>
-        Copy Text
+        {copyLabel}
       </button>
       {!chatLocked && (
         <button type="button" className={itemClass} onClick={() => { onAddReaction(); onClose(); }}>

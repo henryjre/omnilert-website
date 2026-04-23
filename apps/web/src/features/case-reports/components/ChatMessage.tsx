@@ -357,6 +357,34 @@ export function ChatMessage({
   const fileItems = message.attachments?.filter((a) => !mediaItems.includes(a)) || [];
   const isOnlyMedia = !message.content && mediaItems.length > 0 && fileItems.length === 0;
 
+  const hasText = Boolean(message.content?.trim());
+  const hasMedia = mediaItems.length > 0;
+  const hasFiles = fileItems.length > 0;
+
+  let copyLabel = 'Copy Text';
+  if (!hasText) {
+    if (hasMedia) {
+      const isVideo = mediaItems.some(
+        (m) =>
+          /\.(mp4|webm|ogg|mov)$/i.test(m.file_name) || m.content_type?.startsWith('video/'),
+      );
+      copyLabel = isVideo ? 'View Video' : 'View Image';
+    } else if (hasFiles) {
+      copyLabel = 'View Attachment';
+    }
+  }
+
+  const handleCopyAction = () => {
+    if (hasText) {
+      void navigator.clipboard.writeText(message.content);
+    } else if (hasMedia) {
+      const mediaMap = mediaItems.map((m) => ({ url: m.file_url, fileName: m.file_name }));
+      onPreviewImage?.(mediaMap, 0);
+    } else if (hasFiles) {
+      window.open(fileItems[0].file_url, '_blank');
+    }
+  };
+
   const normalBubbleClass = isOnlyMedia 
     ? 'bg-transparent text-gray-900 border border-transparent'
     : `${isOwn ? 'bg-primary-600 text-white' : 'bg-gray-200 text-gray-900'} ${bubbleTailClass} px-3.5 py-2`;
@@ -439,9 +467,8 @@ export function ChatMessage({
               canManage={canManage}
               chatLocked={chatLocked}
               onReply={() => onReply(message)}
-              onCopyText={() => {
-                void navigator.clipboard.writeText(message.content);
-              }}
+              onCopyText={handleCopyAction}
+              copyLabel={copyLabel}
               onAddReaction={() => {
                 setMenuOpen(false);
                 setEmojiPickerOpen(true);
@@ -609,26 +636,11 @@ export function ChatMessage({
 
       {/* Swiping message content */}
       <motion.div
-        animate={
-          isFlashing
-            ? { scale: 1, backgroundColor: '#fde68a' }
-            : isLongPressing
-              ? { scale: 1.03, backgroundColor: '#f3f4f6' }
-              : { scale: 1, backgroundColor: 'rgba(255, 255, 255, 0)' }
-        }
-        initial={{ scale: 1, backgroundColor: 'rgba(255, 255, 255, 0)' }}
-        transition={
-          isFlashing || isLongPressing
-            ? { duration: 0.2 }
-            : { type: 'spring', stiffness: 400, damping: 25 }
-        }
+        animate={{ x: 0 }}
         style={{ x: swipeX, userSelect: 'none', WebkitUserSelect: 'none' }}
         className={`group relative flex rounded-xl select-none sm:hover:bg-gray-50 ${
           isOwn ? 'justify-end' : 'justify-start gap-2'
         } ${isGrouped ? 'py-px' : 'py-0.5'}`}
-        onPointerDown={handlePointerDown}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerCancel}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
@@ -696,48 +708,71 @@ export function ChatMessage({
           })()}
 
           <div className={`relative z-10 ${isEditing ? 'w-full' : 'w-fit max-w-full'} ${hasReactions ? 'mb-[14px]' : ''}`}>
-            <div
+            <motion.div
               data-message-bubble-id={message.id}
-              className={`rounded-[18px] ${isEditing ? 'w-full' : ''} ${normalBubbleClass}`}
+              animate={
+                isFlashing
+                  ? { scale: 1.02, filter: 'brightness(1.1)' }
+                  : isLongPressing
+                    ? { scale: 1.03, filter: 'brightness(0.95)' }
+                    : { scale: 1, filter: 'brightness(1)' }
+              }
+              transition={{ duration: 0.2 }}
+              onPointerDown={handlePointerDown}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerCancel}
+              onContextMenu={(e) => e.preventDefault()}
+              className={`relative overflow-hidden rounded-[18px] ${isEditing ? 'w-full' : ''} ${normalBubbleClass}`}
             >
-              {isEditing ? (
-                <div>
-                  <textarea
-                    value={editContent}
-                    onChange={(e) => setEditContent(e.target.value)}
-                    rows={3}
-                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                    autoFocus
-                  />
-                  <div className="mt-2 flex gap-2">
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        await onEdit(message.id, editContent);
-                        setIsEditing(false);
-                      }}
-                      disabled={!editContent.trim()}
-                      className="rounded-lg bg-primary-600 px-3 py-1 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-50"
-                    >
-                      Save
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsEditing(false)}
-                      className="rounded-lg border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <p className={`whitespace-pre-wrap text-sm leading-6 ${isOwn ? 'text-white' : 'text-gray-700'}`}>
-                  {renderContent(message.content)}
-                </p>
-              )}
+              {/* Overlay for flashing/long-press states */}
+              <motion.div
+                initial={false}
+                animate={{
+                  opacity: isFlashing || (isLongPressing && !isFlashing) ? 1 : 0,
+                  backgroundColor: isFlashing ? '#fde68a' : 'rgba(0,0,0,0.05)',
+                }}
+                className="pointer-events-none absolute inset-0 z-0"
+              />
 
-              {mediaItems.length > 0 && (
-                <div className={`${message.content ? 'mt-2' : ''}`}>
+              <div className="relative z-10">
+                {isEditing ? (
+                  <div>
+                    <textarea
+                      value={editContent}
+                      onChange={(e) => setEditContent(e.target.value)}
+                      rows={3}
+                      className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                      autoFocus
+                    />
+                    <div className="mt-2 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await onEdit(message.id, editContent);
+                          setIsEditing(false);
+                        }}
+                        disabled={!editContent.trim()}
+                        className="rounded-lg bg-primary-600 px-3 py-1 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-50"
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditing(false)}
+                        className="rounded-lg border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className={`whitespace-pre-wrap text-sm leading-6 ${isOwn ? 'text-white' : 'text-gray-700'}`}>
+                    {renderContent(message.content)}
+                  </p>
+                )}
+
+                {mediaItems.length > 0 && (
+                  <div className={`${message.content ? 'mt-2' : ''}`}>
                   {(() => {
                     const renderItem = (att: any, index: number, customClass: string) => {
                       const isImg = /\.(png|jpe?g|gif|webp|svg)$/i.test(att.file_name) || att.content_type?.startsWith('image/');
@@ -834,6 +869,7 @@ export function ChatMessage({
                 </div>
               )}
             </div>
+          </motion.div>
 
             {hasReactions && (
               <MessageReactionBadge reactions={message.reactions} onClick={openReactionViewer} isOwn={isOwn} />
@@ -861,9 +897,8 @@ export function ChatMessage({
         }
         onReact={(emoji) => onReact(message.id, emoji)}
         onReply={() => onReply(message)}
-        onCopyText={() => {
-          void navigator.clipboard.writeText(message.content);
-        }}
+        onCopyText={handleCopyAction}
+        copyLabel={copyLabel}
         onEdit={() => {
           setEditContent(message.content);
           setIsEditing(true);
