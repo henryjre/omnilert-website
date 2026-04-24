@@ -64,16 +64,6 @@ export async function createCaseReport(payload: {
   return response.data.data as CaseReport;
 }
 
-export async function updateCorrectiveAction(caseId: string, correctiveAction: string) {
-  const response = await api.patch(`/case-reports/${caseId}/corrective-action`, { correctiveAction });
-  return response.data.data as CaseReportDetail;
-}
-
-export async function updateResolution(caseId: string, resolution: string) {
-  const response = await api.patch(`/case-reports/${caseId}/resolution`, { resolution });
-  return response.data.data as CaseReportDetail;
-}
-
 export async function closeCase(caseId: string) {
   const response = await api.post(`/case-reports/${caseId}/close`);
   return response.data.data as CaseReportDetail;

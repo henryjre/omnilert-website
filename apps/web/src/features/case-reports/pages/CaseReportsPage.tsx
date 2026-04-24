@@ -42,8 +42,6 @@ import {
   sendCaseMessage,
   toggleCaseMute,
   toggleCaseReaction,
-  updateCorrectiveAction,
-  updateResolution,
   uploadCaseAttachment,
   type CaseReportDetail,
   type CaseReportFilters,
@@ -599,18 +597,6 @@ export function CaseReportsPage() {
                   await toggleCaseMute(selectedCaseId);
                   await fetchReports(true);
                   if (selectedCaseId) await fetchDetail(selectedCaseId);
-                }}
-                onUpdateCorrectiveAction={async (value) => {
-                  if (!selectedCaseId) return;
-                  const detail = await updateCorrectiveAction(selectedCaseId, value);
-                  setSelectedReport(detail);
-                  await fetchReports(true);
-                }}
-                onUpdateResolution={async (value) => {
-                  if (!selectedCaseId) return;
-                  const detail = await updateResolution(selectedCaseId, value);
-                  setSelectedReport(detail);
-                  await fetchReports(true);
                 }}
                 onCloseCase={async () => {
                   if (!selectedCaseId) return;

@@ -27,7 +27,6 @@ import type { CaseReportDetail, MentionableRole, MentionableUser } from '../serv
 import { ChatSection } from './ChatSection';
 import { normalizeFileForUpload } from '@/shared/utils/fileUpload';
 import { ImagePreviewModal } from './ImagePreviewModal';
-import { TextInputModal } from './TextInputModal';
 
 interface PendingAttachment {
   tempId: string;
@@ -74,8 +73,6 @@ interface CaseReportDetailPanelProps {
   onClosePanel: () => void;
   onLeave: () => Promise<void>;
   onToggleMute: () => Promise<void>;
-  onUpdateCorrectiveAction: (value: string) => Promise<void>;
-  onUpdateResolution: (value: string) => Promise<void>;
   onCloseCase: () => Promise<void>;
   onRequestVN: () => Promise<void>;
   onUploadAttachment: (file: File) => Promise<void>;
@@ -124,8 +121,6 @@ export function CaseReportDetailPanel({
   onClosePanel,
   onLeave,
   onToggleMute,
-  onUpdateCorrectiveAction,
-  onUpdateResolution,
   onCloseCase,
   onRequestVN,
   onUploadAttachment,
@@ -138,7 +133,6 @@ export function CaseReportDetailPanel({
   const navigate = useNavigate();
   const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
-  const [editingField, setEditingField] = useState<'corrective_action' | 'resolution' | null>(null);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [closingCase, setClosingCase] = useState(false);
   const [requestingVN, setRequestingVN] = useState(false);
@@ -366,48 +360,6 @@ export function CaseReportDetailPanel({
                     </p>
                   </section>
 
-                  {/* ── Corrective Action ─────────────────────────────── */}
-                  <section>
-                    <div className="mb-2 flex items-center justify-between">
-                      <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-                        Corrective Action
-                      </h3>
-                      {(isCreator || canManage) && canEdit && (
-                        <Button variant="ghost" size="sm" onClick={() => setEditingField('corrective_action')}>
-                          {report.corrective_action ? 'Edit' : 'Add'}
-                        </Button>
-                      )}
-                    </div>
-                    <p className={`break-all whitespace-pre-wrap rounded-xl border px-4 py-3 text-sm leading-6 ${
-                      report.corrective_action
-                        ? 'border-gray-200 bg-gray-50 text-gray-700'
-                        : 'border-dashed border-gray-200 bg-transparent text-gray-400'
-                    }`}>
-                      {report.corrective_action || 'Not yet added'}
-                    </p>
-                  </section>
-
-                  {/* ── Resolution ────────────────────────────────────── */}
-                  <section>
-                    <div className="mb-2 flex items-center justify-between">
-                      <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-                        Resolution
-                      </h3>
-                      {(isCreator || canManage) && canEdit && (
-                        <Button variant="ghost" size="sm" onClick={() => setEditingField('resolution')}>
-                          {report.resolution ? 'Edit' : 'Add'}
-                        </Button>
-                      )}
-                    </div>
-                    <p className={`break-all whitespace-pre-wrap rounded-xl border px-4 py-3 text-sm leading-6 ${
-                      report.resolution
-                        ? 'border-gray-200 bg-gray-50 text-gray-700'
-                        : 'border-dashed border-gray-200 bg-transparent text-gray-400'
-                    }`}>
-                      {report.resolution || 'Not yet added'}
-                    </p>
-                  </section>
-
                   {/* ── Attachments ───────────────────────────────────── */}
                   <section>
                     <div className="mb-2 flex items-center justify-between">
@@ -562,15 +514,39 @@ export function CaseReportDetailPanel({
                     </section>
                   )}
 
+                  {/* ── AI Summary ────────────────────────────────────── */}
+                  <section>
+                    <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
+                      Summary
+                    </h3>
+                    {report.summary ? (
+                      <div className="space-y-1 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm leading-6 text-gray-700">
+                        {report.summary.split('\n').map((line, i) => {
+                          const match = line.match(/^\*\*(.+?):\*\*\s*(.*)/);
+                          if (match) return (
+                            <p key={i}><span className="font-semibold">{match[1]}:</span> {match[2]}</p>
+                          );
+                          return line.trim() ? <p key={i}>{line}</p> : null;
+                        })}
+                      </div>
+                    ) : (
+                      <p className="rounded-xl border border-dashed border-gray-200 px-4 py-3 text-sm text-gray-400">
+                        {report.status === 'open'
+                          ? 'Will be generated when the case is closed.'
+                          : 'Summary not available.'}
+                      </p>
+                    )}
+                  </section>
+
                 </div>
 
               {/* ── Action footer ──────────────────────────────────── */}
               {((isCreator || canManage) && report.status !== 'closed') || (canRequestVN && !report.vn_requested && !report.linked_vn_id) ? (
-                <div className="flex flex-col gap-2 border-t border-gray-100 px-4 py-3 sm:flex-row sm:px-6">
+                <div className="flex flex-col gap-2 border-t border-gray-200 px-4 py-3 sm:flex-row sm:px-6 w-full">
                   {(isCreator || canManage) && report.status !== 'closed' && (
                     <Button
-                      className="w-full justify-center sm:w-auto"
-                      disabled={closingCase || !canClose || !report.corrective_action || !report.resolution}
+                      className="justify-center sm:w-auto"
+                      disabled={closingCase || !canClose}
                       onClick={async () => {
                         setClosingCase(true);
                         try {
@@ -590,7 +566,7 @@ export function CaseReportDetailPanel({
                   {canRequestVN && !report.vn_requested && !report.linked_vn_id && (
                     <Button
                       variant="danger"
-                      className="w-full justify-center sm:w-auto"
+                      className="justify-center sm:w-auto"
                       disabled={requestingVN}
                       onClick={() => void onRequestVN()}
                     >
@@ -634,20 +610,6 @@ export function CaseReportDetailPanel({
         </div>
       </div>
 
-      <TextInputModal
-        isOpen={editingField === 'corrective_action'}
-        title="Corrective Action"
-        initialValue={report.corrective_action}
-        onClose={() => setEditingField(null)}
-        onSubmit={onUpdateCorrectiveAction}
-      />
-      <TextInputModal
-        isOpen={editingField === 'resolution'}
-        title="Resolution"
-        initialValue={report.resolution}
-        onClose={() => setEditingField(null)}
-        onSubmit={onUpdateResolution}
-      />
       <ImagePreviewModal
         items={previewItems}
         index={previewIndex}

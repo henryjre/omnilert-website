@@ -8,6 +8,7 @@ export interface CaseReport {
   status: CaseReportStatus;
   corrective_action: string | null;
   resolution: string | null;
+  summary: string | null;
   vn_requested: boolean;
   linked_vn_id: string | null;
   created_by: string;

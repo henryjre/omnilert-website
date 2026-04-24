@@ -37,14 +37,6 @@ const createCaseSchema = z.object({
   branchId: z.string().uuid().nullable().optional(),
 });
 
-const correctiveActionSchema = z.object({
-  correctiveAction: z.string().trim().min(1),
-});
-
-const resolutionSchema = z.object({
-  resolution: z.string().trim().min(1),
-});
-
 const requestVNSchema = z.object({
   description: z.string().trim().min(1).max(2000),
   targetUserIds: z.array(z.string().uuid()).min(1),
@@ -67,18 +59,6 @@ router.get('/', requirePermission(PERMISSIONS.CASE_REPORT_VIEW), caseReportContr
 router.post('/', requirePermission(PERMISSIONS.CASE_REPORT_MANAGE), validateBody(createCaseSchema), caseReportController.create);
 router.get('/create-branches', requirePermission(PERMISSIONS.CASE_REPORT_MANAGE), caseReportController.listCreateBranches);
 router.get('/:id', requirePermission(PERMISSIONS.CASE_REPORT_VIEW), caseReportController.getById);
-router.patch(
-  '/:id/corrective-action',
-  requirePermission(PERMISSIONS.CASE_REPORT_VIEW),
-  validateBody(correctiveActionSchema),
-  caseReportController.updateCorrectiveAction,
-);
-router.patch(
-  '/:id/resolution',
-  requirePermission(PERMISSIONS.CASE_REPORT_VIEW),
-  validateBody(resolutionSchema),
-  caseReportController.updateResolution,
-);
 router.post('/:id/close', requirePermission(PERMISSIONS.CASE_REPORT_MANAGE), caseReportController.close);
 router.post(
   '/:id/request-vn',

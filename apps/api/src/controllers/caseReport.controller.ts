@@ -77,38 +77,6 @@ export async function listCreateBranches(req: Request, res: Response, next: Next
   }
 }
 
-export async function updateCorrectiveAction(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { companyId } = req.companyContext!;
-    const data = await caseReportService.updateCorrectiveAction({
-      companyId,
-      userId: req.user!.sub,
-      permissions: req.user!.permissions,
-      caseId: String(req.params.id),
-      correctiveAction: String(req.body.correctiveAction ?? ''),
-    });
-    res.json({ success: true, data });
-  } catch (error) {
-    next(error);
-  }
-}
-
-export async function updateResolution(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { companyId } = req.companyContext!;
-    const data = await caseReportService.updateResolution({
-      companyId,
-      userId: req.user!.sub,
-      permissions: req.user!.permissions,
-      caseId: String(req.params.id),
-      resolution: String(req.body.resolution ?? ''),
-    });
-    res.json({ success: true, data });
-  } catch (error) {
-    next(error);
-  }
-}
-
 export async function close(req: Request, res: Response, next: NextFunction) {
   try {
     const { companyId } = req.companyContext!;

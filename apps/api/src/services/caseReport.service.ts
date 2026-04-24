@@ -21,6 +21,7 @@ import {
 } from './globalUser.service.js';
 import { logger } from '../utils/logger.js';
 import * as violationNoticeService from './violationNotice.service.js';
+import { env } from '../config/env.js';
 
 type CaseReportRow = {
   id: string;
@@ -30,6 +31,7 @@ type CaseReportRow = {
   status: 'open' | 'closed';
   corrective_action: string | null;
   resolution: string | null;
+  summary: string | null;
   vn_requested: boolean;
   branch_id: string | null;
   created_by: string;
@@ -637,6 +639,7 @@ async function enrichCaseReports(rows: CaseReportRow[], userId: string): Promise
       status: row.status,
       corrective_action: row.corrective_action,
       resolution: row.resolution,
+      summary: row.summary,
       vn_requested: row.vn_requested,
       linked_vn_id: vnMap.get(row.id) ?? null,
       created_by: row.created_by,
@@ -953,76 +956,70 @@ export async function listCreateBranches(input: {
   return Array.from(groupMap.values());
 }
 
-export async function updateCorrectiveAction(input: {
-  companyId: string;
-  userId: string;
-  permissions: string[];
-  caseId: string;
-  correctiveAction: string;
-}): Promise<CaseReport & { attachments: CaseAttachment[] }> {
-  const current = await assertCanMutateCase(input.caseId, input.permissions);
-  if (current.created_by !== input.userId && !hasManagePermission(input.permissions)) {
-    throw new AppError(403, 'Only the case creator can update the corrective action');
+async function generateCaseSummaryWithAI(input: {
+  title: string;
+  description: string;
+  messages: { userName: string; content: string; createdAt: string }[];
+}): Promise<string> {
+  const FALLBACK =
+    '**Corrective Action:** Not explicitly documented in the discussion.\n**Resolution:** Case closed by the team.';
+
+  const transcript =
+    input.messages.length === 0
+      ? '(No discussion messages were recorded for this case.)'
+      : input.messages
+          .map(
+            (m) =>
+              `[${new Date(m.createdAt).toLocaleString('en-PH')}] ${m.userName}: ${m.content}`,
+          )
+          .join('\n');
+
+  const systemPrompt = `You are a concise case report analyst. Given a case title, description, and a discussion transcript, produce exactly two labeled sections:
+
+**Corrective Action:** [2-4 sentences describing what corrective steps were taken or discussed]
+**Resolution:** [2-4 sentences describing how the case was resolved or closed]
+
+Rules:
+- Use evidence from the discussion; if absent, write "Not explicitly documented in the discussion."
+- Handle English, Filipino, Tagalog, and Taglish naturally.
+- No markdown beyond the two bold labels. No preamble. No extra sections.`;
+
+  const userContent = `Case Title: ${input.title}\n\nDescription: ${input.description}\n\nDiscussion:\n${transcript}`;
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+        'OpenAI-Organization': env.OPENAI_ORGANIZATION_ID,
+        'OpenAI-Project': env.OPENAI_PROJECT_ID,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4.1',
+        max_output_tokens: 600,
+        input: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userContent },
+        ],
+      }),
+    });
+
+    if (!response.ok) return FALLBACK;
+
+    const payload = (await response.json()) as any;
+    const text: string =
+      payload.output_text ??
+      ((payload.output as any[]) ?? [])
+        .flatMap((o: any) => o.content ?? [])
+        .filter((c: any) => c.type === 'output_text' || c.type === 'text')
+        .map((c: any) => c.text as string)
+        .join('');
+
+    return text.trim() || FALLBACK;
+  } catch {
+    return FALLBACK;
   }
-  const nextText = ensureNonEmpty(input.correctiveAction, 'Corrective action');
-  const userNames = await resolveUserNames([input.userId]);
-  const verb = current.corrective_action
-    ? 'updated the corrective action'
-    : 'added a corrective action';
-
-  await db.getDb().transaction(async (trx) => {
-    await trx('case_reports').where({ id: input.caseId }).update({
-      corrective_action: nextText,
-      updated_at: new Date(),
-    });
-    await createSystemMessage({
-      caseId: input.caseId,
-      userId: input.userId,
-      content: `${userNames[input.userId] ?? 'Someone'} ${verb}`,
-    });
-  });
-
-  emitCaseReportEvent('case-report:updated', input.companyId, {
-    id: current.id,
-    caseNumber: current.case_number,
-    field: 'corrective_action',
-  });
-  return getCaseReport({ userId: input.userId, caseId: input.caseId });
-}
-
-export async function updateResolution(input: {
-  companyId: string;
-  userId: string;
-  permissions: string[];
-  caseId: string;
-  resolution: string;
-}): Promise<CaseReport & { attachments: CaseAttachment[] }> {
-  const current = await assertCanMutateCase(input.caseId, input.permissions);
-  if (current.created_by !== input.userId && !hasManagePermission(input.permissions)) {
-    throw new AppError(403, 'Only the case creator can update the resolution');
-  }
-  const nextText = ensureNonEmpty(input.resolution, 'Resolution');
-  const userNames = await resolveUserNames([input.userId]);
-  const verb = current.resolution ? 'updated the resolution' : 'added a resolution';
-
-  await db.getDb().transaction(async (trx) => {
-    await trx('case_reports').where({ id: input.caseId }).update({
-      resolution: nextText,
-      updated_at: new Date(),
-    });
-    await createSystemMessage({
-      caseId: input.caseId,
-      userId: input.userId,
-      content: `${userNames[input.userId] ?? 'Someone'} ${verb}`,
-    });
-  });
-
-  emitCaseReportEvent('case-report:updated', input.companyId, {
-    id: current.id,
-    caseNumber: current.case_number,
-    field: 'resolution',
-  });
-  return getCaseReport({ userId: input.userId, caseId: input.caseId });
 }
 
 export async function closeCase(input: {
@@ -1036,14 +1033,38 @@ export async function closeCase(input: {
   if (current.created_by !== input.userId && !hasManagePermission(input.permissions)) {
     throw new AppError(403, 'Only the case creator can close this case');
   }
-  if (!current.corrective_action || !current.resolution) {
-    throw new AppError(400, 'Corrective action and resolution are required before closing');
-  }
+
+  const rawMessages = await db
+    .getDb()('case_messages as cm')
+    .leftJoin('global_users as u', 'cm.user_id', 'u.id')
+    .where('cm.case_id', input.caseId)
+    .where('cm.is_system', false)
+    .where('cm.is_deleted', false)
+    .orderBy('cm.created_at', 'asc')
+    .select<{ content: string; created_at: Date | string; first_name: string | null; last_name: string | null }[]>(
+      'cm.content',
+      'cm.created_at',
+      'u.first_name',
+      'u.last_name',
+    );
+
+  const messages = rawMessages.map((row) => ({
+    userName: [row.first_name, row.last_name].filter(Boolean).join(' ') || 'Unknown',
+    content: row.content,
+    createdAt: new Date(row.created_at).toISOString(),
+  }));
+
+  const summary = await generateCaseSummaryWithAI({
+    title: current.title,
+    description: current.description,
+    messages,
+  });
 
   const userNames = await resolveUserNames([input.userId]);
   await db.getDb().transaction(async (trx) => {
     await trx('case_reports').where({ id: input.caseId }).update({
       status: 'closed',
+      summary,
       closed_by: input.userId,
       closed_at: new Date(),
       updated_at: new Date(),
