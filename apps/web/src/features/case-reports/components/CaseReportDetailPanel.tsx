@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import type { CaseAttachment, CaseMessage } from '@omnilert/shared';
+import type { CaseAttachment, CaseMessage, CaseTask, CaseTaskMessage, GroupedUsersResponse } from '@omnilert/shared';
 import {
   Bell,
   BellOff,
   Building2,
   CalendarDays,
+  CheckSquare,
   CheckCircle2,
   ExternalLink,
   File,
@@ -27,6 +28,9 @@ import type { CaseReportDetail, MentionableRole, MentionableUser } from '../serv
 import { ChatSection } from './ChatSection';
 import { normalizeFileForUpload } from '@/shared/utils/fileUpload';
 import { ImagePreviewModal } from './ImagePreviewModal';
+import { TaskList } from './TaskList';
+import { TaskCreationModal } from './TaskCreationModal';
+import { TaskDetailPanel } from './TaskDetailPanel';
 
 interface PendingAttachment {
   tempId: string;
@@ -61,6 +65,9 @@ function getApiErrorMessage(err: unknown, fallback: string): string {
 interface CaseReportDetailPanelProps {
   report: CaseReportDetail | null;
   messages: CaseMessage[];
+  tasks: CaseTask[];
+  taskMessages: Record<string, CaseTaskMessage[]>;
+  groupedUsers: GroupedUsersResponse | null;
   currentUserId: string;
   currentUserRoleIds?: string[];
   users: MentionableUser[];
@@ -87,6 +94,10 @@ interface CaseReportDetailPanelProps {
   onReactMessage: (messageId: string, emoji: string) => Promise<void>;
   onEditMessage: (messageId: string, newContent: string) => Promise<void>;
   onDeleteMessage: (messageId: string) => Promise<void>;
+  onCreateTask: (payload: { description: string; assigneeUserIds: string[]; sourceMessageId?: string | null }) => Promise<void>;
+  onCompleteTask: (taskId: string, userId: string) => Promise<void>;
+  onSendTaskMessage: (taskId: string, content: string) => Promise<void>;
+  onLoadTaskMessages: (taskId: string) => Promise<void>;
 }
 
 function formatDate(value: string | null) {
@@ -100,15 +111,25 @@ function formatDate(value: string | null) {
   });
 }
 
+const detailPanelTabs = ['details', 'discussion', 'tasks'] as const;
+type DetailPanelTab = (typeof detailPanelTabs)[number];
+
 const detailPanelTabSlideTransition = {
   type: 'spring',
   stiffness: 300,
   damping: 30,
 } as const;
 
+const detailPanelTabInstantTransition = {
+  duration: 0,
+} as const;
+
 export function CaseReportDetailPanel({
   report,
   messages,
+  tasks,
+  taskMessages,
+  groupedUsers,
   currentUserId,
   currentUserRoleIds,
   users,
@@ -129,6 +150,10 @@ export function CaseReportDetailPanel({
   onReactMessage,
   onEditMessage,
   onDeleteMessage,
+  onCreateTask,
+  onCompleteTask,
+  onSendTaskMessage,
+  onLoadTaskMessages,
 }: CaseReportDetailPanelProps) {
   const navigate = useNavigate();
   const { success: showSuccessToast, error: showErrorToast } = useAppToast();
@@ -140,25 +165,59 @@ export function CaseReportDetailPanel({
   const [previewItems, setPreviewItems] = useState<{ url: string; fileName: string }[] | null>(null);
   const [previewIndex, setPreviewIndex] = useState(0);
 
-  const defaultTab = initialFlashMessageId
-    ? 'discussion'
-    : report?.is_joined
-      ? 'discussion'
-      : 'details';
-  const [activeTab, setActiveTab] = useState<'details' | 'discussion'>(defaultTab as 'details' | 'discussion');
-  const isDiscussionTab = activeTab === 'discussion';
+  // Task state
+  const [taskCreationSourceMessage, setTaskCreationSourceMessage] = useState<CaseMessage | null>(null);
+  const [taskModalOpen, setTaskModalOpen] = useState(false);
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
 
-  // Reset the default tab whenever a different report opens.
-  useEffect(() => {
+  const [activeTab, setActiveTab] = useState<DetailPanelTab>('details');
+  const [syncedReportId, setSyncedReportId] = useState<string | null>(null);
+  const [hasAnimatedTabSwitch, setHasAnimatedTabSwitch] = useState(false);
+
+  // Derive the correct tab during render so the initial paint is never wrong.
+  // syncedReportId tracks whether useLayoutEffect has run for the current report.
+  const effectiveTab: DetailPanelTab =
+    syncedReportId === report?.id
+      ? activeTab
+      : (initialFlashMessageId || report?.is_joined) ? 'discussion' : 'details';
+
+  const activeTabIndex = Math.max(detailPanelTabs.indexOf(effectiveTab), 0);
+
+  const handleTabChange = (nextTab: DetailPanelTab) => {
+    if (nextTab === effectiveTab) return;
+
+    setHasAnimatedTabSwitch(true);
+    setActiveTaskId(null);
+    setActiveTab(nextTab);
+  };
+
+  const getTabOffset = (tab: DetailPanelTab) =>
+    `${(detailPanelTabs.indexOf(tab) - activeTabIndex) * 100}%`;
+
+  const getTabPanelStyle = (tab: DetailPanelTab): CSSProperties => ({
+    transform: `translateX(${getTabOffset(tab)})`,
+    transition: hasAnimatedTabSwitch
+      ? 'transform 320ms cubic-bezier(0.22, 1, 0.36, 1)'
+      : 'none',
+    pointerEvents: effectiveTab === tab ? 'auto' : 'none',
+    willChange: 'transform',
+  });
+
+  // Sync the active tab before paint when a different report loads so
+  // open cases don't visibly slide from the fallback details tab.
+  useLayoutEffect(() => {
     if (!report) return;
+
+    setHasAnimatedTabSwitch(false);
+    setActiveTaskId(null);
 
     if (initialFlashMessageId) {
       setActiveTab('discussion');
-      return;
+    } else {
+      setActiveTab(report.is_joined ? 'discussion' : 'details');
     }
-
-    setActiveTab(report.is_joined ? 'discussion' : 'details');
-  }, [report?.id, initialFlashMessageId]);
+    setSyncedReportId(report.id);
+  }, [report?.id, report?.is_joined, initialFlashMessageId]);
 
   const chatLocked = useMemo(
     () => report?.status === 'closed' && !canManage,
@@ -254,29 +313,22 @@ export function CaseReportDetailPanel({
           options={[
             { id: 'details', label: 'Details', icon: FileWarning },
             { id: 'discussion', label: 'Discussion', icon: MessageCircle },
+            { id: 'tasks', label: 'Tasks', icon: CheckSquare },
           ]}
-          activeId={activeTab}
-          onChange={(id) => setActiveTab(id as 'details' | 'discussion')}
+          activeId={effectiveTab}
+          onChange={(id) => handleTabChange(id as DetailPanelTab)}
           size="default"
           showIcons={true}
           showLabelOnMobile={true}
         />
 
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-
-          {/* ── Details tab content ────────────────────────────────────── */}
-          <motion.div
-            initial={false}
-            animate={{ x: isDiscussionTab ? '-100%' : 0, opacity: isDiscussionTab ? 0 : 1 }}
-            transition={detailPanelTabSlideTransition}
-            className="flex min-h-0 w-full flex-1 flex-col"
-            style={{
-              pointerEvents: isDiscussionTab ? 'none' : 'auto',
-              willChange: 'transform',
-            }}
-            aria-hidden={isDiscussionTab}
+          <section
+            className="absolute inset-0 flex min-h-0 flex-col bg-white"
+            style={getTabPanelStyle('details')}
+            aria-hidden={effectiveTab !== 'details'}
           >
-            <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
+                <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
 
                   {/* ── Info ──────────────────────────────────────────── */}
                   <section>
@@ -540,75 +592,151 @@ export function CaseReportDetailPanel({
 
                 </div>
 
-              {/* ── Action footer ──────────────────────────────────── */}
-              {((isCreator || canManage) && report.status !== 'closed') || (canRequestVN && !report.vn_requested && !report.linked_vn_id) ? (
-                <div className="flex flex-col gap-2 border-t border-gray-200 px-4 py-3 sm:flex-row sm:px-6 w-full">
-                  {(isCreator || canManage) && report.status !== 'closed' && (
-                    <Button
-                      className="w-full flex-1 justify-center"
-                      disabled={closingCase || !canClose}
-                      onClick={async () => {
-                        setClosingCase(true);
-                        try {
-                          await onCloseCase();
-                          showSuccessToast("Case closed successfully.");
-                        } catch (err: unknown) {
-                          const message = getApiErrorMessage(err, "Failed to close case.");
-                          showErrorToast(message);
-                        } finally {
-                          setClosingCase(false);
-                        }
-                      }}
-                    >
-                      {closingCase ? 'Closing…' : 'Close Case'}
-                    </Button>
-                  )}
-                  {canRequestVN && !report.vn_requested && !report.linked_vn_id && (
-                    <Button
-                      variant="danger"
-                      className="w-full flex-1 justify-center"
-                      disabled={requestingVN}
-                      onClick={() => void onRequestVN()}
-                    >
-                      {requestingVN ? 'Requesting…' : 'Request VN'}
-                    </Button>
-                  )}
-                </div>
-              ) : null}
-          </motion.div>
+                {/* ── Action footer ──────────────────────────────────── */}
+            {((isCreator || canManage) && report.status !== 'closed') || (canRequestVN && !report.vn_requested && !report.linked_vn_id) ? (
+              <div className="flex w-full flex-col gap-2 border-t border-gray-200 px-4 py-3 sm:flex-row sm:px-6">
+                {(isCreator || canManage) && report.status !== 'closed' && (
+                  <Button
+                    className="w-full flex-1 justify-center"
+                    disabled={closingCase || !canClose}
+                    onClick={async () => {
+                      setClosingCase(true);
+                      try {
+                        await onCloseCase();
+                        showSuccessToast("Case closed successfully.");
+                      } catch (err: unknown) {
+                        const message = getApiErrorMessage(err, "Failed to close case.");
+                        showErrorToast(message);
+                      } finally {
+                        setClosingCase(false);
+                      }
+                    }}
+                  >
+                    {closingCase ? 'Closing…' : 'Close Case'}
+                  </Button>
+                )}
+                {canRequestVN && !report.vn_requested && !report.linked_vn_id && (
+                  <Button
+                    variant="danger"
+                    className="w-full flex-1 justify-center"
+                    disabled={requestingVN}
+                    onClick={() => void onRequestVN()}
+                  >
+                    {requestingVN ? 'Requesting…' : 'Request VN'}
+                  </Button>
+                )}
+              </div>
+            ) : null}
+          </section>
 
-          {/* ── Discussion tab — always mounted, slides in from right / out to right ── */}
-          <motion.div
-            initial={false}
-            animate={{ x: isDiscussionTab ? 0 : '100%', opacity: isDiscussionTab ? 1 : 0 }}
-            transition={detailPanelTabSlideTransition}
-            style={{
-              pointerEvents: isDiscussionTab ? 'auto' : 'none',
-              willChange: 'transform',
-            }}
-            className="absolute inset-0 z-10 flex min-h-0 flex-1 flex-col bg-white px-4 py-3 sm:px-6 sm:py-4"
-            aria-hidden={!isDiscussionTab}
+          <section
+            className="absolute inset-0 flex min-h-0 flex-col bg-white px-4 py-3 sm:px-6 sm:py-4"
+            style={getTabPanelStyle('discussion')}
+            aria-hidden={effectiveTab !== 'discussion'}
           >
-            <ChatSection
-              className="min-h-0 flex-1"
-              messages={messages}
-              currentUserId={currentUserId}
-              currentUserRoleIds={currentUserRoleIds}
-              canManage={canManage}
-              chatLocked={chatLocked}
-              isClosed={report.status === 'closed'}
-              users={users}
-              roles={roles}
-              initialFlashMessageId={initialFlashMessageId}
-              onFlashMessageConsumed={onFlashMessageConsumed}
-              onSend={onSendMessage}
-              onReact={onReactMessage}
-              onEdit={onEditMessage}
-              onDelete={onDeleteMessage}
-            />
-          </motion.div>
+                <ChatSection
+                  className="min-h-0 flex-1"
+                  messages={messages}
+                  currentUserId={currentUserId}
+                  currentUserRoleIds={currentUserRoleIds}
+                  canManage={canManage}
+                  chatLocked={chatLocked}
+                  isClosed={report.status === 'closed'}
+                  users={users}
+                  roles={roles}
+                  initialFlashMessageId={initialFlashMessageId}
+                  onFlashMessageConsumed={onFlashMessageConsumed}
+                  onSend={onSendMessage}
+                  onReact={onReactMessage}
+                  onEdit={onEditMessage}
+                  onDelete={onDeleteMessage}
+                  onCreateTask={canManage && !chatLocked ? (msg) => {
+                    setTaskCreationSourceMessage(msg);
+                    setTaskModalOpen(true);
+                  } : undefined}
+                />
+          </section>
+
+          <section
+            className="absolute inset-0 flex min-h-0 flex-col overflow-hidden bg-white"
+            style={getTabPanelStyle('tasks')}
+            aria-hidden={effectiveTab !== 'tasks'}
+          >
+                <div className="min-h-0 flex-1 overflow-y-auto">
+                  {canManage && report.status === 'open' && (
+                    <div className="border-b border-gray-100 px-4 py-2.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTaskCreationSourceMessage(null);
+                          setTaskModalOpen(true);
+                        }}
+                        className="w-full rounded-xl border border-dashed border-gray-300 py-2 text-sm font-medium text-primary-600 hover:border-primary-400 hover:bg-primary-50 transition-colors"
+                      >
+                        + New Task
+                      </button>
+                    </div>
+                  )}
+                  <TaskList
+                    tasks={tasks}
+                    currentUserId={currentUserId}
+                    canManage={canManage}
+                    onTaskClick={async (task) => {
+                      await onLoadTaskMessages(task.id);
+                      setActiveTaskId(task.id);
+                    }}
+                    onComplete={onCompleteTask}
+                  />
+                </div>
+
+                {/* ── Task detail panel overlay ─────────────────────────── */}
+                <AnimatePresence>
+                  {activeTaskId && (() => {
+                    const task = tasks.find((t) => t.id === activeTaskId);
+                    if (!task) return null;
+                    return (
+                      <TaskDetailPanel
+                        key={activeTaskId}
+                        task={task}
+                        messages={taskMessages[activeTaskId] ?? []}
+                        currentUserId={currentUserId}
+                        canManage={canManage}
+                        onBack={() => setActiveTaskId(null)}
+                        onComplete={onCompleteTask}
+                        onSendMessage={onSendTaskMessage}
+                        onJumpToMessage={(messageId) => {
+                          setActiveTaskId(null);
+                          handleTabChange('discussion');
+                          // Flash the message after tab switch settles
+                          setTimeout(() => {
+                            const el = document.querySelector(`[data-message-id="${messageId}"]`);
+                            el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                          }, 350);
+                        }}
+                      />
+                    );
+                  })()}
+                </AnimatePresence>
+          </section>
         </div>
       </div>
+
+      {/* ── Task creation modal ─────────────────────────────────────────── */}
+      <TaskCreationModal
+        groupedUsers={groupedUsers}
+        defaultDescription={taskCreationSourceMessage?.content ?? ''}
+        isOpen={taskModalOpen}
+        onSubmit={async (payload) => {
+          await onCreateTask({
+            ...payload,
+            sourceMessageId: taskCreationSourceMessage?.id ?? null,
+          });
+        }}
+        onClose={() => {
+          setTaskModalOpen(false);
+          setTaskCreationSourceMessage(null);
+        }}
+      />
 
       <ImagePreviewModal
         items={previewItems}

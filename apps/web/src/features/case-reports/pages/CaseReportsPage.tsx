@@ -3,7 +3,7 @@ import { useBranchStore } from '@/shared/store/branchStore';
 import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import { useSearchParams } from 'react-router-dom';
 import type { ElementType } from 'react';
-import type { CaseMessage, CaseReport, GroupedUsersResponse } from '@omnilert/shared';
+import type { CaseMessage, CaseReport, CaseTask, CaseTaskMessage, GroupedUsersResponse } from '@omnilert/shared';
 import { PERMISSIONS } from '@omnilert/shared';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from '@/features/auth/hooks/useAuth';
@@ -29,7 +29,9 @@ import { useSocket } from '@/shared/hooks/useSocket';
 import { useAppToast } from '@/shared/hooks/useAppToast';
 import {
   closeCase,
+  completeCaseTask,
   createCaseReport,
+  createCaseTask,
   deleteCaseAttachment,
   deleteCaseMessage,
   editCaseMessage,
@@ -38,8 +40,11 @@ import {
   leaveCaseDiscussion,
   listCaseMessages,
   listCaseReports,
+  listCaseTasks,
+  listCaseTaskMessages,
   markCaseRead,
   sendCaseMessage,
+  sendCaseTaskMessage,
   toggleCaseMute,
   toggleCaseReaction,
   uploadCaseAttachment,
@@ -133,6 +138,10 @@ export function CaseReportsPage() {
   const [loadingGroupedUsers, setLoadingGroupedUsers] = useState(false);
   const groupedUsersReqIdRef = useRef(0);
 
+  // Task state
+  const [tasks, setTasks] = useState<CaseTask[]>([]);
+  const [taskMessages, setTaskMessages] = useState<Record<string, CaseTaskMessage[]>>({});
+
   // Branch filtering
   const selectedBranchIdSet = useMemo(() => new Set(selectedBranchIds), [selectedBranchIds]);
 
@@ -179,12 +188,14 @@ export function CaseReportsPage() {
   const fetchDetail = useCallback(
     async (caseId: string) => {
       try {
-        const [detail, nextMessages] = await Promise.all([
+        const [detail, nextMessages, nextTasks] = await Promise.all([
           getCaseReport(caseId),
           listCaseMessages(caseId),
+          listCaseTasks(caseId),
         ]);
         setSelectedReport(detail);
         setMessages(nextMessages);
+        setTasks(nextTasks);
         await markCaseRead(caseId);
         setReports((prev) =>
           prev.map((r) => (r.id === caseId ? { ...r, unread_count: 0, unread_reply_count: 0 } : r)),
@@ -212,7 +223,7 @@ export function CaseReportsPage() {
   }, []);
 
   useEffect(() => {
-    if (!canRequestVN || !showRequestVNModal || !selectedCaseId) {
+    if (!selectedCaseId) {
       setGroupedUsers(null);
       setLoadingGroupedUsers(false);
       return;
@@ -234,12 +245,14 @@ export function CaseReportsPage() {
         if (groupedUsersReqIdRef.current !== requestId) return;
         setLoadingGroupedUsers(false);
       });
-  }, [canRequestVN, selectedCaseId, showRequestVNModal]);
+  }, [selectedCaseId]);
 
   useEffect(() => {
     if (!selectedCaseId) {
       setSelectedReport(null);
       setMessages([]);
+      setTasks([]);
+      setTaskMessages({});
       return;
     }
     void fetchDetail(selectedCaseId);
@@ -264,17 +277,32 @@ export function CaseReportsPage() {
       }
     };
 
+    const refreshTasks = (payload: { caseId?: string; taskId?: string }) => {
+      if (payload.caseId && payload.caseId === selectedCaseId) {
+        void listCaseTasks(payload.caseId).then(setTasks).catch(() => undefined);
+        if (payload.taskId) {
+          void listCaseTaskMessages(payload.caseId, payload.taskId)
+            .then((msgs) => setTaskMessages((prev) => ({ ...prev, [payload.taskId!]: msgs })))
+            .catch(() => undefined);
+        }
+      }
+    };
+
     socket.on('case-report:created', refresh);
     socket.on('case-report:updated', refreshDetailById);
     socket.on('case-report:attachment', refreshDetail);
     socket.on('case-report:message', refreshDetail);
     socket.on('case-report:reaction', refreshDetail);
+    socket.on('case-report:task:created', refreshTasks);
+    socket.on('case-report:task:updated', refreshTasks);
     return () => {
       socket.off('case-report:created', refresh);
       socket.off('case-report:updated', refreshDetailById);
       socket.off('case-report:attachment', refreshDetail);
       socket.off('case-report:message', refreshDetail);
       socket.off('case-report:reaction', refreshDetail);
+      socket.off('case-report:task:created', refreshTasks);
+      socket.off('case-report:task:updated', refreshTasks);
     };
   }, [fetchDetail, fetchReports, selectedCaseId, socket]);
 
@@ -570,6 +598,9 @@ export function CaseReportsPage() {
               <CaseReportDetailPanel
                 report={selectedReport}
                 messages={messages}
+                tasks={tasks}
+                taskMessages={taskMessages}
+                groupedUsers={groupedUsers}
                 currentUserId={user?.id ?? ''}
                 currentUserRoleIds={user?.roles.map((r) => r.id)}
                 users={users}
@@ -683,6 +714,34 @@ export function CaseReportsPage() {
                       setMessages((prev) => prev.map((m) => (m.id === messageId ? original : m)));
                     }
                   }
+                }}
+                onCreateTask={async (payload) => {
+                  if (!selectedCaseId) return;
+                  const task = await createCaseTask(selectedCaseId, payload);
+                  setTasks((prev) => [...prev, task]);
+                  // Refresh messages so the system message appears
+                  const nextMessages = await listCaseMessages(selectedCaseId);
+                  setMessages(nextMessages);
+                }}
+                onCompleteTask={async (taskId, userId) => {
+                  if (!selectedCaseId) return;
+                  const updated = await completeCaseTask(selectedCaseId, taskId, userId);
+                  setTasks((prev) => prev.map((t) => (t.id === taskId ? updated : t)));
+                  const nextMessages = await listCaseMessages(selectedCaseId);
+                  setMessages(nextMessages);
+                }}
+                onSendTaskMessage={async (taskId, content) => {
+                  if (!selectedCaseId) return;
+                  const msg = await sendCaseTaskMessage(selectedCaseId, taskId, content);
+                  setTaskMessages((prev) => ({
+                    ...prev,
+                    [taskId]: [...(prev[taskId] ?? []), msg],
+                  }));
+                }}
+                onLoadTaskMessages={async (taskId) => {
+                  if (!selectedCaseId) return;
+                  const msgs = await listCaseTaskMessages(selectedCaseId, taskId);
+                  setTaskMessages((prev) => ({ ...prev, [taskId]: msgs }));
                 }}
               />
             </motion.div>

@@ -19,6 +19,7 @@ interface MessageDrawerProps {
   onEdit: () => void;
   onDelete: () => void;
   onClose: () => void;
+  onCreateTask?: () => void;
   copyLabel?: string;
 }
 
@@ -35,6 +36,7 @@ export function MessageDrawer({
   onEdit,
   onDelete,
   onClose,
+  onCreateTask,
   copyLabel = 'Copy Text',
 }: MessageDrawerProps) {
   const isOwnMessage = message.user_id === currentUserId;
@@ -139,6 +141,11 @@ export function MessageDrawer({
                   {!chatLocked && (
                     <button type="button" className={itemClass} onClick={() => handleAction(onReply)}>
                       Reply
+                    </button>
+                  )}
+                  {!chatLocked && onCreateTask && (
+                    <button type="button" className={itemClass} onClick={() => handleAction(onCreateTask)}>
+                      Create Task
                     </button>
                   )}
                   <button type="button" className={itemClass} onClick={() => handleAction(onCopyText)}>

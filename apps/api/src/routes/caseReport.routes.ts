@@ -7,6 +7,7 @@ import { resolveCompany } from '../middleware/companyResolver.js';
 import { requireAnyPermission, requirePermission } from '../middleware/rbac.js';
 import { validateBody } from '../middleware/validateRequest.js';
 import * as caseReportController from '../controllers/caseReport.controller.js';
+import * as caseReportTaskController from '../controllers/caseReportTask.controller.js';
 
 const storage = multer.memoryStorage();
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
@@ -44,6 +45,20 @@ const requestVNSchema = z.object({
 
 const reactionSchema = z.object({
   emoji: z.string().trim().min(1).max(20),
+});
+
+const createTaskSchema = z.object({
+  description: z.string().trim().min(1).max(1000),
+  assigneeUserIds: z.array(z.string().uuid()).min(1),
+  sourceMessageId: z.string().uuid().nullable().optional(),
+});
+
+const sendTaskMessageSchema = z.object({
+  content: z.string().trim().min(1),
+});
+
+const completeTaskSchema = z.object({
+  userId: z.string().uuid().optional(),
 });
 
 const editMessageSchema = z.object({
@@ -100,5 +115,24 @@ router.delete(
 router.post('/:id/leave', requirePermission(PERMISSIONS.CASE_REPORT_VIEW), caseReportController.leave);
 router.post('/:id/mute', requirePermission(PERMISSIONS.CASE_REPORT_VIEW), caseReportController.mute);
 router.post('/:id/read', requirePermission(PERMISSIONS.CASE_REPORT_VIEW), caseReportController.markRead);
+
+// ── Task routes ───────────────────────────────────────────────────────────────
+
+router.get('/:id/tasks', requirePermission(PERMISSIONS.CASE_REPORT_VIEW), caseReportTaskController.listTasks);
+router.post('/:id/tasks', requirePermission(PERMISSIONS.CASE_REPORT_MANAGE), validateBody(createTaskSchema), caseReportTaskController.createTask);
+router.get('/:id/tasks/:taskId', requirePermission(PERMISSIONS.CASE_REPORT_VIEW), caseReportTaskController.getTask);
+router.get('/:id/tasks/:taskId/messages', requirePermission(PERMISSIONS.CASE_REPORT_VIEW), caseReportTaskController.listTaskMessages);
+router.post(
+  '/:id/tasks/:taskId/messages',
+  requirePermission(PERMISSIONS.CASE_REPORT_VIEW),
+  validateBody(sendTaskMessageSchema),
+  caseReportTaskController.sendTaskMessage,
+);
+router.post(
+  '/:id/tasks/:taskId/complete',
+  requirePermission(PERMISSIONS.CASE_REPORT_VIEW),
+  validateBody(completeTaskSchema),
+  caseReportTaskController.completeTask,
+);
 
 export default router;

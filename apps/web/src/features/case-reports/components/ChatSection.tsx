@@ -38,6 +38,7 @@ interface ChatSectionProps {
   onReact: (messageId: string, emoji: string) => Promise<void>;
   onEdit: (messageId: string, newContent: string) => Promise<void>;
   onDelete: (messageId: string) => Promise<void>;
+  onCreateTask?: (message: CaseMessage) => void;
 }
 
 export function ChatSection({
@@ -57,6 +58,7 @@ export function ChatSection({
   onReact,
   onEdit,
   onDelete,
+  onCreateTask,
 }: ChatSectionProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -259,6 +261,7 @@ export function ChatSection({
               onDelete={onDelete}
               onScrollToMessage={handleScrollToMessage}
               onPreviewImage={(items, index) => setPreviewMedia({ items, index })}
+              onCreateTask={onCreateTask}
             />
           </Fragment>
           );

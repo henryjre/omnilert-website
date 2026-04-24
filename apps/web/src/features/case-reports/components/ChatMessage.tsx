@@ -72,6 +72,7 @@ interface ChatMessageProps {
   users?: MentionableUser[];
   roles?: MentionableRole[];
   onPreviewImage?: (items: { url: string; fileName: string }[], index: number) => void;
+  onCreateTask?: (message: CaseMessage) => void;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -105,6 +106,7 @@ export function ChatMessage({
   users,
   roles,
   onPreviewImage,
+  onCreateTask,
 }: ChatMessageProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
@@ -478,6 +480,7 @@ export function ChatMessage({
                 setIsEditing(true);
               }}
               onDelete={handleDelete}
+              onCreateTask={onCreateTask ? () => onCreateTask(message) : undefined}
               onClose={() => setMenuOpen(false)}
               portalMode={true}
               triggerRect={menuTriggerRect}
@@ -904,6 +907,7 @@ export function ChatMessage({
           setIsEditing(true);
         }}
         onDelete={handleDelete}
+        onCreateTask={onCreateTask ? () => onCreateTask(message) : undefined}
         onClose={() => setDrawerOpen(false)}
       />
       <MessageReactionsOverlay

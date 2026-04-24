@@ -43,7 +43,9 @@
       "Bash(pnpm build *)",
       "Bash(node --experimental-vm-modules --test --require tsx/esm src/controllers/shiftAuthorization.controller.test.ts)",
       "Bash(node --test --import tsx/esm src/services/attendanceQueue.service.test.ts)",
-      "Bash(grep -E \"\\\\.\\(tsx|ts\\)$\")"
+      "Bash(grep -E \"\\\\.\\(tsx|ts\\)$\")",
+      "Bash(xargs cat *)",
+      "Bash(pnpm --filter api migrate)"
     ]
   }
 }

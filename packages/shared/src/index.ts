@@ -4,6 +4,7 @@ export type * from './types/payslip.types.js';
 export type * from './types/accountAuditResult.types.js';
 export type * from './types/branch.types.js';
 export type * from './types/caseReport.types.js';
+export type * from './types/caseReportTask.types.js';
 export type * from './types/company.types.js';
 export type * from './types/discordIntegration.types.js';
 export type * from './types/pos.types.js';

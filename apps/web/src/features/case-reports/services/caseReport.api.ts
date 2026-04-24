@@ -1,4 +1,4 @@
-import type { CaseAttachment, CaseMessage, CaseReport } from '@omnilert/shared';
+import type { CaseAttachment, CaseMessage, CaseReport, CaseTask, CaseTaskMessage } from '@omnilert/shared';
 import { api } from '@/shared/services/api.client';
 import type { SelectorCompanySnapshot } from '@/shared/components/branchSelectorState';
 
@@ -156,4 +156,47 @@ export async function editCaseMessage(caseId: string, messageId: string, content
 
 export async function deleteCaseMessage(caseId: string, messageId: string): Promise<void> {
   await api.delete(`/case-reports/${caseId}/messages/${messageId}`);
+}
+
+// ── Task API ──────────────────────────────────────────────────────────────────
+
+export async function listCaseTasks(caseId: string): Promise<CaseTask[]> {
+  const response = await api.get(`/case-reports/${caseId}/tasks`);
+  return response.data.data as CaseTask[];
+}
+
+export async function createCaseTask(
+  caseId: string,
+  payload: { description: string; assigneeUserIds: string[]; sourceMessageId?: string | null },
+): Promise<CaseTask> {
+  const response = await api.post(`/case-reports/${caseId}/tasks`, payload);
+  return response.data.data as CaseTask;
+}
+
+export async function getCaseTask(caseId: string, taskId: string): Promise<CaseTask> {
+  const response = await api.get(`/case-reports/${caseId}/tasks/${taskId}`);
+  return response.data.data as CaseTask;
+}
+
+export async function listCaseTaskMessages(caseId: string, taskId: string): Promise<CaseTaskMessage[]> {
+  const response = await api.get(`/case-reports/${caseId}/tasks/${taskId}/messages`);
+  return response.data.data as CaseTaskMessage[];
+}
+
+export async function sendCaseTaskMessage(
+  caseId: string,
+  taskId: string,
+  content: string,
+): Promise<CaseTaskMessage> {
+  const response = await api.post(`/case-reports/${caseId}/tasks/${taskId}/messages`, { content });
+  return response.data.data as CaseTaskMessage;
+}
+
+export async function completeCaseTask(
+  caseId: string,
+  taskId: string,
+  userId?: string,
+): Promise<CaseTask> {
+  const response = await api.post(`/case-reports/${caseId}/tasks/${taskId}/complete`, { userId });
+  return response.data.data as CaseTask;
 }

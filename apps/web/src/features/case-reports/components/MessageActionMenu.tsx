@@ -11,6 +11,7 @@ interface MessageActionMenuProps {
   onEdit: () => void;
   onDelete: () => void;
   onClose: () => void;
+  onCreateTask?: () => void;
   triggerRect?: DOMRect | null;
   portalMode?: boolean;
   copyLabel?: string;
@@ -26,6 +27,7 @@ export function MessageActionMenu({
   onEdit,
   onDelete,
   onClose,
+  onCreateTask,
   triggerRect,
   portalMode,
   copyLabel = 'Copy Text',
@@ -63,6 +65,11 @@ export function MessageActionMenu({
           Reply
         </button>
       )}
+      {!chatLocked && onCreateTask && (
+        <button type="button" className={itemClass} onClick={() => { onCreateTask(); onClose(); }}>
+          Create Task
+        </button>
+      )}
       <button type="button" className={itemClass} onClick={() => { onCopyText(); onClose(); }}>
         {copyLabel}
       </button>
@@ -90,6 +97,11 @@ export function MessageActionMenu({
       {!chatLocked && (
         <button type="button" className={itemClass} onClick={() => { onReply(); onClose(); }}>
           Reply
+        </button>
+      )}
+      {!chatLocked && onCreateTask && (
+        <button type="button" className={itemClass} onClick={() => { onCreateTask(); onClose(); }}>
+          Create Task
         </button>
       )}
       <button type="button" className={itemClass} onClick={() => { onCopyText(); onClose(); }}>
