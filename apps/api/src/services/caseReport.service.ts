@@ -974,15 +974,16 @@ async function generateCaseSummaryWithAI(input: {
           )
           .join('\n');
 
-  const systemPrompt = `You are a concise case report analyst. Given a case title, description, and a discussion transcript, produce exactly two labeled sections:
+  const systemPrompt = `You are a concise case report analyst. Given a case title, description, and a discussion transcript, produce exactly three labeled sections:
 
+**Summary:** [2-3 sentences summarizing what the case was about and its context]
 **Corrective Action:** [2-4 sentences describing what corrective steps were taken or discussed]
 **Resolution:** [2-4 sentences describing how the case was resolved or closed]
 
 Rules:
 - Use evidence from the discussion; if absent, write "Not explicitly documented in the discussion."
 - Handle English, Filipino, Tagalog, and Taglish naturally.
-- No markdown beyond the two bold labels. No preamble. No extra sections.`;
+- No markdown beyond the three bold labels. No preamble. No extra sections.`;
 
   const userContent = `Case Title: ${input.title}\n\nDescription: ${input.description}\n\nDiscussion:\n${transcript}`;
 
@@ -997,7 +998,7 @@ Rules:
       },
       body: JSON.stringify({
         model: 'gpt-4.1',
-        max_output_tokens: 600,
+        max_output_tokens: 800,
         input: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userContent },
@@ -1036,7 +1037,7 @@ export async function closeCase(input: {
 
   const rawMessages = await db
     .getDb()('case_messages as cm')
-    .leftJoin('global_users as u', 'cm.user_id', 'u.id')
+    .leftJoin('users as u', 'cm.user_id', 'u.id')
     .where('cm.case_id', input.caseId)
     .where('cm.is_system', false)
     .where('cm.is_deleted', false)
