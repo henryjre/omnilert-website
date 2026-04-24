@@ -1,7 +1,7 @@
 import { useRef, useState, useCallback, useEffect, Fragment } from 'react';
 import type { CaseMessage } from '@omnilert/shared';
 import { Paperclip, Send, X } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { Button } from '@/shared/components/ui/Button';
 import type { MentionableRole, MentionableUser } from '../services/caseReport.api';
 import { MentionPicker } from './MentionPicker';
@@ -341,7 +341,7 @@ export function ChatSection({
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={chatLocked}
-            className="shrink-0 rounded-xl p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-40"
+            className="mb-0.5 shrink-0 rounded-xl p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-40"
             title="Attach file"
           >
             <Paperclip className="h-5 w-5" />
@@ -353,7 +353,7 @@ export function ChatSection({
               ref={overlayRef}
               aria-hidden
               className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-2 py-2 text-sm"
-              style={{ fontFamily: 'inherit', lineHeight: '1.25rem', wordBreak: 'break-word' }}
+              style={{ fontFamily: 'inherit', lineHeight: '1.25rem', fontSize: '16px', wordBreak: 'break-word' }}
             >
               {renderHighlightedContent(content, mentionTokens)}
               {'​'}
@@ -409,6 +409,7 @@ export function ChatSection({
               className="w-full resize-none bg-transparent px-2 py-2 text-sm outline-none disabled:opacity-50"
               style={{
                 lineHeight: '1.25rem',
+                fontSize: '16px',
                 ...(content ? { caretColor: 'black', color: 'transparent', WebkitTextFillColor: 'transparent' } : {}),
               }}
               placeholder={chatLocked ? 'Chat is locked' : 'Write a message...'}
@@ -419,7 +420,7 @@ export function ChatSection({
             <Button
               onClick={() => void handleSend()}
               disabled={chatLocked || (!content.trim() && files.length === 0)}
-              className="shrink-0 rounded-xl"
+              className="mb-1.5 shrink-0 rounded-xl"
             >
               <Send className="h-4 w-4" />
             </Button>
