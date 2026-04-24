@@ -269,7 +269,7 @@ export function CaseReportDetailPanel({
             initial={false}
             animate={{ x: isDiscussionTab ? '-100%' : 0, opacity: isDiscussionTab ? 0 : 1 }}
             transition={detailPanelTabSlideTransition}
-            className="flex min-h-0 flex-1 flex-col"
+            className="flex min-h-0 w-full flex-1 flex-col"
             style={{
               pointerEvents: isDiscussionTab ? 'none' : 'auto',
               willChange: 'transform',
@@ -545,7 +545,7 @@ export function CaseReportDetailPanel({
                 <div className="flex flex-col gap-2 border-t border-gray-200 px-4 py-3 sm:flex-row sm:px-6 w-full">
                   {(isCreator || canManage) && report.status !== 'closed' && (
                     <Button
-                      className="justify-center sm:w-auto"
+                      className="w-full flex-1 justify-center"
                       disabled={closingCase || !canClose}
                       onClick={async () => {
                         setClosingCase(true);
@@ -566,7 +566,7 @@ export function CaseReportDetailPanel({
                   {canRequestVN && !report.vn_requested && !report.linked_vn_id && (
                     <Button
                       variant="danger"
-                      className="justify-center sm:w-auto"
+                      className="w-full flex-1 justify-center"
                       disabled={requestingVN}
                       onClick={() => void onRequestVN()}
                     >
