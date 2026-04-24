@@ -71,7 +71,7 @@ export function TopBar({ onOpenSidebar, onOpenAccountSidebar, accountSidebarOpen
   const notificationsSocket = useSocket('/notifications');
   const userEventsSocket = useSocket('/user-events');
 
-  const { unreadCount, setUnreadCount, increment, decrement, reset, pushNotification } = useNotificationStore();
+  const { unreadCount, setUnreadCount, increment, decrement, reset, pushNotification, latestNotificationPatch } = useNotificationStore();
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [reasonModalAuthId, setReasonModalAuthId] = useState<string | null>(null);
@@ -189,6 +189,15 @@ export function TopBar({ onOpenSidebar, onOpenAccountSidebar, accountSidebarOpen
       userEventsSocket.off('user:branch-assignments-updated');
     };
   }, [userEventsSocket, updateUser, setTokens, fetchBranches, logoutStore, navigate]);
+
+  // Patch local bell dropdown state when a same-session read-state change is broadcast
+  useEffect(() => {
+    if (!latestNotificationPatch) return;
+    const { id, changes } = latestNotificationPatch;
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, ...changes } : n)),
+    );
+  }, [latestNotificationPatch]);
 
   // Close dropdown when clicking outside
   useEffect(() => {

@@ -95,7 +95,11 @@ export interface AuditResultsWebhookPayload {
 export type CronJobNotificationEvent = 'cron_job.run';
 export type CronJobNotificationStatus = 'success' | 'failed';
 export type CronJobNotificationTrigger = 'scheduled' | 'startup' | 'manual';
-export type CronJobNotificationFamily = 'service_crew_cctv' | 'epi_snapshot' | 'peer_evaluation_expiry';
+export type CronJobNotificationFamily =
+  | 'service_crew_cctv'
+  | 'epi_snapshot'
+  | 'peer_evaluation_expiry'
+  | 'notification_retention';
 
 export interface CronJobNotificationJob {
   name: string;

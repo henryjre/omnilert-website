@@ -13,7 +13,13 @@ process.env.OPENAI_API_KEY ??= 'test-openai-key';
 process.env.OPENAI_ORGANIZATION_ID ??= 'test-openai-org';
 process.env.OPENAI_PROJECT_ID ??= 'test-openai-project';
 
-const { deleteNotificationsByUserIdAndAuthId } = await import('./notification.service.js');
+const {
+  deleteNotificationByIdForUser,
+  deleteNotificationsByUserIdAndAuthId,
+  deleteNotificationsOlderThan,
+  deleteReadNotificationsByUserId,
+  updateNotificationReadStateForUser,
+} = await import('./notification.service.js');
 const { db } = await import('../config/database.js');
 
 type NotificationRow = {
@@ -21,7 +27,12 @@ type NotificationRow = {
   user_id: string;
   is_read: boolean;
   link_url: string | null;
+  created_at: string;
 };
+
+function toEpoch(value: unknown): number {
+  return new Date(String(value)).getTime();
+}
 
 function createNotificationDbHarness(initialNotifications: NotificationRow[]) {
   const notifications = initialNotifications.map((row) => ({ ...row }));
@@ -36,9 +47,28 @@ function createNotificationDbHarness(initialNotifications: NotificationRow[]) {
       notifications.filter((row) => predicates.every((predicate) => predicate(row)));
 
     const query: Record<string, any> = {
-      where(condition: Record<string, unknown>) {
+      where(
+        fieldOrCondition: string | Record<string, unknown>,
+        operatorOrValue?: unknown,
+        value?: unknown,
+      ) {
+        if (typeof fieldOrCondition === 'string') {
+          const field = fieldOrCondition as keyof NotificationRow;
+          if (arguments.length === 2) {
+            predicates.push((row) => row[field] === operatorOrValue);
+            return query;
+          }
+
+          if (operatorOrValue === '<') {
+            predicates.push((row) => toEpoch(row[field]) < toEpoch(value));
+            return query;
+          }
+
+          throw new Error(`Unsupported where operator in notification test harness: ${String(operatorOrValue)}`);
+        }
+
         predicates.push((row) =>
-          Object.entries(condition).every(([key, value]) => row[key as keyof NotificationRow] === value),
+          Object.entries(fieldOrCondition).every(([key, expected]) => row[key as keyof NotificationRow] === expected),
         );
         return query;
       },
@@ -60,6 +90,13 @@ function createNotificationDbHarness(initialNotifications: NotificationRow[]) {
           if (index >= 0) {
             notifications.splice(index, 1);
           }
+        }
+        return Promise.resolve(matchedRows.length);
+      },
+      update(changes: Partial<NotificationRow>) {
+        const matchedRows = getMatchedRows();
+        for (const row of matchedRows) {
+          Object.assign(row, changes);
         }
         return Promise.resolve(matchedRows.length);
       },
@@ -85,6 +122,156 @@ function installNotificationDbHarness(
   });
 }
 
+test('deleteNotificationByIdForUser deletes one owned notification and preserves unread metadata', async (t) => {
+  const harness = createNotificationDbHarness([
+    {
+      id: 'notif-owned',
+      user_id: 'user-1',
+      is_read: false,
+      link_url: '/account/notifications',
+      created_at: '2026-04-24T00:00:00.000Z',
+    },
+    {
+      id: 'notif-other',
+      user_id: 'user-2',
+      is_read: true,
+      link_url: '/account/profile',
+      created_at: '2026-04-24T00:00:00.000Z',
+    },
+  ]);
+  installNotificationDbHarness(harness, (cleanup) => t.after(cleanup));
+
+  const deletedNotification = await deleteNotificationByIdForUser({
+    userId: 'user-1',
+    notificationId: 'notif-owned',
+  });
+
+  assert.deepEqual(deletedNotification, {
+    userId: 'user-1',
+    id: 'notif-owned',
+    wasUnread: true,
+  });
+  assert.deepEqual(
+    harness.notifications.map((notification) => notification.id),
+    ['notif-other'],
+  );
+});
+
+test('deleteNotificationByIdForUser returns null for missing or non-owned notifications', async (t) => {
+  const harness = createNotificationDbHarness([
+    {
+      id: 'notif-other-user',
+      user_id: 'user-2',
+      is_read: false,
+      link_url: '/account/notifications',
+      created_at: '2026-04-24T00:00:00.000Z',
+    },
+  ]);
+  installNotificationDbHarness(harness, (cleanup) => t.after(cleanup));
+
+  const deletedNotification = await deleteNotificationByIdForUser({
+    userId: 'user-1',
+    notificationId: 'notif-other-user',
+  });
+
+  assert.equal(deletedNotification, null);
+  assert.deepEqual(
+    harness.notifications.map((notification) => notification.id),
+    ['notif-other-user'],
+  );
+});
+
+test('deleteReadNotificationsByUserId deletes only read notifications for the matching user', async (t) => {
+  const harness = createNotificationDbHarness([
+    {
+      id: 'notif-read-1',
+      user_id: 'user-1',
+      is_read: true,
+      link_url: '/account/profile',
+      created_at: '2026-04-24T00:00:00.000Z',
+    },
+    {
+      id: 'notif-unread',
+      user_id: 'user-1',
+      is_read: false,
+      link_url: '/account/settings',
+      created_at: '2026-04-24T00:00:00.000Z',
+    },
+    {
+      id: 'notif-read-2',
+      user_id: 'user-1',
+      is_read: true,
+      link_url: '/account/notifications',
+      created_at: '2026-04-24T00:00:00.000Z',
+    },
+    {
+      id: 'notif-other-user',
+      user_id: 'user-2',
+      is_read: true,
+      link_url: '/account/notifications',
+      created_at: '2026-04-24T00:00:00.000Z',
+    },
+  ]);
+  installNotificationDbHarness(harness, (cleanup) => t.after(cleanup));
+
+  const deletedNotifications = await deleteReadNotificationsByUserId('user-1');
+
+  assert.deepEqual(deletedNotifications, [
+    { userId: 'user-1', id: 'notif-read-1', wasUnread: false },
+    { userId: 'user-1', id: 'notif-read-2', wasUnread: false },
+  ]);
+  assert.deepEqual(
+    harness.notifications.map((notification) => notification.id),
+    ['notif-unread', 'notif-other-user'],
+  );
+});
+
+test('deleteNotificationsOlderThan purges only notifications older than the cutoff', async (t) => {
+  const cutoff = new Date('2026-03-25T00:00:00.000Z');
+  const harness = createNotificationDbHarness([
+    {
+      id: 'notif-old-unread',
+      user_id: 'user-1',
+      is_read: false,
+      link_url: '/account/notifications',
+      created_at: '2026-03-24T23:59:59.000Z',
+    },
+    {
+      id: 'notif-old-read',
+      user_id: 'user-2',
+      is_read: true,
+      link_url: '/account/profile',
+      created_at: '2026-03-20T00:00:00.000Z',
+    },
+    {
+      id: 'notif-at-cutoff',
+      user_id: 'user-3',
+      is_read: true,
+      link_url: '/account/settings',
+      created_at: '2026-03-25T00:00:00.000Z',
+    },
+    {
+      id: 'notif-fresh',
+      user_id: 'user-4',
+      is_read: false,
+      link_url: '/account/notifications',
+      created_at: '2026-04-01T00:00:00.000Z',
+    },
+  ]);
+  installNotificationDbHarness(harness, (cleanup) => t.after(cleanup));
+
+  const deletedNotifications = await deleteNotificationsOlderThan({ cutoff });
+
+  assert.deepEqual(deletedNotifications, [
+    { userId: 'user-1', id: 'notif-old-unread', wasUnread: true },
+    { userId: 'user-2', id: 'notif-old-read', wasUnread: false },
+  ]);
+  assert.deepEqual(
+    harness.notifications.map((notification) => notification.id),
+    ['notif-at-cutoff', 'notif-fresh'],
+  );
+});
+
 test('deleteNotificationsByUserIdAndAuthId deletes only auth-linked notifications for the matching user', async (t) => {
   const authId = '11111111-1111-4111-8111-111111111111';
   const otherAuthId = '22222222-2222-4222-8222-222222222222';
@@ -94,30 +281,35 @@ test('deleteNotificationsByUserIdAndAuthId deletes only auth-linked notification
       user_id: 'user-1',
       is_read: false,
       link_url: `/account/schedule?shiftId=shift-1&authId=${authId}`,
+      created_at: '2026-04-24T00:00:00.000Z',
     },
     {
       id: 'notif-read-match',
       user_id: 'user-1',
       is_read: true,
       link_url: `/account/schedule?authId=${authId}&shiftId=shift-1`,
+      created_at: '2026-04-24T00:00:00.000Z',
     },
     {
       id: 'notif-other-auth',
       user_id: 'user-1',
       is_read: false,
       link_url: `/account/schedule?shiftId=shift-1&authId=${otherAuthId}`,
+      created_at: '2026-04-24T00:00:00.000Z',
     },
     {
       id: 'notif-other-user',
       user_id: 'user-2',
       is_read: false,
       link_url: `/account/schedule?shiftId=shift-1&authId=${authId}`,
+      created_at: '2026-04-24T00:00:00.000Z',
     },
     {
       id: 'notif-no-auth',
       user_id: 'user-1',
       is_read: false,
       link_url: '/account/notifications',
+      created_at: '2026-04-24T00:00:00.000Z',
     },
   ]);
   installNotificationDbHarness(harness, (cleanup) => t.after(cleanup));
@@ -128,8 +320,8 @@ test('deleteNotificationsByUserIdAndAuthId deletes only auth-linked notification
   });
 
   assert.deepEqual(deletedNotifications, [
-    { id: 'notif-unread-match', wasUnread: true },
-    { id: 'notif-read-match', wasUnread: false },
+    { userId: 'user-1', id: 'notif-unread-match', wasUnread: true },
+    { userId: 'user-1', id: 'notif-read-match', wasUnread: false },
   ]);
   assert.deepEqual(
     harness.notifications.map((notification) => notification.id),
@@ -145,6 +337,7 @@ test('deleteNotificationsByUserIdAndAuthId is a no-op when no auth-linked notifi
       user_id: 'user-1',
       is_read: false,
       link_url: '/account/notifications',
+      created_at: '2026-04-24T00:00:00.000Z',
     },
   ]);
   installNotificationDbHarness(harness, (cleanup) => t.after(cleanup));
@@ -159,4 +352,70 @@ test('deleteNotificationsByUserIdAndAuthId is a no-op when no auth-linked notifi
     harness.notifications.map((notification) => notification.id),
     ['notif-1'],
   );
+});
+
+test('updateNotificationReadStateForUser marks an owned notification as read', async (t) => {
+  const harness = createNotificationDbHarness([
+    {
+      id: 'notif-1',
+      user_id: 'user-1',
+      is_read: false,
+      link_url: '/account/notifications',
+      created_at: '2026-04-24T00:00:00.000Z',
+    },
+  ]);
+  installNotificationDbHarness(harness, (cleanup) => t.after(cleanup));
+
+  const result = await updateNotificationReadStateForUser({
+    userId: 'user-1',
+    notificationId: 'notif-1',
+    isRead: true,
+  });
+
+  assert.deepEqual(result, { id: 'notif-1', userId: 'user-1', isRead: true });
+  assert.equal(harness.notifications[0].is_read, true);
+});
+
+test('updateNotificationReadStateForUser marks an owned notification as unread', async (t) => {
+  const harness = createNotificationDbHarness([
+    {
+      id: 'notif-2',
+      user_id: 'user-1',
+      is_read: true,
+      link_url: '/account/notifications',
+      created_at: '2026-04-24T00:00:00.000Z',
+    },
+  ]);
+  installNotificationDbHarness(harness, (cleanup) => t.after(cleanup));
+
+  const result = await updateNotificationReadStateForUser({
+    userId: 'user-1',
+    notificationId: 'notif-2',
+    isRead: false,
+  });
+
+  assert.deepEqual(result, { id: 'notif-2', userId: 'user-1', isRead: false });
+  assert.equal(harness.notifications[0].is_read, false);
+});
+
+test('updateNotificationReadStateForUser returns null for missing or non-owned notification', async (t) => {
+  const harness = createNotificationDbHarness([
+    {
+      id: 'notif-other',
+      user_id: 'user-2',
+      is_read: false,
+      link_url: '/account/notifications',
+      created_at: '2026-04-24T00:00:00.000Z',
+    },
+  ]);
+  installNotificationDbHarness(harness, (cleanup) => t.after(cleanup));
+
+  const result = await updateNotificationReadStateForUser({
+    userId: 'user-1',
+    notificationId: 'notif-other',
+    isRead: true,
+  });
+
+  assert.equal(result, null);
+  assert.equal(harness.notifications[0].is_read, false);
 });

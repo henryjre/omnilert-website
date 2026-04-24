@@ -6,7 +6,7 @@ import { Badge } from '@/shared/components/ui/Badge';
 import { Button } from '@/shared/components/ui/Button';
 import { Spinner } from "@/shared/components/ui/Spinner";
 import { AnimatedModal } from "@/shared/components/ui/AnimatedModal";
-import { AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion, useMotionValue, useTransform, animate } from "framer-motion";
 import { api } from '@/shared/services/api.client';
 import { useAppToast } from '@/shared/hooks/useAppToast';
 import { useSocket } from '@/shared/hooks/useSocket';
@@ -14,7 +14,11 @@ import { useNotificationStore } from '@/shared/store/notificationStore';
 import { ShiftExchangeDetailModal } from '@/features/shift-exchange/components/ShiftExchangeDetailModal';
 import { PeerEvaluationModal } from '../../peer-evaluations/components/PeerEvaluationModal';
 import { ShiftAuthReasonModal } from './ShiftAuthReasonModal';
-import { Bell, Check, X } from 'lucide-react';
+import { Bell, Check, X, Trash2, CheckCheck, Mail } from 'lucide-react';
+
+const SWIPE_MAX_PX = 96;
+const SWIPE_COMMIT_PX = 72;
+const SWIPE_LOCK_THRESHOLD_PX = 10;
 
 function NotificationSkeleton() {
   return (
@@ -127,6 +131,144 @@ function getPayslipAdjustmentId(linkUrl: string | null | undefined): string | nu
 
 const PAGE_SIZE = 10;
 
+interface MobileSwipeNotificationCardProps {
+  notification: any;
+  isDeleting: boolean;
+  onDelete: (n: any) => Promise<void>;
+  onSetReadState: (id: string, isRead: boolean) => Promise<boolean>;
+  children: React.ReactNode;
+}
+
+function MobileSwipeNotificationCard({
+  notification,
+  isDeleting,
+  onDelete,
+  onSetReadState,
+  children,
+}: MobileSwipeNotificationCardProps) {
+  const swipeX = useMotionValue(0);
+  const deleteIconX = useTransform(swipeX, (v) => v + SWIPE_MAX_PX / 2);
+  const readIconX = useTransform(swipeX, (v) => v - SWIPE_MAX_PX / 2);
+  // Fade from subtle (0.35) to full (1) as swipe crosses the commit threshold
+  const deleteLaneOpacity = useTransform(swipeX, [-SWIPE_MAX_PX, -SWIPE_COMMIT_PX, 0], [1, 0.35, 0]);
+  const readLaneOpacity = useTransform(swipeX, [0, SWIPE_COMMIT_PX, SWIPE_MAX_PX], [0, 0.35, 1]);
+  const [lane, setLane] = useState<'delete' | 'read-toggle' | null>(null);
+  const [isPending, setIsPending] = useState(false);
+  const touchStartRef = useRef<{ x: number; y: number; locked: 'h' | 'v' | null } | null>(null);
+
+  function handleTouchStart(e: React.TouchEvent) {
+    if ((e.target as HTMLElement).closest('[data-no-swipe]')) return;
+    touchStartRef.current = {
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+      locked: null,
+    };
+  }
+
+  function handleTouchMove(e: React.TouchEvent) {
+    if (!touchStartRef.current) return;
+    if ((e.target as HTMLElement).closest('[data-no-swipe]')) return;
+    const start = touchStartRef.current;
+    const touch = e.touches[0];
+    const deltaX = touch.clientX - start.x;
+    const deltaY = touch.clientY - start.y;
+
+    if (start.locked === null && Math.abs(deltaX) + Math.abs(deltaY) > SWIPE_LOCK_THRESHOLD_PX) {
+      start.locked = Math.abs(deltaX) >= Math.abs(deltaY) ? 'h' : 'v';
+      touchStartRef.current = { ...start };
+    }
+
+    if (start.locked === 'v') return;
+    if (start.locked !== 'h') return;
+
+    e.preventDefault();
+    const clamped = Math.max(-SWIPE_MAX_PX, Math.min(SWIPE_MAX_PX, deltaX));
+    swipeX.set(clamped);
+    if (clamped < -4) {
+      setLane('delete');
+    } else if (clamped > 4) {
+      setLane('read-toggle');
+    } else {
+      setLane(null);
+    }
+  }
+
+  async function handleTouchEnd() {
+    if (!touchStartRef.current) return;
+    touchStartRef.current = null;
+    const x = swipeX.get();
+
+    if (isPending || isDeleting) {
+      void animate(swipeX, 0, { type: 'spring', stiffness: 400, damping: 30 });
+      return;
+    }
+
+    if (x < -SWIPE_COMMIT_PX) {
+      // Delete: animate off-screen, then invoke
+      setIsPending(true);
+      await animate(swipeX, -window.innerWidth, { type: 'tween', duration: 0.2 });
+      await onDelete(notification);
+      setIsPending(false);
+      void animate(swipeX, 0, { type: 'spring', stiffness: 400, damping: 30 });
+    } else if (x > SWIPE_COMMIT_PX) {
+      // Toggle read state
+      setIsPending(true);
+      const ok = await onSetReadState(notification.id, !notification.is_read);
+      setIsPending(false);
+      if (!ok) {
+        void animate(swipeX, 0, { type: 'spring', stiffness: 400, damping: 30 });
+      } else {
+        void animate(swipeX, 0, { type: 'spring', stiffness: 400, damping: 30 });
+      }
+    } else {
+      void animate(swipeX, 0, { type: 'spring', stiffness: 400, damping: 30 });
+    }
+    setLane(null);
+  }
+
+  return (
+    <div className="relative overflow-hidden rounded-xl sm:overflow-visible sm:rounded-none">
+      {/* Left lane (right swipe → read toggle) */}
+      <motion.div
+        className="absolute inset-0 flex items-center rounded-xl sm:hidden bg-primary-500"
+        style={{ opacity: readLaneOpacity }}
+      >
+        <motion.div style={{ x: readIconX }} className="flex items-center justify-center w-10">
+          {notification.is_read
+            ? <Mail className="h-5 w-5 text-white" />
+            : <CheckCheck className="h-5 w-5 text-white" />}
+        </motion.div>
+      </motion.div>
+
+      {/* Right lane (left swipe → delete) */}
+      <motion.div
+        className="absolute inset-0 flex items-center justify-end rounded-xl sm:hidden"
+        style={{ backgroundColor: 'rgb(239 68 68)', opacity: deleteLaneOpacity }}
+      >
+        <motion.div style={{ x: deleteIconX }} className="flex items-center justify-center w-10">
+          <Trash2 className="h-5 w-5 text-white" />
+        </motion.div>
+      </motion.div>
+
+      {/* Card — swipes horizontally on mobile only */}
+      <motion.div
+        style={{ x: swipeX, touchAction: 'pan-y' }}
+        className="relative sm:!transform-none"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={() => { void handleTouchEnd(); }}
+        onTouchCancel={() => {
+          touchStartRef.current = null;
+          void animate(swipeX, 0, { type: 'spring', stiffness: 400, damping: 30 });
+          setLane(null);
+        }}
+      >
+        {children}
+      </motion.div>
+    </div>
+  );
+}
+
 export function EmployeeNotificationsTab() {
   const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -138,8 +280,11 @@ export function EmployeeNotificationsTab() {
   const location = useLocation();
   const navigate = useNavigate();
   const notificationsSocket = useSocket('/notifications');
+  const increment = useNotificationStore((s) => s.increment);
   const decrement = useNotificationStore((s) => s.decrement);
+  const patchNotification = useNotificationStore((s) => s.patchNotification);
   const latestNotification = useNotificationStore((s) => s.latestNotification);
+  const latestNotificationPatch = useNotificationStore((s) => s.latestNotificationPatch);
 
   // Token Pay modal state
   const [tokenPayModal, setTokenPayModal] = useState<{ notifId: string; verificationId: string } | null>(null);
@@ -152,6 +297,9 @@ export function EmployeeNotificationsTab() {
   const [shiftExchangeRequestId, setShiftExchangeRequestId] = useState<string | null>(null);
   const [peerEvalId, setPeerEvalId] = useState<string | null>(null);
   const [reasonModalAuthId, setReasonModalAuthId] = useState<string | null>(null);
+  const [deletingNotificationIds, setDeletingNotificationIds] = useState<Set<string>>(new Set());
+  const [deleteAllReadOpen, setDeleteAllReadOpen] = useState(false);
+  const [deleteAllReadLoading, setDeleteAllReadLoading] = useState(false);
 
   useEffect(() => {
     api
@@ -173,6 +321,15 @@ export function EmployeeNotificationsTab() {
     setPage(1);
   }, [latestNotification]);
 
+  // Patch local notification state when a same-session read-state change is broadcast
+  useEffect(() => {
+    if (!latestNotificationPatch) return;
+    const { id, changes } = latestNotificationPatch;
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, ...changes } : n)),
+    );
+  }, [latestNotificationPatch]);
+
   useEffect(() => {
     if (!notificationsSocket) return;
 
@@ -187,6 +344,11 @@ export function EmployeeNotificationsTab() {
       notificationsSocket.off('notification:deleted', handleNotificationDeleted);
     };
   }, [notificationsSocket]);
+
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(notifications.length / PAGE_SIZE));
+    setPage((currentPage) => Math.min(currentPage, totalPages));
+  }, [notifications.length]);
 
   // Scroll to and highlight a notification when navigated from the bell dropdown
   useEffect(() => {
@@ -225,15 +387,79 @@ export function EmployeeNotificationsTab() {
     }
   }, [location.search]);
 
-  const markAsRead = async (id: string): Promise<boolean> => {
+  const setNotificationReadState = async (notificationId: string, isRead: boolean): Promise<boolean> => {
     try {
-      await api.put(`/account/notifications/${id}/read`);
-      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)));
-      decrement();
+      const endpoint = isRead
+        ? `/account/notifications/${notificationId}/read`
+        : `/account/notifications/${notificationId}/unread`;
+      await api.put(endpoint);
+      const changes = { is_read: isRead };
+      setNotifications((prev) => prev.map((n) => (n.id === notificationId ? { ...n, ...changes } : n)));
+      patchNotification(notificationId, changes);
+      if (isRead) {
+        decrement();
+      } else {
+        increment();
+      }
       return true;
     } catch (err: any) {
-      showErrorToast(err?.response?.data?.error || err?.response?.data?.message || 'Failed to mark notification as read.');
+      showErrorToast(
+        err?.response?.data?.error ||
+        err?.response?.data?.message ||
+        `Failed to mark notification as ${isRead ? 'read' : 'unread'}.`,
+      );
       return false;
+    }
+  };
+
+  const markAsRead = async (id: string): Promise<boolean> => {
+    return setNotificationReadState(id, true);
+  };
+
+  const removeNotificationsFromState = (notificationIds: string[]) => {
+    if (notificationIds.length === 0) return;
+    const idSet = new Set(notificationIds);
+    setNotifications((prev) => prev.filter((notification) => !idSet.has(notification.id)));
+  };
+
+  const handleDeleteNotification = async (notification: any) => {
+    const notificationId = String(notification?.id ?? '').trim();
+    if (!notificationId) return;
+
+    setDeletingNotificationIds((prev) => new Set(prev).add(notificationId));
+    try {
+      await api.delete(`/account/notifications/${notificationId}`);
+      removeNotificationsFromState([notificationId]);
+      showSuccessToast('Notification deleted.');
+    } catch (err: any) {
+      showErrorToast(err?.response?.data?.error || err?.response?.data?.message || 'Failed to delete notification.');
+    } finally {
+      setDeletingNotificationIds((prev) => {
+        const next = new Set(prev);
+        next.delete(notificationId);
+        return next;
+      });
+    }
+  };
+
+  const handleDeleteAllRead = async () => {
+    setDeleteAllReadLoading(true);
+    try {
+      const res = await api.delete('/account/notifications/read-all');
+      const deletedIds = Array.isArray(res.data?.data?.deletedIds)
+        ? res.data.data.deletedIds.filter((id: unknown): id is string => typeof id === 'string')
+        : [];
+      removeNotificationsFromState(deletedIds);
+      setDeleteAllReadOpen(false);
+      showSuccessToast(
+        deletedIds.length === 1
+          ? '1 read notification deleted.'
+          : `${deletedIds.length} read notifications deleted.`,
+      );
+    } catch (err: any) {
+      showErrorToast(err?.response?.data?.error || err?.response?.data?.message || 'Failed to delete read notifications.');
+    } finally {
+      setDeleteAllReadLoading(false);
     }
   };
 
@@ -340,6 +566,8 @@ export function EmployeeNotificationsTab() {
     }
   };
 
+  const readNotificationCount = notifications.filter((notification) => notification.is_read).length;
+
   if (notifications.length === 0) {
     return (
       <div className="space-y-5">
@@ -360,9 +588,21 @@ export function EmployeeNotificationsTab() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Bell className="h-6 w-6 text-primary-600" />
-        <h1 className="text-2xl font-bold text-gray-900">My Notifications</h1>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <Bell className="h-6 w-6 text-primary-600" />
+          <h1 className="text-2xl font-bold text-gray-900">My Notifications</h1>
+        </div>
+        <Button
+          variant="secondary"
+          size="sm"
+          data-no-swipe
+          onClick={() => setDeleteAllReadOpen(true)}
+          disabled={readNotificationCount === 0}
+          className="self-start text-xs sm:self-auto"
+        >
+          Delete all read
+        </Button>
       </div>
 
       <div className="space-y-3">
@@ -380,11 +620,18 @@ export function EmployeeNotificationsTab() {
             (n.link_url.startsWith('/case-reports') || n.link_url.startsWith('/violation-notices'));
           const isAuthRequestLink = typeof n.link_url === "string" && n.link_url.startsWith("/account/authorization-requests");
           const isCashRequestLink = typeof n.link_url === "string" && n.link_url.startsWith("/account/cash-requests");
+          const isDeletingNotification = deletingNotificationIds.has(n.id);
           return (
             <div key={n.id} ref={(el) => { cardRefs.current[n.id] = el; }}>
-            <Card className={`border-l-4 ${typeBorderClass(n.type)} transition-all duration-300 ${n.is_read ? 'opacity-60' : ''} ${highlightId === n.id ? 'ring-2 ring-primary-400 animate-pulse' : ''}`}>
+            <MobileSwipeNotificationCard
+              notification={n}
+              isDeleting={isDeletingNotification}
+              onDelete={handleDeleteNotification}
+              onSetReadState={setNotificationReadState}
+            >
+            <Card className={`border-l-4 ${typeBorderClass(n.type)} transition-all duration-300 ${highlightId === n.id ? 'ring-2 ring-primary-400 animate-pulse' : ''}`}>
               <CardBody className="p-3 sm:p-4">
-                <div className="flex flex-col gap-2.5 sm:flex-row sm:items-start sm:gap-3">
+                <div className={`flex flex-col gap-2.5 sm:flex-row sm:items-start sm:gap-3 transition-opacity duration-300 ${n.is_read ? 'opacity-60' : ''}`}>
                   {/* Notification content */}
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -412,6 +659,7 @@ export function EmployeeNotificationsTab() {
                       <Button
                         variant="secondary"
                         size="sm"
+                        data-no-swipe
                         onClick={() => { void handleOpenNotificationLink(n); }}
                         className="text-xs"
                       >
@@ -422,6 +670,7 @@ export function EmployeeNotificationsTab() {
                       <Button
                         variant="secondary"
                         size="sm"
+                        data-no-swipe
                         onClick={() => {
                           if (!n.is_read) { void markAsRead(n.id); }
                           setReasonModalAuthId(authId);
@@ -435,6 +684,7 @@ export function EmployeeNotificationsTab() {
                       <Button
                         variant="secondary"
                         size="sm"
+                        data-no-swipe
                         onClick={() => {
                           if (!n.is_read) { void markAsRead(n.id); }
                           navigate(n.link_url ?? `/account/schedule?shiftId=${shiftId}`);
@@ -448,6 +698,7 @@ export function EmployeeNotificationsTab() {
                       <Button
                         variant="secondary"
                         size="sm"
+                        data-no-swipe
                         onClick={() => {
                           if (!n.is_read) { void markAsRead(n.id); }
                           navigate(n.link_url ?? (isAuthRequestLink ? `/account/authorization-requests?requestId=${requestId}` : `/account/cash-requests?requestId=${requestId}`));
@@ -461,6 +712,7 @@ export function EmployeeNotificationsTab() {
                       <Button
                         variant="secondary"
                         size="sm"
+                        data-no-swipe
                         onClick={() => setPeerEvalId(peerEvaluationId)}
                         className="text-xs"
                       >
@@ -471,6 +723,7 @@ export function EmployeeNotificationsTab() {
                       <Button
                         variant="secondary"
                         size="sm"
+                        data-no-swipe
                         onClick={() => setShiftExchangeRequestId(shiftExchangeId)}
                         className="text-xs"
                       >
@@ -481,6 +734,7 @@ export function EmployeeNotificationsTab() {
                       <Button
                         variant="secondary"
                         size="sm"
+                        data-no-swipe
                         onClick={() => {
                           if (!n.is_read) { void markAsRead(n.id); }
                           navigate(`/account/payslip?tab=adjustments&adjustmentId=${payslipAdjustmentId}`);
@@ -494,6 +748,7 @@ export function EmployeeNotificationsTab() {
                       <Button
                         variant="secondary"
                         size="sm"
+                        data-no-swipe
                         onClick={() => openTokenPayModal(n.id, tokenPayId)}
                         className="text-xs"
                       >
@@ -504,6 +759,7 @@ export function EmployeeNotificationsTab() {
                       <Button
                         variant="secondary"
                         size="sm"
+                        data-no-swipe
                         onClick={() => { void handleOpenNotificationLink(n); }}
                         className="text-xs"
                       >
@@ -514,6 +770,7 @@ export function EmployeeNotificationsTab() {
                       <Button
                         variant="secondary"
                         size="sm"
+                        data-no-swipe
                         onClick={() => { void handleOpenNotificationLink(n); }}
                         className="text-xs"
                       >
@@ -524,15 +781,25 @@ export function EmployeeNotificationsTab() {
                       <button
                         type="button"
                         onClick={() => { void markAsRead(n.id); }}
-                        className="text-xs text-primary-600 hover:underline"
+                        disabled={isDeletingNotification}
+                        className="hidden text-xs text-primary-600 hover:underline sm:inline"
                       >
                         Mark read
                       </button>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => { void handleDeleteNotification(n); }}
+                      disabled={isDeletingNotification}
+                      className="hidden text-xs text-red-600 hover:underline disabled:cursor-not-allowed disabled:opacity-50 disabled:no-underline sm:inline"
+                    >
+                      {isDeletingNotification ? 'Deleting...' : 'Delete'}
+                    </button>
                   </div>
                 </div>
               </CardBody>
             </Card>
+            </MobileSwipeNotificationCard>
             </div>
           );
         })}
@@ -785,6 +1052,40 @@ export function EmployeeNotificationsTab() {
         initialEvaluationId={peerEvalId}
         onClose={() => setPeerEvalId(null)}
       />
+
+      <AnimatePresence>
+        {deleteAllReadOpen && (
+          <AnimatedModal
+            onBackdropClick={deleteAllReadLoading ? undefined : () => setDeleteAllReadOpen(false)}
+            maxWidth="max-w-md"
+          >
+            <div className="w-full overflow-hidden rounded-xl bg-white shadow-xl">
+              <div className="border-b px-5 py-4">
+                <h3 className="font-semibold text-gray-900">Delete all read notifications?</h3>
+                <p className="mt-1 text-sm text-gray-500">
+                  This will permanently remove {readNotificationCount} read notification{readNotificationCount === 1 ? '' : 's'}.
+                </p>
+              </div>
+              <div className="flex justify-end gap-3 px-5 py-4">
+                <Button
+                  variant="secondary"
+                  onClick={() => setDeleteAllReadOpen(false)}
+                  disabled={deleteAllReadLoading}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="danger"
+                  onClick={() => { void handleDeleteAllRead(); }}
+                  disabled={deleteAllReadLoading || readNotificationCount === 0}
+                >
+                  {deleteAllReadLoading ? 'Deleting...' : 'Delete all read'}
+                </Button>
+              </div>
+            </div>
+          </AnimatedModal>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {reasonModalAuthId && (

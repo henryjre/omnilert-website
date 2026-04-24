@@ -25,6 +25,10 @@ import {
   stopShiftAuthorizationCron,
 } from './services/shiftAuthorizationCron.service.js';
 import { initEpiSnapshotCrons, stopEpiSnapshotCrons } from './services/epiSnapshotCron.service.js';
+import {
+  initNotificationRetentionCron,
+  stopNotificationRetentionCron,
+} from './services/notificationRetentionCron.service.js';
 import { logger } from './utils/logger.js';
 import fs from 'fs';
 
@@ -86,6 +90,12 @@ async function shutdown(signal: string): Promise<void> {
     logger.error({ err: error }, 'Failed to stop EPI snapshot crons');
   }
 
+  try {
+    stopNotificationRetentionCron();
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to stop notification retention cron');
+  }
+
   await new Promise<void>((resolve) => {
     server.close(() => resolve());
   });
@@ -108,6 +118,7 @@ async function bootstrap(): Promise<void> {
   initPosAlertsMonitor();
   initShiftAuthorizationCron();
   await initEpiSnapshotCrons();
+  initNotificationRetentionCron();
 
   server.listen(env.PORT, () => {
     logger.info(`Server running on port ${env.PORT}`);

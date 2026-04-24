@@ -17,7 +17,8 @@ type NotificationRecord = {
   created_at: string | Date;
 };
 
-type NotificationLookupRow = Pick<NotificationRecord, 'id' | 'is_read' | 'link_url'>;
+type NotificationDeletionLookupRow = Pick<NotificationRecord, 'id' | 'user_id' | 'is_read'>;
+type NotificationLookupRow = NotificationDeletionLookupRow & Pick<NotificationRecord, 'link_url'>;
 
 type PushSubscriptionRecord = {
   id: string;
@@ -53,6 +54,7 @@ export type RegisterPushSubscriptionInput = {
 };
 
 export type DeletedNotificationInfo = {
+  userId: string;
   id: string;
   wasUnread: boolean;
 };
@@ -109,6 +111,81 @@ export async function createAndDispatchNotification(
   return notification;
 }
 
+export function emitDeletedNotificationEvents(notifications: DeletedNotificationInfo[]): void {
+  if (notifications.length === 0) return;
+
+  try {
+    const namespace = getIO().of('/notifications');
+    for (const notification of notifications) {
+      namespace.to(`user:${notification.userId}`).emit('notification:deleted', {
+        id: notification.id,
+        wasUnread: notification.wasUnread,
+      });
+    }
+  } catch {
+    // Ignore socket failures and continue with deletion flow.
+  }
+}
+
+export async function updateNotificationReadStateForUser(input: {
+  userId: string;
+  notificationId: string;
+  isRead: boolean;
+}): Promise<{ id: string; userId: string; isRead: boolean } | null> {
+  const rows = (await db.getDb()('employee_notifications')
+    .where({ id: input.notificationId, user_id: input.userId })
+    .select('id', 'user_id')) as Array<{ id: string; user_id: string }>;
+
+  if (rows.length === 0) return null;
+
+  await db.getDb()('employee_notifications')
+    .where({ id: input.notificationId, user_id: input.userId })
+    .update({ is_read: input.isRead });
+
+  return { id: input.notificationId, userId: input.userId, isRead: input.isRead };
+}
+
+export async function deleteNotificationByIdForUser(input: {
+  userId: string;
+  notificationId: string;
+}): Promise<DeletedNotificationInfo | null> {
+  const userId = input.userId.trim();
+  const notificationId = input.notificationId.trim();
+  if (!userId || !notificationId) return null;
+
+  const rows = (await db.getDb()('employee_notifications')
+    .where({ id: notificationId, user_id: userId })
+    .select('id', 'user_id', 'is_read')) as NotificationDeletionLookupRow[];
+
+  const deletedNotifications = await deleteNotificationRows(rows);
+  return deletedNotifications[0] ?? null;
+}
+
+export async function deleteReadNotificationsByUserId(userId: string): Promise<DeletedNotificationInfo[]> {
+  const trimmedUserId = userId.trim();
+  if (!trimmedUserId) return [];
+
+  const rows = (await db.getDb()('employee_notifications')
+    .where({ user_id: trimmedUserId, is_read: true })
+    .select('id', 'user_id', 'is_read')) as NotificationDeletionLookupRow[];
+
+  return deleteNotificationRows(rows);
+}
+
+export async function deleteNotificationsOlderThan(input: {
+  cutoff: Date;
+}): Promise<DeletedNotificationInfo[]> {
+  if (!(input.cutoff instanceof Date) || Number.isNaN(input.cutoff.getTime())) {
+    return [];
+  }
+
+  const rows = (await db.getDb()('employee_notifications')
+    .where('created_at', '<', input.cutoff)
+    .select('id', 'user_id', 'is_read')) as NotificationDeletionLookupRow[];
+
+  return deleteNotificationRows(rows);
+}
+
 export async function deleteNotificationsByUserIdAndAuthId(input: {
   userId: string;
   authId: string;
@@ -120,22 +197,11 @@ export async function deleteNotificationsByUserIdAndAuthId(input: {
   const tenantDb = db.getDb();
   const rows = (await tenantDb('employee_notifications')
     .where({ user_id: userId })
-    .select('id', 'is_read', 'link_url')) as NotificationLookupRow[];
+    .select('id', 'user_id', 'is_read', 'link_url')) as NotificationLookupRow[];
 
-  const matchingNotifications = rows
-    .filter((row) => extractAuthIdFromLinkUrl(row.link_url) === authId)
-    .map((row) => ({
-      id: String(row.id),
-      wasUnread: row.is_read !== true,
-    }));
-
-  for (const notification of matchingNotifications) {
-    await tenantDb('employee_notifications')
-      .where({ id: notification.id, user_id: userId })
-      .delete();
-  }
-
-  return matchingNotifications;
+  return deleteNotificationRows(
+    rows.filter((row) => extractAuthIdFromLinkUrl(row.link_url) === authId),
+  );
 }
 
 export async function registerPushSubscription(
@@ -263,4 +329,33 @@ function extractAuthIdFromLinkUrl(linkUrl: string | null | undefined): string | 
   if (typeof linkUrl !== 'string') return null;
   const match = linkUrl.match(AUTH_ID_PARAM_PATTERN);
   return match?.[1] ?? null;
+}
+
+async function deleteNotificationRows(
+  rows: NotificationDeletionLookupRow[],
+): Promise<DeletedNotificationInfo[]> {
+  if (rows.length === 0) return [];
+
+  const tenantDb = db.getDb();
+  const deletedNotifications: DeletedNotificationInfo[] = [];
+
+  for (const row of rows) {
+    const userId = String(row.user_id ?? '').trim();
+    const id = String(row.id ?? '').trim();
+    if (!userId || !id) continue;
+
+    const deletedCount = await tenantDb('employee_notifications')
+      .where({ id, user_id: userId })
+      .delete();
+
+    if (deletedCount > 0) {
+      deletedNotifications.push({
+        userId,
+        id,
+        wasUnread: row.is_read !== true,
+      });
+    }
+  }
+
+  return deletedNotifications;
 }

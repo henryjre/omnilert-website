@@ -6,9 +6,13 @@ import { env } from '../config/env.js';
 import { syncUserProfileToOdoo } from '../services/odoo.service.js';
 import {
   createAndDispatchNotification,
+  deleteNotificationByIdForUser,
+  deleteReadNotificationsByUserId,
+  emitDeletedNotificationEvents,
   getWebPushConfig,
   registerPushSubscription,
   unregisterPushSubscription,
+  updateNotificationReadStateForUser,
 } from '../services/notification.service.js';
 import { db } from '../config/database.js';
 import { loadUserWorkScope } from '../services/globalUser.service.js';
@@ -620,15 +624,53 @@ export async function getNotifications(req: Request, res: Response, next: NextFu
 
 export async function markNotificationRead(req: Request, res: Response, next: NextFunction) {
   try {
-    const { companyId } = req.companyContext!;
-    const tenantDb = db.getDb();
-    const { id } = req.params;
-
-    await tenantDb('employee_notifications')
-      .where({ id, user_id: req.user!.sub })
-      .update({ is_read: true });
-
+    const id = Array.isArray(req.params.id) ? req.params.id[0] ?? '' : req.params.id;
+    const result = await updateNotificationReadStateForUser({
+      userId: req.user!.sub,
+      notificationId: id,
+      isRead: true,
+    });
+    if (!result) throw new AppError(404, 'Notification not found');
     res.json({ success: true, message: 'Notification marked as read' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function markNotificationUnread(req: Request, res: Response, next: NextFunction) {
+  try {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] ?? '' : req.params.id;
+    const result = await updateNotificationReadStateForUser({
+      userId: req.user!.sub,
+      notificationId: id,
+      isRead: false,
+    });
+    if (!result) throw new AppError(404, 'Notification not found');
+    res.json({ success: true, message: 'Notification marked as unread' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function deleteNotification(req: Request, res: Response, next: NextFunction) {
+  try {
+    const deletedNotification = await deleteNotificationByIdForUser({
+      userId: req.user!.sub,
+      notificationId: Array.isArray(req.params.id) ? req.params.id[0] ?? '' : req.params.id,
+    });
+
+    if (!deletedNotification) {
+      throw new AppError(404, 'Notification not found');
+    }
+
+    emitDeletedNotificationEvents([deletedNotification]);
+
+    res.json({
+      success: true,
+      data: {
+        id: deletedNotification.id,
+      },
+    });
   } catch (err) {
     next(err);
   }
@@ -672,6 +714,23 @@ export async function markAllNotificationsRead(req: Request, res: Response, next
       .update({ is_read: true });
 
     res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function deleteAllReadNotifications(req: Request, res: Response, next: NextFunction) {
+  try {
+    const deletedNotifications = await deleteReadNotificationsByUserId(req.user!.sub);
+    emitDeletedNotificationEvents(deletedNotifications);
+
+    res.json({
+      success: true,
+      data: {
+        deletedCount: deletedNotifications.length,
+        deletedIds: deletedNotifications.map((notification) => notification.id),
+      },
+    });
   } catch (err) {
     next(err);
   }

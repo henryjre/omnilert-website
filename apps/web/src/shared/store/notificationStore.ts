@@ -9,6 +9,9 @@ interface NotificationState {
   // Used to broadcast new notifications to any subscribed component (e.g. the tab)
   latestNotification: any | null;
   pushNotification: (notif: any) => void;
+  // Used to broadcast read-state changes across same-session components
+  latestNotificationPatch: { id: string; changes: Record<string, unknown> } | null;
+  patchNotification: (id: string, changes: Record<string, unknown>) => void;
 }
 
 export const useNotificationStore = create<NotificationState>((set) => ({
@@ -19,4 +22,6 @@ export const useNotificationStore = create<NotificationState>((set) => ({
   reset: () => set({ unreadCount: 0 }),
   latestNotification: null,
   pushNotification: (notif) => set({ latestNotification: notif }),
+  latestNotificationPatch: null,
+  patchNotification: (id, changes) => set({ latestNotificationPatch: { id, changes } }),
 }));

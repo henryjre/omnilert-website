@@ -144,9 +144,21 @@ router.put(
   '/notifications/read-all',
   accountController.markAllNotificationsRead,
 );
+router.delete(
+  '/notifications/read-all',
+  accountController.deleteAllReadNotifications,
+);
 router.put(
   '/notifications/:id/read',
   accountController.markNotificationRead,
+);
+router.put(
+  '/notifications/:id/unread',
+  accountController.markNotificationUnread,
+);
+router.delete(
+  '/notifications/:id',
+  accountController.deleteNotification,
 );
 router.get('/push/config', accountController.getPushConfig);
 router.get('/push/preferences', accountController.getPushPreferences);
