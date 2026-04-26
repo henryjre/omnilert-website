@@ -186,10 +186,48 @@ export async function listCaseTaskMessages(caseId: string, taskId: string): Prom
 export async function sendCaseTaskMessage(
   caseId: string,
   taskId: string,
-  content: string,
+  input: {
+    content: string;
+    files?: File[];
+    parentMessageId?: string | null;
+    mentionedUserIds?: string[];
+    mentionedRoleIds?: string[];
+  },
 ): Promise<CaseTaskMessage> {
-  const response = await api.post(`/case-reports/${caseId}/tasks/${taskId}/messages`, { content });
+  const hasFiles = (input.files?.length ?? 0) > 0;
+  if (!hasFiles) {
+    const response = await api.post(`/case-reports/${caseId}/tasks/${taskId}/messages`, {
+      content: input.content,
+      parentMessageId: input.parentMessageId ?? undefined,
+      mentionedUserIds: input.mentionedUserIds ?? [],
+      mentionedRoleIds: input.mentionedRoleIds ?? [],
+    });
+    return response.data.data as CaseTaskMessage;
+  }
+
+  const form = new FormData();
+  if (input.content) form.append('content', input.content);
+  if (input.parentMessageId) form.append('parentMessageId', input.parentMessageId);
+  form.append('mentionedUserIds', JSON.stringify(input.mentionedUserIds ?? []));
+  form.append('mentionedRoleIds', JSON.stringify(input.mentionedRoleIds ?? []));
+  for (const file of input.files ?? []) {
+    form.append('files', file);
+  }
+  const response = await api.post(`/case-reports/${caseId}/tasks/${taskId}/messages`, form);
   return response.data.data as CaseTaskMessage;
+}
+
+export async function toggleTaskReaction(
+  caseId: string,
+  taskId: string,
+  messageId: string,
+  emoji: string,
+): Promise<{ messageId: string; reactions: CaseTaskMessage['reactions'] }> {
+  const response = await api.post(
+    `/case-reports/${caseId}/tasks/${taskId}/messages/${messageId}/reactions`,
+    { emoji },
+  );
+  return response.data.data;
 }
 
 export async function completeCaseTask(

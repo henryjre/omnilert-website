@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { Button } from '@/shared/components/ui/Button';
 import { Input } from '@/shared/components/ui/Input';
+import { MoveLeft } from 'lucide-react';
 import axios from 'axios';
 
 interface Company {
@@ -21,9 +22,36 @@ function sanitizeRedirectPath(raw: string | null): string {
   return raw;
 }
 
+function getSafeDiscordSourceUrl(rawSource: string | null, guildId: string | undefined): string | null {
+  if (!rawSource || !guildId) return null;
+
+  try {
+    const url = new URL(rawSource);
+    const hostname = url.hostname.toLowerCase();
+    const protocol = url.protocol.toLowerCase();
+    const isDiscordHost =
+      protocol === 'discord:' ||
+      hostname === 'discord.com' ||
+      hostname.endsWith('.discord.com') ||
+      hostname === 'discordapp.com' ||
+      hostname.endsWith('.discordapp.com');
+
+    if (!isDiscordHost) return null;
+    if (!rawSource.includes(guildId)) return null;
+
+    return rawSource;
+  } catch {
+    return null;
+  }
+}
+
 export function LoginForm() {
   const [searchParams] = useSearchParams();
   const redirectPath = sanitizeRedirectPath(searchParams.get('redirect'));
+  const discordSourceUrl = getSafeDiscordSourceUrl(
+    searchParams.get('source'),
+    import.meta.env.VITE_DISCORD_GUILD_ID,
+  );
   const [mode, setMode] = useState<AuthMode>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -353,6 +381,18 @@ export function LoginForm() {
             </form>
           ) : null}
         </div>
+
+        {discordSourceUrl && (
+          <div className="mt-4 flex justify-center">
+            <a
+              href={discordSourceUrl}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-600 transition-colors hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-4"
+            >
+              <MoveLeft className="h-3.5 w-[18px]" aria-hidden="true" />
+              Back to Discord
+            </a>
+          </div>
+        )}
       </div>
     </div>
   );

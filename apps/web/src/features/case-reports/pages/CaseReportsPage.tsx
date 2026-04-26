@@ -47,6 +47,7 @@ import {
   sendCaseTaskMessage,
   toggleCaseMute,
   toggleCaseReaction,
+  toggleTaskReaction,
   uploadCaseAttachment,
   type CaseReportDetail,
   type CaseReportFilters,
@@ -115,13 +116,25 @@ export function CaseReportsPage() {
   const [initialFlashMessageId, setInitialFlashMessageId] = useState<string | null>(() =>
     searchParams.get('messageId'),
   );
+  const [initialFlashTaskId, setInitialFlashTaskId] = useState<string | null>(() =>
+    searchParams.get('taskId'),
+  );
+  const [initialFlashTaskMessageId, setInitialFlashTaskMessageId] = useState<string | null>(() =>
+    searchParams.get('taskId') ? searchParams.get('messageId') : null,
+  );
 
   // Sync state when URL params change externally
   useEffect(() => {
     const caseId = searchParams.get('caseId');
     const messageId = searchParams.get('messageId');
+    const taskId = searchParams.get('taskId');
     setSelectedCaseId((prev) => (prev !== caseId ? caseId : prev));
-    if (messageId) setInitialFlashMessageId(messageId);
+    if (taskId) {
+      setInitialFlashTaskId(taskId);
+      setInitialFlashTaskMessageId(messageId);
+    } else if (messageId) {
+      setInitialFlashMessageId(messageId);
+    }
   }, [searchParams]);
 
   const [selectedReport, setSelectedReport] = useState<CaseReportDetail | null>(null);
@@ -256,7 +269,8 @@ export function CaseReportsPage() {
       return;
     }
     void fetchDetail(selectedCaseId);
-  }, [fetchDetail, selectedCaseId]);
+    if (socket) socket.emit('case-report:join', { caseId: selectedCaseId });
+  }, [fetchDetail, selectedCaseId, socket]);
 
   useEffect(() => {
     if (!socket) return;
@@ -280,6 +294,7 @@ export function CaseReportsPage() {
     const refreshTasks = (payload: { caseId?: string; taskId?: string }) => {
       if (payload.caseId && payload.caseId === selectedCaseId) {
         void listCaseTasks(payload.caseId).then(setTasks).catch(() => undefined);
+        void listCaseMessages(payload.caseId).then(setMessages).catch(() => undefined);
         if (payload.taskId) {
           void listCaseTaskMessages(payload.caseId, payload.taskId)
             .then((msgs) => setTaskMessages((prev) => ({ ...prev, [payload.taskId!]: msgs })))
@@ -602,13 +617,17 @@ export function CaseReportsPage() {
                 taskMessages={taskMessages}
                 groupedUsers={groupedUsers}
                 currentUserId={user?.id ?? ''}
+                currentUserName={user ? `${user.firstName} ${user.lastName}`.trim() : undefined}
                 currentUserRoleIds={user?.roles.map((r) => r.id)}
+                socket={socket}
                 users={users}
                 roles={roles}
                 canManage={canManage}
                 canRequestVN={canRequestVN}
                 canClose={canClose}
                 initialFlashMessageId={initialFlashMessageId}
+                initialFlashTaskId={initialFlashTaskId}
+                initialFlashTaskMessageId={initialFlashTaskMessageId}
                 onFlashMessageConsumed={() => setInitialFlashMessageId(null)}
                 onClosePanel={() => {
                   setSelectedCaseId(null);
@@ -730,13 +749,28 @@ export function CaseReportsPage() {
                   const nextMessages = await listCaseMessages(selectedCaseId);
                   setMessages(nextMessages);
                 }}
-                onSendTaskMessage={async (taskId, content) => {
+                onSendTaskMessage={async (taskId, content, files, parentMessageId, mentionedUserIds, mentionedRoleIds) => {
                   if (!selectedCaseId) return;
-                  const msg = await sendCaseTaskMessage(selectedCaseId, taskId, content);
+                  const msg = await sendCaseTaskMessage(selectedCaseId, taskId, { content, files, parentMessageId, mentionedUserIds, mentionedRoleIds });
                   setTaskMessages((prev) => ({
                     ...prev,
                     [taskId]: [...(prev[taskId] ?? []), msg],
                   }));
+                  void listCaseTasks(selectedCaseId).then(setTasks).catch(() => undefined);
+                  void listCaseMessages(selectedCaseId).then(setMessages).catch(() => undefined);
+                }}
+                onReactToTaskMessage={async (taskId, messageId, emoji) => {
+                  if (!selectedCaseId) return;
+                  const result = await toggleTaskReaction(selectedCaseId, taskId, messageId, emoji);
+                  setTaskMessages((prev) => {
+                    const msgs = prev[taskId] ?? [];
+                    return {
+                      ...prev,
+                      [taskId]: msgs.map((m) =>
+                        m.id === result.messageId ? { ...m, reactions: result.reactions } : m,
+                      ),
+                    };
+                  });
                 }}
                 onLoadTaskMessages={async (taskId) => {
                   if (!selectedCaseId) return;

@@ -15,6 +15,8 @@ interface MessageActionMenuProps {
   triggerRect?: DOMRect | null;
   portalMode?: boolean;
   copyLabel?: string;
+  disableReply?: boolean;
+  disableReactions?: boolean;
 }
 
 export function MessageActionMenu({
@@ -31,6 +33,8 @@ export function MessageActionMenu({
   triggerRect,
   portalMode,
   copyLabel = 'Copy Text',
+  disableReply = false,
+  disableReactions = false,
 }: MessageActionMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -60,7 +64,7 @@ export function MessageActionMenu({
         zIndex: 60,
       }}
     >
-      {!chatLocked && (
+      {!chatLocked && !disableReply && (
         <button type="button" className={itemClass} onClick={() => { onReply(); onClose(); }}>
           Reply
         </button>
@@ -73,7 +77,7 @@ export function MessageActionMenu({
       <button type="button" className={itemClass} onClick={() => { onCopyText(); onClose(); }}>
         {copyLabel}
       </button>
-      {!chatLocked && (
+      {!chatLocked && !disableReactions && (
         <button type="button" className={itemClass} onClick={() => { onAddReaction(); onClose(); }}>
           Add Reaction
         </button>
@@ -94,7 +98,7 @@ export function MessageActionMenu({
       ref={ref}
       className="absolute right-0 top-6 z-50 min-w-[160px] rounded-xl border border-gray-200 bg-white p-1 shadow-lg"
     >
-      {!chatLocked && (
+      {!chatLocked && !disableReply && (
         <button type="button" className={itemClass} onClick={() => { onReply(); onClose(); }}>
           Reply
         </button>
@@ -107,7 +111,7 @@ export function MessageActionMenu({
       <button type="button" className={itemClass} onClick={() => { onCopyText(); onClose(); }}>
         {copyLabel}
       </button>
-      {!chatLocked && (
+      {!chatLocked && !disableReactions && (
         <button type="button" className={itemClass} onClick={() => { onAddReaction(); onClose(); }}>
           Add Reaction
         </button>

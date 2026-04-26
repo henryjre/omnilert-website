@@ -23,6 +23,7 @@ interface Role {
   description: string | null;
   color: string | null;
   priority: number;
+  discord_id: string | null;
   is_system: boolean;
 }
 
@@ -43,6 +44,8 @@ const PERMISSION_NAME_OVERRIDES: Partial<Record<string, string>> = {
   [PERMISSIONS.WORKPLACE_RELATIONS_VIEW]: 'View',
   [PERMISSIONS.CASH_REQUESTS_VIEW]: 'View',
 };
+
+const DISCORD_ID_PATTERN = /^\d{17,20}$/;
 
 function isManageShiftPermissionKey(key: string): boolean {
   return key === PERMISSIONS.SCHEDULE_MANAGE_SHIFT || key === PERMISSIONS.SCHEDULE_END_SHIFT;
@@ -233,10 +236,17 @@ export function RoleManagementPage() {
     if (!selectedRole || !roleDraft || !originalDraft) return;
 
     const trimmedName = roleDraft.name.trim();
+    const trimmedDiscordId = roleDraft.discord_id.trim();
+    if (trimmedDiscordId && !DISCORD_ID_PATTERN.test(trimmedDiscordId)) {
+      showErrorToast('Discord role ID must be a valid 17-20 digit Discord snowflake.');
+      return;
+    }
+
     const metadataChanged =
       trimmedName !== originalDraft.name ||
       roleDraft.color !== originalDraft.color ||
-      roleDraft.priority !== originalDraft.priority;
+      roleDraft.priority !== originalDraft.priority ||
+      trimmedDiscordId !== originalDraft.discord_id;
     const permissionsChanged =
       JSON.stringify([...roleDraft.permissionIds].sort()) !==
       JSON.stringify([...originalDraft.permissionIds].sort());
@@ -248,11 +258,23 @@ export function RoleManagementPage() {
     setSavingRole(true);
     try {
       if (metadataChanged) {
-        await api.put(`/roles/${selectedRole.id}`, {
-          name: trimmedName,
-          color: roleDraft.color,
-          priority: roleDraft.priority,
-        });
+        const metadataPayload: Partial<{
+          name: string;
+          color: string;
+          priority: number;
+          discord_id: string | null;
+        }> = {};
+
+        if (trimmedName !== originalDraft.name) metadataPayload.name = trimmedName;
+        if (roleDraft.color !== originalDraft.color) metadataPayload.color = roleDraft.color;
+        if (roleDraft.priority !== originalDraft.priority) {
+          metadataPayload.priority = roleDraft.priority;
+        }
+        if (trimmedDiscordId !== originalDraft.discord_id) {
+          metadataPayload.discord_id = trimmedDiscordId || null;
+        }
+
+        await api.put(`/roles/${selectedRole.id}`, metadataPayload);
       }
 
       if (permissionsChanged) {
@@ -267,6 +289,7 @@ export function RoleManagementPage() {
         name: trimmedName,
         color: roleDraft.color,
         priority: roleDraft.priority,
+        discord_id: trimmedDiscordId || null,
       };
       const nextDraft = createRoleEditorDraft(refreshedRole, roleDraft.permissionIds);
       setSelectedRole(refreshedRole);
@@ -482,6 +505,16 @@ export function RoleManagementPage() {
                       }
                       min="0"
                       max="99"
+                    />
+                    <Input
+                      label="Discord Role ID"
+                      value={roleDraft.discord_id}
+                      onChange={(e) =>
+                        setRoleDraft({ ...roleDraft, discord_id: e.target.value })
+                      }
+                      placeholder="e.g., 123456789012345678"
+                      inputMode="numeric"
+                      pattern="\\d{17,20}"
                     />
                   </div>
 

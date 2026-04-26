@@ -45,7 +45,10 @@
       "Bash(node --test --import tsx/esm src/services/attendanceQueue.service.test.ts)",
       "Bash(grep -E \"\\\\.\\(tsx|ts\\)$\")",
       "Bash(xargs cat *)",
-      "Bash(pnpm --filter api migrate)"
+      "Bash(pnpm --filter api migrate)",
+      "Bash(node -e ' *)",
+      "Bash(rtk psql *)",
+      "Bash(pnpm migrate *)"
     ]
   }
 }

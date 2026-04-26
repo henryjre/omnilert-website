@@ -111,6 +111,7 @@ function getMessageId(linkUrl: string | null | undefined): string | null {
   return match?.[1] ?? null;
 }
 
+
 function getShiftId(linkUrl: string | null | undefined): string | null {
   if (!linkUrl) return null;
   const match = linkUrl.match(/[?&]shiftId=([0-9a-f-]{36})/i);

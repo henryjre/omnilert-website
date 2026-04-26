@@ -114,6 +114,10 @@ export interface ServerToClientEvents {
   }) => void;
   'case-report:message:edited': (data: { caseId: string; message: CaseMessage }) => void;
   'case-report:message:deleted': (data: { caseId: string; messageId: string }) => void;
+  'case-report:task:created': (data: { caseId: string; taskId?: string }) => void;
+  'case-report:task:updated': (data: { caseId: string; taskId?: string }) => void;
+  'case-report:typing': (data: { caseId: string; userName: string; taskId?: string }) => void;
+  'case-report:typing:stop': (data: { caseId: string; userName: string; taskId?: string }) => void;
 
   'violation-notice:created': (data: {
     id: string;
@@ -157,4 +161,7 @@ export interface ServerToClientEvents {
 export interface ClientToServerEvents {
   'join-branch': (branchId: string) => void;
   'leave-branch': (branchId: string) => void;
+  'case-report:typing': (data: { caseId: string; userName: string; taskId?: string }) => void;
+  'case-report:typing:stop': (data: { caseId: string; userName: string; taskId?: string }) => void;
+  'case-report:join': (data: { caseId: string }) => void;
 }

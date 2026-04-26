@@ -1,5 +1,11 @@
 import { z } from 'zod';
 
+const discordRoleIdSchema = z
+  .string()
+  .regex(/^\d{17,20}$/, 'discord_id must be a valid Discord snowflake')
+  .nullable()
+  .optional();
+
 export const createRoleSchema = z.object({
   name: z
     .string()
@@ -11,6 +17,7 @@ export const createRoleSchema = z.object({
     .regex(/^#[0-9a-fA-F]{6}$/, 'Color must be a valid hex color')
     .optional(),
   priority: z.number().int().min(0).max(99),
+  discord_id: discordRoleIdSchema,
   permissionIds: z.array(z.string().uuid()).min(1, 'At least one permission is required'),
 });
 
@@ -22,6 +29,7 @@ export const updateRoleSchema = z.object({
     .regex(/^#[0-9a-fA-F]{6}$/)
     .optional(),
   priority: z.number().int().min(0).max(99).optional(),
+  discord_id: discordRoleIdSchema,
 });
 
 export const assignPermissionsSchema = z.object({

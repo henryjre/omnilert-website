@@ -195,6 +195,29 @@ export function initializeSocket(
       socket.join(`company:${companyId}`);
     }
     logger.debug(`Case Reports: ${socket.data.user?.sub} connected`);
+
+    // Allow client to join a specific case's company room (for cross-company access)
+    socket.on('case-report:join', async (payload: { caseId: string }) => {
+      try {
+        const { db } = await import('./database.js');
+        const row = await db.getDb()('case_reports')
+          .where({ id: payload.caseId })
+          .first('company_id') as { company_id: string } | undefined;
+        if (row) socket.join(`company:${row.company_id}`);
+      } catch {
+        // non-fatal
+      }
+    });
+
+    socket.on('case-report:typing', (payload: { caseId: string; userName: string; taskId?: string }) => {
+      if (!companyId) return;
+      socket.to(`company:${companyId}`).emit('case-report:typing', payload);
+    });
+
+    socket.on('case-report:typing:stop', (payload: { caseId: string; userName: string; taskId?: string }) => {
+      if (!companyId) return;
+      socket.to(`company:${companyId}`).emit('case-report:typing:stop', payload);
+    });
   });
 
   // Violation Notices namespace

@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import type { CaseTask, CaseTaskAssignee, CaseTaskMessage } from '@omnilert/shared';
-import { ArrowLeft, CheckCircle2, Circle, ExternalLink, Send } from 'lucide-react';
+import type { CaseMessage, CaseTask, CaseTaskAssignee, CaseTaskMessage } from '@omnilert/shared';
+import type { MentionableUser, MentionableRole } from '../services/caseReport.api';
+import { ArrowLeft, CheckCircle2, Circle, ExternalLink } from 'lucide-react';
 import { Spinner } from '@/shared/components/ui/Spinner';
+import { ChatSection } from './ChatSection';
 
 // ── Avatar helpers ────────────────────────────────────────────────────────────
 
@@ -48,10 +50,6 @@ function Avatar({
   );
 }
 
-function formatTime(value: string): string {
-  return new Date(value).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-}
-
 function formatDate(value: string): string {
   return new Date(value).toLocaleString(undefined, {
     month: 'short',
@@ -66,18 +64,18 @@ function formatDate(value: string): string {
 function AssigneeRow({
   assignee,
   currentUserId,
-  canManage,
+  isCreator,
   completing,
   onComplete,
 }: {
   assignee: CaseTaskAssignee;
   currentUserId: string;
-  canManage: boolean;
+  isCreator: boolean;
   completing: boolean;
   onComplete: () => void;
 }) {
   const isDone = Boolean(assignee.completed_at);
-  const canComplete = !isDone && (assignee.user_id === currentUserId || canManage);
+  const canComplete = !isDone && isCreator;
   const name = assignee.user_name ?? 'Unknown';
 
   return (
@@ -118,10 +116,16 @@ interface TaskDetailPanelProps {
   task: CaseTask;
   messages: CaseTaskMessage[];
   currentUserId: string;
+  currentUserName?: string;
   canManage: boolean;
+  users: MentionableUser[];
+  roles: MentionableRole[];
+  socket?: import('socket.io-client').Socket | null;
+  initialFlashMessageId?: string | null;
   onBack: () => void;
   onComplete: (taskId: string, userId: string) => Promise<void>;
-  onSendMessage: (taskId: string, content: string) => Promise<void>;
+  onSendMessage: (taskId: string, content: string, files?: File[], parentMessageId?: string | null, mentionedUserIds?: string[], mentionedRoleIds?: string[]) => Promise<void>;
+  onReact: (taskId: string, messageId: string, emoji: string) => Promise<void>;
   onJumpToMessage: (messageId: string) => void;
 }
 
@@ -131,44 +135,58 @@ export function TaskDetailPanel({
   task,
   messages,
   currentUserId,
+  currentUserName,
   canManage,
+  users,
+  roles,
+  socket,
+  initialFlashMessageId,
   onBack,
   onComplete,
   onSendMessage,
+  onReact,
   onJumpToMessage,
 }: TaskDetailPanelProps) {
-  const [content, setContent] = useState('');
-  const [sending, setSending] = useState(false);
   const [completingUserId, setCompletingUserId] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const allDone =
     task.assignees.length > 0 && task.assignees.every((a) => a.completed_at);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  function resizeTextarea() {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
-  }
-
-  async function handleSend() {
-    const trimmed = content.trim();
-    if (!trimmed || sending) return;
-    setSending(true);
-    try {
-      await onSendMessage(task.id, trimmed);
-      setContent('');
-      if (textareaRef.current) textareaRef.current.style.height = 'auto';
-    } finally {
-      setSending(false);
-    }
-  }
+  // Adapt CaseTaskMessage[] → CaseMessage[] so ChatSection can render them
+  const adaptedMessages = useMemo((): (CaseMessage & { isPending?: boolean })[] =>
+    messages.map((msg) => ({
+      id: msg.id,
+      case_id: task.case_id,
+      user_id: msg.user_id ?? '',
+      user_name: msg.user_name ?? undefined,
+      user_avatar: msg.user_avatar ?? undefined,
+      content: msg.content ?? '',
+      is_system: false,
+      is_deleted: false,
+      is_edited: false,
+      parent_message_id: msg.parent_message_id ?? null,
+      reactions: msg.reactions ?? [],
+      attachments: msg.file_url
+        ? [{
+            id: msg.id,
+            message_id: msg.id,
+            file_url: msg.file_url,
+            file_name: msg.file_name ?? 'attachment',
+            file_size: msg.file_size ?? 0,
+            content_type: msg.content_type ?? 'application/octet-stream',
+            created_at: msg.created_at,
+          }]
+        : [],
+      mentions: (msg.mentions ?? []).map((m) => ({
+        id: m.id,
+        message_id: m.message_id,
+        mentioned_user_id: m.mentioned_user_id ?? null,
+        mentioned_role_id: m.mentioned_role_id ?? null,
+        mentioned_name: m.mentioned_name ?? undefined,
+      })),
+      created_at: msg.created_at,
+    })),
+  [messages, task.case_id]);
 
   async function handleComplete(userId: string) {
     if (completingUserId) return;
@@ -209,8 +227,8 @@ export function TaskDetailPanel({
         )}
       </div>
 
-      {/* Scrollable body */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Scrollable body + chat */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {/* Source message block */}
         {task.source_message_id && task.source_message_content && (
           <div className="border-b border-gray-100 px-4 py-3">
@@ -247,7 +265,7 @@ export function TaskDetailPanel({
                 key={assignee.id}
                 assignee={assignee}
                 currentUserId={currentUserId}
-                canManage={canManage}
+                isCreator={task.created_by === currentUserId}
                 completing={completingUserId === assignee.user_id}
                 onComplete={() => void handleComplete(assignee.user_id)}
               />
@@ -255,71 +273,28 @@ export function TaskDetailPanel({
           </div>
         </div>
 
-        {/* Task chat messages */}
-        <div className="px-4 py-3">
-          {messages.length === 0 ? (
-            <p className="py-4 text-center text-sm text-gray-400">No messages yet. Start the conversation.</p>
-          ) : (
-            <div className="space-y-3">
-              {messages.map((msg) => {
-                const isOwn = msg.user_id === currentUserId;
-                const name = msg.user_name ?? 'Unknown';
-                return (
-                  <div key={msg.id} className={`flex gap-2 ${isOwn ? 'flex-row-reverse' : ''}`}>
-                    {!isOwn && <Avatar name={name} avatarUrl={msg.user_avatar} size="sm" />}
-                    <div className={`max-w-[75%] ${isOwn ? 'items-end' : 'items-start'} flex flex-col`}>
-                      {!isOwn && (
-                        <p className="mb-0.5 text-xs font-semibold text-gray-500">{name}</p>
-                      )}
-                      <div
-                        className={`rounded-2xl px-3.5 py-2 text-sm leading-6 ${
-                          isOwn
-                            ? 'rounded-br-[4px] bg-primary-600 text-white'
-                            : 'rounded-bl-[4px] bg-gray-200 text-gray-900'
-                        }`}
-                      >
-                        {msg.content}
-                      </div>
-                      <p className="mt-0.5 text-[10px] text-gray-400">{formatTime(msg.created_at)}</p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-      </div>
-
-      {/* Composer */}
-      <div className="border-t border-gray-200 px-3 py-2">
-        <div className="flex items-end gap-2 rounded-2xl border border-gray-300 bg-white px-3 py-2 focus-within:border-primary-500 focus-within:ring-1 focus-within:ring-primary-500">
-          <textarea
-            ref={textareaRef}
-            value={content}
-            onChange={(e) => {
-              setContent(e.target.value);
-              resizeTextarea();
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                void handleSend();
-              }
-            }}
-            placeholder="Message..."
-            rows={1}
-            className="min-h-0 flex-1 resize-none bg-transparent text-sm text-gray-900 placeholder-gray-400 focus:outline-none"
-          />
-          <button
-            type="button"
-            onClick={() => void handleSend()}
-            disabled={!content.trim() || sending}
-            className="shrink-0 rounded-xl bg-primary-600 p-1.5 text-white hover:bg-primary-700 disabled:opacity-40 transition-opacity"
-          >
-            {sending ? <Spinner size="sm" /> : <Send className="h-4 w-4" />}
-          </button>
-        </div>
+        <ChatSection
+          className="min-h-0 flex-1 px-4 py-2"
+          messages={adaptedMessages}
+          currentUserId={currentUserId}
+          currentUserName={currentUserName}
+          canManage={canManage}
+          chatLocked={false}
+          users={users}
+          roles={roles}
+          socket={socket}
+          caseId={task.case_id}
+          taskId={task.id}
+          initialFlashMessageId={initialFlashMessageId}
+          onSend={async ({ content, parentMessageId, mentionedUserIds, mentionedRoleIds, files }) => {
+            await onSendMessage(task.id, content ?? '', files, parentMessageId, mentionedUserIds, mentionedRoleIds);
+          }}
+          onReact={async (messageId, emoji) => {
+            await onReact(task.id, messageId, emoji);
+          }}
+          onEdit={async () => {}}
+          onDelete={async () => {}}
+        />
       </div>
     </motion.div>
   );

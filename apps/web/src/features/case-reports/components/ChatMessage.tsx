@@ -8,6 +8,7 @@ import { MessageDrawer } from './MessageDrawer';
 import { MessageReactionBadge } from './MessageReactionBadge';
 import { MessageReactionsOverlay } from './MessageReactionsOverlay';
 import type { MentionableUser, MentionableRole } from '../services/caseReport.api';
+import type { CaseTask } from '@omnilert/shared';
 
 // ── Avatar helpers ────────────────────────────────────────────────────────────
 
@@ -73,6 +74,10 @@ interface ChatMessageProps {
   roles?: MentionableRole[];
   onPreviewImage?: (items: { url: string; fileName: string }[], index: number) => void;
   onCreateTask?: (message: CaseMessage) => void;
+  tasks?: CaseTask[];
+  onOpenTask?: (task: CaseTask) => void;
+  disableReply?: boolean;
+  disableReactions?: boolean;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -107,6 +112,10 @@ export function ChatMessage({
   roles,
   onPreviewImage,
   onCreateTask,
+  tasks,
+  onOpenTask,
+  disableReply = false,
+  disableReactions = false,
 }: ChatMessageProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState('');
@@ -235,7 +244,7 @@ export function ChatMessage({
 
   function handleTouchEnd() {
     const swipeValue = swipeX.get();
-    if ((isOwn && swipeValue < -60) || (!isOwn && swipeValue > 60)) onReply(message);
+    if (!disableReply && ((isOwn && swipeValue < -60) || (!isOwn && swipeValue > 60))) onReply(message);
     setSwipeProgress(0);
     void animate(swipeX, 0, { type: 'spring', stiffness: 400, damping: 30 });
     touchStartRef.current = null;
@@ -424,32 +433,34 @@ export function ChatMessage({
       <div
         className={`absolute top-1/2 -translate-y-1/2 z-10 hidden items-center gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-focus-within:pointer-events-auto sm:flex sm:group-hover:opacity-100 ${isOwn ? 'right-full mr-2 flex-row-reverse' : 'left-full ml-2 flex-row'} pointer-events-none sm:group-hover:pointer-events-auto whitespace-nowrap`}
       >
-        <div className="relative">
-          <button
-            ref={emojiTriggerRef}
-            type="button"
-            onClick={() => {
-              setEmojiTriggerRect(emojiTriggerRef.current?.getBoundingClientRect() ?? null);
-              setEmojiPickerOpen((v) => !v);
-            }}
-            className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-            title="Add reaction"
-          >
-            😊
-          </button>
-          {emojiPickerOpen && (
-            <EmojiPicker
-              onSelect={(emoji) => {
-                onReact(message.id, emoji);
-                setEmojiPickerOpen(false);
+        {!disableReactions && (
+          <div className="relative">
+            <button
+              ref={emojiTriggerRef}
+              type="button"
+              onClick={() => {
+                setEmojiTriggerRect(emojiTriggerRef.current?.getBoundingClientRect() ?? null);
+                setEmojiPickerOpen((v) => !v);
               }}
-              onClose={() => setEmojiPickerOpen(false)}
-              placement="above"
-              portalMode={true}
-              triggerRect={emojiTriggerRect}
-            />
-          )}
-        </div>
+              className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              title="Add reaction"
+            >
+              😊
+            </button>
+            {emojiPickerOpen && (
+              <EmojiPicker
+                onSelect={(emoji) => {
+                  onReact(message.id, emoji);
+                  setEmojiPickerOpen(false);
+                }}
+                onClose={() => setEmojiPickerOpen(false)}
+                placement="above"
+                portalMode={true}
+                triggerRect={emojiTriggerRect}
+              />
+            )}
+          </div>
+        )}
         <div className="relative">
           <button
             ref={menuTriggerRef}
@@ -484,6 +495,8 @@ export function ChatMessage({
               onClose={() => setMenuOpen(false)}
               portalMode={true}
               triggerRect={menuTriggerRect}
+              disableReply={disableReply}
+              disableReactions={disableReactions}
             />
           )}
         </div>
@@ -527,6 +540,135 @@ export function ChatMessage({
     const timeout = setTimeout(() => setPendingReactionEmoji(null), 1500);
     return () => clearTimeout(timeout);
   }, [pendingReactionEmoji]);
+
+  // ── Task bubble ───────────────────────────────────────────────────────────
+
+  const linkedTask = tasks?.find((t) => t.discussion_message_id === message.id);
+
+  if (linkedTask) {
+    const doneCount = linkedTask.assignees.filter((a) => a.completed_at).length;
+    const totalCount = linkedTask.assignees.length;
+    const allDone = totalCount > 0 && doneCount === totalCount;
+    const visibleAssignees = linkedTask.assignees.slice(0, 3);
+    const overflowAssignees = linkedTask.assignees.length - 3;
+    const msgCount = linkedTask.message_count ?? 0;
+    const isStale = !linkedTask.last_message_at || (Date.now() - new Date(linkedTask.last_message_at).getTime() > 24 * 60 * 60 * 1000);
+    const lastContentRaw = linkedTask.last_message_content?.trim() || (linkedTask.last_message_at ? 'Click to view attachment' : null);
+    const isAttachmentFallback = !linkedTask.last_message_content?.trim() && !!linkedTask.last_message_at;
+    const lastContent = isStale ? null : lastContentRaw;
+    const lastUserName = isStale ? null : linkedTask.last_message_user_name;
+    const lastUserAvatar = isStale ? null : linkedTask.last_message_user_avatar;
+
+    return (
+      <div data-message-id={message.id} className="flex justify-center py-1">
+        <button
+          type="button"
+          onClick={() => onOpenTask?.(linkedTask)}
+          className="group w-full max-w-xs rounded-xl border border-gray-200 bg-white px-3 py-2 text-left shadow-sm transition-shadow hover:shadow-md"
+        >
+          {/* Top row: icon + label + message count | stacked assignee avatars */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5">
+              <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md ${allDone ? 'bg-green-50 text-green-600' : 'bg-primary-50 text-primary-600'}`}>
+                {allDone ? (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
+                    <polyline points="9 11 12 14 22 4" />
+                    <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                  </svg>
+                )}
+              </div>
+              <span className={`text-[10px] font-bold uppercase tracking-widest ${allDone ? 'text-green-600' : 'text-primary-600'}`}>Task</span>
+              {msgCount > 0 && (
+                <span className="text-[10px] font-semibold text-gray-400">
+                  · {msgCount} {msgCount === 1 ? 'Message' : 'Messages'} ›
+                </span>
+              )}
+            </div>
+
+            {/* Stacked assignee avatars */}
+            {totalCount > 0 && (
+              <div className="flex items-center">
+                {visibleAssignees.map((a, i) => (
+                  a.user_avatar ? (
+                    <img
+                      key={a.id}
+                      src={a.user_avatar}
+                      alt={a.user_name ?? ''}
+                      title={a.user_name ?? ''}
+                      className={`h-6 w-6 rounded-full object-cover ring-2 ring-white ${i > 0 ? '-ml-1.5' : ''}`}
+                    />
+                  ) : (
+                    <div
+                      key={a.id}
+                      title={a.user_name ?? ''}
+                      className={`flex h-6 w-6 items-center justify-center rounded-full text-[8px] font-semibold text-white ring-2 ring-white ${i > 0 ? '-ml-1.5' : ''}`}
+                      style={{ backgroundColor: getAvatarColor(a.user_name ?? 'User') }}
+                    >
+                      {getInitials(a.user_name ?? 'U')}
+                    </div>
+                  )
+                ))}
+                {overflowAssignees > 0 && (
+                  <div className="-ml-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-gray-200 text-[8px] font-semibold text-gray-600 ring-2 ring-white">
+                    +{overflowAssignees}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Description */}
+          <p className="mt-1 truncate text-xs font-semibold text-gray-900">{linkedTask.description}</p>
+
+          {/* Last message preview + progress on same row */}
+          <div className="mt-1.5 flex items-center gap-2">
+            {isStale ? (
+              <p className="min-w-0 flex-1 truncate text-[10px] italic text-gray-400">There are no recent messages in this task</p>
+            ) : lastContent ? (
+              <div className="flex min-w-0 flex-1 items-center gap-1">
+                {lastUserAvatar ? (
+                  <img src={lastUserAvatar} alt={lastUserName ?? ''} className="h-4 w-4 shrink-0 rounded-full object-cover" />
+                ) : lastUserName ? (
+                  <div
+                    className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[7px] font-semibold text-white"
+                    style={{ backgroundColor: getAvatarColor(lastUserName) }}
+                  >
+                    {getInitials(lastUserName)}
+                  </div>
+                ) : null}
+                {lastUserName && (
+                  <span className="shrink-0 text-[10px] font-semibold text-gray-700">{lastUserName.split(' ')[0]}</span>
+                )}
+                <p className={`min-w-0 truncate text-[10px] text-gray-500${isAttachmentFallback ? ' italic' : ''}`}>{lastContent}</p>
+                {linkedTask.last_message_at && (
+                  <span className="shrink-0 text-[10px] text-gray-400">{formatCompactTime(linkedTask.last_message_at)}</span>
+                )}
+              </div>
+            ) : (
+              <div className="flex-1" />
+            )}
+            <span className={`shrink-0 text-[10px] font-medium ${allDone ? 'text-green-600' : 'text-gray-400'}`}>
+              {doneCount} / {totalCount} done
+            </span>
+          </div>
+
+          {/* Progress bar */}
+          {totalCount > 0 && (
+            <div className="mt-1.5 h-0.5 w-full overflow-hidden rounded-full bg-gray-100">
+              <div
+                className={`h-full rounded-full transition-all ${allDone ? 'bg-green-500' : 'bg-primary-500'}`}
+                style={{ width: `${Math.round((doneCount / totalCount) * 100)}%` }}
+              />
+            </div>
+          )}
+        </button>
+      </div>
+    );
+  }
 
   // ── System message ────────────────────────────────────────────────────────
 
@@ -909,6 +1051,8 @@ export function ChatMessage({
         onDelete={handleDelete}
         onCreateTask={onCreateTask ? () => onCreateTask(message) : undefined}
         onClose={() => setDrawerOpen(false)}
+        disableReply={disableReply}
+        disableReactions={disableReactions}
       />
       <MessageReactionsOverlay
         isOpen={reactionViewerOpen}

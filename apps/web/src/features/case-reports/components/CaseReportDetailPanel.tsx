@@ -69,13 +69,17 @@ interface CaseReportDetailPanelProps {
   taskMessages: Record<string, CaseTaskMessage[]>;
   groupedUsers: GroupedUsersResponse | null;
   currentUserId: string;
+  currentUserName?: string;
   currentUserRoleIds?: string[];
+  socket?: import('socket.io-client').Socket | null;
   users: MentionableUser[];
   roles: MentionableRole[];
   canManage: boolean;
   canRequestVN: boolean;
   canClose: boolean;
   initialFlashMessageId?: string | null;
+  initialFlashTaskId?: string | null;
+  initialFlashTaskMessageId?: string | null;
   onFlashMessageConsumed?: () => void;
   onClosePanel: () => void;
   onLeave: () => Promise<void>;
@@ -96,7 +100,8 @@ interface CaseReportDetailPanelProps {
   onDeleteMessage: (messageId: string) => Promise<void>;
   onCreateTask: (payload: { description: string; assigneeUserIds: string[]; sourceMessageId?: string | null }) => Promise<void>;
   onCompleteTask: (taskId: string, userId: string) => Promise<void>;
-  onSendTaskMessage: (taskId: string, content: string) => Promise<void>;
+  onSendTaskMessage: (taskId: string, content: string, files?: File[], parentMessageId?: string | null, mentionedUserIds?: string[], mentionedRoleIds?: string[]) => Promise<void>;
+  onReactToTaskMessage: (taskId: string, messageId: string, emoji: string) => Promise<void>;
   onLoadTaskMessages: (taskId: string) => Promise<void>;
 }
 
@@ -131,13 +136,17 @@ export function CaseReportDetailPanel({
   taskMessages,
   groupedUsers,
   currentUserId,
+  currentUserName,
   currentUserRoleIds,
+  socket,
   users,
   roles,
   canManage,
   canRequestVN,
   canClose,
   initialFlashMessageId,
+  initialFlashTaskId,
+  initialFlashTaskMessageId,
   onFlashMessageConsumed,
   onClosePanel,
   onLeave,
@@ -153,6 +162,7 @@ export function CaseReportDetailPanel({
   onCreateTask,
   onCompleteTask,
   onSendTaskMessage,
+  onReactToTaskMessage,
   onLoadTaskMessages,
 }: CaseReportDetailPanelProps) {
   const navigate = useNavigate();
@@ -169,6 +179,7 @@ export function CaseReportDetailPanel({
   const [taskCreationSourceMessage, setTaskCreationSourceMessage] = useState<CaseMessage | null>(null);
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [taskFlashMessageId, setTaskFlashMessageId] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<DetailPanelTab>('details');
   const [syncedReportId, setSyncedReportId] = useState<string | null>(null);
@@ -179,7 +190,7 @@ export function CaseReportDetailPanel({
   const effectiveTab: DetailPanelTab =
     syncedReportId === report?.id
       ? activeTab
-      : (initialFlashMessageId || report?.is_joined) ? 'discussion' : 'details';
+      : (initialFlashMessageId || initialFlashTaskId || report?.is_joined) ? (initialFlashTaskId ? 'tasks' : 'discussion') : 'details';
 
   const activeTabIndex = Math.max(detailPanelTabs.indexOf(effectiveTab), 0);
 
@@ -209,15 +220,30 @@ export function CaseReportDetailPanel({
     if (!report) return;
 
     setHasAnimatedTabSwitch(false);
-    setActiveTaskId(null);
 
-    if (initialFlashMessageId) {
-      setActiveTab('discussion');
+    if (initialFlashTaskId) {
+      setActiveTab('tasks');
+      setActiveTaskId(initialFlashTaskId);
+      setTaskFlashMessageId(initialFlashTaskMessageId ?? null);
     } else {
-      setActiveTab(report.is_joined ? 'discussion' : 'details');
+      setActiveTaskId(null);
+      setTaskFlashMessageId(null);
+      if (initialFlashMessageId) {
+        setActiveTab('discussion');
+      } else {
+        setActiveTab(report.is_joined ? 'discussion' : 'details');
+      }
     }
     setSyncedReportId(report.id);
-  }, [report?.id, report?.is_joined, initialFlashMessageId]);
+  }, [report?.id, report?.is_joined, initialFlashMessageId, initialFlashTaskId, initialFlashTaskMessageId]);
+
+  // Load task messages when auto-opening a task from a notification link
+  useEffect(() => {
+    if (initialFlashTaskId) {
+      void onLoadTaskMessages(initialFlashTaskId);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialFlashTaskId]);
 
   const chatLocked = useMemo(
     () => report?.status === 'closed' && !canManage,
@@ -638,6 +664,7 @@ export function CaseReportDetailPanel({
                   className="min-h-0 flex-1"
                   messages={messages}
                   currentUserId={currentUserId}
+                  currentUserName={currentUserName}
                   currentUserRoleIds={currentUserRoleIds}
                   canManage={canManage}
                   chatLocked={chatLocked}
@@ -654,6 +681,14 @@ export function CaseReportDetailPanel({
                     setTaskCreationSourceMessage(msg);
                     setTaskModalOpen(true);
                   } : undefined}
+                  tasks={tasks}
+                  onOpenTask={async (task) => {
+                    await onLoadTaskMessages(task.id);
+                    handleTabChange('tasks');
+                    setActiveTaskId(task.id);
+                  }}
+                  socket={socket}
+                  caseId={report.id}
                 />
           </section>
 
@@ -700,10 +735,16 @@ export function CaseReportDetailPanel({
                         task={task}
                         messages={taskMessages[activeTaskId] ?? []}
                         currentUserId={currentUserId}
+                        currentUserName={currentUserName}
                         canManage={canManage}
-                        onBack={() => setActiveTaskId(null)}
+                        users={users}
+                        roles={roles}
+                        socket={socket}
+                        initialFlashMessageId={taskFlashMessageId}
+                        onBack={() => { setActiveTaskId(null); setTaskFlashMessageId(null); }}
                         onComplete={onCompleteTask}
                         onSendMessage={onSendTaskMessage}
+                        onReact={onReactToTaskMessage}
                         onJumpToMessage={(messageId) => {
                           setActiveTaskId(null);
                           handleTabChange('discussion');

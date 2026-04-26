@@ -75,10 +75,10 @@ export function TaskList({ tasks, currentUserId, canManage, onTaskClick, onCompl
         const visibleAssignees = task.assignees.slice(0, 3);
         const overflow = task.assignees.length - 3;
 
-        // Assignees the current user can complete (self or canManage)
-        const completableAssignees = task.assignees.filter(
-          (a) => !a.completed_at && (a.user_id === currentUserId || canManage),
-        );
+        // Only the task creator can mark assignees as done
+        const completableAssignees = task.created_by === currentUserId
+          ? task.assignees.filter((a) => !a.completed_at)
+          : [];
 
         return (
           <div

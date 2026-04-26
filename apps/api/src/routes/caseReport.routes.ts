@@ -125,7 +125,7 @@ router.get('/:id/tasks/:taskId/messages', requirePermission(PERMISSIONS.CASE_REP
 router.post(
   '/:id/tasks/:taskId/messages',
   requirePermission(PERMISSIONS.CASE_REPORT_VIEW),
-  validateBody(sendTaskMessageSchema),
+  messageUpload.any(),
   caseReportTaskController.sendTaskMessage,
 );
 router.post(
@@ -133,6 +133,12 @@ router.post(
   requirePermission(PERMISSIONS.CASE_REPORT_VIEW),
   validateBody(completeTaskSchema),
   caseReportTaskController.completeTask,
+);
+router.post(
+  '/:id/tasks/:taskId/messages/:messageId/reactions',
+  requirePermission(PERMISSIONS.CASE_REPORT_VIEW),
+  validateBody(reactionSchema),
+  caseReportTaskController.toggleTaskReaction,
 );
 
 export default router;

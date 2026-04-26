@@ -17,7 +17,7 @@ export async function create(req: Request, res: Response, next: NextFunction) {
   try {
     const masterDb = db.getDb();
     const user = req.user!;
-    const { name, description, color, priority, permissionIds } = req.body;
+    const { name, description, color, priority, discord_id, permissionIds } = req.body;
 
     // Prevent creating roles with priority >= user's highest role priority
     const userRoles = await masterDb('user_roles')
@@ -33,7 +33,13 @@ export async function create(req: Request, res: Response, next: NextFunction) {
     }
 
     const [role] = await masterDb('roles')
-      .insert({ name, description: description || null, color: color || null, priority })
+      .insert({
+        name,
+        description: description || null,
+        color: color || null,
+        priority,
+        discord_id: discord_id || null,
+      })
       .returning('*');
 
     // Assign permissions

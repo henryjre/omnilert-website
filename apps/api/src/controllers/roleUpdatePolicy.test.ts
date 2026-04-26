@@ -7,11 +7,13 @@ test('buildRoleUpdates includes editable role fields when provided', () => {
     name: 'Operations Lead',
     color: '#123456',
     priority: 42,
+    discord_id: '123456789012345678',
   });
 
   assert.equal(updates.name, 'Operations Lead');
   assert.equal(updates.color, '#123456');
   assert.equal(updates.priority, 42);
+  assert.equal(updates.discord_id, '123456789012345678');
   assert.ok(updates.updated_at instanceof Date);
 });
 

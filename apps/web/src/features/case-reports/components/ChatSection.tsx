@@ -1,7 +1,7 @@
 import { useRef, useState, useCallback, useEffect, Fragment } from 'react';
-import type { CaseMessage } from '@omnilert/shared';
+import type { CaseMessage, CaseTask } from '@omnilert/shared';
 import { Paperclip, Send, X } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/shared/components/ui/Button';
 import type { MentionableRole, MentionableUser } from '../services/caseReport.api';
 import { MentionPicker } from './MentionPicker';
@@ -9,6 +9,7 @@ import { ChatMessage } from './ChatMessage';
 import { ImagePreviewModal } from './ImagePreviewModal';
 import { normalizeFileForUpload } from '@/shared/utils/fileUpload';
 import { FileThumbnail } from '@/shared/components/ui/FileThumbnail';
+import type { Socket } from 'socket.io-client';
 
 function autoResizeTextarea(el: HTMLTextAreaElement) {
   el.style.height = 'auto';
@@ -39,6 +40,15 @@ interface ChatSectionProps {
   onEdit: (messageId: string, newContent: string) => Promise<void>;
   onDelete: (messageId: string) => Promise<void>;
   onCreateTask?: (message: CaseMessage) => void;
+  tasks?: CaseTask[];
+  onOpenTask?: (task: CaseTask) => void;
+  disableAttachments?: boolean;
+  disableReply?: boolean;
+  disableReactions?: boolean;
+  socket?: Socket | null;
+  caseId?: string;
+  taskId?: string;
+  currentUserName?: string;
 }
 
 export function ChatSection({
@@ -59,6 +69,15 @@ export function ChatSection({
   onEdit,
   onDelete,
   onCreateTask,
+  tasks,
+  onOpenTask,
+  disableAttachments = false,
+  disableReply = false,
+  disableReactions = false,
+  socket,
+  caseId,
+  taskId,
+  currentUserName,
 }: ChatSectionProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -81,6 +100,48 @@ export function ChatSection({
   const [visibleTimestampMessageId, setVisibleTimestampMessageId] = useState<string | null>(null);
   const initialFlashFiredRef = useRef(false);
 
+  // ── Typing indicators ─────────────────────────────────────────────────────
+  const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  const typingStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isTypingRef = useRef(false);
+
+  const emitTypingStop = useCallback(() => {
+    if (!socket || !caseId || !currentUserName || !isTypingRef.current) return;
+    isTypingRef.current = false;
+    socket.emit('case-report:typing:stop', { caseId, userName: currentUserName, taskId });
+  }, [socket, caseId, currentUserName, taskId]);
+
+  const emitTypingStart = useCallback(() => {
+    if (!socket || !caseId || !currentUserName) return;
+    if (!isTypingRef.current) {
+      isTypingRef.current = true;
+      socket.emit('case-report:typing', { caseId, userName: currentUserName, taskId });
+    }
+    if (typingStopTimer.current) clearTimeout(typingStopTimer.current);
+    typingStopTimer.current = setTimeout(emitTypingStop, 3000);
+  }, [socket, caseId, currentUserName, taskId, emitTypingStop]);
+
+  useEffect(() => {
+    if (!socket || !caseId) return;
+    const onTyping = (payload: { caseId: string; userName: string; taskId?: string }) => {
+      if (payload.caseId !== caseId || payload.taskId !== taskId) return;
+      setTypingUsers((prev) => prev.includes(payload.userName) ? prev : [...prev, payload.userName]);
+    };
+    const onTypingStop = (payload: { caseId: string; userName: string; taskId?: string }) => {
+      if (payload.caseId !== caseId || payload.taskId !== taskId) return;
+      setTypingUsers((prev) => prev.filter((u) => u !== payload.userName));
+    };
+    socket.on('case-report:typing', onTyping);
+    socket.on('case-report:typing:stop', onTypingStop);
+    return () => {
+      socket.off('case-report:typing', onTyping);
+      socket.off('case-report:typing:stop', onTypingStop);
+    };
+  }, [socket, caseId, taskId]);
+
+  // Stop typing on unmount
+  useEffect(() => () => { emitTypingStop(); }, [emitTypingStop]);
+
   useEffect(() => {
     const container = scrollContainerRef.current;
     const end = messagesEndRef.current;
@@ -101,6 +162,7 @@ export function ChatSection({
 
   const handleSend = useCallback(async () => {
     if (chatLocked || (!content.trim() && files.length === 0)) return;
+    emitTypingStop();
     justSentRef.current = true;
     await onSend({ content, parentMessageId: replyTo?.id ?? null, mentionedUserIds, mentionedRoleIds, files });
     setContent('');
@@ -255,13 +317,17 @@ export function ChatSection({
                   current === messageId ? current : messageId,
                 )
               }
-              onReply={setReplyTo}
+              onReply={disableReply ? () => {} : setReplyTo}
               onReact={(messageId, emoji) => void onReact(messageId, emoji)}
+              disableReply={disableReply}
+              disableReactions={disableReactions}
               onEdit={onEdit}
               onDelete={onDelete}
               onScrollToMessage={handleScrollToMessage}
               onPreviewImage={(items, index) => setPreviewMedia({ items, index })}
               onCreateTask={onCreateTask}
+              tasks={tasks}
+              onOpenTask={onOpenTask}
             />
           </Fragment>
           );
@@ -275,7 +341,38 @@ export function ChatSection({
         </p>
       )}
 
-      <div className={`relative mt-4 border-t border-gray-200 pb-[env(safe-area-inset-bottom)] pt-3${isClosed ? ' hidden' : ''}`}>
+      <AnimatePresence>
+        {typingUsers.length > 0 && (
+          <motion.div
+            key="typing-indicator"
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 4 }}
+            transition={{ duration: 0.15 }}
+            className="flex items-center gap-1.5 px-1 pb-1 pt-2"
+          >
+            <span className="flex gap-0.5">
+              {[0, 1, 2].map((i) => (
+                <motion.span
+                  key={i}
+                  className="block h-1.5 w-1.5 rounded-full bg-gray-400"
+                  animate={{ y: [0, -3, 0] }}
+                  transition={{ duration: 0.6, repeat: Infinity, delay: i * 0.15 }}
+                />
+              ))}
+            </span>
+            <span className="text-xs text-gray-400">
+              {typingUsers.length === 1
+                ? `${typingUsers[0]} is typing…`
+                : typingUsers.length === 2
+                  ? `${typingUsers[0]} and ${typingUsers[1]} are typing…`
+                  : 'Several people are typing…'}
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className={`relative border-t border-gray-200 pb-[env(safe-area-inset-bottom)] pt-3${isClosed ? ' hidden' : ''}`}>
         <MentionPicker
           isOpen={mentionOpen}
           query={mentionQuery}
@@ -339,16 +436,18 @@ export function ChatSection({
           layout
           className="flex items-end gap-1 rounded-2xl border border-gray-200 bg-white px-2 py-1.5 shadow-[0_-1px_0_0_rgba(0,0,0,0.04)]"
         >
-          <motion.button
-            layout
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={chatLocked}
-            className="mb-0.5 shrink-0 rounded-xl p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-40"
-            title="Attach file"
-          >
-            <Paperclip className="h-5 w-5" />
-          </motion.button>
+          {!disableAttachments && (
+            <motion.button
+              layout
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={chatLocked}
+              className="mb-0.5 shrink-0 rounded-xl p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600 disabled:opacity-40"
+              title="Attach file"
+            >
+              <Paperclip className="h-5 w-5" />
+            </motion.button>
+          )}
 
           <motion.div layout className="relative min-w-0 flex-1">
             {/* Highlight overlay — sits behind the transparent textarea */}
@@ -387,6 +486,7 @@ export function ChatSection({
                 const next = event.target.value;
                 setContent(next);
                 autoResizeTextarea(event.target);
+                if (next.trim()) emitTypingStart(); else emitTypingStop();
                 const cursor = event.target.selectionStart ?? next.length;
                 const before = next.slice(0, cursor);
                 const atIdx = before.lastIndexOf('@');
@@ -434,6 +534,7 @@ export function ChatSection({
           ref={fileInputRef}
           type="file"
           multiple
+          disabled={disableAttachments}
           className="hidden"
           onChange={async (event) => {
             const raw = Array.from(event.target.files ?? []);
