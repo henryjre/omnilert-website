@@ -974,15 +974,15 @@ async function generateCaseSummaryWithAI(input: {
           )
           .join('\n');
 
-  const systemPrompt = `You are a concise case report analyst. Given a case title, description, and a discussion transcript, produce exactly three labeled sections:
+  const systemPrompt = `You are a concise case report analyst for a Philippine-based operations team. Given a case title, description, and a discussion transcript, produce exactly three labeled sections:
 
 **Summary:** [2-3 sentences summarizing what the case was about and its context]
 **Corrective Action:** [2-4 sentences describing what corrective steps were taken or discussed]
 **Resolution:** [2-4 sentences describing how the case was resolved or closed]
 
 Rules:
+- Write in plain, conversational English only. Avoid formal or complex words — write the way a person would explain it out loud (e.g. "The issue was fixed" not "The matter was resolved and addressed accordingly").
 - Use evidence from the discussion; if absent, write "Not explicitly documented in the discussion."
-- Handle English, Filipino, Tagalog, and Taglish naturally.
 - No markdown beyond the three bold labels. No preamble. No extra sections.`;
 
   const userContent = `Case Title: ${input.title}\n\nDescription: ${input.description}\n\nDiscussion:\n${transcript}`;
