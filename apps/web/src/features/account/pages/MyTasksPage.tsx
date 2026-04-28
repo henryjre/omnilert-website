@@ -1,19 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, type Variants } from 'framer-motion';
-import { CheckSquare } from 'lucide-react';
-import { ViewToggle } from '@/shared/components/ui/ViewToggle';
+import { CheckSquare, CircleCheck, Clock } from 'lucide-react';
+import { ViewToggle, type ViewOption } from '@/shared/components/ui/ViewToggle';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import { useAppToast } from '@/shared/hooks/useAppToast';
 import { getMyTasks, type MyTask } from '@/features/case-reports/services/caseReport.api';
 import { MyTaskCard } from '../components/MyTaskCard';
 
 type TaskTab = 'pending' | 'completed';
-
-const taskTabs = [
-  { id: 'pending', label: 'Pending' },
-  { id: 'completed', label: 'Completed' },
-] satisfies Array<{ id: TaskTab; label: string }>;
 
 const cardVariants: Variants = {
   hidden: { opacity: 0, y: 12 },
@@ -24,23 +19,48 @@ const cardVariants: Variants = {
   }),
 };
 
+const containerVariant: Variants = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.1, delayChildren: 0.05 } },
+};
+
+const sectionVariant: Variants = {
+  hidden: { opacity: 0, y: 16 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
+};
+
+function CountBadge({ count }: { count: number }) {
+  if (count === 0) return null;
+  return (
+    <span className="ml-0.5 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-gray-500">
+      {count}
+    </span>
+  );
+}
+
 function SkeletonCard() {
   return (
-    <div className="flex animate-pulse items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3">
-      <div className="flex-1 space-y-2">
-        <div className="h-3.5 w-3/4 rounded bg-gray-200" />
-        <div className="h-3 w-1/2 rounded bg-gray-100" />
+    <div className="w-full animate-pulse rounded-xl border border-gray-200 bg-white px-4 py-3.5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex-1 space-y-1.5">
+          <div className="h-4 w-48 max-w-full rounded bg-gray-200" />
+          <div className="h-3 w-36 rounded bg-gray-200" />
+          <div className="h-3 w-28 rounded bg-gray-200" />
+        </div>
+        <div className="flex shrink-0 items-center gap-3">
+          <div className="h-5 w-20 rounded-full bg-gray-200" />
+          <div className="h-4 w-4 rounded bg-gray-200" />
+        </div>
       </div>
-      <div className="h-4 w-4 rounded bg-gray-200" />
     </div>
   );
 }
 
 function EmptyState({ tab }: { tab: TaskTab }) {
   return (
-    <div className="flex flex-col items-center justify-center py-16 text-center">
-      <CheckSquare className="mb-3 h-10 w-10 text-gray-300" />
-      <p className="text-sm font-medium text-gray-500">
+    <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3.5">
+      <CheckSquare className="h-4 w-4 shrink-0 text-gray-300" />
+      <p className="text-sm text-gray-400">
         {tab === 'pending' ? 'No pending tasks' : 'No completed tasks yet'}
       </p>
     </div>
@@ -96,30 +116,44 @@ export function MyTasksPage() {
   }, [tasks, user?.id]);
 
   const visibleTasks = activeTab === 'pending' ? pending : completed;
+  const taskTabs = useMemo<ViewOption<TaskTab>[]>(
+    () => [
+      { id: 'pending', label: 'Pending', icon: Clock, badge: <CountBadge count={pending.length} /> },
+      { id: 'completed', label: 'Completed', icon: CircleCheck, badge: <CountBadge count={completed.length} /> },
+    ],
+    [completed.length, pending.length],
+  );
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-6 sm:px-6">
-      <div className="mb-6">
-        <h1 className="text-xl font-semibold text-gray-900">My Tasks</h1>
-        <p className="mt-0.5 text-sm text-gray-500">Tasks assigned to you</p>
-      </div>
+    <motion.div className="space-y-5" initial="hidden" animate="visible" variants={containerVariant}>
+      <motion.div variants={sectionVariant}>
+        <div className="flex items-center gap-3">
+          <CheckSquare className="h-6 w-6 text-primary-600" />
+          <h1 className="text-2xl font-bold text-gray-900">My Tasks</h1>
+        </div>
+        <p className="mt-1 hidden text-sm text-gray-500 sm:block">
+          Review tasks assigned to you across case reports.
+        </p>
+      </motion.div>
 
-      <ViewToggle
-        options={taskTabs}
-        activeId={activeTab}
-        onChange={setActiveTab}
-        layoutId="my-tasks-tabs"
-        showIcons={false}
-        size="default"
-      />
+      <motion.div variants={sectionVariant}>
+        <ViewToggle
+          options={taskTabs}
+          activeId={activeTab}
+          onChange={setActiveTab}
+          layoutId="my-tasks-tabs"
+          className="sm:flex-1"
+          labelAboveOnMobile
+        />
+      </motion.div>
 
-      <div className="mt-4 space-y-2">
+      <motion.div variants={sectionVariant}>
         {loading ? (
-          <>
-            <SkeletonCard />
-            <SkeletonCard />
-            <SkeletonCard />
-          </>
+          <div className="space-y-3">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <SkeletonCard key={i} />
+            ))}
+          </div>
         ) : visibleTasks.length === 0 ? (
           <EmptyState tab={activeTab} />
         ) : (
@@ -129,12 +163,13 @@ export function MyTasksPage() {
               initial="hidden"
               animate="visible"
               exit="hidden"
-              className="space-y-2"
+              className="space-y-3"
             >
               {visibleTasks.map((task, i) => (
                 <motion.div key={task.id} custom={i} variants={cardVariants}>
                   <MyTaskCard
                     task={task}
+                    completed={activeTab === 'completed'}
                     onClick={() => navigate(`/case-reports?caseId=${task.case_id}&taskId=${task.id}`)}
                   />
                 </motion.div>
@@ -142,7 +177,7 @@ export function MyTasksPage() {
             </motion.div>
           </AnimatePresence>
         )}
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }
