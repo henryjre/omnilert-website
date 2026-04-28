@@ -73,6 +73,12 @@ function mapTarget(row: RewardTargetRow): RewardRequestTarget {
 }
 
 function mapRequest(row: RewardRequestRow, targets: RewardRequestTarget[]): RewardRequestSummary {
+  const reviewedByName = row.reviewed_by
+    ? String(row.reviewed_by_name ?? '').trim() || null
+    : row.status === 'approved'
+      ? 'Omnilert System'
+      : null;
+
   return {
     id: String(row.id),
     companyId: String(row.company_id),
@@ -84,7 +90,7 @@ function mapRequest(row: RewardRequestRow, targets: RewardRequestTarget[]): Rewa
     createdByUserId: String(row.created_by),
     createdByName: String(row.created_by_name ?? '').trim(),
     reviewedByUserId: row.reviewed_by ? String(row.reviewed_by) : null,
-    reviewedByName: row.reviewed_by ? String(row.reviewed_by_name ?? '').trim() || null : null,
+    reviewedByName,
     reviewedAt: toIso(row.reviewed_at),
     rejectionReason: row.rejection_reason ?? null,
     createdAt: toIso(row.created_at) ?? new Date().toISOString(),

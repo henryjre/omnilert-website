@@ -711,7 +711,7 @@ test('violation notice completion does not write removed users.violation_notices
 
   const completionBlock = source.slice(
     source.indexOf('async function notifyViolationNoticeCompletionTargets'),
-    source.indexOf('export async function completeViolationNotice'),
+    source.indexOf('export async function sendMessage'),
   );
 
   assert.doesNotMatch(
@@ -728,6 +728,16 @@ test('violation notice completion does not write removed users.violation_notices
     completionBlock,
     /createAndDispatchNotification\(\{/,
     'violation notice completion should notify target users via employee_notifications flow',
+  );
+  assert.match(
+    completionBlock,
+    /createAutoApprovedEpiAdjustment/,
+    'violation notice completion should apply EPI decreases through auto-approved EPI adjustment records',
+  );
+  assert.doesNotMatch(
+    completionBlock,
+    /epi_score:\s*epiAfter/,
+    'violation notice completion should not directly update users.epi_score',
   );
 });
 

@@ -199,19 +199,21 @@ export function ViolationNoticesPage() {
   }, [notices, selectedBranchIdSet]);
 
   // Reset detail panel only when the currently selected VN is no longer visible
-  // after a global branch selection change.
+  // after a global branch selection change. Status/filter changes can remove the
+  // VN from the list while the detail panel should stay open.
   useEffect(() => {
-    if (!selectedVnId) return;
+    if (!selectedVnId || !selectedVn) return;
+    if (selectedBranchIds.length === 0) return;
 
-    const stillVisible = filteredNotices.some((vn) => vn.id === selectedVnId);
+    const stillVisible =
+      selectedVn.branch_id != null && selectedBranchIds.includes(selectedVn.branch_id);
     if (stillVisible) return;
 
     setSelectedVnId(null);
     setSelectedVn(null);
     setMessages([]);
     setSearchParams({});
-    void fetchReports(true);
-  }, [fetchReports, selectedBranchIds, filteredNotices, selectedVnId, setSearchParams]);
+  }, [selectedBranchIds, selectedVnId, selectedVn, setSearchParams]);
 
   useEffect(() => {
     void getVNMentionables()

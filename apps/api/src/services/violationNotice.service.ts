@@ -13,6 +13,11 @@ import { db } from '../config/database.js';
 import { getIO } from '../config/socket.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { createAndDispatchNotification } from './notification.service.js';
+import {
+  createAutoApprovedEpiAdjustment,
+  notifyAutoApprovedEpiAdjustmentTargets,
+  type AutoApprovedEpiAdjustmentResult,
+} from './autoApprovedEpiAdjustment.service.js';
 import { buildTenantStoragePrefix, deleteFile, uploadFile } from './storage.service.js';
 import {
   hydrateUsersByIds,
@@ -1145,7 +1150,6 @@ async function notifyViolationNoticeCompletionTargets(input: {
   companyId: string;
   vnId: string;
   vnNumber: number;
-  epiDecrease: number;
 }): Promise<void> {
   const targets = await db
     .getDb()('violation_notice_targets')
@@ -1154,10 +1158,6 @@ async function notifyViolationNoticeCompletionTargets(input: {
   if (targets.length === 0) return;
 
   const vnLabel = `VN-${String(input.vnNumber).padStart(4, '0')}`;
-  const epiMessage =
-    input.epiDecrease > 0
-      ? ` EPI decrease: ${input.epiDecrease.toFixed(1)} has been applied to your official EPI score.`
-      : '';
 
   await Promise.all(
     targets.map(async (target: { user_id: unknown }) => {
@@ -1165,8 +1165,8 @@ async function notifyViolationNoticeCompletionTargets(input: {
         userId: String(target.user_id),
         companyId: input.companyId,
         title: 'Violation Notice Completed',
-        message: `Violation Notice ${vnLabel} has been completed.${epiMessage ? ` ${epiMessage}` : ''}`,
-        type: input.epiDecrease > 0 ? 'warning' : 'info',
+        message: `Violation Notice ${vnLabel} has been completed.`,
+        type: 'info',
         linkUrl: `/violation-notices?vnId=${input.vnId}`,
       });
     }),
@@ -1186,8 +1186,11 @@ export async function completeViolationNotice(input: {
 
   const userNames = await resolveUserNames([input.userId]);
   const completedAt = new Date();
+  const vnLabel = `VN-${String(record.vn_number).padStart(4, '0')}`;
 
-  await db.getDb().transaction(async (trx) => {
+  const autoApprovedAdjustment = await db.getDb().transaction(async (trx) => {
+    let adjustment: AutoApprovedEpiAdjustmentResult | null = null;
+
     await trx('violation_notices').where({ id: input.vnId }).update({
       status: 'completed',
       completed_by: input.userId,
@@ -1200,40 +1203,25 @@ export async function completeViolationNotice(input: {
         .where({ violation_notice_id: input.vnId })
         .select<{ user_id: string }[]>('user_id');
 
-      for (const target of targets) {
-        const user = await trx('users').where({ id: target.user_id }).first<{
-          epi_score: number | string | null;
-          epi_history: any;
-        }>('epi_score', 'epi_history');
-
-        if (!user) continue;
-
-        const epiBefore = user.epi_score !== null ? Number(user.epi_score) : 100;
-        const epiAfter = Math.round(Math.max(0, epiBefore - input.epiDecrease) * 100) / 100;
-        const delta = Number((epiAfter - epiBefore).toFixed(2));
-
-        const historyEntry = {
-          type: 'violation',
-          date: completedAt.toISOString(),
-          epi_before: epiBefore,
-          epi_after: epiAfter,
-          delta,
-          vn_id: input.vnId,
-          vn_number: record.vn_number,
-        };
-
-        await trx('users').where({ id: target.user_id }).update({
-          epi_score: epiAfter,
-          updated_at: completedAt,
-        });
-      }
+      adjustment = await createAutoApprovedEpiAdjustment(trx, {
+        companyId: input.companyId,
+        createdByUserId: input.userId,
+        targetUserIds: targets.map((target) => target.user_id),
+        epiDelta: -input.epiDecrease,
+        reason: vnLabel,
+        approvedAt: completedAt,
+        clampMinimum: 0,
+      });
     }
 
     await createSystemMessage(
       input.vnId,
       input.userId,
       `${userNames[input.userId] ?? 'Someone'} completed this violation notice`,
+      trx,
     );
+
+    return adjustment;
   });
 
   emitVNEvent(input.companyId, 'violation-notice:status-changed', {
@@ -1246,10 +1234,20 @@ export async function completeViolationNotice(input: {
       companyId: input.companyId,
       vnId: input.vnId,
       vnNumber: record.vn_number,
-      epiDecrease: input.epiDecrease,
     });
   } catch (err) {
     logger.error({ err, vnId: input.vnId }, 'Failed to notify VN completion to target users');
+  }
+
+  if (autoApprovedAdjustment) {
+    try {
+      await notifyAutoApprovedEpiAdjustmentTargets(autoApprovedAdjustment);
+    } catch (err) {
+      logger.error(
+        { err, vnId: input.vnId, rewardRequestId: autoApprovedAdjustment.requestId },
+        'Failed to notify VN EPI adjustment targets',
+      );
+    }
   }
 
   const updated = await getVNOrThrow(input.vnId);

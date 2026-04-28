@@ -72,4 +72,45 @@ describe('Rewards contracts', () => {
     expect(service).not.toContain('epi_points');
     expect(service).toContain('epi_delta');
   });
+
+  test('reward mapping shows Omnilert System for auto-approved system reviews', () => {
+    const service = readRepoFile('apps/api/src/services/reward.service.ts');
+    expect(service).toContain("'Omnilert System'");
+    expect(service).toContain("row.status === 'approved'");
+  });
+
+  test('auto-approved EPI adjustments insert approved requests and apply target deltas', () => {
+    const helper = readRepoFile('apps/api/src/services/autoApprovedEpiAdjustment.service.ts');
+    expect(helper).toContain("status: 'approved'");
+    expect(helper).toContain('reviewed_by: null');
+    expect(helper).toContain('created_by: input.createdByUserId');
+    expect(helper).toContain('epi_score: epiAfter');
+    expect(helper).toContain('epi_delta: appliedDelta');
+  });
+
+  test('violation notice completion uses auto-approved EPI adjustments for deductions', () => {
+    const service = readRepoFile('apps/api/src/services/violationNotice.service.ts');
+    const completeBlock = service.slice(
+      service.indexOf('export async function completeViolationNotice'),
+      service.indexOf('export async function sendMessage'),
+    );
+
+    expect(completeBlock).toContain('createAutoApprovedEpiAdjustment');
+    expect(completeBlock).toContain('epiDelta: -input.epiDecrease');
+    expect(completeBlock).toContain('reason: vnLabel');
+    expect(completeBlock).not.toContain('epi_score: epiAfter');
+    expect(completeBlock).not.toContain('epiBefore - input.epiDecrease');
+  });
+
+  test('violation notice completion notification leaves EPI wording to adjustment notifications', () => {
+    const service = readRepoFile('apps/api/src/services/violationNotice.service.ts');
+    const notificationBlock = service.slice(
+      service.indexOf('async function notifyViolationNoticeCompletionTargets'),
+      service.indexOf('export async function completeViolationNotice'),
+    );
+
+    expect(notificationBlock).toContain('Violation Notice Completed');
+    expect(notificationBlock).not.toContain('EPI decrease');
+    expect(notificationBlock).not.toContain('official EPI score');
+  });
 });
