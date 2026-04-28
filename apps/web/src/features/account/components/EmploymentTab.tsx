@@ -1,5 +1,5 @@
 import { type ElementType, useEffect, useRef, useState } from 'react';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion, type Variants } from 'framer-motion';
 import { Card, CardBody, CardHeader } from '@/shared/components/ui/Card';
 import { AnimatedModal } from '@/shared/components/ui/AnimatedModal';
 import { Button } from '@/shared/components/ui/Button';
@@ -1062,11 +1062,14 @@ export function EmploymentTab() {
 
   if (loading) return null;
 
+  const containerVariant: Variants = { hidden: {}, visible: { transition: { staggerChildren: 0.1, delayChildren: 0.05 } } };
+  const sectionVariant: Variants = { hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } } };
+
   return (
-    <div className="space-y-6">
+    <motion.div className="space-y-6" initial="hidden" animate="visible" variants={containerVariant}>
 
       {/* ─── Page header ─────────────────────────────────────────────── */}
-      <div>
+      <motion.div variants={sectionVariant}>
         <div className="flex items-center gap-3">
           <IdCard className="h-6 w-6 text-primary-600" />
           <h1 className="text-2xl font-bold text-gray-900">My Profile</h1>
@@ -1074,9 +1077,10 @@ export function EmploymentTab() {
         <p className="mt-1 hidden text-sm text-gray-500 sm:block">
           Your employment record, personal details, and bank information.
         </p>
-      </div>
+      </motion.div>
 
       {/* ─── Employee summary (read-only snapshot) ───────────────────── */}
+      <motion.div variants={sectionVariant}>
       <Card>
         <CardBody className="p-4 sm:p-5">
           {/* Mobile: centered column; Desktop: side-by-side row */}
@@ -1237,7 +1241,10 @@ export function EmploymentTab() {
         </CardBody>
       </Card>
 
+      </motion.div>
+
       {/* ─── Personal information (editable) ─────────────────────────── */}
+      <motion.div variants={sectionVariant}>
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
@@ -1575,7 +1582,10 @@ export function EmploymentTab() {
         </CardBody>
       </Card>
 
+      </motion.div>
+
       {/* ─── Bank information (editable) ─────────────────────────────── */}
+      <motion.div variants={sectionVariant}>
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
@@ -1699,7 +1709,10 @@ export function EmploymentTab() {
         </CardBody>
       </Card>
 
+      </motion.div>
+
       {/* ─── Employment requirements ──────────────────────────────────── */}
+      <motion.div variants={sectionVariant}>
       {canSubmitEmployeeRequirements && (
         <Card>
           <CardHeader>
@@ -1749,6 +1762,8 @@ export function EmploymentTab() {
           </CardBody>
         </Card>
       )}
+
+      </motion.div>
 
       {/* ─── Requirement upload modal ─────────────────────────────────── */}
       <AnimatePresence>
@@ -1903,6 +1918,6 @@ export function EmploymentTab() {
           void fetchProfile();
         }}
       />
-    </div>
+    </motion.div>
   );
 }

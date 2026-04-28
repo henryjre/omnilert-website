@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, memo } from 'react';
 import type { ElementType } from 'react';
 import { ViewToggle, type ViewOption } from '@/shared/components/ui/ViewToggle';
 import { createPortal } from 'react-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, type Variants } from 'framer-motion';
 import { useSearchParams } from "react-router-dom";
 import { Badge } from '@/shared/components/ui/Badge';
 import { Button } from '@/shared/components/ui/Button';
@@ -706,10 +706,13 @@ export function CashRequestsTab() {
 
   // ── Main render ───────────────────────────────────────────────────────────
 
+  const containerVariant: Variants = { hidden: {}, visible: { transition: { staggerChildren: 0.1, delayChildren: 0.05 } } };
+  const sectionVariant: Variants = { hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } } };
+
   return (
-    <div className="space-y-5">
+    <motion.div className="space-y-5" initial="hidden" animate="visible" variants={containerVariant}>
       {/* Page header */}
-      <div>
+      <motion.div variants={sectionVariant}>
         <div className="flex items-center gap-3">
           <DollarSign className="h-6 w-6 text-primary-600" />
           <h1 className="text-2xl font-bold text-gray-900">My Cash Requests</h1>
@@ -727,10 +730,10 @@ export function CashRequestsTab() {
         <p className="mt-1 hidden text-sm text-gray-500 sm:block">
           Submit and track your salary, cash advance, and reimbursement requests.
         </p>
-      </div>
+      </motion.div>
 
       {/* Status tabs + New Request button */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+      <motion.div variants={sectionVariant} className="flex flex-col gap-2 sm:flex-row sm:items-end">
         <ViewToggle
           options={STATUS_TABS}
           activeId={statusFilter}
@@ -753,7 +756,7 @@ export function CashRequestsTab() {
             New Request
           </button>
         )}
-      </div>
+      </motion.div>
 
       {/* Modal */}
       <AnimatePresence>
@@ -772,6 +775,7 @@ export function CashRequestsTab() {
       </AnimatePresence>
 
       {/* Content */}
+      <motion.div variants={sectionVariant}>
       {loading ? (
         <div className="space-y-3">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -821,6 +825,8 @@ export function CashRequestsTab() {
         </div>
       )}
 
+      </motion.div>
+
       {/* Attachment image modal */}
       <ImageModal
         images={attachmentUrl ? [{ file_path: attachmentUrl }] : []}
@@ -867,6 +873,6 @@ export function CashRequestsTab() {
         </AnimatePresence>,
         document.body
       )}
-    </div>
+    </motion.div>
   );
 }

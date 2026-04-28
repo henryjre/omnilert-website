@@ -363,7 +363,7 @@ export function BranchSelector() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.15, ease: [0.2, 0, 0, 1] }}
-              className="fixed inset-x-3 top-[4.5rem] bottom-3 z-50 md:hidden"
+              className="fixed inset-x-3 top-[4.5rem] bottom-[calc(3.5rem+env(safe-area-inset-bottom)+0.75rem)] z-50 md:hidden"
             >
               <BranchSelectorContent
                 companyBranchGroups={companyBranchGroups}

@@ -6,7 +6,7 @@ import { Badge } from '@/shared/components/ui/Badge';
 import { Button } from '@/shared/components/ui/Button';
 import { Spinner } from "@/shared/components/ui/Spinner";
 import { AnimatedModal } from "@/shared/components/ui/AnimatedModal";
-import { AnimatePresence, motion, useMotionValue, useTransform, animate } from "framer-motion";
+import { AnimatePresence, motion, useMotionValue, useTransform, animate, type Variants } from "framer-motion";
 import { api } from '@/shared/services/api.client';
 import { useAppToast } from '@/shared/hooks/useAppToast';
 import { useSocket } from '@/shared/hooks/useSocket';
@@ -569,18 +569,21 @@ export function EmployeeNotificationsTab() {
 
   const readNotificationCount = notifications.filter((notification) => notification.is_read).length;
 
+  const containerVariant: Variants = { hidden: {}, visible: { transition: { staggerChildren: 0.1, delayChildren: 0.05 } } };
+  const sectionVariant: Variants = { hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } } };
+
   if (notifications.length === 0) {
     return (
-      <div className="space-y-5">
-        <div className="flex items-center gap-3">
+      <motion.div className="space-y-5" initial="hidden" animate="visible" variants={containerVariant}>
+        <motion.div variants={sectionVariant} className="flex items-center gap-3">
           <Bell className="h-6 w-6 text-primary-600" />
           <h1 className="text-2xl font-bold text-gray-900">My Notifications</h1>
-        </div>
-        <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3.5">
+        </motion.div>
+        <motion.div variants={sectionVariant} className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3.5">
           <Bell className="h-4 w-4 shrink-0 text-gray-300" />
           <p className="text-sm text-gray-400">No notifications yet.</p>
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
     );
   }
 
@@ -588,8 +591,8 @@ export function EmployeeNotificationsTab() {
   const pagedNotifications = notifications.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <motion.div className="space-y-6" initial="hidden" animate="visible" variants={containerVariant}>
+      <motion.div variants={sectionVariant} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Bell className="h-6 w-6 text-primary-600" />
           <h1 className="text-2xl font-bold text-gray-900">My Notifications</h1>
@@ -604,9 +607,9 @@ export function EmployeeNotificationsTab() {
         >
           Delete all read
         </Button>
-      </div>
+      </motion.div>
 
-      <div className="space-y-3">
+      <motion.div variants={sectionVariant} className="space-y-3">
         {pagedNotifications.map((n) => {
           const tokenPayId = getTokenPayVerificationId(n.link_url);
           const shiftExchangeId = getShiftExchangeId(n.link_url);
@@ -804,7 +807,7 @@ export function EmployeeNotificationsTab() {
             </div>
           );
         })}
-      </div>
+      </motion.div>
 
       {/* Pagination */}
       <Pagination
@@ -1096,6 +1099,6 @@ export function EmployeeNotificationsTab() {
           />
         )}
       </AnimatePresence>
-    </div>
+    </motion.div>
   );
 }

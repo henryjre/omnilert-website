@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, type Variants } from 'framer-motion';
 import type { PayslipDetailResponse, PayslipListItem, PayslipStatus } from '@omnilert/shared';
 import { FileEdit, FileText, X } from 'lucide-react';
 import { api } from '@/shared/services/api.client';
@@ -388,11 +388,14 @@ export function PayslipPage() {
     }
   };
 
+  const containerVariant: Variants = { hidden: {}, visible: { transition: { staggerChildren: 0.1, delayChildren: 0.05 } } };
+  const sectionVariant: Variants = { hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } } };
+
   const panelOpen = Boolean(selectedPayslipId);
   const adjustmentPanelOpen = Boolean(selectedAdjustmentId);
   return (
-    <div className="space-y-5">
-      <div>
+    <motion.div className="space-y-5" initial="hidden" animate="visible" variants={containerVariant}>
+      <motion.div variants={sectionVariant}>
         <div className="flex items-center gap-2">
           <FileText className="h-6 w-6 text-primary-600" />
           <h1 className="text-2xl font-bold text-gray-900">My Payslip</h1>
@@ -412,8 +415,9 @@ export function PayslipPage() {
             ? 'View your payslip history. Click a card to see the full breakdown.'
             : 'Review payroll adjustments awaiting your authorization or already in progress.'}
         </p>
-      </div>
+      </motion.div>
 
+      <motion.div variants={sectionVariant}>
       <ViewToggle
         options={CATEGORY_TABS}
         activeId={categoryTab}
@@ -421,7 +425,9 @@ export function PayslipPage() {
         layoutId="payslip-category-tabs"
         showLabelOnMobile
       />
+      </motion.div>
 
+      <motion.div variants={sectionVariant}>
       {categoryTab === 'payslip' ? (
         <PayslipListContent
           loading={loading || branchesLoading}
@@ -449,6 +455,7 @@ export function PayslipPage() {
           onPageChange={setAdjustmentPage}
         />
       )}
+      </motion.div>
 
       {createPortal(
         <>
@@ -554,6 +561,6 @@ export function PayslipPage() {
         </>,
         document.body,
       )}
-    </div>
+    </motion.div>
   );
 }

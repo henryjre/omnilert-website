@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, type Variants } from 'framer-motion';
 import { useSearchParams } from 'react-router-dom';
 import type {
   AccountAuditResultDetail,
@@ -165,11 +165,15 @@ export function AuditResultsPage() {
     }
   }, [selectedAuditId, setSearchParams]);
 
+  const containerVariant: Variants = { hidden: {}, visible: { transition: { staggerChildren: 0.1, delayChildren: 0.05 } } };
+  const sectionVariant: Variants = { hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } } };
+
   const currentPage = paginationState.page;
   const totalPages = paginationState.totalPages;
 
   return (
-    <>
+    <motion.div initial="hidden" animate="visible" variants={containerVariant}>
+      <motion.div variants={sectionVariant}>
       <AuditResultsPageContent
         loading={loading}
         items={items}
@@ -185,6 +189,7 @@ export function AuditResultsPage() {
           setSelectedAuditId(null);
         }}
       />
+      </motion.div>
 
       {/* Detail Panel via Portal */}
       {createPortal(
@@ -252,6 +257,6 @@ export function AuditResultsPage() {
         </AnimatePresence>,
         document.body
       )}
-    </>
+    </motion.div>
   );
 }

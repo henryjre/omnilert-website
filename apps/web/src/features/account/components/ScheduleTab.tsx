@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, useRef, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { ViewToggle, type ViewOption } from '@/shared/components/ui/ViewToggle';
 import { useSearchParams } from 'react-router-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, type Variants } from 'framer-motion';
 import { DateRangePicker } from '@/shared/components/ui/DateRangePicker';
 import { Card, CardBody } from '@/shared/components/ui/Card';
 import { Badge } from '@/shared/components/ui/Badge';
@@ -2428,9 +2428,12 @@ export function ScheduleTab() {
   });
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+  const containerVariant: Variants = { hidden: {}, visible: { transition: { staggerChildren: 0.1, delayChildren: 0.05 } } };
+  const sectionVariant: Variants = { hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } } };
+
   return (
-    <div className="space-y-5">
-      <div className="flex items-start justify-between">
+    <motion.div className="space-y-5" initial="hidden" animate="visible" variants={containerVariant}>
+      <motion.div variants={sectionVariant} className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-3">
             <Calendar className="h-6 w-6 text-primary-600" />
@@ -2479,9 +2482,9 @@ export function ScheduleTab() {
             );
           })}
         </div>
-      </div>
+      </motion.div>
 
-      <div className="space-y-5">
+      <motion.div variants={sectionVariant} className="space-y-5">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
           <ViewToggle
             options={TABS}
@@ -2780,7 +2783,7 @@ export function ScheduleTab() {
             </div>
           </div>
         )}
-      </div>
+      </motion.div>
 
       {createPortal(
         <AnimatePresence>
@@ -3048,7 +3051,7 @@ export function ScheduleTab() {
           </AnimatedModal>
         )}
       </AnimatePresence>
-    </div>
+    </motion.div>
   );
 }
 

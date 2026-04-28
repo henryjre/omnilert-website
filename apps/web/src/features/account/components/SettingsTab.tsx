@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { motion, type Variants } from 'framer-motion';
 import { Card, CardBody, CardHeader } from '@/shared/components/ui/Card';
 import { Button } from '@/shared/components/ui/Button';
 import { Input } from '@/shared/components/ui/Input';
@@ -207,10 +208,13 @@ export function SettingsTab() {
 
   if (loading) return null;
 
+  const containerVariant: Variants = { hidden: {}, visible: { transition: { staggerChildren: 0.1, delayChildren: 0.05 } } };
+  const sectionVariant: Variants = { hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } } };
+
   return (
-    <div className="space-y-6">
+    <motion.div className="space-y-6" initial="hidden" animate="visible" variants={containerVariant}>
       {/* ─── Page header ─────────────────────────────────────────────── */}
-      <div>
+      <motion.div variants={sectionVariant}>
         <div className="flex items-center gap-3">
           <SettingsIcon className="h-6 w-6 text-primary-600" />
           <h1 className="text-2xl font-bold text-gray-900">My Settings</h1>
@@ -218,9 +222,10 @@ export function SettingsTab() {
         <p className="mt-1 hidden text-sm text-gray-500 sm:block">
           Manage your account preferences, security, and notifications.
         </p>
-      </div>
+      </motion.div>
 
       {/* ─── Appearance ──────────────────────────────────────────────── */}
+      <motion.div variants={sectionVariant}>
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
@@ -258,7 +263,10 @@ export function SettingsTab() {
         </CardBody>
       </Card>
 
+      </motion.div>
+
       {/* ─── Email address ────────────────────────────────────────────── */}
+      <motion.div variants={sectionVariant}>
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
@@ -291,7 +299,10 @@ export function SettingsTab() {
         </CardBody>
       </Card>
 
+      </motion.div>
+
       {/* ─── Security ────────────────────────────────────────────────── */}
+      <motion.div variants={sectionVariant}>
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
@@ -348,7 +359,10 @@ export function SettingsTab() {
         </CardBody>
       </Card>
 
+      </motion.div>
+
       {/* ─── Device notifications ─────────────────────────────────────── */}
+      <motion.div variants={sectionVariant}>
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
@@ -405,6 +419,8 @@ export function SettingsTab() {
         </CardBody>
       </Card>
 
+      </motion.div>
+
       {/* ─── Password confirm dialog ──────────────────────────────────── */}
       {passwordConfirmOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -444,6 +460,6 @@ export function SettingsTab() {
           </div>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }

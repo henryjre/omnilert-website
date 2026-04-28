@@ -298,7 +298,7 @@ export function TopBar({ onOpenSidebar, onOpenAccountSidebar, accountSidebarOpen
 
       <div className="ml-auto flex items-center gap-3 md:ml-3">
         {/* Notification bell */}
-        <div className="relative" ref={dropdownRef}>
+        <div className="relative hidden lg:relative lg:block" ref={dropdownRef}>
           <button
             onClick={() => setOpen((v) => !v)}
             className="relative rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
@@ -459,7 +459,7 @@ export function TopBar({ onOpenSidebar, onOpenAccountSidebar, accountSidebarOpen
           type="button"
           onClick={onOpenAccountSidebar}
           whileTap={{ scale: 0.95 }}
-          className={`sm:hidden flex h-9 w-9 items-center justify-center rounded-full border cursor-pointer focus:outline-none transition-colors ${
+          className={`hidden flex h-9 w-9 items-center justify-center rounded-full border cursor-pointer focus:outline-none transition-colors ${
             accountSidebarOpen
               ? 'border-primary-500 bg-primary-50'
               : 'border-gray-300 bg-gray-100 hover:border-primary-400 hover:bg-primary-50'

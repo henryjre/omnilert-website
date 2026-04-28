@@ -5,38 +5,43 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { AccountSidebar } from './AccountSidebar';
+import { BottomNav } from './BottomNav';
+import { AccountBottomSheet } from './AccountBottomSheet';
 
 export function DashboardLayout() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [accountSidebarOpen, setAccountSidebarOpen] = useState(false);
+  const [accountSheetOpen, setAccountSheetOpen] = useState(false);
   const [panStartX, setPanStartX] = useState<number | null>(null);
   const location = useLocation();
 
   useEffect(() => {
     setMobileSidebarOpen(false);
     setAccountSidebarOpen(false);
+    setAccountSheetOpen(false);
   }, [location.pathname]);
 
   useEffect(() => {
-    if (!mobileSidebarOpen && !accountSidebarOpen) return;
+    if (!mobileSidebarOpen && !accountSidebarOpen && !accountSheetOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setMobileSidebarOpen(false);
         setAccountSidebarOpen(false);
+        setAccountSheetOpen(false);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [mobileSidebarOpen, accountSidebarOpen]);
+  }, [mobileSidebarOpen, accountSidebarOpen, accountSheetOpen]);
 
   useEffect(() => {
-    if (!mobileSidebarOpen && !accountSidebarOpen) return;
+    if (!mobileSidebarOpen && !accountSidebarOpen && !accountSheetOpen) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, [mobileSidebarOpen, accountSidebarOpen]);
+  }, [mobileSidebarOpen, accountSidebarOpen, accountSheetOpen]);
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -80,6 +85,11 @@ export function DashboardLayout() {
           </div>
         )}
       </AnimatePresence>
+
+      <AccountBottomSheet
+        open={accountSheetOpen}
+        onClose={() => setAccountSheetOpen(false)}
+      />
 
       <AnimatePresence>
         {accountSidebarOpen && (
@@ -141,10 +151,14 @@ export function DashboardLayout() {
         />
         <main
           data-dashboard-scroll-container="true"
-          className="flex-1 overflow-y-auto bg-gray-50 p-4 sm:p-6"
+          className="flex-1 overflow-y-auto bg-gray-50 p-4 pb-[calc(4.5rem+env(safe-area-inset-bottom))] sm:p-6 lg:pb-6"
         >
           <Outlet />
         </main>
+        <BottomNav
+          onOpenAccountSheet={() => setAccountSheetOpen(true)}
+          accountSheetOpen={accountSheetOpen}
+        />
       </motion.div>
     </div>
   );
