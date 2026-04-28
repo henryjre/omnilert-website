@@ -207,21 +207,21 @@ export function TaskDetailPanel({
       className="absolute inset-0 z-20 flex flex-col bg-white"
     >
       {/* Header */}
-      <div className="flex items-center gap-3 border-b border-gray-200 px-4 py-3">
+      <div className="flex items-start gap-3 border-b border-gray-200 px-4 py-3">
         <button
           type="button"
           onClick={onBack}
-          className="shrink-0 rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+          className="mt-0.5 shrink-0 rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
-        <p className="min-w-0 flex-1 truncate text-sm font-semibold text-gray-900">
+        <p className="min-w-0 flex-1 whitespace-pre-wrap break-words py-1 text-sm font-semibold leading-5 text-gray-900">
           {task.description}
         </p>
         {allDone ? (
-          <CheckCircle2 className="h-5 w-5 shrink-0 text-green-500" />
+          <CheckCircle2 className="mt-1 h-5 w-5 shrink-0 text-green-500" />
         ) : (
-          <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+          <span className="mt-1 shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
             In Progress
           </span>
         )}

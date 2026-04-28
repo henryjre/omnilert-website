@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import type { GroupedUsersResponse } from '@omnilert/shared';
 import { AnimatedModal } from '@/shared/components/ui/AnimatedModal';
 import { GroupedUserSelect } from '@/features/violation-notices/components/GroupedUserSelect';
 import { Spinner } from '@/shared/components/ui/Spinner';
+
+const TASK_DESCRIPTION_MAX_LENGTH = 120;
 
 interface TaskCreationModalProps {
   groupedUsers: GroupedUsersResponse | null;
@@ -20,14 +22,19 @@ export function TaskCreationModal({
   onSubmit,
   onClose,
 }: TaskCreationModalProps) {
-  const [description, setDescription] = useState(defaultDescription);
+  const [description, setDescription] = useState(() => defaultDescription.slice(0, TASK_DESCRIPTION_MAX_LENGTH));
   const [assigneeUserIds, setAssigneeUserIds] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    setDescription(defaultDescription.slice(0, TASK_DESCRIPTION_MAX_LENGTH));
+  }, [defaultDescription, isOpen]);
+
   // Reset state when modal opens with a new defaultDescription
   function handleClose() {
-    setDescription(defaultDescription);
+    setDescription(defaultDescription.slice(0, TASK_DESCRIPTION_MAX_LENGTH));
     setAssigneeUserIds([]);
     setError(null);
     onClose();
@@ -36,6 +43,10 @@ export function TaskCreationModal({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!description.trim()) return;
+    if (description.trim().length > TASK_DESCRIPTION_MAX_LENGTH) {
+      setError(`Task description must be ${TASK_DESCRIPTION_MAX_LENGTH} characters or fewer.`);
+      return;
+    }
     if (assigneeUserIds.length === 0) {
       setError('Please select at least one assignee.');
       return;
@@ -67,11 +78,15 @@ export function TaskCreationModal({
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
+                maxLength={TASK_DESCRIPTION_MAX_LENGTH}
                 rows={3}
                 placeholder="Describe the task..."
                 className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
                 autoFocus
               />
+              <p className="mt-1 text-right text-xs text-gray-400">
+                {description.length}/{TASK_DESCRIPTION_MAX_LENGTH}
+              </p>
             </div>
 
             <div className="mb-4">

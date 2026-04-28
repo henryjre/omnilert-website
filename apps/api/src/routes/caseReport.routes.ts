@@ -47,8 +47,10 @@ const reactionSchema = z.object({
   emoji: z.string().trim().min(1).max(20),
 });
 
+const TASK_DESCRIPTION_MAX_LENGTH = 120;
+
 const createTaskSchema = z.object({
-  description: z.string().trim().min(1).max(1000),
+  description: z.string().trim().min(1).max(TASK_DESCRIPTION_MAX_LENGTH),
   assigneeUserIds: z.array(z.string().uuid()).min(1),
   sourceMessageId: z.string().uuid().nullable().optional(),
 });
