@@ -1,14 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, type Variants } from 'framer-motion';
-import { CheckSquare, CircleCheck, Clock } from 'lucide-react';
+import { CheckSquare, CircleCheck, Clock, LayoutGrid } from 'lucide-react';
 import { ViewToggle, type ViewOption } from '@/shared/components/ui/ViewToggle';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import { useAppToast } from '@/shared/hooks/useAppToast';
 import { getMyTasks, type MyTask } from '@/features/case-reports/services/caseReport.api';
 import { MyTaskCard } from '../components/MyTaskCard';
 
-type TaskTab = 'pending' | 'completed';
+type TaskTab = 'all' | 'pending' | 'completed';
+
+const taskTabs: ViewOption<TaskTab>[] = [
+  { id: 'all', label: 'All', icon: LayoutGrid },
+  { id: 'pending', label: 'Pending', icon: Clock },
+  { id: 'completed', label: 'Completed', icon: CircleCheck },
+];
 
 const cardVariants: Variants = {
   hidden: { opacity: 0, y: 12 },
@@ -28,15 +34,6 @@ const sectionVariant: Variants = {
   hidden: { opacity: 0, y: 16 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
 };
-
-function CountBadge({ count }: { count: number }) {
-  if (count === 0) return null;
-  return (
-    <span className="ml-0.5 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-gray-500">
-      {count}
-    </span>
-  );
-}
 
 function SkeletonCard() {
   return (
@@ -61,7 +58,11 @@ function EmptyState({ tab }: { tab: TaskTab }) {
     <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3.5">
       <CheckSquare className="h-4 w-4 shrink-0 text-gray-300" />
       <p className="text-sm text-gray-400">
-        {tab === 'pending' ? 'No pending tasks' : 'No completed tasks yet'}
+        {tab === 'all'
+          ? 'No tasks assigned to you yet'
+          : tab === 'pending'
+            ? 'No pending tasks'
+            : 'No completed tasks yet'}
       </p>
     </div>
   );
@@ -74,7 +75,7 @@ export function MyTasksPage() {
 
   const [tasks, setTasks] = useState<MyTask[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<TaskTab>('pending');
+  const [activeTab, setActiveTab] = useState<TaskTab>('all');
 
   useEffect(() => {
     let active = true;
@@ -115,14 +116,7 @@ export function MyTasksPage() {
     return { pending: nextPending, completed: nextCompleted };
   }, [tasks, user?.id]);
 
-  const visibleTasks = activeTab === 'pending' ? pending : completed;
-  const taskTabs = useMemo<ViewOption<TaskTab>[]>(
-    () => [
-      { id: 'pending', label: 'Pending', icon: Clock, badge: <CountBadge count={pending.length} /> },
-      { id: 'completed', label: 'Completed', icon: CircleCheck, badge: <CountBadge count={completed.length} /> },
-    ],
-    [completed.length, pending.length],
-  );
+  const visibleTasks = activeTab === 'all' ? tasks : activeTab === 'pending' ? pending : completed;
 
   return (
     <motion.div className="space-y-5" initial="hidden" animate="visible" variants={containerVariant}>
@@ -165,15 +159,20 @@ export function MyTasksPage() {
               exit="hidden"
               className="space-y-3"
             >
-              {visibleTasks.map((task, i) => (
-                <motion.div key={task.id} custom={i} variants={cardVariants}>
-                  <MyTaskCard
-                    task={task}
-                    completed={activeTab === 'completed'}
-                    onClick={() => navigate(`/case-reports?caseId=${task.case_id}&taskId=${task.id}`)}
-                  />
-                </motion.div>
-              ))}
+              {visibleTasks.map((task, i) => {
+                const assignee = task.assignees.find((a) => a.user_id === user?.id);
+                const completed = Boolean(assignee?.completed_at);
+
+                return (
+                  <motion.div key={task.id} custom={i} variants={cardVariants}>
+                    <MyTaskCard
+                      task={task}
+                      completed={completed}
+                      onClick={() => navigate(`/case-reports?caseId=${task.case_id}&taskId=${task.id}`)}
+                    />
+                  </motion.div>
+                );
+              })}
             </motion.div>
           </AnimatePresence>
         )}
