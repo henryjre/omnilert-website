@@ -57,6 +57,11 @@ export const PERMISSIONS = {
   VIOLATION_NOTICE_VIEW: 'violation_notice.view',
   VIOLATION_NOTICE_MANAGE: 'violation_notice.manage',
 
+  // EPI Adjustment (3)
+  REWARDS_VIEW: 'rewards.view',
+  REWARDS_ISSUE: 'rewards.issue',
+  REWARDS_MANAGE: 'rewards.manage',
+
   // Workplace Relations (1)
   WORKPLACE_RELATIONS_VIEW: 'workplace_relations.view',
 
@@ -70,7 +75,7 @@ export const PERMISSIONS = {
   TOKEN_PAY_MANAGE: 'token_pay.manage',
   TOKEN_PAY_ACCOUNT_MANAGE: 'token_pay.account_manage',
 
-  // Payslips Management (3)
+  // Payroll (3)
   PAYSLIPS_VIEW: 'payslips.view',
   PAYSLIPS_ISSUE: 'payslips.issue',
   PAYSLIPS_MANAGE: 'payslips.manage',
@@ -174,6 +179,14 @@ export const PERMISSION_CATEGORIES: Record<string, { label: string; permissions:
       PERMISSIONS.VIOLATION_NOTICE_MANAGE,
     ],
   },
+  rewards: {
+    label: 'EPI Adjustment',
+    permissions: [
+      PERMISSIONS.REWARDS_VIEW,
+      PERMISSIONS.REWARDS_ISSUE,
+      PERMISSIONS.REWARDS_MANAGE,
+    ],
+  },
   workplace_relations: {
     label: 'Workplace Relations',
     permissions: [
@@ -197,7 +210,7 @@ export const PERMISSION_CATEGORIES: Record<string, { label: string; permissions:
     ],
   },
   payslips: {
-    label: 'Payslips',
+    label: 'Payroll',
     permissions: [
       PERMISSIONS.PAYSLIPS_VIEW,
       PERMISSIONS.PAYSLIPS_ISSUE,
@@ -235,6 +248,8 @@ export const PERMISSION_PREREQUISITES: Partial<Record<PermissionKey, PermissionK
   [PERMISSIONS.SCHEDULE_MANAGE_SHIFT]: PERMISSIONS.SCHEDULE_VIEW,
   [PERMISSIONS.SCHEDULE_END_SHIFT]: PERMISSIONS.SCHEDULE_VIEW,
   [PERMISSIONS.VIOLATION_NOTICE_MANAGE]: PERMISSIONS.VIOLATION_NOTICE_VIEW,
+  [PERMISSIONS.REWARDS_ISSUE]: PERMISSIONS.REWARDS_VIEW,
+  [PERMISSIONS.REWARDS_MANAGE]: PERMISSIONS.REWARDS_VIEW,
   [PERMISSIONS.CASH_REQUESTS_MANAGE]: PERMISSIONS.CASH_REQUESTS_VIEW,
   [PERMISSIONS.TOKEN_PAY_ISSUE]: PERMISSIONS.TOKEN_PAY_VIEW,
   [PERMISSIONS.TOKEN_PAY_MANAGE]: PERMISSIONS.TOKEN_PAY_VIEW,
@@ -282,6 +297,9 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
   [PERMISSIONS.SCHEDULE_END_SHIFT]: 'Approve/reject public shift authorizations and end shifts for all employees on the schedule',
   [PERMISSIONS.VIOLATION_NOTICE_VIEW]: 'Access the Violation Notices page and view notice data',
   [PERMISSIONS.VIOLATION_NOTICE_MANAGE]: 'Create, confirm, reject, issue, and complete violation notices',
+  [PERMISSIONS.REWARDS_VIEW]: 'Access the EPI Adjustment page and view adjustment requests',
+  [PERMISSIONS.REWARDS_ISSUE]: 'Submit EPI adjustment requests',
+  [PERMISSIONS.REWARDS_MANAGE]: 'Approve and reject EPI adjustment requests',
   [PERMISSIONS.WORKPLACE_RELATIONS_VIEW]: 'Access the Workplace Relations page and view peer evaluations',
   [PERMISSIONS.CASH_REQUESTS_VIEW]: 'Access the Cash Requests management page',
   [PERMISSIONS.CASH_REQUESTS_MANAGE]: 'Approve, reject, and disburse cash requests',
@@ -289,9 +307,9 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
   [PERMISSIONS.TOKEN_PAY_ISSUE]: 'Submit token issuance and deduction requests',
   [PERMISSIONS.TOKEN_PAY_MANAGE]: 'Approve and reject token issuance and deduction requests',
   [PERMISSIONS.TOKEN_PAY_ACCOUNT_MANAGE]: 'Suspend and unsuspend loyalty accounts',
-  [PERMISSIONS.PAYSLIPS_VIEW]: 'Access the Payslips management page',
-  [PERMISSIONS.PAYSLIPS_ISSUE]: 'Submit payslip deduction and issuance requests',
-  [PERMISSIONS.PAYSLIPS_MANAGE]: 'Approve and reject payslip deduction and issuance requests',
+  [PERMISSIONS.PAYSLIPS_VIEW]: 'Access the Payroll management page',
+  [PERMISSIONS.PAYSLIPS_ISSUE]: 'Submit payroll deduction and issuance requests',
+  [PERMISSIONS.PAYSLIPS_MANAGE]: 'Approve and reject payroll deduction and issuance requests',
   [PERMISSIONS.ANALYTICS_VIEW_EMPLOYEE_ANALYTICS]: 'Access the Employee Analytics page and view performance metrics',
   [PERMISSIONS.ANALYTICS_VIEW_PROFITABILITY_ANALYTICS]: 'Access the Profitability Analytics page and view P&L metrics',
   [PERMISSIONS.ANALYTICS_VIEW_POS_ANALYTICS]: 'Access the POS Analytics page and view session metrics',

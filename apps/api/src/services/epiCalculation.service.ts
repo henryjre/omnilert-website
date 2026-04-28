@@ -28,7 +28,7 @@ export interface KpiBreakdown {
   cashiering: { score: number | null; impact: number };
   suggestive_selling_and_upselling: { score: number | null; impact: number };
   service_efficiency: { score: number | null; impact: number };
-  awards: { count: number; impact: number };
+  awards: { count: number; total_increase: number; impact: number };
   violations: { count: number; total_decrease: number; impact: number };
 }
 
@@ -554,6 +554,26 @@ function calcViolations(
   };
 }
 
+function calcAwards(
+  rewardRequests: Array<{ epi_delta?: number | null; applied_at?: string | null }> | null | undefined,
+  from: Date,
+  to: Date,
+): { count: number; total_increase: number; impact: number } {
+  if (!Array.isArray(rewardRequests) || rewardRequests.length === 0) {
+    return { count: 0, total_increase: 0, impact: 0 };
+  }
+
+  const recent = rewardRequests.filter(
+    (reward) => reward.applied_at && dateRangeFilter(reward.applied_at, from, to),
+  );
+  const totalIncrease = recent.reduce((sum, reward) => sum + Number(reward.epi_delta ?? 0), 0);
+  return {
+    count: recent.length,
+    total_increase: Math.round(totalIncrease * 100) / 100,
+    impact: 0, // Impact is zero because EPI points are applied immediately on approval
+  };
+}
+
 // ─── Main KPI Calculation ─────────────────────────────────────────────────────
 
 export interface UserKpiData {
@@ -562,6 +582,7 @@ export interface UserKpiData {
   cssAudits: Array<{ star_rating: number; audited_at: string }> | null;
   peerEvaluations: WrsEvaluationRow[] | null;
   complianceAudit: Array<{ answers: Record<string, any>; audited_at: string }> | null;
+  rewardRequests?: Array<{ epi_delta?: number | null; applied_at?: string | null }> | null;
   violationNotices: Array<{ epi_decrease?: number | null; completed_at?: string | null }> | null;
 }
 
@@ -660,7 +681,7 @@ export async function calculateKpiScoresWithQueryDeps(
     impact: complianceServiceEfficiency.score !== null ? serviceEfficiencyImpact(complianceServiceEfficiency.score) : 0,
   };
 
-  const awards: KpiBreakdown['awards'] = { count: 0, impact: 0 }; // Awards system not yet built
+  const awards = calcAwards(userData.rewardRequests, from, to);
 
   const violations = calcViolations(userData.violationNotices, from, to);
 
@@ -843,7 +864,7 @@ export async function calculateKpiScoresBatch(
       impact: complianceServiceEfficiency.score !== null ? serviceEfficiencyImpact(complianceServiceEfficiency.score) : 0,
     };
 
-    const awards: KpiBreakdown['awards'] = { count: 0, impact: 0 };
+    const awards = calcAwards(userData.rewardRequests, from, to);
     const violations = calcViolations(userData.violationNotices, from, to);
 
     const breakdown: KpiBreakdown = {

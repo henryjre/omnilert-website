@@ -70,6 +70,7 @@ export interface NormalizedEmployeeMetricDailySnapshot extends Omit<EmployeeMetr
   | 'serviceEfficiencyScore'
   | 'epiScore'
   | 'awardsCount'
+  | 'awardsTotalIncrease'
   | 'violationsCount'
 > {
   workplaceRelationsScore: number | null;
@@ -87,6 +88,7 @@ export interface NormalizedEmployeeMetricDailySnapshot extends Omit<EmployeeMetr
   serviceEfficiencyScore: number | null;
   epiScore: number | null;
   awardsCount: number;
+  awardsTotalIncrease: number;
   violationsCount: number;
 }
 
@@ -198,6 +200,7 @@ export function normalizeSnapshotRows(rows: EmployeeMetricDailySnapshot[]): Norm
     serviceEfficiencyScore: toNumber(row.serviceEfficiencyScore),
     epiScore: toNumber(row.epiScore),
     awardsCount: toInteger(row.awardsCount),
+    awardsTotalIncrease: toNumber(row.awardsTotalIncrease) ?? 0,
     violationsCount: toInteger(row.violationsCount),
   }));
 }

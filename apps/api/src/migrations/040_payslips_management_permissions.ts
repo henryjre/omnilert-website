@@ -4,20 +4,20 @@ import type { Knex } from 'knex';
 const PERMISSIONS = [
   {
     key: 'payslips.view',
-    name: 'View Payslips Management',
-    description: 'Access the Payslips management page',
+    name: 'View Payroll',
+    description: 'Access the Payroll management page',
     category: 'payslips',
   },
   {
     key: 'payslips.issue',
-    name: 'Issue Payslips',
-    description: 'Submit payslip deduction and issuance requests',
+    name: 'Issue Payroll',
+    description: 'Submit payroll deduction and issuance requests',
     category: 'payslips',
   },
   {
     key: 'payslips.manage',
-    name: 'Manage Payslips',
-    description: 'Approve and reject payslip deduction and issuance requests',
+    name: 'Manage Payroll',
+    description: 'Approve and reject payroll deduction and issuance requests',
     category: 'payslips',
   },
 ];

@@ -20,6 +20,7 @@ import {
   BarChart2,
   ShoppingBag,
   Coins,
+  Star,
 } from 'lucide-react';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { usePosVerificationStore } from '@/shared/store/posVerificationStore';
@@ -36,7 +37,7 @@ interface SidebarProps {
   hideDashboardLink?: boolean;
 }
 
-const HR_PATHS = ['/employee-profiles', '/employee-schedule', '/violation-notices', '/workplace-relations'];
+const HR_PATHS = ['/employee-profiles', '/employee-schedule', '/violation-notices', '/epi-adjustments', '/workplace-relations'];
 const FINANCE_PATHS = ['/cash-requests', '/token-pay', '/payslips'];
 const AUDIT_PATHS = ['/store-audits'];
 
@@ -169,6 +170,7 @@ export function Sidebar({ className = '', hideDashboardLink = false }: SidebarPr
           PERMISSIONS.EMPLOYEE_PROFILES_VIEW,
           PERMISSIONS.SCHEDULE_VIEW,
           PERMISSIONS.VIOLATION_NOTICE_VIEW,
+          PERMISSIONS.REWARDS_VIEW,
           PERMISSIONS.WORKPLACE_RELATIONS_VIEW,
           PERMISSIONS.STORE_AUDIT_VIEW,
           PERMISSIONS.CASE_REPORT_VIEW,
@@ -211,6 +213,7 @@ export function Sidebar({ className = '', hideDashboardLink = false }: SidebarPr
             {(hasPermission(PERMISSIONS.EMPLOYEE_PROFILES_VIEW)
               || hasPermission(PERMISSIONS.SCHEDULE_VIEW)
               || hasPermission(PERMISSIONS.VIOLATION_NOTICE_VIEW)
+              || hasPermission(PERMISSIONS.REWARDS_VIEW)
               || hasPermission(PERMISSIONS.WORKPLACE_RELATIONS_VIEW)) && (
               <SubCategory
                 label="Human Resources"
@@ -233,6 +236,12 @@ export function Sidebar({ className = '', hideDashboardLink = false }: SidebarPr
                   <AnimatedNavLink to="/violation-notices" className={linkClass}>
                     <TriangleAlert className="h-5 w-5" />
                     Violation Notices
+                  </AnimatedNavLink>
+                )}
+                {hasPermission(PERMISSIONS.REWARDS_VIEW) && (
+                  <AnimatedNavLink to="/epi-adjustments" className={linkClass}>
+                    <Star className="h-5 w-5" />
+                    EPI Adjustment
                   </AnimatedNavLink>
                 )}
                 {hasPermission(PERMISSIONS.WORKPLACE_RELATIONS_VIEW) && (

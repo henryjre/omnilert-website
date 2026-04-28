@@ -50,7 +50,7 @@ test('mapBreakdownToRollingMetricSnapshot returns rolling metrics plus branch AO
     uniform: { rate: 99.2, impact: 1 },
     hygiene: { rate: 97.8, impact: 1 },
     sop: { rate: 96.4, impact: 0 },
-    awards: { count: 3, impact: 0 },
+    awards: { count: 3, total_increase: 7.5, impact: 0 },
     violations: { count: 1, total_decrease: 1, impact: -1 },
   });
 

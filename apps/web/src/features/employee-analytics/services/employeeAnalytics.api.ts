@@ -41,6 +41,7 @@ export interface EmployeeMetricDailySnapshot {
   serviceEfficiencyScore: number | null;
   epiScore: number | null;
   awardsCount: number;
+  awardsTotalIncrease: number;
   violationsCount: number;
   generatedAt: string;
   calculationVersion: string;

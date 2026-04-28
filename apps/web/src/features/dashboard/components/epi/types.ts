@@ -10,6 +10,7 @@ export interface EpiCriteria {
   violationCount: number;
   violationTotalDecrease: number;
   awardCount: number;
+  awardTotalIncrease: number;
   uniformComplianceRate: number | null;
   hygieneComplianceRate: number | null;
   sopComplianceRate: number | null;

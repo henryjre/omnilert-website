@@ -17,6 +17,7 @@ export type * from './types/violationNotice.types.js';
 export type * from './types/webhook.types.js';
 export type * from './types/tokenPay.types.js';
 export type * from './types/payrollAdjustment.types.js';
+export type * from './types/reward.types.js';
 
 // Constants
 export {
@@ -191,3 +192,14 @@ export type {
   AuthorizePayrollAdjustmentInput,
   PayrollAdjustmentCompleteWebhookInput,
 } from './validation/payrollAdjustment.schema.js';
+
+export {
+  rewardRequestStatusSchema,
+  createRewardRequestSchema,
+  rejectRewardRequestSchema,
+} from './validation/reward.schema.js';
+export type {
+  RewardRequestStatusInput,
+  CreateRewardRequestInput,
+  RejectRewardRequestInput,
+} from './validation/reward.schema.js';

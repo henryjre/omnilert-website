@@ -81,6 +81,7 @@ function createCriteria(overrides: Partial<DashboardCriteria> = {}): DashboardCr
     violationCount: 0,
     violationTotalDecrease: 0,
     awardCount: 1,
+    awardTotalIncrease: 5,
     uniformComplianceRate: 100,
     hygieneComplianceRate: 100,
     sopComplianceRate: 100,

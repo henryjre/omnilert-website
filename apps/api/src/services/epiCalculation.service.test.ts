@@ -28,6 +28,7 @@ test('calculateKpiScoresWithQueryDeps fetches slots and attendance once for both
     cssAudits: null,
     peerEvaluations: null,
     complianceAudit: null,
+    rewardRequests: null,
     violationNotices: null,
   }, {
     getOdooEmployeeIdsByWebsiteKey: async () => {
@@ -90,6 +91,7 @@ test('calculateKpiScoresWithQueryDeps benchmarks AOV against weighted attended b
     cssAudits: null,
     peerEvaluations: null,
     complianceAudit: null,
+    rewardRequests: null,
     violationNotices: null,
   }, {
     getOdooEmployeeIdsByWebsiteKey: async () => [101],
@@ -163,6 +165,7 @@ test('calculateKpiScoresWithQueryDeps keeps employee AOV visible when no attenda
     cssAudits: null,
     peerEvaluations: null,
     complianceAudit: null,
+    rewardRequests: null,
     violationNotices: null,
   }, {
     getOdooEmployeeIdsByWebsiteKey: async () => [101],
@@ -267,6 +270,7 @@ test('calculateKpiScoresWithQueryDeps uses the default 5 score for expired peer 
       } as any,
     ],
     complianceAudit: null,
+    rewardRequests: null,
     violationNotices: null,
   }, {
     getOdooEmployeeIdsByWebsiteKey: async () => [101],
@@ -298,6 +302,7 @@ test('calculateKpiScoresWithQueryDeps respects explicit rolling window', async (
     ],
     peerEvaluations: null,
     complianceAudit: null,
+    rewardRequests: null,
     violationNotices: null,
   }, {
     getOdooEmployeeIdsByWebsiteKey: async () => [101],

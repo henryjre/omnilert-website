@@ -24,7 +24,7 @@ interface DashboardUserRow {
 async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKpiData> {
   const dbConn = db.getDb();
   const odooEmployeeIds = await getOdooEmployeeIdsByWebsiteKey(userKey);
-  const [cssAudits, peerEvaluations, complianceAuditRows, violationNotices] = await Promise.all([
+  const [cssAudits, peerEvaluations, complianceAuditRows, violationNotices, rewardRequests] = await Promise.all([
     // CSS audits: the user was the cashier being audited (identified by user_key UUID)
     dbConn('store_audits')
       .where({ type: 'customer_service', status: 'completed' })
@@ -92,6 +92,10 @@ async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKp
       )
       .where({ status: 'completed' })
       .select('epi_decrease', dbConn.raw(`updated_at::text as completed_at`)),
+    dbConn('reward_request_targets as rrt')
+      .join('reward_requests as rr', 'rr.id', 'rrt.reward_request_id')
+      .where({ 'rr.status': 'approved', 'rrt.user_id': userId })
+      .select('rrt.epi_delta', dbConn.raw(`rrt.applied_at::text as applied_at`)),
   ]);
 
   // Shape compliance rows into { answers, audited_at } format expected by epiCalculation
@@ -117,6 +121,7 @@ async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKp
     cssAudits: cssAudits.length ? cssAudits : null,
     peerEvaluations: peerEvaluations.length ? peerEvaluations : null,
     complianceAudit,
+    rewardRequests: rewardRequests.length ? rewardRequests : null,
     violationNotices: violationNotices.length ? violationNotices : null,
   };
 }
@@ -162,6 +167,7 @@ export interface DashboardCriteria {
   violationCount: number;
   violationTotalDecrease: number;
   awardCount: number;
+  awardTotalIncrease: number;
   uniformComplianceRate: number | null;
   hygieneComplianceRate: number | null;
   sopComplianceRate: number | null;
@@ -306,6 +312,7 @@ function createEmptyCriteria(): DashboardCriteria {
     violationCount: 0,
     violationTotalDecrease: 0,
     awardCount: 0,
+    awardTotalIncrease: 0,
     uniformComplianceRate: null,
     hygieneComplianceRate: null,
     sopComplianceRate: null,
@@ -343,6 +350,7 @@ function breakdownToCriteria(kpi: KpiBreakdown | null | undefined): DashboardCri
     violationCount: kpi.violations.count,
     violationTotalDecrease: kpi.violations.total_decrease,
     awardCount: kpi.awards.count,
+    awardTotalIncrease: kpi.awards.total_increase,
     uniformComplianceRate: kpi.uniform.rate,
     hygieneComplianceRate: kpi.hygiene.rate,
     sopComplianceRate: kpi.sop.rate,
@@ -373,6 +381,7 @@ function snapshotToCriteria(s: any): DashboardCriteria {
     violationCount: toNumber(s.violations_count, 0),
     violationTotalDecrease: toNumber(s.violations_count, 0) * 5,
     awardCount: toNumber(s.awards_count, 0),
+    awardTotalIncrease: toNumber(s.awards_total_increase, 0),
     uniformComplianceRate: toNullableNumber(s.uniform_compliance_rate),
     hygieneComplianceRate: toNullableNumber(s.hygiene_compliance_rate),
     sopComplianceRate: toNullableNumber(s.sop_compliance_rate),
@@ -404,6 +413,7 @@ async function fetchMonthlyHistoryFromSnapshots(userId: string): Promise<Histori
       'suggestive_selling_and_upselling',
       'service_efficiency',
       'awards_count',
+      'awards_total_increase',
       'violations_count'
     )
     .orderByRaw("date_trunc('month', snapshot_date) DESC, snapshot_date DESC");
@@ -448,6 +458,7 @@ async function buildCurrentLiveSnapshot(user: UserKpiData, officialEpiScore: num
     cssAudits: user.cssAudits,
     peerEvaluations: user.peerEvaluations,
     complianceAudit: user.complianceAudit,
+    rewardRequests: user.rewardRequests,
     violationNotices: user.violationNotices,
   }, { window: { from, to }, minRecords: 1 });
 
@@ -768,6 +779,7 @@ export async function getEpiLeaderboard(currentUserId: string, monthKey: string)
       'suggestive_selling_and_upselling',
       'service_efficiency',
       'awards_count',
+      'awards_total_increase',
       'violations_count'
     )
     .orderByRaw("user_id, date_trunc('month', snapshot_date) DESC, snapshot_date DESC");

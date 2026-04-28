@@ -50,6 +50,7 @@ export interface RollingMetricWindow {
 export interface NonRollingSnapshotValues {
   epiScore: number | null;
   awardsCount: number;
+  awardsTotalIncrease: number;
   violationsCount: number;
 }
 
@@ -164,6 +165,30 @@ function countDailyViolations(
   }).length;
 }
 
+function summarizeDailyRewards(
+  rewardRequests: Array<{ epi_delta?: number | string | null; applied_at?: string | null }> | null | undefined,
+  fromInclusive: Date,
+  toInclusive: Date,
+): { count: number; totalIncrease: number } {
+  if (!Array.isArray(rewardRequests) || rewardRequests.length === 0) {
+    return { count: 0, totalIncrease: 0 };
+  }
+
+  const inRange = rewardRequests.filter((reward) => {
+    if (!reward.applied_at) return false;
+    const appliedAt = new Date(reward.applied_at);
+    if (Number.isNaN(appliedAt.getTime())) return false;
+    return appliedAt >= fromInclusive && appliedAt <= toInclusive;
+  });
+
+  return {
+    count: inRange.length,
+    totalIncrease: Math.round(
+      inRange.reduce((sum, reward) => sum + toNumber(reward.epi_delta, 0), 0) * 100,
+    ) / 100,
+  };
+}
+
 export function getSnapshotDateForScheduledRun(scheduledFor: Date = new Date()): string {
   const shifted = new Date(scheduledFor.getTime() + MANILA_OFFSET_MS);
   shifted.setUTCDate(shifted.getUTCDate() - 1);
@@ -221,7 +246,7 @@ async function fetchSnapshotUsers(): Promise<SnapshotUserRow[]> {
 async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKpiData> {
   const dbConn = db.getDb();
   const odooEmployeeIds = await getOdooEmployeeIdsByWebsiteKey(userKey);
-  const [cssAudits, peerEvaluations, complianceAuditRows, violationNotices] = await Promise.all([
+  const [cssAudits, peerEvaluations, complianceAuditRows, violationNotices, rewardRequests] = await Promise.all([
     dbConn('store_audits')
       .where({ type: 'customer_service', status: 'completed' })
       .andWhere((ownedQuery) => {
@@ -287,6 +312,10 @@ async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKp
       )
       .where({ status: 'completed' })
       .select('epi_decrease', dbConn.raw('updated_at::text as completed_at')),
+    dbConn('reward_request_targets as rrt')
+      .join('reward_requests as rr', 'rr.id', 'rrt.reward_request_id')
+      .where({ 'rr.status': 'approved', 'rrt.user_id': userId })
+      .select('rrt.epi_delta', dbConn.raw('rrt.applied_at::text as applied_at')),
   ]);
 
   const complianceAudit = complianceAuditRows.length
@@ -311,6 +340,7 @@ async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKp
     cssAudits: cssAudits.length ? cssAudits : null,
     peerEvaluations: peerEvaluations.length ? peerEvaluations : null,
     complianceAudit,
+    rewardRequests: rewardRequests.length ? rewardRequests : null,
     violationNotices: violationNotices.length ? violationNotices : null,
   };
 }
@@ -344,9 +374,11 @@ export async function runDailyEmployeeRollingMetricSnapshot(input?: { scheduledF
       const kpiData = await fetchUserKpiData(user.id, user.user_key);
       const { breakdown } = await calculateKpiScores(kpiData, { window: { from, to }, minRecords: 1 });
       const values = mapBreakdownToRollingMetricSnapshot(breakdown);
+      const rewards = summarizeDailyRewards(kpiData.rewardRequests, dailyFrom, dailyTo);
       const nonRolling: NonRollingSnapshotValues = {
         epiScore: user.epi_score,
-        awardsCount: 0,
+        awardsCount: rewards.count,
+        awardsTotalIncrease: rewards.totalIncrease,
         violationsCount: countDailyViolations(kpiData.violationNotices, dailyFrom, dailyTo),
       };
 
@@ -371,6 +403,7 @@ export async function runDailyEmployeeRollingMetricSnapshot(input?: { scheduledF
           sop_compliance_rate: values.sopComplianceRate,
           epi_score: nonRolling.epiScore,
           awards_count: nonRolling.awardsCount,
+          awards_total_increase: nonRolling.awardsTotalIncrease,
           violations_count: nonRolling.violationsCount,
           generated_at: generatedAt,
           calculation_version: SNAPSHOT_CALCULATION_VERSION,
@@ -396,6 +429,7 @@ export async function runDailyEmployeeRollingMetricSnapshot(input?: { scheduledF
           sop_compliance_rate: values.sopComplianceRate,
           epi_score: db.getDb().raw('COALESCE(employee_metric_daily_snapshots.epi_score, EXCLUDED.epi_score)'),
           awards_count: db.getDb().raw('COALESCE(employee_metric_daily_snapshots.awards_count, EXCLUDED.awards_count)'),
+          awards_total_increase: db.getDb().raw('COALESCE(employee_metric_daily_snapshots.awards_total_increase, EXCLUDED.awards_total_increase)'),
           violations_count: db.getDb().raw('COALESCE(employee_metric_daily_snapshots.violations_count, EXCLUDED.violations_count)'),
           generated_at: generatedAt,
           calculation_version: SNAPSHOT_CALCULATION_VERSION,
@@ -439,7 +473,7 @@ async function fetchLiveSnapshotRows(
   }
 
   // Run bulk queries in parallel
-  const [sccAuditRows, wrsRows, violationRows, recentSnapshotRows, userBaseRows] = await Promise.all([
+  const [sccAuditRows, wrsRows, violationRows, rewardRows, recentSnapshotRows, userBaseRows] = await Promise.all([
     // Query 1 — SCC audits (30-day rolling average)
     // Matches by both audited_user_id and audited_user_key to ensure no data is missed
     (() => {
@@ -506,7 +540,23 @@ async function fetchLiveSnapshotRows(
       return q;
     })() as Promise<Array<Record<string, any>>>,
 
-    // Query 4 — Most recent snapshot per user (past 30 days) for all metrics fallback
+    // Query 4 — Rewards count and total increase (Daily window)
+    (() => {
+      const q = dbConn('reward_request_targets as rrt')
+        .join('reward_requests as rr', 'rr.id', 'rrt.reward_request_id')
+        .where('rr.status', 'approved')
+        .whereBetween('rrt.applied_at', [todayStart, todayEnd])
+        .groupBy('rrt.user_id')
+        .select(
+          'rrt.user_id',
+          dbConn.raw('COUNT(*)::int as awards_count'),
+          dbConn.raw('COALESCE(SUM(rrt.epi_delta), 0) as awards_total_increase'),
+        );
+      if (filterUserId) q.where('rrt.user_id', filterUserId);
+      return q;
+    })() as Promise<Array<Record<string, any>>>,
+
+    // Query 5 — Most recent snapshot per user (past 30 days) for all metrics fallback
     (() => {
       const q = dbConn.raw(`
         SELECT DISTINCT ON (user_id) *
@@ -518,7 +568,7 @@ async function fetchLiveSnapshotRows(
       return q;
     })().then((result: any) => result.rows ?? result) as Promise<Array<Record<string, any>>>,
 
-    // Query 5 — Users to include in live rows (everyone active in last 30 days)
+    // Query 6 — Users to include in live rows (everyone active in last 30 days)
     (() => {
       const q = dbConn('users as u')
         .whereExists(function() {
@@ -537,6 +587,7 @@ async function fetchLiveSnapshotRows(
   const sccByUser = new Map(sccAuditRows.map((r) => [r.user_id, r]));
   const wrsByUser = new Map(wrsRows.map((r) => [r.user_id, r]));
   const violationsByUser = new Map(violationRows.map((r) => [r.user_id, r]));
+  const rewardsByUser = new Map(rewardRows.map((r) => [r.user_id, r]));
   const snapshotByUser = new Map(recentSnapshotRows.map((r) => [r.user_id, r]));
 
   // Filters out IDs that already have this date's snapshot
@@ -552,6 +603,7 @@ async function fetchLiveSnapshotRows(
     const scc = sccByUser.get(userId);
     const wrs = wrsByUser.get(userId);
     const viol = violationsByUser.get(userId);
+    const rewards = rewardsByUser.get(userId);
     const snap = snapshotByUser.get(userId);
 
     const firstName = userInfo.first_name || '';
@@ -584,7 +636,8 @@ async function fetchLiveSnapshotRows(
       epiScore: roundToTwo(userInfo.epi_score ?? snap?.epi_score),
       averageOrderValue: roundToTwo(snap?.average_order_value),
       branchAov: roundToTwo(snap?.branch_aov),
-      awardsCount: 0, // Stay 0 for live, per user request
+      awardsCount: rewards?.awards_count ?? 0,
+      awardsTotalIncrease: roundToTwo(rewards?.awards_total_increase) ?? 0,
       violationsCount: viol?.violations_count ?? 0,
       generatedAt: now.toISOString(),
       calculationVersion: 'live-v2',
@@ -627,6 +680,7 @@ export async function getEmployeeMetricDailySnapshots(input: {
       's.sop_compliance_rate as sopComplianceRate',
       's.epi_score as epiScore',
       's.awards_count as awardsCount',
+      's.awards_total_increase as awardsTotalIncrease',
       's.violations_count as violationsCount',
       's.generated_at as generatedAt',
       's.calculation_version as calculationVersion',

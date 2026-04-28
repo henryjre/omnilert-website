@@ -19,7 +19,6 @@ import { Card, CardBody } from '@/shared/components/ui/Card';
 import { fetchEpiLeaderboardDetail } from '../../services/epi.api';
 import { getDashboardRefreshPolicy } from '../../services/dashboardRefreshPolicy';
 import { LeaderboardSkeleton } from './EpiSkeletons';
-import { AWARD_BONUS, VIOLATION_DEDUCTION } from './epiUtils';
 
 interface EpiLeaderboardProps {
   entries: LeaderboardSummaryEntry[];
@@ -44,6 +43,7 @@ function getEmptyCriteria(): EpiCriteria {
     violationCount: 0,
     violationTotalDecrease: 0,
     awardCount: 0,
+    awardTotalIncrease: 0,
     uniformComplianceRate: null,
     hygieneComplianceRate: null,
     sopComplianceRate: null,
@@ -309,7 +309,7 @@ function ExpandedMetrics({
       : null;
   const aovColors = aovZone ? getZoneColors(aovZone) : null;
   const violationImpact = criteria.violationTotalDecrease;
-  const awardImpact = criteria.awardCount * AWARD_BONUS;
+  const awardImpact = criteria.awardTotalIncrease;
   const asOfDateTime = formatAsOfDateTime(detail?.asOfDateTime ?? null);
   const showProjectedEpi =
     detail?.criteriaSource === 'live' &&

@@ -4,7 +4,6 @@ import type { EpiCriteria } from './types';
 import { SectionLabel } from './SectionLabel';
 import { AnimatedCounter } from './AnimatedCounter';
 import { Card, CardBody } from '@/shared/components/ui/Card';
-import { VIOLATION_DEDUCTION, AWARD_BONUS } from './epiUtils';
 
 interface DisciplineRecognitionSectionProps {
   criteria: EpiCriteria;
@@ -12,7 +11,7 @@ interface DisciplineRecognitionSectionProps {
 
 export function DisciplineRecognitionSection({ criteria }: DisciplineRecognitionSectionProps) {
   const violationImpact = criteria.violationTotalDecrease;
-  const awardImpact = criteria.awardCount * AWARD_BONUS;
+  const awardImpact = criteria.awardTotalIncrease;
 
   return (
     <div>
@@ -31,7 +30,7 @@ export function DisciplineRecognitionSection({ criteria }: DisciplineRecognition
                   <Star className="h-5 w-5 text-amber-600 dark:text-amber-400" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-900 dark:text-white">Awards</p>
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">Rewards</p>
                   <div className="flex items-baseline justify-center gap-1 sm:justify-start">
                     <AnimatedCounter
                       value={criteria.awardCount}
@@ -41,7 +40,7 @@ export function DisciplineRecognitionSection({ criteria }: DisciplineRecognition
                     <span className="text-xs text-gray-500 dark:text-gray-400">this period</span>
                   </div>
                   <p className="text-[11px] sm:text-xs text-amber-600 dark:text-amber-400">
-                    {criteria.awardCount === 0 ? 'No bonus yet' : `+${awardImpact} pts to EPI`}
+                    {criteria.awardCount === 0 ? 'No bonus yet' : `+${awardImpact} EPI points applied`}
                   </p>
                 </div>
               </div>

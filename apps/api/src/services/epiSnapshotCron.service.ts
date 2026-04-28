@@ -46,7 +46,7 @@ function isEligibleForWeeklyEpiByAccountAge(createdAt: Date, referenceDate: Date
 async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKpiData> {
   const dbConn = db.getDb();
   const odooEmployeeIds = await getOdooEmployeeIdsByWebsiteKey(userKey);
-  const [cssAudits, peerEvaluations, complianceAuditRows, violationNotices] = await Promise.all([
+  const [cssAudits, peerEvaluations, complianceAuditRows, violationNotices, rewardRequests] = await Promise.all([
     // CSS audits: the user was the cashier being audited (identified by user_key UUID)
     dbConn('store_audits')
       .where({ type: 'customer_service', status: 'completed' })
@@ -114,6 +114,10 @@ async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKp
       )
       .where({ status: 'completed' })
       .select('epi_decrease', dbConn.raw(`updated_at::text as completed_at`)),
+    dbConn('reward_request_targets as rrt')
+      .join('reward_requests as rr', 'rr.id', 'rrt.reward_request_id')
+      .where({ 'rr.status': 'approved', 'rrt.user_id': userId })
+      .select('rrt.epi_delta', dbConn.raw(`rrt.applied_at::text as applied_at`)),
   ]);
 
   const complianceAudit = complianceAuditRows.length
@@ -138,6 +142,7 @@ async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKp
     cssAudits: cssAudits.length ? cssAudits : null,
     peerEvaluations: peerEvaluations.length ? peerEvaluations : null,
     complianceAudit,
+    rewardRequests: rewardRequests.length ? rewardRequests : null,
     violationNotices: violationNotices.length ? violationNotices : null,
   };
 }

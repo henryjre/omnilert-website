@@ -30,6 +30,7 @@ import { EmployeeProfilesPage } from '@/features/employee-profiles/pages/Employe
 import { StoreAuditsPage } from '@/features/store-audits/pages/StoreAuditsPage';
 import { CaseReportsPage } from '@/features/case-reports/pages/CaseReportsPage';
 import { ViolationNoticesPage } from '@/features/violation-notices/pages/ViolationNoticesPage';
+import { EpiAdjustmentsPage } from '@/features/epi-adjustments/pages/EpiAdjustmentsPage';
 import { PeerEvaluationsPage } from '@/features/peer-evaluations/pages/PeerEvaluationsPage';
 import { EmployeeAnalyticsPage } from '@/features/employee-analytics/pages/EmployeeAnalyticsPage';
 import { ProfitabilityAnalyticsPage } from '@/features/profitability-analytics/pages/ProfitabilityAnalyticsPage';
@@ -246,6 +247,14 @@ export const router = createBrowserRouter([
             element: (
               <PermissionGuard permission={PERMISSIONS.VIOLATION_NOTICE_VIEW}>
                 <ViolationNoticesPage />
+              </PermissionGuard>
+            ),
+          },
+          {
+            path: 'epi-adjustments',
+            element: (
+              <PermissionGuard permission={PERMISSIONS.REWARDS_VIEW}>
+                <EpiAdjustmentsPage />
               </PermissionGuard>
             ),
           },

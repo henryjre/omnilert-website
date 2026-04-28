@@ -1,6 +1,4 @@
 import type { EpiZone } from './types';
-export const VIOLATION_DEDUCTION = 5;
-export const AWARD_BONUS = 5;
 
 export function getEpiZone(score: number): EpiZone {
   if (score >= 100) return 'green';
