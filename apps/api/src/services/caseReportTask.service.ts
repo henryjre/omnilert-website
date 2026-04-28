@@ -621,6 +621,14 @@ export async function completeTaskForAssignee(input: {
   const caseRow = await getCaseOrThrow(taskRow.case_id);
   const knex = db.getDb();
 
+  if (caseRow.company_id !== input.companyId) {
+    throw new AppError(404, 'Task not found');
+  }
+
+  if (taskRow.created_by !== input.completedBy) {
+    throw new AppError(403, 'Only the task creator can mark assignees as done');
+  }
+
   // Verify the userId is an assignee
   const assigneeRow = await knex('case_report_task_assignees')
     .where({ task_id: input.taskId, user_id: input.userId })

@@ -98,10 +98,10 @@ function AssigneeRow({
           type="button"
           onClick={onComplete}
           disabled={completing}
-          className="shrink-0 rounded-full p-1 text-gray-400 hover:bg-green-50 hover:text-green-600 transition-colors disabled:opacity-50"
-          title="Mark done"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-green-200 bg-green-50 px-2.5 py-1.5 text-xs font-medium text-green-700 transition-colors hover:border-green-300 hover:bg-green-100 disabled:cursor-wait disabled:opacity-60"
         >
-          {completing ? <Spinner size="sm" /> : <Circle className="h-4 w-4" />}
+          {completing ? <Spinner size="sm" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+          <span>{completing ? 'Marking...' : 'Mark as Done'}</span>
         </button>
       ) : (
         <Circle className="h-4 w-4 shrink-0 text-gray-300" />
