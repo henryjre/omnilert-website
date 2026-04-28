@@ -131,7 +131,7 @@ export function Sidebar({ className = '', hideDashboardLink = false }: SidebarPr
           PERMISSIONS.ANALYTICS_VIEW_PRODUCT_ANALYTICS,
         ) && (
           <>
-            <div className="my-2 border-t border-gray-200" />
+            {!hideDashboardLink && <div className="my-2 border-t border-gray-200" />}
             {categoryLabel('Analytics')}
             {hasPermission(PERMISSIONS.ANALYTICS_VIEW_EMPLOYEE_ANALYTICS) && (
               <AnimatedNavLink to="/employee-analytics" className={linkClass}>
