@@ -9,6 +9,11 @@ import { createAndDispatchNotification } from './notification.service.js';
 
 // ── Row types ─────────────────────────────────────────────────────────────────
 
+export interface MyTask extends CaseTask {
+  case_number: number;
+  case_title: string;
+}
+
 type TaskRow = {
   id: string;
   case_id: string;
@@ -306,6 +311,27 @@ export async function listTasks(caseId: string): Promise<CaseTask[]> {
     .where({ case_id: caseId })
     .orderBy('created_at', 'asc') as TaskRow[];
   return buildTasks(rows);
+}
+
+export async function listMyTasks(input: {
+  userId: string;
+  companyId: string;
+}): Promise<MyTask[]> {
+  const knex = db.getDb();
+  const rows = await knex('case_report_tasks as ct')
+    .join('case_report_task_assignees as cta', 'cta.task_id', 'ct.id')
+    .join('case_reports as cr', 'cr.id', 'ct.case_id')
+    .where('cta.user_id', input.userId)
+    .where('cr.company_id', input.companyId)
+    .select('ct.*', 'cr.case_number', knex.raw('cr.title as case_title'))
+    .orderBy('ct.created_at', 'desc') as Array<TaskRow & { case_number: number; case_title: string }>;
+
+  const tasks = await buildTasks(rows);
+  return tasks.map((task, index) => ({
+    ...task,
+    case_number: Number(rows[index]?.case_number ?? 0),
+    case_title: String(rows[index]?.case_title ?? ''),
+  }));
 }
 
 export async function getTask(taskId: string): Promise<CaseTask> {

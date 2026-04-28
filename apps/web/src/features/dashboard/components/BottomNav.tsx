@@ -43,11 +43,11 @@ export function BottomNav({ onOpenAccountSheet, accountSheetOpen }: BottomNavPro
           Schedule
         </button>
 
-        {/* Tasks — disabled */}
+        {/* Tasks */}
         <button
           type="button"
-          disabled
-          className={`${tabClass(false)} opacity-40 cursor-not-allowed pointer-events-none`}
+          onClick={() => navigate('/account/tasks')}
+          className={tabClass(isActive('/account/tasks'))}
         >
           <CheckSquare className="h-5 w-5" />
           Tasks

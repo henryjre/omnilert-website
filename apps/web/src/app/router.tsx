@@ -10,6 +10,7 @@ import { CashRequestsTab } from '@/features/account/components/CashRequestsTab';
 import { EmployeeNotificationsTab } from '@/features/account/components/EmployeeNotificationsTab';
 import { SettingsTab } from '@/features/account/components/SettingsTab';
 import { AuditResultsPage } from '@/features/account/pages/AuditResultsPage';
+import { MyTasksPage } from '@/features/account/pages/MyTasksPage';
 import { PayslipPage } from '@/features/account/pages/PayslipPage';
 import { TokenPayPage } from '@/features/account/pages/TokenPayPage';
 import { EmploymentTab } from '@/features/account/components/EmploymentTab';
@@ -71,6 +72,10 @@ export const router = createBrowserRouter([
           {
             path: 'account/payslip',
             element: <PayslipPage />,
+          },
+          {
+            path: 'account/tasks',
+            element: <MyTasksPage />,
           },
           {
             path: 'account/authorization-requests',
@@ -297,4 +302,3 @@ export const router = createBrowserRouter([
     ],
   },
 ]);
-

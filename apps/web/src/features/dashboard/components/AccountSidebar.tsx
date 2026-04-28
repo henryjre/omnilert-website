@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import { linkClass, AnimatedNavLink } from './sidebar-nav';
 import {
   Calendar,
+  CheckSquare,
   Receipt,
   Wallet,
   FileText,
@@ -58,6 +59,10 @@ export function AccountSidebar({ className = '', onClose }: AccountSidebarProps)
             My Schedule
           </AnimatedNavLink>
         )}
+        <AnimatedNavLink to="/account/tasks" className={linkClass} onClick={onClose}>
+          <CheckSquare className="h-5 w-5" />
+          My Tasks
+        </AnimatedNavLink>
         <AnimatedNavLink to="/account/payslip" className={linkClass} onClick={onClose}>
           <Receipt className="h-5 w-5" />
           My Payslip

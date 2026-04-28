@@ -20,6 +20,7 @@ import {
   getAccountAuditResultById,
   listAccountAuditResults,
 } from '../services/accountAuditResult.service.js';
+import { listMyTasks } from '../services/caseReportTask.service.js';
 
 function toDisplayStatus(status: string | null): 'complete' | 'rejected' | 'verification' | 'pending' {
   if (!status) return 'pending';
@@ -234,6 +235,19 @@ export async function getSchedule(req: Request, res: Response, next: NextFunctio
     res.json({ success: true, data: shiftsWithActivities });
   } catch (err) {
     next(err);
+  }
+}
+
+export async function getMyTasks(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await listMyTasks({
+      userId: req.user!.sub,
+      companyId: req.companyContext!.companyId,
+    });
+
+    res.json({ success: true, data });
+  } catch (error) {
+    next(error);
   }
 }
 

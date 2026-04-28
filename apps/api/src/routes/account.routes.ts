@@ -84,6 +84,10 @@ router.get(
   requirePermission(PERMISSIONS.ACCOUNT_VIEW_AUDIT_RESULTS),
   accountController.getAuditResultById,
 );
+router.get(
+  '/tasks/me',
+  accountController.getMyTasks,
+);
 router.post(
   '/cash-requests',
   requirePermission(PERMISSIONS.ACCOUNT_MANAGE_CASH_REQUEST),
