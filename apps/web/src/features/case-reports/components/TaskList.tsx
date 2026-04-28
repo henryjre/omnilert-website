@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import type { CaseTask, CaseTaskAssignee } from '@omnilert/shared';
-import { CheckCircle2, Circle, ClipboardList } from 'lucide-react';
+import { CheckCircle2, CheckSquare, ClipboardList } from 'lucide-react';
 
 // ── Avatar helpers ─────────────────────────────────────────────────────────────
 
@@ -57,6 +58,8 @@ interface TaskListProps {
 // ── Component ──────────────────────────────────────────────────────────────────
 
 export function TaskList({ tasks, currentUserId, canManage, onTaskClick, onComplete }: TaskListProps) {
+  const [completingKey, setCompletingKey] = useState<string | null>(null);
+
   if (tasks.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-16 text-gray-400">
@@ -79,6 +82,10 @@ export function TaskList({ tasks, currentUserId, canManage, onTaskClick, onCompl
         const completableAssignees = task.created_by === currentUserId
           ? task.assignees.filter((a) => !a.completed_at)
           : [];
+        const selfAssignee = completableAssignees.find((a) => a.user_id === currentUserId);
+        const quickCompleteTarget = selfAssignee ?? completableAssignees[0] ?? null;
+        const quickCompleteKey = quickCompleteTarget ? `${task.id}:${quickCompleteTarget.user_id}` : null;
+        const isCompleting = quickCompleteKey !== null && completingKey === quickCompleteKey;
 
         return (
           <div
@@ -133,17 +140,21 @@ export function TaskList({ tasks, currentUserId, canManage, onTaskClick, onCompl
               {completableAssignees.length > 0 && !allDone && (
                 <button
                   type="button"
-                  title="Mark as done"
+                  disabled={completingKey !== null}
                   onClick={async (e) => {
                     e.stopPropagation();
-                    // If current user is an assignee, complete for self first; else use first completable
-                    const selfAssignee = completableAssignees.find((a) => a.user_id === currentUserId);
-                    const target = selfAssignee ?? completableAssignees[0];
-                    await onComplete(task.id, target.user_id);
+                    if (!quickCompleteTarget || !quickCompleteKey) return;
+                    setCompletingKey(quickCompleteKey);
+                    try {
+                      await onComplete(task.id, quickCompleteTarget.user_id);
+                    } finally {
+                      setCompletingKey(null);
+                    }
                   }}
-                  className="rounded-full p-1 text-gray-400 hover:bg-green-50 hover:text-green-600 transition-colors"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-primary-200 bg-white px-2.5 py-1.5 text-xs font-medium text-primary-700 transition-colors hover:border-primary-300 hover:bg-primary-50 disabled:cursor-wait disabled:opacity-60"
                 >
-                  <Circle className="h-4 w-4" />
+                  <CheckSquare className="h-3.5 w-3.5" />
+                  <span>{isCompleting ? 'Marking...' : 'Mark as Done'}</span>
                 </button>
               )}
             </div>

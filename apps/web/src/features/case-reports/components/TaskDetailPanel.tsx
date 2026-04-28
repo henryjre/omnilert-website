@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import type { CaseMessage, CaseTask, CaseTaskAssignee, CaseTaskMessage } from '@omnilert/shared';
 import type { MentionableUser, MentionableRole } from '../services/caseReport.api';
-import { ArrowLeft, CheckCircle2, Circle, ExternalLink } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, CheckSquare, Circle, ExternalLink } from 'lucide-react';
 import { Spinner } from '@/shared/components/ui/Spinner';
 import { ChatSection } from './ChatSection';
 
@@ -98,9 +98,9 @@ function AssigneeRow({
           type="button"
           onClick={onComplete}
           disabled={completing}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-green-200 bg-green-50 px-2.5 py-1.5 text-xs font-medium text-green-700 transition-colors hover:border-green-300 hover:bg-green-100 disabled:cursor-wait disabled:opacity-60"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-primary-200 bg-white px-2.5 py-1.5 text-xs font-medium text-primary-700 transition-colors hover:border-primary-300 hover:bg-primary-50 disabled:cursor-wait disabled:opacity-60"
         >
-          {completing ? <Spinner size="sm" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+          {completing ? <Spinner size="sm" /> : <CheckSquare className="h-3.5 w-3.5" />}
           <span>{completing ? 'Marking...' : 'Mark as Done'}</span>
         </button>
       ) : (
