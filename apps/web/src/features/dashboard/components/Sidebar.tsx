@@ -33,6 +33,7 @@ const categoryLabel = (label: string) => (
 
 interface SidebarProps {
   className?: string;
+  hideDashboardLink?: boolean;
 }
 
 const HR_PATHS = ['/employee-profiles', '/employee-schedule', '/violation-notices', '/workplace-relations'];
@@ -85,7 +86,7 @@ function SubCategory({
   );
 }
 
-export function Sidebar({ className = '' }: SidebarProps) {
+export function Sidebar({ className = '', hideDashboardLink = false }: SidebarProps) {
   const { hasPermission, hasAnyPermission } = usePermission();
   const location = useLocation();
   const pendingVerificationCount = usePosVerificationStore((s) => s.pendingCount);
@@ -117,10 +118,12 @@ export function Sidebar({ className = '' }: SidebarProps) {
 
       {/* Navigation */}
       <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-4">
-        <AnimatedNavLink to="/dashboard" className={linkClass}>
-          <LayoutDashboard className="h-5 w-5" />
-          Dashboard
-        </AnimatedNavLink>
+        {!hideDashboardLink && (
+          <AnimatedNavLink to="/dashboard" className={linkClass}>
+            <LayoutDashboard className="h-5 w-5" />
+            Dashboard
+          </AnimatedNavLink>
+        )}
         {hasAnyPermission(
           PERMISSIONS.ANALYTICS_VIEW_EMPLOYEE_ANALYTICS,
           PERMISSIONS.ANALYTICS_VIEW_PROFITABILITY_ANALYTICS,
@@ -335,4 +338,3 @@ export function Sidebar({ className = '' }: SidebarProps) {
     </aside>
   );
 }
-

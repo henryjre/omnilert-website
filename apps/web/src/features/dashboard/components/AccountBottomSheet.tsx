@@ -2,7 +2,6 @@ import ReactDOM from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
-  Calendar,
   ChevronRight,
   ClipboardList,
   DollarSign,
@@ -123,14 +122,6 @@ export function AccountBottomSheet({ open, onClose }: AccountBottomSheetProps) {
                 <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Personal</span>
                 <div className="h-px flex-1 bg-gray-200" />
               </div>
-              {hasPermission(PERMISSIONS.ACCOUNT_VIEW_SCHEDULE) && (
-                <AnimatedNavLink to="/account/schedule" className={sheetLinkClass} onClick={onClose}>
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-gray-100">
-                    <Calendar className="h-4 w-4" />
-                  </span>
-                  My Schedule
-                </AnimatedNavLink>
-              )}
               <AnimatedNavLink to="/account/payslip" className={sheetLinkClass} onClick={onClose}>
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-gray-100">
                   <Receipt className="h-4 w-4" />

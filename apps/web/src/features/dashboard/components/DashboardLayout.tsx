@@ -72,7 +72,7 @@ export function DashboardLayout() {
               }}
               className="absolute inset-y-0 left-0 flex h-[100dvh] w-72 max-w-[85vw] flex-col bg-white shadow-2xl shadow-black/20"
             >
-              <Sidebar className="h-full w-full border-r-0" />
+              <Sidebar className="h-full w-full border-r-0" hideDashboardLink />
               <motion.span
                 initial={{ opacity: 0, scale: 0.5 }}
                 animate={{ opacity: 1, scale: 1 }}
