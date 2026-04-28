@@ -133,7 +133,13 @@ export function CaseReportsPage() {
       setInitialFlashTaskId(taskId);
       setInitialFlashTaskMessageId(messageId);
     } else if (messageId) {
+      setInitialFlashTaskId(null);
+      setInitialFlashTaskMessageId(null);
       setInitialFlashMessageId(messageId);
+    } else {
+      setInitialFlashTaskId(null);
+      setInitialFlashTaskMessageId(null);
+      setInitialFlashMessageId(null);
     }
   }, [searchParams]);
 
@@ -599,6 +605,9 @@ export function CaseReportsPage() {
               onClick={() => {
                 setSelectedCaseId(null);
                 setSelectedReport(null);
+                setInitialFlashTaskId(null);
+                setInitialFlashTaskMessageId(null);
+                setInitialFlashMessageId(null);
                 setSearchParams({});
               }}
             />
@@ -632,6 +641,9 @@ export function CaseReportsPage() {
                 onClosePanel={() => {
                   setSelectedCaseId(null);
                   setSelectedReport(null);
+                  setInitialFlashTaskId(null);
+                  setInitialFlashTaskMessageId(null);
+                  setInitialFlashMessageId(null);
                   setSearchParams({});
                 }}
                 onLeave={async () => {
@@ -640,6 +652,9 @@ export function CaseReportsPage() {
                   await fetchReports(true);
                   setSelectedCaseId(null);
                   setSelectedReport(null);
+                  setInitialFlashTaskId(null);
+                  setInitialFlashTaskMessageId(null);
+                  setInitialFlashMessageId(null);
                   setSearchParams({});
                 }}
                 onToggleMute={async () => {

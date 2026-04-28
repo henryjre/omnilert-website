@@ -5,6 +5,7 @@ import { CheckSquare, CircleCheck, Clock, LayoutGrid } from 'lucide-react';
 import { ViewToggle, type ViewOption } from '@/shared/components/ui/ViewToggle';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import { useAppToast } from '@/shared/hooks/useAppToast';
+import { useBranchStore } from '@/shared/store/branchStore';
 import { getMyTasks, type MyTask } from '@/features/case-reports/services/caseReport.api';
 import { MyTaskCard } from '../components/MyTaskCard';
 
@@ -72,19 +73,50 @@ export function MyTasksPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { error: showErrorToast } = useAppToast();
+  const { selectedBranchIds, branches, loading: branchesLoading } = useBranchStore();
 
   const [tasks, setTasks] = useState<MyTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TaskTab>('all');
 
   useEffect(() => {
+    if (branchesLoading) {
+      setLoading(true);
+      return;
+    }
+    if (branches.length === 0) {
+      setTasks([]);
+      setLoading(false);
+      return;
+    }
+
     let active = true;
     setLoading(true);
 
-    void getMyTasks()
-      .then((data) => {
-        if (!active) return;
-        setTasks(data);
+    const selectedBranchIdSet = new Set(selectedBranchIds);
+    const selectedCompanyIds = Array.from(
+      new Set(
+        branches
+          .filter((branch) => selectedBranchIdSet.size === 0 || selectedBranchIdSet.has(branch.id))
+          .map((branch) => branch.companyId),
+      ),
+    );
+
+    void Promise.allSettled(selectedCompanyIds.map((companyId) => getMyTasks(companyId)))
+      .then((results) => {
+        const uniqueById = new Map<string, MyTask>();
+        for (const result of results) {
+          if (result.status !== 'fulfilled') continue;
+          for (const task of result.value) {
+            uniqueById.set(task.id, task);
+          }
+        }
+
+        const merged = Array.from(uniqueById.values()).sort(
+          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+        );
+
+        if (active) setTasks(merged);
       })
       .catch((err: unknown) => {
         if (!active) return;
@@ -98,7 +130,7 @@ export function MyTasksPage() {
     return () => {
       active = false;
     };
-  }, [showErrorToast]);
+  }, [branches, branchesLoading, selectedBranchIds, showErrorToast]);
 
   const { pending, completed } = useMemo(() => {
     const nextPending: MyTask[] = [];

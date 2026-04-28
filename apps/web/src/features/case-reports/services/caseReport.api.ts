@@ -244,7 +244,10 @@ export async function completeCaseTask(
   return response.data.data as CaseTask;
 }
 
-export async function getMyTasks(): Promise<MyTask[]> {
-  const response = await api.get('/account/tasks/me');
+export async function getMyTasks(companyId?: string): Promise<MyTask[]> {
+  const response = await api.get(
+    '/account/tasks/me',
+    companyId ? { headers: { 'X-Company-Id': companyId } } : undefined,
+  );
   return response.data.data as MyTask[];
 }
