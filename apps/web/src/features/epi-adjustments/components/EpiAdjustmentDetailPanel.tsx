@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Users, X } from 'lucide-react';
 import { canReviewSubmittedRequest, PERMISSIONS } from '@omnilert/shared';
 import type { RewardRequestDetail } from '@omnilert/shared';
@@ -68,6 +69,7 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
 
 export function EpiAdjustmentDetailPanel({ request, onClose, onUpdated }: EpiAdjustmentDetailPanelProps) {
   const { hasPermission } = usePermission();
+  const queryClient = useQueryClient();
   const currentUserId = useAuthStore((state) => state.user?.id ?? null);
   const { success: showSuccess, error: showError } = useAppToast();
   const [actionLoading, setActionLoading] = useState<'approve' | 'reject' | null>(null);
@@ -86,6 +88,11 @@ export function EpiAdjustmentDetailPanel({ request, onClose, onUpdated }: EpiAdj
     try {
       const updated = await approveRewardRequest(request.id, request.companyId);
       showSuccess('EPI adjustment approved.');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['epi-dashboard'] }),
+        queryClient.invalidateQueries({ queryKey: ['epi-leaderboard-summary'] }),
+        queryClient.invalidateQueries({ queryKey: ['epi-leaderboard-detail'] }),
+      ]);
       onUpdated(updated);
     } catch (error: unknown) {
       showError(getApiErrorMessage(error, 'Failed to approve EPI adjustment request.'));

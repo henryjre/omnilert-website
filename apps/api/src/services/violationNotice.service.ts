@@ -1213,6 +1213,7 @@ export async function completeViolationNotice(input: {
         reason: vnLabel,
         approvedAt: completedAt,
         clampMinimum: 0,
+        sourceViolationNoticeId: input.vnId,
       });
     }
 
@@ -1548,12 +1549,7 @@ export async function getMentionables(input: { companyId: string }): Promise<{
 }> {
   const [users, roles] = await Promise.all([
     resolveCompanyUsers(input.companyId),
-    db
-      .getDb()('roles')
-      .whereNot('name', SYSTEM_ROLES.SERVICE_CREW)
-      .select('id', 'name', 'color')
-      .orderBy('priority', 'desc')
-      .orderBy('name', 'asc'),
+    resolveRolesWithPermission(PERMISSIONS.VIOLATION_NOTICE_VIEW),
   ]);
 
   return {

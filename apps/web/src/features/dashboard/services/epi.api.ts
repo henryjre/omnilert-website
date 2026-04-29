@@ -134,6 +134,8 @@ function getEmptyCriteria(): EpiCriteria {
     violationTotalDecrease: 0,
     awardCount: 0,
     awardTotalIncrease: 0,
+    penaltyCount: 0,
+    penaltyTotalDecrease: 0,
     uniformComplianceRate: null,
     hygieneComplianceRate: null,
     sopComplianceRate: null,

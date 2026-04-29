@@ -51,14 +51,15 @@ test('mapBreakdownToRollingMetricSnapshot returns rolling metrics plus branch AO
     hygiene: { rate: 97.8, impact: 1 },
     sop: { rate: 96.4, impact: 0 },
     awards: { count: 3, total_increase: 7.5, impact: 0 },
+    penalties: { count: 1, total_decrease: 2.5, impact: 0 },
     violations: { count: 1, total_decrease: 1, impact: -1 },
   });
 
   assert.deepEqual(snapshot, {
-    customerInteraction: 4.5,
-    cashiering: 4.5,
-    suggestiveSellingAndUpselling: 4.5,
-    serviceEfficiency: 4.5,
+    customerInteractionScore: 4.5,
+    cashieringScore: 4.5,
+    suggestiveSellingAndUpsellingScore: 4.5,
+    serviceEfficiencyScore: 4.5,
     workplaceRelationsScore: 4.1,
     attendanceRate: 98.5,
     punctualityRate: 96.2,

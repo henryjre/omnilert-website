@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, Star, AlertCircle } from 'lucide-react';
+import { ChevronDown, Star, AlertCircle, MinusCircle } from 'lucide-react';
 import type { EpiCriteria, LeaderboardDetailEntry, LeaderboardSummaryEntry } from './types';
 import {
   getAovZone,
@@ -44,6 +44,8 @@ function getEmptyCriteria(): EpiCriteria {
     violationTotalDecrease: 0,
     awardCount: 0,
     awardTotalIncrease: 0,
+    penaltyCount: 0,
+    penaltyTotalDecrease: 0,
     uniformComplianceRate: null,
     hygieneComplianceRate: null,
     sopComplianceRate: null,
@@ -310,6 +312,7 @@ function ExpandedMetrics({
   const aovColors = aovZone ? getZoneColors(aovZone) : null;
   const violationImpact = criteria.violationTotalDecrease;
   const awardImpact = criteria.awardTotalIncrease;
+  const penaltyImpact = criteria.penaltyTotalDecrease;
   const asOfDateTime = formatAsOfDateTime(detail?.asOfDateTime ?? null);
   const showProjectedEpi =
     detail?.criteriaSource === 'live' &&
@@ -518,15 +521,26 @@ function ExpandedMetrics({
         <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-gray-400">
           Discipline &amp; Recognition
         </p>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 dark:bg-amber-900/10">
-            <Star className="h-4 w-4 flex-shrink-0 text-amber-500" />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2 dark:bg-green-900/10">
+            <Star className="h-4 w-4 flex-shrink-0 text-green-500" />
             <div>
-              <p className="font-bold text-amber-600 dark:text-amber-400">
+              <p className="font-bold text-green-600 dark:text-green-400">
                 {criteria.awardCount} Awards
               </p>
-              <p className="text-[10px] text-amber-500">
+              <p className="text-[10px] text-green-500">
                 {criteria.awardCount === 0 ? 'No bonus' : `+${awardImpact} pts`}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 rounded-lg bg-orange-50 px-3 py-2 dark:bg-orange-900/10">
+            <MinusCircle className="h-4 w-4 flex-shrink-0 text-orange-500" />
+            <div>
+              <p className="font-bold text-orange-600 dark:text-orange-400">
+                {criteria.penaltyCount} Penalties
+              </p>
+              <p className="text-[10px] text-orange-500">
+                {criteria.penaltyCount === 0 ? 'No penalty' : `-${penaltyImpact} EPI points applied`}
               </p>
             </div>
           </div>

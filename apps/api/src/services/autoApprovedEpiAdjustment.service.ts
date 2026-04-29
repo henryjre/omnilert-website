@@ -9,6 +9,7 @@ interface AutoApprovedEpiAdjustmentInput {
   reason: string;
   approvedAt: Date;
   clampMinimum?: number;
+  sourceViolationNoticeId?: string | null;
 }
 
 export interface AutoApprovedEpiAdjustmentResult {
@@ -47,6 +48,7 @@ export async function createAutoApprovedEpiAdjustment(
       status: 'approved',
       created_by: input.createdByUserId,
       reviewed_by: null,
+      source_violation_notice_id: input.sourceViolationNoticeId ?? null,
       reviewed_at: input.approvedAt,
       created_at: input.approvedAt,
       updated_at: input.approvedAt,

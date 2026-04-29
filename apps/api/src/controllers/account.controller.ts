@@ -3,7 +3,7 @@ import { AppError } from '../middleware/errorHandler.js';
 import { buildTenantStoragePrefix, uploadFile } from '../services/storage.service.js';
 import { getIO } from '../config/socket.js';
 import { env } from '../config/env.js';
-import { syncUserProfileToOdoo } from '../services/odoo.service.js';
+import { listOdooBanks, odooBankExists, syncUserProfileToOdoo } from '../services/odoo.service.js';
 import {
   createAndDispatchNotification,
   deleteNotificationByIdForUser,
@@ -44,6 +44,15 @@ async function notifyUser(
     type,
     linkUrl,
   });
+}
+
+export async function getBankOptions(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const banks = await listOdooBanks();
+    res.json({ success: true, data: banks });
+  } catch (err) {
+    next(err);
+  }
 }
 
 function emitEmployeeVerificationUpdated(payload: {
@@ -1231,6 +1240,16 @@ export async function submitBankInformationVerification(req: Request, res: Respo
     const user = await masterDb('users').where({ id: userId }).first('id');
     if (!user) {
       throw new AppError(404, 'User not found');
+    }
+
+    let bankExists = false;
+    try {
+      bankExists = await odooBankExists(bankId);
+    } catch {
+      throw new AppError(502, 'Unable to verify bank selection with Odoo');
+    }
+    if (!bankExists) {
+      throw new AppError(400, 'Selected bank does not exist in Odoo');
     }
 
     const pending = await tenantDb('bank_information_verifications')

@@ -1,10 +1,11 @@
-import { type ElementType, useEffect, useRef, useState } from 'react';
+import { type ElementType, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, type Variants } from 'framer-motion';
 import { Card, CardBody, CardHeader } from '@/shared/components/ui/Card';
 import { AnimatedModal } from '@/shared/components/ui/AnimatedModal';
 import { Button } from '@/shared/components/ui/Button';
 import { Input } from '@/shared/components/ui/Input';
 import { api } from '@/shared/services/api.client';
+import { getBankOptions, type BankOption } from '@/shared/services/banks.api';
 import { compressImageForUpload, normalizeFileForUpload } from '@/shared/utils/fileUpload';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useAppToast } from '@/shared/hooks/useAppToast';
@@ -177,14 +178,6 @@ const STATUS_CONFIG: Record<
     Icon: AlertTriangle,
   },
 };
-
-const BANK_OPTIONS = [
-  { label: 'BDO', value: 4 },
-  { label: 'BPI', value: 5 },
-  { label: 'Gcash', value: 3 },
-  { label: 'Maya', value: 6 },
-  { label: 'Metrobank', value: 2 },
-] as const;
 
 const GENDER_OPTIONS = [
   { value: '', label: 'Select gender' },
@@ -502,6 +495,9 @@ export function EmploymentTab() {
 
   const [profile, setProfile] = useState<ProfilePayload | null>(null);
   const [requirements, setRequirements] = useState<RequirementItem[]>([]);
+  const [bankOptions, setBankOptions] = useState<BankOption[]>([]);
+  const [bankOptionsLoading, setBankOptionsLoading] = useState(false);
+  const [bankOptionsError, setBankOptionsError] = useState<string | null>(null);
 
   const [firstName, setFirstName] = useState('');
   const [middleName, setMiddleName] = useState('');
@@ -542,6 +538,29 @@ export function EmploymentTab() {
 
   const personalPending = profile?.personalVerification.status === 'pending';
   const bankPending = profile?.bankVerification.status === 'pending';
+
+  const bankSelectOptions = useMemo(() => {
+    if (!bankId) return bankOptions;
+    const numericBankId = Number(bankId);
+    if (!Number.isInteger(numericBankId) || numericBankId <= 0) return bankOptions;
+    if (bankOptions.some((option) => option.id === numericBankId)) return bankOptions;
+    return [
+      ...bankOptions,
+      { id: numericBankId, name: `Bank ID ${numericBankId}`, bic: null },
+    ];
+  }, [bankId, bankOptions]);
+
+  const fetchBankOptions = async () => {
+    setBankOptionsLoading(true);
+    setBankOptionsError(null);
+    try {
+      setBankOptions(await getBankOptions());
+    } catch {
+      setBankOptionsError('Bank list is unavailable. Try refreshing before changing banks.');
+    } finally {
+      setBankOptionsLoading(false);
+    }
+  };
 
   const fetchProfile = async () => {
     const res = await api.get('/account/profile');
@@ -802,6 +821,7 @@ export function EmploymentTab() {
 
   useEffect(() => {
     const requests: Array<Promise<unknown>> = [fetchProfile()];
+    void fetchBankOptions();
     if (canSubmitEmployeeRequirements) {
       requests.push(fetchRequirements());
     } else {
@@ -1658,14 +1678,19 @@ export function EmploymentTab() {
               <select
                 value={bankId}
                 onChange={(e) => setBankId(e.target.value)}
-                disabled={bankPending}
+                disabled={bankPending || bankOptionsLoading}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:bg-gray-50"
               >
-                <option value="">Select bank</option>
-                {BANK_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
+                <option value="">
+                  {bankOptionsLoading ? 'Loading banks...' : 'Select bank'}
+                </option>
+                {bankSelectOptions.map((option) => (
+                  <option key={option.id} value={option.id}>{option.name}</option>
                 ))}
               </select>
+              {bankOptionsError && (
+                <p className="text-xs text-red-600">{bankOptionsError}</p>
+              )}
             </div>
             <div className="space-y-1">
               <label className="text-sm font-medium text-gray-700">Account Number</label>
@@ -1696,6 +1721,7 @@ export function EmploymentTab() {
                 !true
                 || Boolean(bankPending)
                 || Boolean(profile?.bankCooldown.cooldownActive)
+                || bankOptionsLoading
                 || submittingBank
               }
               onClick={handleSubmitBankVerification}

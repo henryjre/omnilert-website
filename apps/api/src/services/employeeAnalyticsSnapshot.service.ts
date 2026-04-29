@@ -51,6 +51,8 @@ export interface NonRollingSnapshotValues {
   epiScore: number | null;
   awardsCount: number;
   awardsTotalIncrease: number;
+  penaltiesCount: number;
+  penaltiesTotalDecrease: number;
   violationsCount: number;
 }
 
@@ -166,12 +168,16 @@ function countDailyViolations(
 }
 
 function summarizeDailyRewards(
-  rewardRequests: Array<{ epi_delta?: number | string | null; applied_at?: string | null }> | null | undefined,
+  rewardRequests: Array<{
+    epi_delta?: number | string | null;
+    applied_at?: string | null;
+    source_violation_notice_id?: string | null;
+  }> | null | undefined,
   fromInclusive: Date,
   toInclusive: Date,
-): { count: number; totalIncrease: number } {
+): { awardsCount: number; awardsTotalIncrease: number; penaltiesCount: number; penaltiesTotalDecrease: number } {
   if (!Array.isArray(rewardRequests) || rewardRequests.length === 0) {
-    return { count: 0, totalIncrease: 0 };
+    return { awardsCount: 0, awardsTotalIncrease: 0, penaltiesCount: 0, penaltiesTotalDecrease: 0 };
   }
 
   const inRange = rewardRequests.filter((reward) => {
@@ -181,10 +187,19 @@ function summarizeDailyRewards(
     return appliedAt >= fromInclusive && appliedAt <= toInclusive;
   });
 
+  const awards = inRange.filter((reward) => toNumber(reward.epi_delta, 0) > 0);
+  const penalties = inRange.filter(
+    (reward) => toNumber(reward.epi_delta, 0) < 0 && !reward.source_violation_notice_id,
+  );
+
   return {
-    count: inRange.length,
-    totalIncrease: Math.round(
-      inRange.reduce((sum, reward) => sum + toNumber(reward.epi_delta, 0), 0) * 100,
+    awardsCount: awards.length,
+    awardsTotalIncrease: Math.round(
+      awards.reduce((sum, reward) => sum + toNumber(reward.epi_delta, 0), 0) * 100,
+    ) / 100,
+    penaltiesCount: penalties.length,
+    penaltiesTotalDecrease: Math.round(
+      penalties.reduce((sum, reward) => sum + Math.abs(toNumber(reward.epi_delta, 0)), 0) * 100,
     ) / 100,
   };
 }
@@ -315,7 +330,11 @@ async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKp
     dbConn('reward_request_targets as rrt')
       .join('reward_requests as rr', 'rr.id', 'rrt.reward_request_id')
       .where({ 'rr.status': 'approved', 'rrt.user_id': userId })
-      .select('rrt.epi_delta', dbConn.raw('rrt.applied_at::text as applied_at')),
+      .select(
+        dbConn.raw('COALESCE(rrt.epi_delta, rr.epi_delta) as epi_delta'),
+        'rr.source_violation_notice_id',
+        dbConn.raw('COALESCE(rrt.applied_at, rr.reviewed_at, rr.updated_at)::text as applied_at'),
+      ),
   ]);
 
   const complianceAudit = complianceAuditRows.length
@@ -377,8 +396,10 @@ export async function runDailyEmployeeRollingMetricSnapshot(input?: { scheduledF
       const rewards = summarizeDailyRewards(kpiData.rewardRequests, dailyFrom, dailyTo);
       const nonRolling: NonRollingSnapshotValues = {
         epiScore: user.epi_score,
-        awardsCount: rewards.count,
-        awardsTotalIncrease: rewards.totalIncrease,
+        awardsCount: rewards.awardsCount,
+        awardsTotalIncrease: rewards.awardsTotalIncrease,
+        penaltiesCount: rewards.penaltiesCount,
+        penaltiesTotalDecrease: rewards.penaltiesTotalDecrease,
         violationsCount: countDailyViolations(kpiData.violationNotices, dailyFrom, dailyTo),
       };
 
@@ -404,6 +425,8 @@ export async function runDailyEmployeeRollingMetricSnapshot(input?: { scheduledF
           epi_score: nonRolling.epiScore,
           awards_count: nonRolling.awardsCount,
           awards_total_increase: nonRolling.awardsTotalIncrease,
+          penalties_count: nonRolling.penaltiesCount,
+          penalties_total_decrease: nonRolling.penaltiesTotalDecrease,
           violations_count: nonRolling.violationsCount,
           generated_at: generatedAt,
           calculation_version: SNAPSHOT_CALCULATION_VERSION,
@@ -430,6 +453,8 @@ export async function runDailyEmployeeRollingMetricSnapshot(input?: { scheduledF
           epi_score: db.getDb().raw('COALESCE(employee_metric_daily_snapshots.epi_score, EXCLUDED.epi_score)'),
           awards_count: db.getDb().raw('COALESCE(employee_metric_daily_snapshots.awards_count, EXCLUDED.awards_count)'),
           awards_total_increase: db.getDb().raw('COALESCE(employee_metric_daily_snapshots.awards_total_increase, EXCLUDED.awards_total_increase)'),
+          penalties_count: db.getDb().raw('COALESCE(employee_metric_daily_snapshots.penalties_count, EXCLUDED.penalties_count)'),
+          penalties_total_decrease: db.getDb().raw('COALESCE(employee_metric_daily_snapshots.penalties_total_decrease, EXCLUDED.penalties_total_decrease)'),
           violations_count: db.getDb().raw('COALESCE(employee_metric_daily_snapshots.violations_count, EXCLUDED.violations_count)'),
           generated_at: generatedAt,
           calculation_version: SNAPSHOT_CALCULATION_VERSION,
@@ -540,17 +565,23 @@ async function fetchLiveSnapshotRows(
       return q;
     })() as Promise<Array<Record<string, any>>>,
 
-    // Query 4 — Rewards count and total increase (Daily window)
+    // Query 4 — Rewards and manual penalties (Daily window)
     (() => {
       const q = dbConn('reward_request_targets as rrt')
         .join('reward_requests as rr', 'rr.id', 'rrt.reward_request_id')
         .where('rr.status', 'approved')
-        .whereBetween('rrt.applied_at', [todayStart, todayEnd])
+        .whereBetween(dbConn.raw('COALESCE(rrt.applied_at, rr.reviewed_at, rr.updated_at)'), [todayStart, todayEnd])
         .groupBy('rrt.user_id')
         .select(
           'rrt.user_id',
-          dbConn.raw('COUNT(*)::int as awards_count'),
-          dbConn.raw('COALESCE(SUM(rrt.epi_delta), 0) as awards_total_increase'),
+          dbConn.raw('COUNT(*) FILTER (WHERE COALESCE(rrt.epi_delta, rr.epi_delta) > 0)::int as awards_count'),
+          dbConn.raw('COALESCE(SUM(COALESCE(rrt.epi_delta, rr.epi_delta)) FILTER (WHERE COALESCE(rrt.epi_delta, rr.epi_delta) > 0), 0) as awards_total_increase'),
+          dbConn.raw(
+            'COUNT(*) FILTER (WHERE COALESCE(rrt.epi_delta, rr.epi_delta) < 0 AND rr.source_violation_notice_id IS NULL)::int as penalties_count',
+          ),
+          dbConn.raw(
+            'COALESCE(SUM(ABS(COALESCE(rrt.epi_delta, rr.epi_delta))) FILTER (WHERE COALESCE(rrt.epi_delta, rr.epi_delta) < 0 AND rr.source_violation_notice_id IS NULL), 0) as penalties_total_decrease',
+          ),
         );
       if (filterUserId) q.where('rrt.user_id', filterUserId);
       return q;
@@ -638,6 +669,8 @@ async function fetchLiveSnapshotRows(
       branchAov: roundToTwo(snap?.branch_aov),
       awardsCount: rewards?.awards_count ?? 0,
       awardsTotalIncrease: roundToTwo(rewards?.awards_total_increase) ?? 0,
+      penaltiesCount: rewards?.penalties_count ?? 0,
+      penaltiesTotalDecrease: roundToTwo(rewards?.penalties_total_decrease) ?? 0,
       violationsCount: viol?.violations_count ?? 0,
       generatedAt: now.toISOString(),
       calculationVersion: 'live-v2',
@@ -681,6 +714,8 @@ export async function getEmployeeMetricDailySnapshots(input: {
       's.epi_score as epiScore',
       's.awards_count as awardsCount',
       's.awards_total_increase as awardsTotalIncrease',
+      's.penalties_count as penaltiesCount',
+      's.penalties_total_decrease as penaltiesTotalDecrease',
       's.violations_count as violationsCount',
       's.generated_at as generatedAt',
       's.calculation_version as calculationVersion',

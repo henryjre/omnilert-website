@@ -18,6 +18,8 @@ const {
   archiveEmployeesByWebsiteUserKey,
   unarchiveEmployeesByWebsiteUserKey,
   setBreakWorkEntryDuration,
+  listOdooBanks,
+  odooBankExists,
 } = await import('./odoo.service.js');
 
 type Deferred<T> = {
@@ -125,6 +127,69 @@ test('createOdooRpcClient limits concurrent JSON-RPC calls', async () => {
   secondRequest.resolve(createJsonResponse([{ id: 'second' }]));
   assert.deepEqual(await secondCall, [{ id: 'second' }]);
   assert.deepEqual(fetchOrder, [1, 2]);
+});
+
+test('listOdooBanks reads res.bank rows and returns sorted safe options', async () => {
+  const calls: Array<{
+    model: string;
+    method: string;
+    args: unknown[];
+    kwargs?: Record<string, unknown>;
+  }> = [];
+
+  const result = await listOdooBanks({
+    callOdooKwFn: async (
+      model: string,
+      method: string,
+      args: unknown[],
+      kwargs?: Record<string, unknown>,
+    ) => {
+      calls.push({ model, method, args, kwargs });
+      return [
+        { id: 6, name: 'Maya', bic: false },
+        { id: 2, name: 'Metrobank', bic: 'MBTCPHMM' },
+        { id: 0, name: 'Invalid', bic: 'NOPE' },
+        { id: 4, name: '  BDO  ', bic: '' },
+      ];
+    },
+  });
+
+  assert.deepEqual(result, [
+    { id: 4, name: 'BDO', bic: null },
+    { id: 6, name: 'Maya', bic: null },
+    { id: 2, name: 'Metrobank', bic: 'MBTCPHMM' },
+  ]);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]?.model, 'res.bank');
+  assert.equal(calls[0]?.method, 'search_read');
+  assert.deepEqual(calls[0]?.kwargs?.fields, ['id', 'name', 'bic']);
+});
+
+test('odooBankExists checks res.bank by id', async () => {
+  const calls: Array<{
+    model: string;
+    method: string;
+    args: unknown[];
+    kwargs?: Record<string, unknown>;
+  }> = [];
+
+  const exists = await odooBankExists(42, {
+    callOdooKwFn: async (
+      model: string,
+      method: string,
+      args: unknown[],
+      kwargs?: Record<string, unknown>,
+    ) => {
+      calls.push({ model, method, args, kwargs });
+      return [{ id: 42 }];
+    },
+  });
+
+  assert.equal(exists, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]?.model, 'res.bank');
+  assert.deepEqual(calls[0]?.kwargs?.domain, [['id', '=', 42]]);
+  assert.equal(await odooBankExists(0, { callOdooKwFn: async () => [{ id: 0 }] }), false);
 });
 
 test('archiveEmployeesByWebsiteUserKey includes inactive employees in lookup and archives active matches', async () => {

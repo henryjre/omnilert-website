@@ -51,8 +51,6 @@ const STATUS_TABS: ViewOption<StatusTab>[] = [
     id: 'resolved',
     label: 'Resolved',
     icon: PackageCheck,
-    activeClassName: 'text-green-600',
-    activeIndicatorClassName: 'bg-green-600',
   },
 ];
 

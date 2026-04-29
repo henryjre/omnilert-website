@@ -6,6 +6,7 @@ import { Button } from '@/shared/components/ui/Button';
 import { Input } from '@/shared/components/ui/Input';
 import { Spinner } from '@/shared/components/ui/Spinner';
 import { api } from '@/shared/services/api.client';
+import { getBankLabel, getBankOptions, type BankOption } from '@/shared/services/banks.api';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useSocket } from '@/shared/hooks/useSocket';
 import { useAppToast } from '@/shared/hooks/useAppToast';
@@ -186,14 +187,6 @@ type AssignmentOptionCompany = {
 type CompanyAssignmentForm = {
   companyId: string;
   branchIds: string[];
-};
-
-const BANK_LABEL: Record<number, string> = {
-  2: 'Metrobank',
-  3: 'Gcash',
-  4: 'BDO',
-  5: 'BPI',
-  6: 'Maya',
 };
 
 const REQUIREMENT_STATUS_CONFIG: Record<
@@ -660,6 +653,7 @@ export function EmployeeProfilesPage() {
   const [isMobile, setIsMobile] = useState(isMobileViewport);
   const pageSize = isMobile ? MOBILE_PAGE_SIZE : DESKTOP_PAGE_SIZE;
   const [items, setItems] = useState<EmployeeCard[]>([]);
+  const [bankOptions, setBankOptions] = useState<BankOption[]>([]);
   const [previewDoc, setPreviewDoc] = useState<{ url: string; title: string } | null>(null);
   const [pagination, setPagination] = useState({ total: 0, page: 1, pageSize: pageSize, totalPages: 1 });
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
@@ -683,6 +677,11 @@ export function EmployeeProfilesPage() {
     residentBranchId: '',
     dateStarted: '',
   });
+
+  const getBankLabelForId = useCallback(
+    (bankId: number | string | null | undefined) => getBankLabel(bankOptions, bankId),
+    [bankOptions],
+  );
 
   const appliedRoleIdsKey = useMemo(
     () => [...appliedFilters.roleIds].sort().join(","),
@@ -871,6 +870,18 @@ export function EmployeeProfilesPage() {
   useEffect(() => {
     fetchList();
   }, [fetchList]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getBankOptions()
+      .then((options) => {
+        if (!cancelled) setBankOptions(options);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // On a full reload, auth state may rehydrate after the first fetchList() completes.
   // When that happens, /employee-requirements may return an empty result, leaving
@@ -2134,7 +2145,7 @@ export function EmployeeProfilesPage() {
                             <p className="text-[11px] uppercase tracking-wide text-gray-400">Bank</p>
                             <p className="mt-0.5 font-medium text-gray-800">
                               {detail.bank_information.bank_id
-                                ? (BANK_LABEL[detail.bank_information.bank_id] ?? `Bank ID ${detail.bank_information.bank_id}`)
+                                ? getBankLabelForId(detail.bank_information.bank_id)
                                 : '—'}
                             </p>
                           </div>

@@ -7,6 +7,7 @@ import { Button } from '@/shared/components/ui/Button';
 import { AnimatedModal } from '@/shared/components/ui/AnimatedModal';
 import { Input } from '@/shared/components/ui/Input';
 import { api } from '@/shared/services/api.client';
+import { getBankLabel, getBankOptions, type BankOption } from '@/shared/services/banks.api';
 import { normalizeFileForUpload } from '@/shared/utils/fileUpload';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useSocket } from '@/shared/hooks/useSocket';
@@ -134,14 +135,6 @@ const PERSONAL_FIELD_LABEL: Record<PersonalInfoKey, string> = {
   emergencyRelationship: 'Relationship',
 };
 
-const BANK_LABEL: Record<number, string> = {
-  2: 'Metrobank',
-  3: 'Gcash',
-  4: 'BDO',
-  5: 'BPI',
-  6: 'Maya',
-};
-
 function getUrlPath(url: string): string {
   try {
     return new URL(url).pathname.toLowerCase();
@@ -237,17 +230,19 @@ function VerificationCard({
   type,
   item,
   onClick,
+  getBankLabelForId,
 }: {
   type: VerificationType;
   item: any;
   onClick: () => void;
+  getBankLabelForId: (bankId: number | string | null | undefined) => string;
 }) {
   /** Secondary line of metadata below the name */
   function subtitle() {
     if (type === 'registration') return item.email as string;
     if (type === 'personalInformation') return item.email as string;
     if (type === 'employmentRequirements') return item.requirement_label as string;
-    return BANK_LABEL[Number(item.bank_id)] ?? `Bank ID ${String(item.bank_id)}`;
+    return getBankLabelForId(item.bank_id);
   }
 
   /** Tertiary line for bank cards */
@@ -363,6 +358,7 @@ export function EmployeeVerificationsPage() {
     employmentRequirements: [],
     bankInformation: [],
   });
+  const [bankOptions, setBankOptions] = useState<BankOption[]>([]);
   const [assignmentOptions, setAssignmentOptions] = useState<RegistrationAssignmentOptions>({
     roles: [],
     companies: [],
@@ -479,6 +475,10 @@ export function EmployeeVerificationsPage() {
   const canActOnSelected = !!selectedItem
     && selectedItem.data.status === 'pending'
     && canApproveType(selectedItem.type);
+  const getBankLabelForId = useCallback(
+    (bankId: number | string | null | undefined) => getBankLabel(bankOptions, bankId),
+    [bankOptions],
+  );
 
   const activeTypeLabel =
     activeType === 'registration'
@@ -543,6 +543,18 @@ export function EmployeeVerificationsPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getBankOptions()
+      .then((options) => {
+        if (!cancelled) setBankOptions(options);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!socket) return;
@@ -1039,6 +1051,7 @@ export function EmployeeVerificationsPage() {
                         type={activeType}
                         item={item}
                         onClick={() => openPanel(activeType, item)}
+                        getBankLabelForId={getBankLabelForId}
                       />
                     ))}
                   </div>
@@ -1796,7 +1809,7 @@ export function EmployeeVerificationsPage() {
                         <div>
                           <dt className="text-xs text-gray-500">Bank</dt>
                           <dd className="text-sm font-medium text-gray-900">
-                            {BANK_LABEL[Number(selectedItem.data.bank_id)] ?? `Bank ID ${String(selectedItem.data.bank_id)}`}
+                            {getBankLabelForId(selectedItem.data.bank_id)}
                           </dd>
                         </div>
                       </div>

@@ -82,6 +82,45 @@ test('calculateKpiScoresWithQueryDeps fetches slots and attendance once for both
   assert.equal(result.breakdown.punctuality.rate, 100);
 });
 
+test('calculateKpiScoresWithQueryDeps separates awards, manual penalties, and VN deductions', async () => {
+  const result = await calculateKpiScoresWithQueryDeps({
+    userId: 'user-1',
+    userKey: 'website-key-1',
+    cssAudits: null,
+    peerEvaluations: null,
+    complianceAudit: null,
+    rewardRequests: [
+      { epi_delta: 3, applied_at: '2026-03-10T08:00:00.000Z' },
+      { epi_delta: -2, applied_at: '2026-03-11T08:00:00.000Z' },
+      {
+        epi_delta: -5,
+        applied_at: '2026-03-12T08:00:00.000Z',
+        source_violation_notice_id: 'vn-1',
+      },
+      { epi_delta: 4, applied_at: '2026-01-10T08:00:00.000Z' },
+    ],
+    violationNotices: [
+      { epi_decrease: 5, completed_at: '2026-03-12T08:00:00.000Z' },
+    ],
+  }, {
+    getOdooEmployeeIdsByWebsiteKey: async () => [],
+    getScheduledSlots: async () => [],
+    getAttendanceRecords: async () => [],
+    getPosOrders: async () => [],
+    getBranchPosOrders: async () => [],
+  }, {
+    minRecords: 1,
+    window: {
+      from: new Date('2026-03-01T00:00:00.000Z'),
+      to: new Date('2026-03-31T23:59:59.999Z'),
+    },
+  });
+
+  assert.deepEqual(result.breakdown.awards, { count: 1, total_increase: 3, impact: 0 });
+  assert.deepEqual(result.breakdown.penalties, { count: 1, total_decrease: 2, impact: 0 });
+  assert.deepEqual(result.breakdown.violations, { count: 1, total_decrease: 5, impact: 0 });
+});
+
 test('calculateKpiScoresWithQueryDeps benchmarks AOV against weighted attended branches only', async () => {
   const branchOrderLookups: number[] = [];
 

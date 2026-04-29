@@ -15,6 +15,7 @@ import { buildTenantStoragePrefix, deleteFile, uploadFile } from './storage.serv
 import {
   hydrateUsersByIds,
   resolveCompanyUsersWithPermission,
+  resolveRolesWithPermission,
 } from './globalUser.service.js';
 import type { GlobalUser } from './globalUser.service.js';
 import { logger } from '../utils/logger.js';
@@ -591,20 +592,13 @@ export async function getMentionables(companyId: string): Promise<{
   users: MentionableUser[];
   roles: MentionableRole[];
 }> {
-  const users = await resolveCompanyUsersWithPermission(companyId, PERMISSIONS.AIC_VARIANCE_VIEW);
-  const rolesRaw = await db
-    .getDb()('roles')
-    .whereNot('name', SYSTEM_ROLES.SERVICE_CREW)
-    .select('id', 'name', 'color')
-    .orderBy('priority', 'desc')
-    .orderBy('name', 'asc');
+  const [users, rolesRaw] = await Promise.all([
+    resolveCompanyUsersWithPermission(companyId, PERMISSIONS.AIC_VARIANCE_VIEW),
+    resolveRolesWithPermission(PERMISSIONS.AIC_VARIANCE_VIEW),
+  ]);
 
   return {
-    users: users.map((u: any) => ({
-      id: String(u.id),
-      name: [u.first_name, u.last_name].filter(Boolean).join(' '),
-      avatar_url: u.avatar_url ?? null,
-    })),
+    users,
     roles: rolesRaw.map((r: any) => ({ id: String(r.id), name: String(r.name), color: r.color ?? null })),
   };
 }

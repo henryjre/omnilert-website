@@ -68,6 +68,21 @@ type OdooKwCallFn = (
   kwargs?: Record<string, unknown>,
 ) => Promise<unknown>;
 
+export type OdooBankOption = {
+  id: number;
+  name: string;
+  bic: string | null;
+};
+
+type OdooBankRow = {
+  id: number;
+  name?: string | null;
+  bic?: string | false | null;
+};
+
+const ODOO_BANK_CACHE_TTL_MS = 5 * 60 * 1000;
+let odooBankCache: { expiresAt: number; rows: OdooBankOption[] } | null = null;
+
 /** First linked res.partner.bank id from hr.employee.bank_account_ids, if any. */
 function firstPartnerBankIdFromEmployee(employee: OdooEmployeeIdentityRow): number | null {
   const raw = employee.bank_account_ids;
@@ -1033,6 +1048,68 @@ export async function callOdooKw(
   kwargs: Record<string, unknown> = {},
 ): Promise<unknown> {
   return defaultOdooRpcClient.callOdooKw(model, method, args, kwargs);
+}
+
+function normalizeOdooBankRows(rows: OdooBankRow[]): OdooBankOption[] {
+  return rows
+    .map((row) => ({
+      id: Number(row.id),
+      name: String(row.name ?? '').trim(),
+      bic: row.bic ? String(row.bic).trim() || null : null,
+    }))
+    .filter((row) => Number.isInteger(row.id) && row.id > 0 && row.name.length > 0)
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+}
+
+export async function listOdooBanks(options: {
+  forceRefresh?: boolean;
+  callOdooKwFn?: OdooKwCallFn;
+} = {}): Promise<OdooBankOption[]> {
+  const callFn = options.callOdooKwFn ?? callOdooKw;
+  const canUseCache = !options.callOdooKwFn;
+  const now = Date.now();
+
+  if (canUseCache && !options.forceRefresh && odooBankCache && odooBankCache.expiresAt > now) {
+    return odooBankCache.rows;
+  }
+
+  const rows = (await callFn('res.bank', 'search_read', [], {
+    fields: ['id', 'name', 'bic'],
+    order: 'name asc',
+    limit: 1000,
+  })) as OdooBankRow[];
+  const banks = normalizeOdooBankRows(Array.isArray(rows) ? rows : []);
+
+  if (canUseCache) {
+    odooBankCache = {
+      expiresAt: now + ODOO_BANK_CACHE_TTL_MS,
+      rows: banks,
+    };
+  }
+
+  return banks;
+}
+
+export async function odooBankExists(
+  bankId: number,
+  options: { callOdooKwFn?: OdooKwCallFn } = {},
+): Promise<boolean> {
+  if (!Number.isInteger(bankId) || bankId <= 0) {
+    return false;
+  }
+
+  const cached = odooBankCache?.rows.some((bank) => bank.id === bankId);
+  if (cached) {
+    return true;
+  }
+
+  const rows = (await (options.callOdooKwFn ?? callOdooKw)('res.bank', 'search_read', [], {
+    domain: [['id', '=', bankId]],
+    fields: ['id'],
+    limit: 1,
+  })) as Array<{ id: number }>;
+
+  return Array.isArray(rows) && rows.some((row) => Number(row.id) === bankId);
 }
 
 /**

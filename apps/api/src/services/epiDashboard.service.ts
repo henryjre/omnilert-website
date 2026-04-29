@@ -95,7 +95,11 @@ async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKp
     dbConn('reward_request_targets as rrt')
       .join('reward_requests as rr', 'rr.id', 'rrt.reward_request_id')
       .where({ 'rr.status': 'approved', 'rrt.user_id': userId })
-      .select('rrt.epi_delta', dbConn.raw(`rrt.applied_at::text as applied_at`)),
+      .select(
+        dbConn.raw('COALESCE(rrt.epi_delta, rr.epi_delta) as epi_delta'),
+        'rr.source_violation_notice_id',
+        dbConn.raw(`COALESCE(rrt.applied_at, rr.reviewed_at, rr.updated_at)::text as applied_at`),
+      ),
   ]);
 
   // Shape compliance rows into { answers, audited_at } format expected by epiCalculation
@@ -168,6 +172,8 @@ export interface DashboardCriteria {
   violationTotalDecrease: number;
   awardCount: number;
   awardTotalIncrease: number;
+  penaltyCount: number;
+  penaltyTotalDecrease: number;
   uniformComplianceRate: number | null;
   hygieneComplianceRate: number | null;
   sopComplianceRate: number | null;
@@ -313,6 +319,8 @@ function createEmptyCriteria(): DashboardCriteria {
     violationTotalDecrease: 0,
     awardCount: 0,
     awardTotalIncrease: 0,
+    penaltyCount: 0,
+    penaltyTotalDecrease: 0,
     uniformComplianceRate: null,
     hygieneComplianceRate: null,
     sopComplianceRate: null,
@@ -351,6 +359,8 @@ function breakdownToCriteria(kpi: KpiBreakdown | null | undefined): DashboardCri
     violationTotalDecrease: kpi.violations.total_decrease,
     awardCount: kpi.awards.count,
     awardTotalIncrease: kpi.awards.total_increase,
+    penaltyCount: kpi.penalties.count,
+    penaltyTotalDecrease: kpi.penalties.total_decrease,
     uniformComplianceRate: kpi.uniform.rate,
     hygieneComplianceRate: kpi.hygiene.rate,
     sopComplianceRate: kpi.sop.rate,
@@ -382,6 +392,8 @@ function snapshotToCriteria(s: any): DashboardCriteria {
     violationTotalDecrease: toNumber(s.violations_count, 0) * 5,
     awardCount: toNumber(s.awards_count, 0),
     awardTotalIncrease: toNumber(s.awards_total_increase, 0),
+    penaltyCount: toNumber(s.penalties_count, 0),
+    penaltyTotalDecrease: toNumber(s.penalties_total_decrease, 0),
     uniformComplianceRate: toNullableNumber(s.uniform_compliance_rate),
     hygieneComplianceRate: toNullableNumber(s.hygiene_compliance_rate),
     sopComplianceRate: toNullableNumber(s.sop_compliance_rate),

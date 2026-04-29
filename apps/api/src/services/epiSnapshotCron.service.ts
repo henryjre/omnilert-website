@@ -117,7 +117,11 @@ async function fetchUserKpiData(userId: string, userKey: string): Promise<UserKp
     dbConn('reward_request_targets as rrt')
       .join('reward_requests as rr', 'rr.id', 'rrt.reward_request_id')
       .where({ 'rr.status': 'approved', 'rrt.user_id': userId })
-      .select('rrt.epi_delta', dbConn.raw(`rrt.applied_at::text as applied_at`)),
+      .select(
+        dbConn.raw('COALESCE(rrt.epi_delta, rr.epi_delta) as epi_delta'),
+        'rr.source_violation_notice_id',
+        dbConn.raw(`COALESCE(rrt.applied_at, rr.reviewed_at, rr.updated_at)::text as applied_at`),
+      ),
   ]);
 
   const complianceAudit = complianceAuditRows.length

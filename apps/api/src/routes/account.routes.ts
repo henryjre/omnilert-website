@@ -118,6 +118,11 @@ router.post(
   accountController.uploadValidId,
 );
 
+router.get(
+  '/banks',
+  accountController.getBankOptions,
+);
+
 router.post(
   '/bank-information/verifications',
   validateBody(submitBankInformationVerificationSchema),

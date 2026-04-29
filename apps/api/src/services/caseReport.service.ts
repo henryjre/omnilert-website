@@ -1446,12 +1446,7 @@ export async function getMentionables(input: { companyId: string }): Promise<{
 }> {
   const [users, roles] = await Promise.all([
     resolveCompanyUsers(input.companyId),
-    db
-      .getDb()('roles')
-      .whereNot('name', SYSTEM_ROLES.SERVICE_CREW)
-      .select('id', 'name', 'color')
-      .orderBy('priority', 'desc')
-      .orderBy('name', 'asc'),
+    resolveRolesWithPermission(PERMISSIONS.CASE_REPORT_VIEW),
   ]);
 
   return {
