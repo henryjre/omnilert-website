@@ -21,7 +21,9 @@ function parseJsonArray(value: unknown): string[] | undefined {
 
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
+    const { companyId } = req.companyContext!;
     const data = await caseReportService.listCaseReports({
+      companyId,
       userId: req.user!.sub,
       status: typeof req.query.status === 'string' ? req.query.status : undefined,
       search: typeof req.query.search === 'string' ? req.query.search : undefined,

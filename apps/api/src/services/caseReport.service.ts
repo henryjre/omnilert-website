@@ -239,7 +239,7 @@ async function upsertParticipant(
     .where({ case_id: caseId, user_id: userId })
     .first();
   const next = {
-    is_joined: patch.is_joined ?? existing?.is_joined ?? true,
+    is_joined: patch.is_joined ?? existing?.is_joined ?? false,
     is_muted: patch.is_muted ?? existing?.is_muted ?? false,
     last_read_at: patch.last_read_at ?? existing?.last_read_at ?? null,
     updated_at: new Date(),
@@ -722,6 +722,7 @@ async function maybeNotifyMentionedUsers(input: {
 }
 
 export async function listCaseReports(input: {
+  companyId: string;
   userId: string;
   status?: string;
   search?: string;
@@ -730,7 +731,34 @@ export async function listCaseReports(input: {
   sortOrder?: string;
   vnOnly?: boolean;
 }): Promise<{ items: CaseReport[]; total: number }> {
-  const query = db.getDb()('case_reports');
+  const query = db.getDb()('case_reports').where('case_reports.company_id', input.companyId);
+
+  // Visibility: only show cases the user created, is joined on, or is an Administrator for
+  query.andWhere((vis) => {
+    vis
+      .where('case_reports.created_by', input.userId)
+      .orWhereExists(
+        db
+          .getDb()
+          .select(db.getDb().raw('1'))
+          .from('case_participants')
+          .whereRaw('case_participants.case_id = case_reports.id')
+          .andWhere({ 'case_participants.user_id': input.userId, 'case_participants.is_joined': true }),
+      )
+      .orWhereExists(
+        db
+          .getDb()
+          .select(db.getDb().raw('1'))
+          .from('user_roles as ur')
+          .join('roles as r', 'ur.role_id', 'r.id')
+          .join('user_company_access as uca', 'ur.user_id', 'uca.user_id')
+          .where('ur.user_id', input.userId)
+          .andWhere('r.name', SYSTEM_ROLES.ADMINISTRATOR)
+          .andWhere('uca.company_id', input.companyId)
+          .andWhere('uca.is_active', true),
+      );
+  });
+
   if (input.status && ['open', 'closed'].includes(input.status)) {
     query.where({ status: input.status });
   }
@@ -774,7 +802,6 @@ export async function getCaseReport(input: {
   const rawRecord = await getCaseOrThrow(input.caseId);
   if (input.markRead) {
     await upsertParticipant(input.caseId, input.userId, {
-      is_joined: true,
       last_read_at: new Date(),
     });
   }
@@ -1443,7 +1470,6 @@ export async function markCaseRead(input: {
   await getCaseOrThrow(input.caseId);
   const now = new Date();
   await upsertParticipant(input.caseId, input.userId, {
-    is_joined: true,
     last_read_at: now,
   });
   return { last_read_at: now.toISOString() };
