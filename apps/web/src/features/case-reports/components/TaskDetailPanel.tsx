@@ -117,6 +117,7 @@ interface TaskDetailPanelProps {
   messages: CaseTaskMessage[];
   currentUserId: string;
   currentUserName?: string;
+  currentUserRoleIds?: string[];
   canManage: boolean;
   users: MentionableUser[];
   roles: MentionableRole[];
@@ -136,6 +137,7 @@ export function TaskDetailPanel({
   messages,
   currentUserId,
   currentUserName,
+  currentUserRoleIds,
   canManage,
   users,
   roles,
@@ -278,6 +280,7 @@ export function TaskDetailPanel({
           messages={adaptedMessages}
           currentUserId={currentUserId}
           currentUserName={currentUserName}
+          currentUserRoleIds={currentUserRoleIds}
           canManage={canManage}
           chatLocked={false}
           users={users}

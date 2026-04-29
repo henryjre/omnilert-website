@@ -16,6 +16,7 @@ import {
   ChevronDown,
   ClipboardList,
   TriangleAlert,
+  Boxes,
   FileWarning,
   BarChart2,
   ShoppingBag,
@@ -196,7 +197,6 @@ export function Sidebar({ className = '', hideDashboardLink = false }: SidebarPr
                 Case Reports
               </AnimatedNavLink>
             )}
-
             {hasPermission(PERMISSIONS.STORE_AUDIT_VIEW) && (
               <SubCategory
                 label="Internal Audit"
@@ -283,7 +283,7 @@ export function Sidebar({ className = '', hideDashboardLink = false }: SidebarPr
         )}
 
         {/* Store Operations */}
-        {hasPermission(PERMISSIONS.POS_VIEW) && (
+        {hasAnyPermission(PERMISSIONS.POS_VIEW, PERMISSIONS.AIC_VARIANCE_VIEW) && (
           <>
             <div className="my-2 border-t border-gray-200" />
             {categoryLabel('Store Operations')}
@@ -302,6 +302,12 @@ export function Sidebar({ className = '', hideDashboardLink = false }: SidebarPr
               <AnimatedNavLink to="/pos-sessions" className={linkClass}>
                 <Monitor className="h-5 w-5" />
                 POS Sessions
+              </AnimatedNavLink>
+            )}
+            {hasPermission(PERMISSIONS.AIC_VARIANCE_VIEW) && (
+              <AnimatedNavLink to="/aic-variance" className={linkClass}>
+                <Boxes className="h-5 w-5" />
+                AIC Variance
               </AnimatedNavLink>
             )}
           </>

@@ -12,7 +12,7 @@ export interface ViolationNoticeFilters {
   date_from?: string;
   date_to?: string;
   sort_order?: 'asc' | 'desc';
-  category?: 'manual' | 'case_reports' | 'store_audits';
+  category?: 'manual' | 'case_reports' | 'store_audits' | 'aic_variance';
   target_user_id?: string;
 }
 
@@ -158,6 +158,7 @@ export async function getGroupedUsers(params?: {
   auditId?: string;
   companyId?: string;
   caseId?: string;
+  aicRecordId?: string;
   allCompanies?: boolean;
 }): Promise<GroupedUsersResponse> {
   const response = await api.get('/violation-notices/grouped-users', {
@@ -181,5 +182,14 @@ export async function createVNFromStoreAudit(payload: {
   targetUserIds: string[];
 }): Promise<ViolationNotice> {
   const response = await api.post('/violation-notices/from-store-audit', payload);
+  return response.data.data as ViolationNotice;
+}
+
+export async function createVNFromAicRecord(payload: {
+  aicRecordId: string;
+  description: string;
+  targetUserIds: string[];
+}): Promise<ViolationNotice> {
+  const response = await api.post('/violation-notices/from-aic-record', payload);
   return response.data.data as ViolationNotice;
 }

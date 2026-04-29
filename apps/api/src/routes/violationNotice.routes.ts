@@ -61,6 +61,12 @@ const fromStoreAuditSchema = z.object({
   targetUserIds: z.array(z.string().uuid()).min(1),
 });
 
+const fromAicRecordSchema = z.object({
+  aicRecordId: z.string().uuid(),
+  description: z.string().trim().min(1).max(2000),
+  targetUserIds: z.array(z.string().uuid()).min(1),
+});
+
 const reactionSchema = z.object({
   emoji: z.string().trim().min(1).max(20),
 });
@@ -96,6 +102,12 @@ router.post(
   requireAnyPermission(PERMISSIONS.STORE_AUDIT_MANAGE, PERMISSIONS.VIOLATION_NOTICE_MANAGE),
   validateBody(fromStoreAuditSchema),
   violationNoticeController.createFromStoreAudit,
+);
+router.post(
+  '/from-aic-record',
+  requireAnyPermission(PERMISSIONS.AIC_VARIANCE_MANAGE, PERMISSIONS.VIOLATION_NOTICE_MANAGE),
+  validateBody(fromAicRecordSchema),
+  violationNoticeController.createFromAicRecord,
 );
 router.get('/', requirePermission(PERMISSIONS.VIOLATION_NOTICE_VIEW), violationNoticeController.list);
 router.post('/', requirePermission(PERMISSIONS.VIOLATION_NOTICE_MANAGE), validateBody(createVNSchema), violationNoticeController.create);

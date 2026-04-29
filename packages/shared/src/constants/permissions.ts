@@ -39,6 +39,10 @@ export const PERMISSIONS = {
   CASE_REPORT_VIEW: 'case_report.view',
   CASE_REPORT_MANAGE: 'case_report.manage',
 
+  // AIC Variance (2)
+  AIC_VARIANCE_VIEW: 'aic_variance.view',
+  AIC_VARIANCE_MANAGE: 'aic_variance.manage',
+
   // Store Audits (2)
   STORE_AUDIT_VIEW: 'store_audit.view',
   STORE_AUDIT_MANAGE: 'store_audit.manage',
@@ -150,6 +154,13 @@ export const PERMISSION_CATEGORIES: Record<string, { label: string; permissions:
       PERMISSIONS.CASE_REPORT_MANAGE,
     ],
   },
+  aic_variance: {
+    label: 'AIC Variance',
+    permissions: [
+      PERMISSIONS.AIC_VARIANCE_VIEW,
+      PERMISSIONS.AIC_VARIANCE_MANAGE,
+    ],
+  },
   store_audit: {
     label: 'Store Audits',
     permissions: [
@@ -243,6 +254,7 @@ export const PERMISSION_PREREQUISITES: Partial<Record<PermissionKey, PermissionK
   [PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_REQUIREMENTS]: PERMISSIONS.EMPLOYEE_VERIFICATION_VIEW_PAGE,
   [PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_BANK]: PERMISSIONS.EMPLOYEE_VERIFICATION_VIEW_PAGE,
   [PERMISSIONS.CASE_REPORT_MANAGE]: PERMISSIONS.CASE_REPORT_VIEW,
+  [PERMISSIONS.AIC_VARIANCE_MANAGE]: PERMISSIONS.AIC_VARIANCE_VIEW,
   [PERMISSIONS.STORE_AUDIT_MANAGE]: PERMISSIONS.STORE_AUDIT_VIEW,
   [PERMISSIONS.EMPLOYEE_PROFILES_MANAGE_WORK]: PERMISSIONS.EMPLOYEE_PROFILES_VIEW,
   [PERMISSIONS.SCHEDULE_MANAGE_SHIFT]: PERMISSIONS.SCHEDULE_VIEW,
@@ -288,6 +300,8 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
   [PERMISSIONS.EMPLOYEE_VERIFICATION_MANAGE_BANK]: 'Review and approve/reject bank information submissions',
   [PERMISSIONS.CASE_REPORT_VIEW]: 'Access the Case Reports page and view case data',
   [PERMISSIONS.CASE_REPORT_MANAGE]: 'Create, close, and manage case reports, and request violation notices',
+  [PERMISSIONS.AIC_VARIANCE_VIEW]: 'Access the AIC Variance page and view records you have joined',
+  [PERMISSIONS.AIC_VARIANCE_MANAGE]: 'Mark AIC records as resolved, request violation notices, and manage tasks',
   [PERMISSIONS.STORE_AUDIT_VIEW]: 'Access the Store Audits page and view audit data',
   [PERMISSIONS.STORE_AUDIT_MANAGE]: 'Process store audits and request violation notices',
   [PERMISSIONS.EMPLOYEE_PROFILES_VIEW]: 'Access the Employee Profiles page and view profile data',

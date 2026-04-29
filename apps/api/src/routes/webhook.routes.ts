@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { handleAicWebhookPayload } from '../services/aicVarianceWebhook.service.js';
 import {
   odooPosVerificationPayloadSchema,
   odooPosSessionPayloadSchema,
@@ -98,5 +99,10 @@ router.post(
   validateBody(payrollAdjustmentCompleteWebhookSchema),
   payrollAdjustmentController.completeFromOdooWebhook,
 );
+
+router.post('/odoo/aic-variance', (req, res) => {
+  handleAicWebhookPayload(req.body);
+  res.json({ success: true });
+});
 
 export default router;

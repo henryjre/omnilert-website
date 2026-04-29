@@ -794,6 +794,7 @@ export async function createViolationNotice(input: {
   category?: string;
   sourceCaseReportId?: string;
   sourceStoreAuditId?: string;
+  sourceAicRecordId?: string;
 }): Promise<ViolationNotice> {
   const description = ensureNonEmpty(input.description, 'Description');
   if (!input.targetUserIds || input.targetUserIds.length === 0) {
@@ -815,6 +816,7 @@ export async function createViolationNotice(input: {
         branch_id: input.branchId ?? null,
         source_case_report_id: input.sourceCaseReportId ?? null,
         source_store_audit_id: input.sourceStoreAuditId ?? null,
+        source_aic_record_id: input.sourceAicRecordId ?? null,
       })
       .returning('*');
 

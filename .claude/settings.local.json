@@ -52,7 +52,8 @@
       "Bash(awk 'NR>=2910 && NR<=2950' /home/phaeton/Projects/omnilert-website/apps/web/src/features/account/components/ScheduleTab.tsx)",
       "Bash(awk 'NR>=2960 && NR<=3000' /home/phaeton/Projects/omnilert-website/apps/web/src/features/account/components/ScheduleTab.tsx)",
       "Bash(awk 'NR>=3020 && NR<=3060' /home/phaeton/Projects/omnilert-website/apps/web/src/features/account/components/ScheduleTab.tsx)",
-      "Bash(awk 'NR>=2750 && NR<=2800' /home/phaeton/Projects/omnilert-website/apps/web/src/features/account/components/ScheduleTab.tsx)"
+      "Bash(awk 'NR>=2750 && NR<=2800' /home/phaeton/Projects/omnilert-website/apps/web/src/features/account/components/ScheduleTab.tsx)",
+      "Bash(grep -E \"\\\\.\\(ts|js\\)$\")"
     ]
   }
 }

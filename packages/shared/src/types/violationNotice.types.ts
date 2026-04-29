@@ -6,7 +6,7 @@ export type ViolationNoticeStatus =
   | 'completed'
   | 'rejected';
 
-export type ViolationNoticeCategory = 'manual' | 'case_reports' | 'store_audits';
+export type ViolationNoticeCategory = 'manual' | 'case_reports' | 'store_audits' | 'aic_variance';
 
 export type ViolationNoticeMessageType = 'message' | 'system';
 

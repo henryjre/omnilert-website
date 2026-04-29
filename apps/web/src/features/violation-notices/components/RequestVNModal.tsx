@@ -3,7 +3,7 @@ import { X, FileText } from 'lucide-react';
 import type { GroupedUsersResponse } from '@omnilert/shared';
 import { Button } from '@/shared/components/ui/Button';
 import { requestViolationNotice } from '@/features/case-reports/services/caseReport.api';
-import { createVNFromStoreAudit } from '../services/violationNotice.api';
+import { createVNFromAicRecord, createVNFromStoreAudit } from '../services/violationNotice.api';
 import { GroupedUserSelect } from './GroupedUserSelect';
 
 export interface RequestVNModalProps {
@@ -15,6 +15,7 @@ export interface RequestVNModalProps {
   // Source context — one of these will be provided:
   sourceCaseReportId?: string;
   sourceStoreAuditId?: string;
+  sourceAicRecordId?: string;
   sourceLabel?: string;
 }
 
@@ -26,6 +27,7 @@ export function RequestVNModal({
   loadingUsers = false,
   sourceCaseReportId,
   sourceStoreAuditId,
+  sourceAicRecordId,
   sourceLabel,
 }: RequestVNModalProps) {
   const [description, setDescription] = useState('');
@@ -50,6 +52,12 @@ export function RequestVNModal({
       } else if (sourceStoreAuditId) {
         await createVNFromStoreAudit({
           auditId: sourceStoreAuditId,
+          description: description.trim(),
+          targetUserIds,
+        });
+      } else if (sourceAicRecordId) {
+        await createVNFromAicRecord({
+          aicRecordId: sourceAicRecordId,
           description: description.trim(),
           targetUserIds,
         });

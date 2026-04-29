@@ -578,6 +578,7 @@ export function ViolationNoticesPage() {
                       <option value="manual">Manual</option>
                       <option value="case_reports">Case Reports</option>
                       <option value="store_audits">Store Audits</option>
+                      <option value="aic_variance">AIC Variance</option>
                     </select>
                   </div>
 

@@ -45,6 +45,7 @@ function formatCategory(category: ViolationNoticeCategory): string {
     case 'manual': return 'Manual';
     case 'case_reports': return 'Case Report';
     case 'store_audits': return 'Store Audit';
+    case 'aic_variance': return 'AIC Variance';
     default: return category;
   }
 }

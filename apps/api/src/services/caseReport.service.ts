@@ -802,6 +802,7 @@ export async function getCaseReport(input: {
   const rawRecord = await getCaseOrThrow(input.caseId);
   if (input.markRead) {
     await upsertParticipant(input.caseId, input.userId, {
+      is_joined: true,
       last_read_at: new Date(),
     });
   }
@@ -1470,6 +1471,7 @@ export async function markCaseRead(input: {
   await getCaseOrThrow(input.caseId);
   const now = new Date();
   await upsertParticipant(input.caseId, input.userId, {
+    is_joined: true,
     last_read_at: now,
   });
   return { last_read_at: now.toISOString() };

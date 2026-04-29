@@ -3,6 +3,7 @@ import * as violationNoticeService from '../services/violationNotice.service.js'
 import { AppError } from '../middleware/errorHandler.js';
 import { emitStoreAuditEvent } from '../services/storeAuditRealtime.service.js';
 import { db } from '../config/database.js';
+import { emitAicEvent } from '../services/aicVarianceWebhook.service.js';
 
 function getUploadedFiles(req: Request): Express.Multer.File[] {
   const files = (req as Request & { files?: Express.Multer.File[] | Record<string, Express.Multer.File[]> }).files;
@@ -319,6 +320,7 @@ export async function groupedUsers(req: Request, res: Response, next: NextFuncti
     const { companyId } = req.companyContext!;
     const auditId = String(req.query.auditId ?? '').trim();
     const caseId = String(req.query.caseId ?? '').trim();
+    const aicRecordId = String(req.query.aicRecordId ?? '').trim();
     const queryCompanyId = String(req.query.companyId ?? '').trim();
     const allCompaniesParam = String(req.query.allCompanies ?? '').trim().toLowerCase();
     const includeAllCompanies = allCompaniesParam === 'true' || allCompaniesParam === '1';
@@ -329,6 +331,9 @@ export async function groupedUsers(req: Request, res: Response, next: NextFuncti
     } else if (caseId && /^[0-9a-f-]{36}$/i.test(caseId)) {
       const caseRow = await db.getDb()('case_reports').where({ id: caseId }).first('company_id');
       resolvedCompanyId = caseRow?.company_id ?? companyId;
+    } else if (aicRecordId && /^[0-9a-f-]{36}$/i.test(aicRecordId)) {
+      const aicRow = await db.getDb()('aic_records').where({ id: aicRecordId }).first('company_id');
+      resolvedCompanyId = aicRow?.company_id ?? companyId;
     } else if (queryCompanyId && /^[0-9a-f-]{36}$/i.test(queryCompanyId)) {
       resolvedCompanyId = queryCompanyId;
     }
@@ -394,6 +399,57 @@ export async function createFromStoreAudit(req: Request, res: Response, next: Ne
   }
 }
 
+export async function createFromAicRecord(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { companyId } = req.companyContext!;
+    const aicRecordId = String(req.body.aicRecordId ?? '');
+    const aicRow = aicRecordId
+      ? await db.getDb()('aic_records').where({ id: aicRecordId }).first('branch_id', 'company_id')
+      : null;
+    if (!aicRow || aicRow.company_id !== companyId) {
+      throw new AppError(404, 'AIC record not found');
+    }
+
+    const data = await violationNoticeService.createViolationNotice({
+      companyId,
+      userId: req.user!.sub,
+      description: String(req.body.description ?? ''),
+      targetUserIds: req.body.targetUserIds,
+      category: 'aic_variance',
+      sourceAicRecordId: aicRecordId,
+      branchId: aicRow?.branch_id ?? null,
+    });
+
+    const userRow = await db
+      .getDb()('users')
+      .where({ id: req.user!.sub })
+      .first('first_name', 'last_name');
+    const actorName =
+      [userRow?.first_name, userRow?.last_name].filter(Boolean).join(' ') || 'Someone';
+
+    await db.getDb().transaction(async (trx) => {
+      await trx('aic_records').where({ id: aicRecordId }).update({
+        vn_requested: true,
+        linked_vn_id: data.id,
+        updated_at: new Date(),
+      });
+      await trx('aic_messages').insert({
+        aic_record_id: aicRecordId,
+        user_id: null,
+        content: `${actorName} requested a Violation Notice`,
+        is_system: true,
+        created_at: new Date(),
+        updated_at: new Date(),
+      });
+    });
+    emitAicEvent('aic-variance:updated', companyId, { id: aicRecordId });
+
+    res.status(201).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export const violationNoticeController = {
   list,
   getById,
@@ -417,4 +473,5 @@ export const violationNoticeController = {
   groupedUsers,
   createFromCaseReport,
   createFromStoreAudit,
+  createFromAicRecord,
 };

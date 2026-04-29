@@ -29,6 +29,7 @@ import { EmployeeVerificationsPage } from '@/features/employee-verifications/pag
 import { EmployeeProfilesPage } from '@/features/employee-profiles/pages/EmployeeProfilesPage';
 import { StoreAuditsPage } from '@/features/store-audits/pages/StoreAuditsPage';
 import { CaseReportsPage } from '@/features/case-reports/pages/CaseReportsPage';
+import { AicVariancePage } from '@/features/aic-variance/pages/AicVariancePage';
 import { ViolationNoticesPage } from '@/features/violation-notices/pages/ViolationNoticesPage';
 import { EpiAdjustmentsPage } from '@/features/epi-adjustments/pages/EpiAdjustmentsPage';
 import { PeerEvaluationsPage } from '@/features/peer-evaluations/pages/PeerEvaluationsPage';
@@ -239,6 +240,14 @@ export const router = createBrowserRouter([
             element: (
               <PermissionGuard permission={PERMISSIONS.CASE_REPORT_VIEW}>
                 <CaseReportsPage />
+              </PermissionGuard>
+            ),
+          },
+          {
+            path: 'aic-variance',
+            element: (
+              <PermissionGuard permission={PERMISSIONS.AIC_VARIANCE_VIEW}>
+                <AicVariancePage />
               </PermissionGuard>
             ),
           },
