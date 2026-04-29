@@ -89,12 +89,6 @@ function formatDate(value: string | null) {
   });
 }
 
-const detailPanelTabSlideTransition = {
-  type: 'spring',
-  stiffness: 300,
-  damping: 30,
-} as const;
-
 type DetailPanelTab = 'details' | 'discussion';
 
 function getStatusVariant(status: ViolationNoticeStatus): 'success' | 'danger' | 'warning' | 'default' {
@@ -423,19 +417,9 @@ export function ViolationNoticeDetailPanel({
       />
 
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        <AnimatePresence initial={false}>
-          {activeTab === 'details' && (
-        <motion.div
-          key={`vn-details-${vn.id}`}
-          initial={{ x: '-100%', opacity: 0 }}
-          animate={{ x: '0%', opacity: 1 }}
-          exit={{ x: '-100%', opacity: 0 }}
-          transition={detailPanelTabSlideTransition}
-          className="absolute inset-0 flex min-h-0 flex-col bg-white"
-          style={{
-            willChange: 'transform',
-          }}
-        >
+          <div
+            className={`absolute inset-0 flex min-h-0 flex-col bg-white${activeTab !== 'details' ? ' hidden' : ''}`}
+          >
           <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
 
             {/* ── Info ──────────────────────────────────────────────── */}
@@ -820,21 +804,11 @@ export function ViolationNoticeDetailPanel({
               )}
             </section>
           </div>
-        </motion.div>
-          )}
+          </div>
 
-          {activeTab === 'discussion' && (
-        <motion.div
-          key={`vn-discussion-${vn.id}`}
-          initial={{ x: '100%', opacity: 0 }}
-          animate={{ x: '0%', opacity: 1 }}
-          exit={{ x: '100%', opacity: 0 }}
-          transition={detailPanelTabSlideTransition}
-          style={{
-            willChange: 'transform',
-          }}
-          className="absolute inset-0 z-10 flex min-h-0 flex-1 flex-col bg-white px-4 py-3 sm:px-6 sm:py-4"
-        >
+          <div
+            className={`absolute inset-0 flex min-h-0 flex-col bg-white px-4 py-3 sm:px-6 sm:py-4${activeTab !== 'discussion' ? ' hidden' : ''}`}
+          >
           <ChatSection
             className="min-h-0 flex-1"
             messages={adaptedMessages as unknown as Parameters<typeof ChatSection>[0]['messages']}
@@ -853,9 +827,7 @@ export function ViolationNoticeDetailPanel({
             onEdit={onEditMessage}
             onDelete={onDeleteMessage}
           />
-        </motion.div>
-          )}
-        </AnimatePresence>
+          </div>
       </div>
 
       {/* Disciplinary proof lightbox */}

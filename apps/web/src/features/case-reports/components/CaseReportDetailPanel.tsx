@@ -1,5 +1,5 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import type { CaseAttachment, CaseMessage, CaseTask, CaseTaskMessage, GroupedUsersResponse } from '@omnilert/shared';
 import {
@@ -119,15 +119,6 @@ function formatDate(value: string | null) {
 const detailPanelTabs = ['details', 'discussion', 'tasks'] as const;
 type DetailPanelTab = (typeof detailPanelTabs)[number];
 
-const detailPanelTabSlideTransition = {
-  type: 'spring',
-  stiffness: 300,
-  damping: 30,
-} as const;
-
-const detailPanelTabInstantTransition = {
-  duration: 0,
-} as const;
 
 export function CaseReportDetailPanel({
   report,
@@ -165,7 +156,6 @@ export function CaseReportDetailPanel({
   onReactToTaskMessage,
   onLoadTaskMessages,
 }: CaseReportDetailPanelProps) {
-  const navigate = useNavigate();
   const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
@@ -183,7 +173,6 @@ export function CaseReportDetailPanel({
 
   const [activeTab, setActiveTab] = useState<DetailPanelTab>('details');
   const [syncedReportId, setSyncedReportId] = useState<string | null>(null);
-  const [hasAnimatedTabSwitch, setHasAnimatedTabSwitch] = useState(false);
 
   // Derive the correct tab during render so the initial paint is never wrong.
   // syncedReportId tracks whether useLayoutEffect has run for the current report.
@@ -192,34 +181,14 @@ export function CaseReportDetailPanel({
       ? activeTab
       : (initialFlashMessageId || initialFlashTaskId || report?.is_joined) ? (initialFlashTaskId ? 'tasks' : 'discussion') : 'details';
 
-  const activeTabIndex = Math.max(detailPanelTabs.indexOf(effectiveTab), 0);
-
   const handleTabChange = (nextTab: DetailPanelTab) => {
     if (nextTab === effectiveTab) return;
-
-    setHasAnimatedTabSwitch(true);
     setActiveTaskId(null);
     setActiveTab(nextTab);
   };
 
-  const getTabOffset = (tab: DetailPanelTab) =>
-    `${(detailPanelTabs.indexOf(tab) - activeTabIndex) * 100}%`;
-
-  const getTabPanelStyle = (tab: DetailPanelTab): CSSProperties => ({
-    transform: `translateX(${getTabOffset(tab)})`,
-    transition: hasAnimatedTabSwitch
-      ? 'transform 320ms cubic-bezier(0.22, 1, 0.36, 1)'
-      : 'none',
-    pointerEvents: effectiveTab === tab ? 'auto' : 'none',
-    willChange: 'transform',
-  });
-
-  // Sync the active tab before paint when a different report loads so
-  // open cases don't visibly slide from the fallback details tab.
   useLayoutEffect(() => {
     if (!report) return;
-
-    setHasAnimatedTabSwitch(false);
 
     if (initialFlashTaskId) {
       setActiveTab('tasks');
@@ -235,7 +204,8 @@ export function CaseReportDetailPanel({
       }
     }
     setSyncedReportId(report.id);
-  }, [report?.id, report?.is_joined, initialFlashMessageId, initialFlashTaskId, initialFlashTaskMessageId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [report?.id, initialFlashMessageId, initialFlashTaskId, initialFlashTaskMessageId]);
 
   // Load task messages when auto-opening a task from a notification link
   useEffect(() => {
@@ -350,8 +320,7 @@ export function CaseReportDetailPanel({
 
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           <section
-            className="absolute inset-0 flex min-h-0 flex-col bg-white"
-            style={getTabPanelStyle('details')}
+            className={`absolute inset-0 flex min-h-0 flex-col bg-white${effectiveTab !== 'details' ? ' hidden' : ''}`}
             aria-hidden={effectiveTab !== 'details'}
           >
                 <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
@@ -576,19 +545,29 @@ export function CaseReportDetailPanel({
                   </section>
 
                   {/* ── Linked VN ─────────────────────────────────────── */}
-                  {report.linked_vn_id && (
+                  {(report.vn_requested || report.linked_vn_id) && (
                     <section>
                       <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
                         Violation Notice
                       </h3>
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/violation-notices?vnId=${report.linked_vn_id}`)}
-                        className="inline-flex items-center gap-1.5 text-sm text-primary-700 hover:underline"
-                      >
-                        <ExternalLink className="h-3.5 w-3.5" />
-                        View Violation Notice
-                      </button>
+                      <div className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <FileWarning className="h-4 w-4 shrink-0 text-gray-400" />
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-gray-900">Violation Notice Requested</p>
+                            <p className="truncate text-xs text-gray-500">Linked violation notice</p>
+                          </div>
+                        </div>
+                        {report.linked_vn_id && (
+                          <Link
+                            to={`/violation-notices?vnId=${report.linked_vn_id}`}
+                            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-sm font-medium text-primary-600 ring-1 ring-gray-200 transition-colors hover:bg-primary-50 hover:text-primary-700 hover:ring-primary-200"
+                          >
+                            Open
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </Link>
+                        )}
+                      </div>
                     </section>
                   )}
 
@@ -656,8 +635,7 @@ export function CaseReportDetailPanel({
           </section>
 
           <section
-            className="absolute inset-0 flex min-h-0 flex-col bg-white px-4 py-3 sm:px-6 sm:py-4"
-            style={getTabPanelStyle('discussion')}
+            className={`absolute inset-0 flex min-h-0 flex-col bg-white px-4 py-3 sm:px-6 sm:py-4${effectiveTab !== 'discussion' ? ' hidden' : ''}`}
             aria-hidden={effectiveTab !== 'discussion'}
           >
                 <ChatSection
@@ -693,8 +671,7 @@ export function CaseReportDetailPanel({
           </section>
 
           <section
-            className="absolute inset-0 flex min-h-0 flex-col overflow-hidden bg-white"
-            style={getTabPanelStyle('tasks')}
+            className={`absolute inset-0 flex min-h-0 flex-col overflow-hidden bg-white${effectiveTab !== 'tasks' ? ' hidden' : ''}`}
             aria-hidden={effectiveTab !== 'tasks'}
           >
                 <div className="min-h-0 flex-1 overflow-y-auto">

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useLayoutEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { AicMessage, AicTask, AicTaskMessage, CaseTask, CaseTaskMessage, GroupedUsersResponse } from '@omnilert/shared';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -151,7 +151,6 @@ export function AicVarianceDetailPanel({
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<DetailPanelTab>('details');
   const [syncedRecordId, setSyncedRecordId] = useState<string | null>(null);
-  const [hasAnimatedTabSwitch, setHasAnimatedTabSwitch] = useState(false);
 
   const effectiveTab: DetailPanelTab =
     syncedRecordId === record?.id
@@ -160,30 +159,19 @@ export function AicVarianceDetailPanel({
       ? 'discussion'
       : 'details';
 
-  const activeTabIndex = Math.max(detailPanelTabs.indexOf(effectiveTab), 0);
-
   const handleTabChange = (nextTab: DetailPanelTab) => {
     if (nextTab === effectiveTab) return;
-
-    setHasAnimatedTabSwitch(true);
     setActiveTaskId(null);
     setActiveTab(nextTab);
   };
 
-  const getTabPanelStyle = (tab: DetailPanelTab): CSSProperties => ({
-    transform: `translateX(${(detailPanelTabs.indexOf(tab) - activeTabIndex) * 100}%)`,
-    transition: hasAnimatedTabSwitch ? 'transform 320ms cubic-bezier(0.22, 1, 0.36, 1)' : 'none',
-    pointerEvents: effectiveTab === tab ? 'auto' : 'none',
-    willChange: 'transform',
-  });
-
   useLayoutEffect(() => {
     if (!record) return;
-    setHasAnimatedTabSwitch(false);
     setActiveTaskId(null);
     setActiveTab(record.is_joined ? 'discussion' : 'details');
     setSyncedRecordId(record.id);
-  }, [record?.id, record?.is_joined]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [record?.id]);
 
   const chatLocked = useMemo(
     () => record?.status === 'resolved' && !canManage,
@@ -311,8 +299,7 @@ export function AicVarianceDetailPanel({
         {/* ── Tab content ──────────────────────────────────────────────── */}
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           <section
-            className="absolute inset-0 flex min-h-0 flex-col bg-white"
-            style={getTabPanelStyle('details')}
+            className={`absolute inset-0 flex min-h-0 flex-col bg-white${effectiveTab !== 'details' ? ' hidden' : ''}`}
             aria-hidden={effectiveTab !== 'details'}
           >
             <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
@@ -454,8 +441,7 @@ export function AicVarianceDetailPanel({
 
           {/* Discussion */}
           <section
-            className="absolute inset-0 flex min-h-0 flex-col bg-white px-4 py-3 sm:px-6 sm:py-4"
-            style={getTabPanelStyle('discussion')}
+            className={`absolute inset-0 flex min-h-0 flex-col bg-white px-4 py-3 sm:px-6 sm:py-4${effectiveTab !== 'discussion' ? ' hidden' : ''}`}
             aria-hidden={effectiveTab !== 'discussion'}
           >
             <ChatSection
@@ -489,8 +475,7 @@ export function AicVarianceDetailPanel({
 
           {/* Tasks */}
           <section
-            className="absolute inset-0 flex min-h-0 flex-col overflow-hidden bg-white"
-            style={getTabPanelStyle('tasks')}
+            className={`absolute inset-0 flex min-h-0 flex-col overflow-hidden bg-white${effectiveTab !== 'tasks' ? ' hidden' : ''}`}
             aria-hidden={effectiveTab !== 'tasks'}
           >
             <div className="min-h-0 flex-1 overflow-y-auto">
