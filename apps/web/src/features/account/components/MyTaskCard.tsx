@@ -31,7 +31,11 @@ export function MyTaskCard({ task, completed, onClick }: MyTaskCardProps) {
     >
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="line-clamp-2 text-sm font-medium text-gray-900 transition-colors group-hover:text-primary-700">
+          <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${config.chipClassName}`}>
+            <Icon className="h-3 w-3" />
+            {config.label}
+          </span>
+          <p className="mt-1 line-clamp-2 text-sm font-medium text-gray-900 transition-colors group-hover:text-primary-700">
             {task.description}
           </p>
           <p className="mt-1 flex items-center gap-1 truncate text-xs text-gray-500">
@@ -40,15 +44,9 @@ export function MyTaskCard({ task, completed, onClick }: MyTaskCardProps) {
               {task.parent_label} - {task.parent_title}
             </span>
           </p>
-          <div className="mt-1 flex items-center gap-2">
-            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${config.chipClassName}`}>
-              <Icon className="h-3 w-3" />
-              {config.label}
-            </span>
-            <p className="text-xs text-gray-400">
-              {task.last_message_at ? `Last activity ${formatDate(task.last_message_at)}` : `Created ${formatDate(task.created_at)}`}
-            </p>
-          </div>
+          <p className="mt-0.5 text-xs text-gray-400">
+            {task.last_message_at ? `Last activity ${formatDate(task.last_message_at)}` : `Created ${formatDate(task.created_at)}`}
+          </p>
         </div>
 
         <div className="flex shrink-0 items-center gap-3">

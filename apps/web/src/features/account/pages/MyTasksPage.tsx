@@ -194,40 +194,42 @@ export function MyTasksPage() {
       </motion.div>
 
       {!loading && availableSources.length > 1 && (
-        <motion.div variants={sectionVariant} className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setActiveSource('all')}
-            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-              activeSource === 'all'
-                ? 'bg-gray-900 text-white'
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            All sources
-            <span className="tabular-nums opacity-70">{sourceCounts.all}</span>
-          </button>
-          {availableSources.map((source) => {
-            const config = TASK_SOURCE_CONFIG[source];
-            const Icon = config.icon;
-            const isActive = activeSource === source;
-            return (
-              <button
-                key={source}
-                type="button"
-                onClick={() => setActiveSource(source)}
-                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                  isActive
-                    ? 'bg-gray-900 text-white'
-                    : `${config.chipClassName} hover:opacity-80`
-                }`}
-              >
-                <Icon className="h-3 w-3" />
-                {config.label}
-                <span className="tabular-nums opacity-70">{sourceCounts[source]}</span>
-              </button>
-            );
-          })}
+        <motion.div variants={sectionVariant} className="-mx-4 px-4 sm:mx-0 sm:px-0">
+          <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <button
+              type="button"
+              onClick={() => setActiveSource('all')}
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                activeSource === 'all'
+                  ? 'bg-gray-900 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              All sources
+              <span className="tabular-nums opacity-70">{sourceCounts.all}</span>
+            </button>
+            {availableSources.map((source) => {
+              const config = TASK_SOURCE_CONFIG[source];
+              const Icon = config.icon;
+              const isActive = activeSource === source;
+              return (
+                <button
+                  key={source}
+                  type="button"
+                  onClick={() => setActiveSource(source)}
+                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                    isActive
+                      ? 'bg-gray-900 text-white'
+                      : `${config.chipClassName} hover:opacity-80`
+                  }`}
+                >
+                  <Icon className="h-3 w-3" />
+                  {config.label}
+                  <span className="tabular-nums opacity-70">{sourceCounts[source]}</span>
+                </button>
+              );
+            })}
+          </div>
         </motion.div>
       )}
 
