@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, type Variants } from 'framer-motion';
 import { CheckSquare, CircleCheck, Clock, LayoutGrid } from 'lucide-react';
+import type { MyTaskSource, UnifiedMyTask } from '@omnilert/shared';
 import { ViewToggle, type ViewOption } from '@/shared/components/ui/ViewToggle';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import { useAppToast } from '@/shared/hooks/useAppToast';
 import { useBranchStore } from '@/shared/store/branchStore';
-import { getMyTasks, type MyTask } from '@/features/case-reports/services/caseReport.api';
+import { getMyTasks } from '@/features/account/services/account.api';
 import { MyTaskCard } from '../components/MyTaskCard';
+import { TASK_SOURCE_CONFIG } from '../config/taskSourceConfig';
 
 type TaskTab = 'all' | 'pending' | 'completed';
 
@@ -75,9 +77,10 @@ export function MyTasksPage() {
   const { error: showErrorToast } = useAppToast();
   const { selectedBranchIds, branches, loading: branchesLoading } = useBranchStore();
 
-  const [tasks, setTasks] = useState<MyTask[]>([]);
+  const [tasks, setTasks] = useState<UnifiedMyTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TaskTab>('all');
+  const [activeSource, setActiveSource] = useState<MyTaskSource | 'all'>('all');
 
   useEffect(() => {
     if (branchesLoading) {
@@ -104,7 +107,7 @@ export function MyTasksPage() {
 
     void Promise.allSettled(selectedCompanyIds.map((companyId) => getMyTasks(companyId)))
       .then((results) => {
-        const uniqueById = new Map<string, MyTask>();
+        const uniqueById = new Map<string, UnifiedMyTask>();
         for (const result of results) {
           if (result.status !== 'fulfilled') continue;
           for (const task of result.value) {
@@ -133,8 +136,8 @@ export function MyTasksPage() {
   }, [branches, branchesLoading, selectedBranchIds, showErrorToast]);
 
   const { pending, completed } = useMemo(() => {
-    const nextPending: MyTask[] = [];
-    const nextCompleted: MyTask[] = [];
+    const nextPending: UnifiedMyTask[] = [];
+    const nextCompleted: UnifiedMyTask[] = [];
 
     for (const task of tasks) {
       const assignee = task.assignees.find((a) => a.user_id === user?.id);
@@ -148,7 +151,24 @@ export function MyTasksPage() {
     return { pending: nextPending, completed: nextCompleted };
   }, [tasks, user?.id]);
 
-  const visibleTasks = activeTab === 'all' ? tasks : activeTab === 'pending' ? pending : completed;
+  const availableSources = useMemo(
+    () => Array.from(new Set(tasks.map((t) => t.source))),
+    [tasks],
+  );
+
+  const visibleTasks = useMemo(() => {
+    const byTab = activeTab === 'all' ? tasks : activeTab === 'pending' ? pending : completed;
+    return activeSource === 'all' ? byTab : byTab.filter((t) => t.source === activeSource);
+  }, [tasks, pending, completed, activeTab, activeSource]);
+
+  const sourceCounts = useMemo(() => {
+    const byTab = activeTab === 'all' ? tasks : activeTab === 'pending' ? pending : completed;
+    const counts: Record<string, number> = { all: byTab.length };
+    for (const source of availableSources) {
+      counts[source] = byTab.filter((t) => t.source === source).length;
+    }
+    return counts;
+  }, [tasks, pending, completed, activeTab, availableSources]);
 
   return (
     <motion.div className="space-y-5" initial="hidden" animate="visible" variants={containerVariant}>
@@ -158,7 +178,7 @@ export function MyTasksPage() {
           <h1 className="text-2xl font-bold text-gray-900">My Tasks</h1>
         </div>
         <p className="mt-1 hidden text-sm text-gray-500 sm:block">
-          Review tasks assigned to you across case reports.
+          Review tasks assigned to you across all systems.
         </p>
       </motion.div>
 
@@ -173,6 +193,44 @@ export function MyTasksPage() {
         />
       </motion.div>
 
+      {!loading && availableSources.length > 1 && (
+        <motion.div variants={sectionVariant} className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveSource('all')}
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+              activeSource === 'all'
+                ? 'bg-gray-900 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            All sources
+            <span className="tabular-nums opacity-70">{sourceCounts.all}</span>
+          </button>
+          {availableSources.map((source) => {
+            const config = TASK_SOURCE_CONFIG[source];
+            const Icon = config.icon;
+            const isActive = activeSource === source;
+            return (
+              <button
+                key={source}
+                type="button"
+                onClick={() => setActiveSource(source)}
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  isActive
+                    ? 'bg-gray-900 text-white'
+                    : `${config.chipClassName} hover:opacity-80`
+                }`}
+              >
+                <Icon className="h-3 w-3" />
+                {config.label}
+                <span className="tabular-nums opacity-70">{sourceCounts[source]}</span>
+              </button>
+            );
+          })}
+        </motion.div>
+      )}
+
       <motion.div variants={sectionVariant}>
         {loading ? (
           <div className="space-y-3">
@@ -185,7 +243,7 @@ export function MyTasksPage() {
         ) : (
           <AnimatePresence mode="wait">
             <motion.div
-              key={activeTab}
+              key={`${activeTab}-${activeSource}`}
               initial="hidden"
               animate="visible"
               exit="hidden"
@@ -193,14 +251,14 @@ export function MyTasksPage() {
             >
               {visibleTasks.map((task, i) => {
                 const assignee = task.assignees.find((a) => a.user_id === user?.id);
-                const completed = Boolean(assignee?.completed_at);
+                const isCompleted = Boolean(assignee?.completed_at);
 
                 return (
                   <motion.div key={task.id} custom={i} variants={cardVariants}>
                     <MyTaskCard
                       task={task}
-                      completed={completed}
-                      onClick={() => navigate(`/case-reports?caseId=${task.case_id}&taskId=${task.id}`)}
+                      completed={isCompleted}
+                      onClick={() => navigate(TASK_SOURCE_CONFIG[task.source].getNavPath(task))}
                     />
                   </motion.div>
                 );

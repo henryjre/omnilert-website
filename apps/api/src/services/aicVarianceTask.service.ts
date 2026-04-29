@@ -414,6 +414,27 @@ export async function toggleTaskReaction(input: {
   emitAicEvent('aic-variance:task:updated', aicRow.company_id, { aicId: taskRow.aic_record_id, taskId: input.taskId });
 }
 
+export async function listMyAicTasks(input: {
+  userId: string;
+  companyId: string;
+}): Promise<Array<AicTask & { aic_number: number; aic_reference: string }>> {
+  const knex = db.getDb();
+  const rows = (await knex('aic_tasks as at')
+    .join('aic_task_assignees as ata', 'ata.task_id', 'at.id')
+    .join('aic_records as ar', 'ar.id', 'at.aic_record_id')
+    .where('ata.user_id', input.userId)
+    .where('ar.company_id', input.companyId)
+    .select('at.*', 'ar.aic_number', knex.raw('ar.reference as aic_reference'))
+    .orderBy('at.created_at', 'desc')) as Array<TaskRow & { aic_number: number; aic_reference: string }>;
+
+  const tasks = await buildTasks(rows);
+  return tasks.map((task, index) => ({
+    ...task,
+    aic_number: Number(rows[index]?.aic_number ?? 0),
+    aic_reference: String(rows[index]?.aic_reference ?? ''),
+  }));
+}
+
 export async function completeTaskForAssignee(input: {
   taskId: string;
   userId: string;

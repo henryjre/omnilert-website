@@ -1,9 +1,10 @@
-import { ChevronRight, FileWarning } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
+import type { UnifiedMyTask } from '@omnilert/shared';
 import { Badge } from '@/shared/components/ui/Badge';
-import type { MyTask } from '@/features/case-reports/services/caseReport.api';
+import { TASK_SOURCE_CONFIG } from '../config/taskSourceConfig';
 
 interface MyTaskCardProps {
-  task: MyTask;
+  task: UnifiedMyTask;
   completed: boolean;
   onClick: () => void;
 }
@@ -19,6 +20,9 @@ function formatDate(value: string): string {
 }
 
 export function MyTaskCard({ task, completed, onClick }: MyTaskCardProps) {
+  const config = TASK_SOURCE_CONFIG[task.source];
+  const Icon = config.icon;
+
   return (
     <button
       type="button"
@@ -31,14 +35,20 @@ export function MyTaskCard({ task, completed, onClick }: MyTaskCardProps) {
             {task.description}
           </p>
           <p className="mt-1 flex items-center gap-1 truncate text-xs text-gray-500">
-            <FileWarning className="h-3.5 w-3.5 shrink-0" />
+            <Icon className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate">
-              Case #{String(task.case_number).padStart(4, '0')} - {task.case_title}
+              {task.parent_label} - {task.parent_title}
             </span>
           </p>
-          <p className="mt-0.5 text-xs text-gray-400">
-            {task.last_message_at ? `Last activity ${formatDate(task.last_message_at)}` : `Created ${formatDate(task.created_at)}`}
-          </p>
+          <div className="mt-1 flex items-center gap-2">
+            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${config.chipClassName}`}>
+              <Icon className="h-3 w-3" />
+              {config.label}
+            </span>
+            <p className="text-xs text-gray-400">
+              {task.last_message_at ? `Last activity ${formatDate(task.last_message_at)}` : `Created ${formatDate(task.created_at)}`}
+            </p>
+          </div>
         </div>
 
         <div className="flex shrink-0 items-center gap-3">

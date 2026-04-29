@@ -15,11 +15,6 @@ export type CaseReportDetail = CaseReport & {
   attachments: CaseAttachment[];
 };
 
-export interface MyTask extends CaseTask {
-  case_number: number;
-  case_title: string;
-}
-
 export type MentionableUser = {
   id: string;
   name: string;
@@ -244,10 +239,3 @@ export async function completeCaseTask(
   return response.data.data as CaseTask;
 }
 
-export async function getMyTasks(companyId?: string): Promise<MyTask[]> {
-  const response = await api.get(
-    '/account/tasks/me',
-    companyId ? { headers: { 'X-Company-Id': companyId } } : undefined,
-  );
-  return response.data.data as MyTask[];
-}

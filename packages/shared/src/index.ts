@@ -19,6 +19,7 @@ export type * from './types/aicVariance.types.js';
 export type * from './types/tokenPay.types.js';
 export type * from './types/payrollAdjustment.types.js';
 export type * from './types/reward.types.js';
+export type * from './types/account.types.js';
 
 // Constants
 export {
