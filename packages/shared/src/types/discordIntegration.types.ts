@@ -2,6 +2,7 @@ export interface DiscordIntegrationRole {
   id: string;
   name: string;
   color: string | null;
+  discord_role_id: string | null;
 }
 
 export interface DiscordIntegrationCompany {
@@ -49,4 +50,11 @@ export interface DiscordIntegrationUsersListData {
 
 export interface DiscordIntegrationUserLookupData {
   user: DiscordIntegrationUser;
+}
+
+export interface DiscordRegistrationStatusData {
+  registration: {
+    exists: boolean;
+    status: 'pending' | 'approved' | 'rejected' | null;
+  };
 }

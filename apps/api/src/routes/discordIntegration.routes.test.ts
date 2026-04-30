@@ -34,6 +34,7 @@ function hasRoute(path: string, method: string): boolean {
 test('discord integration routes expose list and lookup endpoints', () => {
   assert.equal(hasRoute('/users', 'GET'), true);
   assert.equal(hasRoute('/users/lookup', 'GET'), true);
+  assert.equal(hasRoute('/registration-requests/status', 'GET'), true);
   assert.equal(hasRoute('/users/discord-id', 'POST'), true);
 });
 

@@ -10,6 +10,7 @@ router.use(authenticateDiscordBot);
 
 router.get('/users', discordIntegrationController.listUsers);
 router.get('/users/lookup', discordIntegrationController.lookupUser);
+router.get('/registration-requests/status', discordIntegrationController.getRegistrationStatus);
 router.post(
   '/users/discord-id',
   validateBody(updateUserDiscordIdSchema),

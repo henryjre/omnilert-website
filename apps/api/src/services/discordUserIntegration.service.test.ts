@@ -63,8 +63,8 @@ const USERS: FakeUserRow[] = [
 ];
 
 const ROLE_ROWS = [
-  { user_id: USERS[0]!.id, id: 'role-1', name: 'Admin', color: '#111' },
-  { user_id: USERS[1]!.id, id: 'role-2', name: 'Manager', color: '#222' },
+  { user_id: USERS[0]!.id, id: 'role-1', name: 'Admin', color: '#111', discord_role_id: '123456789012345678' },
+  { user_id: USERS[1]!.id, id: 'role-2', name: 'Manager', color: '#222', discord_role_id: null },
 ];
 
 const COMPANY_ROWS = [
@@ -84,6 +84,33 @@ const BRANCH_ROWS = [
     branch_id: 'branch-1',
     branch_name: 'Main',
     assignment_type: 'resident',
+  },
+];
+
+const REGISTRATION_ROWS = [
+  {
+    email: 'pending@example.com',
+    status: 'pending' as const,
+    requested_at: '2026-03-30T12:00:00.000Z',
+    id: 'registration-1',
+  },
+  {
+    email: 'approved@example.com',
+    status: 'approved' as const,
+    requested_at: '2026-03-30T12:00:00.000Z',
+    id: 'registration-2',
+  },
+  {
+    email: 'rejected@example.com',
+    status: 'rejected' as const,
+    requested_at: '2026-03-30T12:00:00.000Z',
+    id: 'registration-3',
+  },
+  {
+    email: 'pending@example.com',
+    status: 'rejected' as const,
+    requested_at: '2026-03-29T12:00:00.000Z',
+    id: 'registration-4',
   },
 ];
 
@@ -126,6 +153,17 @@ function createService() {
     async findUserByUserKey(userKey: string, includeInactive: boolean) {
       return USERS.find((user) => user.user_key === userKey && (includeInactive || user.is_active)) ?? null;
     },
+    async findLatestRegistrationRequestByEmail(email: string) {
+      const normalized = email.trim().toLowerCase();
+      const row = [...REGISTRATION_ROWS]
+        .filter((row) => row.email.toLowerCase() === normalized)
+        .sort((a, b) => {
+          const byRequestedAt = b.requested_at.localeCompare(a.requested_at);
+          if (byRequestedAt !== 0) return byRequestedAt;
+          return b.id.localeCompare(a.id);
+        })[0];
+      return row ? { status: row.status } : null;
+    },
     async updateDiscordUserIdByEmail(email: string, discordUserId: string) {
       const normalized = email.trim().toLowerCase();
       const user = USERS.find((row) => row.email.toLowerCase() === normalized && row.is_active) ?? null;
@@ -148,6 +186,14 @@ test('listUsers returns active users by default with standard pagination envelop
 
   assert.equal(result.users.length, 1);
   assert.equal(result.users[0]?.email, 'active@example.com');
+  assert.deepEqual(result.users[0]?.roles, [
+    {
+      id: 'role-1',
+      name: 'Admin',
+      color: '#111',
+      discord_role_id: '123456789012345678',
+    },
+  ]);
   assert.deepEqual(result.pagination, {
     page: 1,
     limit: 50,
@@ -229,6 +275,54 @@ test('lookupUser can include inactive users', async () => {
 
   assert.equal(user.id, USERS[1]!.id);
   assert.equal(user.is_active, false);
+});
+
+test('getRegistrationStatus returns latest registration status by email', async () => {
+  const service = createService();
+
+  assert.deepEqual(await service.getRegistrationStatus({ email: 'PENDING@EXAMPLE.COM' }), {
+    registration: {
+      exists: true,
+      status: 'pending',
+    },
+  });
+});
+
+test('getRegistrationStatus returns approved and rejected statuses', async () => {
+  const service = createService();
+
+  assert.deepEqual(await service.getRegistrationStatus({ email: 'approved@example.com' }), {
+    registration: {
+      exists: true,
+      status: 'approved',
+    },
+  });
+  assert.deepEqual(await service.getRegistrationStatus({ email: 'rejected@example.com' }), {
+    registration: {
+      exists: true,
+      status: 'rejected',
+    },
+  });
+});
+
+test('getRegistrationStatus returns empty status when no request exists', async () => {
+  const service = createService();
+
+  assert.deepEqual(await service.getRegistrationStatus({ email: 'missing@example.com' }), {
+    registration: {
+      exists: false,
+      status: null,
+    },
+  });
+});
+
+test('getRegistrationStatus throws validation error when email is missing', async () => {
+  const service = createService();
+
+  await assert.rejects(
+    () => service.getRegistrationStatus({}),
+    (error: unknown) => error instanceof DiscordIntegrationValidationError,
+  );
 });
 
 test('setDiscordUserId updates discord id by email and returns updated user summary', async () => {

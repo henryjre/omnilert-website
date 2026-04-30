@@ -23,6 +23,7 @@ type RoleRow = {
   id: string;
   name: string;
   color: string | null;
+  discord_role_id: string | null;
 };
 
 type CompanyRow = {
@@ -45,6 +46,7 @@ type DiscordIntegrationRole = {
   id: string;
   name: string;
   color: string | null;
+  discord_role_id: string | null;
 };
 
 type DiscordIntegrationCompany = {
@@ -88,6 +90,19 @@ type DiscordIntegrationUsersListData = {
   };
 };
 
+type RegistrationStatus = 'pending' | 'approved' | 'rejected';
+
+type RegistrationRequestRow = {
+  status: RegistrationStatus;
+};
+
+type DiscordRegistrationStatusData = {
+  registration: {
+    exists: boolean;
+    status: RegistrationStatus | null;
+  };
+};
+
 export type DiscordUsersListQuery = {
   page?: number | string;
   limit?: number | string;
@@ -99,6 +114,10 @@ export type DiscordUserLookupQuery = {
   email?: string;
   user_key?: string;
   include_inactive?: boolean | string;
+};
+
+export type DiscordRegistrationStatusQuery = {
+  email?: string;
 };
 
 export class DiscordIntegrationValidationError extends Error {
@@ -124,6 +143,7 @@ type DiscordUserIntegrationRepository = {
   findUserById(id: string, includeInactive: boolean): Promise<UserRow | null>;
   findUserByEmail(email: string, includeInactive: boolean): Promise<UserRow | null>;
   findUserByUserKey(userKey: string, includeInactive: boolean): Promise<UserRow | null>;
+  findLatestRegistrationRequestByEmail(email: string): Promise<RegistrationRequestRow | null>;
   updateDiscordUserIdByEmail(email: string, discordUserId: string): Promise<{
     id: string;
     email: string;
@@ -175,6 +195,14 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
+function normalizeRequiredEmail(email: string | undefined): string {
+  const normalized = normalizeEmail(email ?? '');
+  if (!normalized) {
+    throw new DiscordIntegrationValidationError('email is required');
+  }
+  return normalized;
+}
+
 function toIsoString(value: Date | string | null | undefined): string | null {
   if (value === null || value === undefined) return null;
   if (typeof value === 'string') return value;
@@ -194,6 +222,7 @@ function mapUsers(
       id: row.id,
       name: row.name,
       color: row.color ?? null,
+      discord_role_id: row.discord_role_id ?? null,
     });
     rolesByUserId.set(row.user_id, current);
   }
@@ -291,6 +320,7 @@ function createDatabaseRepository(): DiscordUserIntegrationRepository {
           'roles.id',
           'roles.name',
           'roles.color',
+          'roles.discord_role_id',
         ) as Promise<RoleRow[]>;
     },
     async listCompaniesForUsers(userIds) {
@@ -392,6 +422,13 @@ function createDatabaseRepository(): DiscordUserIntegrationRepository {
 
       return (await query) as UserRow | null;
     },
+    async findLatestRegistrationRequestByEmail(email) {
+      return (await db.getDb()('registration_requests')
+        .whereRaw('LOWER(email) = ?', [normalizeEmail(email)])
+        .orderBy('requested_at', 'desc')
+        .orderBy('id', 'desc')
+        .first('status')) as RegistrationRequestRow | null;
+    },
     async updateDiscordUserIdByEmail(email, discordUserId) {
       const [updated] = await db.getDb()('users')
         .whereRaw('LOWER(email) = ?', [normalizeEmail(email)])
@@ -484,6 +521,17 @@ export function createDiscordUserIntegrationService(repository: DiscordUserInteg
       ]);
 
       return mapUsers([user], rolesRows, companyRows, branchRows)[0]!;
+    },
+    async getRegistrationStatus(input: DiscordRegistrationStatusQuery): Promise<DiscordRegistrationStatusData> {
+      const email = normalizeRequiredEmail(input.email);
+      const registration = await repository.findLatestRegistrationRequestByEmail(email);
+
+      return {
+        registration: {
+          exists: Boolean(registration),
+          status: registration?.status ?? null,
+        },
+      };
     },
     async setDiscordUserId(input: { email: string; discord_id: string }): Promise<{
       id: string;

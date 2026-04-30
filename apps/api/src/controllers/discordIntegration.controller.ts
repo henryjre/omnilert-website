@@ -55,6 +55,22 @@ export async function lookupUser(req: Request, res: Response, next: NextFunction
   }
 }
 
+export async function getRegistrationStatus(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await discordUserIntegrationService.getRegistrationStatus({
+      email: req.query.email as string | undefined,
+    });
+
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (error) {
+    const mapped = toAppError(error);
+    next(mapped ?? error);
+  }
+}
+
 export async function updateUserDiscordId(req: Request, res: Response, next: NextFunction) {
   try {
     const user = await discordUserIntegrationService.setDiscordUserId({
