@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { Button } from '@/shared/components/ui/Button';
 import { Input } from '@/shared/components/ui/Input';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, type Variants } from 'framer-motion';
 import { ArrowRight, Building2, LogIn, MoveLeft, UserRoundPlus } from 'lucide-react';
 import { useAuthSidebar } from './AuthLayout';
 import axios from 'axios';
@@ -58,7 +58,7 @@ const fieldVariants = {
   visible: { transition: { staggerChildren: 0.055 } },
 };
 
-const fieldItemVariants = {
+const fieldItemVariants: Variants = {
   hidden: { opacity: 0, y: 15 },
   visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: "easeOut" } }
 };
