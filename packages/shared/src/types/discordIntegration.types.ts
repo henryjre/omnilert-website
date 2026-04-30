@@ -58,3 +58,11 @@ export interface DiscordRegistrationStatusData {
     status: 'pending' | 'approved' | 'rejected' | null;
   };
 }
+
+export interface DiscordRegistrationDiscordIdData {
+  registration_request: {
+    id: string;
+    email: string;
+    discord_user_id: string | null;
+  };
+}

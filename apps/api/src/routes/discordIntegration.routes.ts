@@ -12,6 +12,11 @@ router.get('/users', discordIntegrationController.listUsers);
 router.get('/users/lookup', discordIntegrationController.lookupUser);
 router.get('/registration-requests/status', discordIntegrationController.getRegistrationStatus);
 router.post(
+  '/registration-requests/discord-id',
+  validateBody(updateUserDiscordIdSchema),
+  discordIntegrationController.updateRegistrationDiscordId,
+);
+router.post(
   '/users/discord-id',
   validateBody(updateUserDiscordIdSchema),
   discordIntegrationController.updateUserDiscordId,

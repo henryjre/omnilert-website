@@ -33,6 +33,14 @@ type FakeUserRow = {
   created_at: string;
 };
 
+type FakeRegistrationRow = {
+  email: string;
+  status: 'pending' | 'approved' | 'rejected';
+  requested_at: string;
+  id: string;
+  discord_user_id: string | null;
+};
+
 const USERS: FakeUserRow[] = [
   {
     id: '00000000-0000-0000-0000-000000000001',
@@ -87,30 +95,34 @@ const BRANCH_ROWS = [
   },
 ];
 
-const REGISTRATION_ROWS = [
+const REGISTRATION_ROWS: FakeRegistrationRow[] = [
   {
     email: 'pending@example.com',
-    status: 'pending' as const,
+    status: 'pending',
     requested_at: '2026-03-30T12:00:00.000Z',
     id: 'registration-1',
+    discord_user_id: null,
   },
   {
     email: 'approved@example.com',
-    status: 'approved' as const,
+    status: 'approved',
     requested_at: '2026-03-30T12:00:00.000Z',
     id: 'registration-2',
+    discord_user_id: null,
   },
   {
     email: 'rejected@example.com',
-    status: 'rejected' as const,
+    status: 'rejected',
     requested_at: '2026-03-30T12:00:00.000Z',
     id: 'registration-3',
+    discord_user_id: null,
   },
   {
     email: 'pending@example.com',
-    status: 'rejected' as const,
+    status: 'rejected',
     requested_at: '2026-03-29T12:00:00.000Z',
     id: 'registration-4',
+    discord_user_id: null,
   },
 ];
 
@@ -153,6 +165,14 @@ function createService() {
     async findUserByUserKey(userKey: string, includeInactive: boolean) {
       return USERS.find((user) => user.user_key === userKey && (includeInactive || user.is_active)) ?? null;
     },
+    async findUserByDiscordUserId(discordUserId: string) {
+      const user = USERS.find((row) => row.discord_user_id === discordUserId) ?? null;
+      if (!user) return null;
+      return {
+        id: user.id,
+        email: user.email,
+      };
+    },
     async findLatestRegistrationRequestByEmail(email: string) {
       const normalized = email.trim().toLowerCase();
       const row = [...REGISTRATION_ROWS]
@@ -163,6 +183,24 @@ function createService() {
           return b.id.localeCompare(a.id);
         })[0];
       return row ? { status: row.status } : null;
+    },
+    async updatePendingRegistrationDiscordUserId(input: { email: string; discordUserId: string }) {
+      const normalized = input.email.trim().toLowerCase();
+      const row = [...REGISTRATION_ROWS]
+        .filter((item) => item.email.toLowerCase() === normalized && item.status === 'pending')
+        .sort((a, b) => {
+          const byRequestedAt = b.requested_at.localeCompare(a.requested_at);
+          if (byRequestedAt !== 0) return byRequestedAt;
+          return b.id.localeCompare(a.id);
+        })[0] ?? null;
+      if (!row) return null;
+
+      row.discord_user_id = input.discordUserId;
+      return {
+        id: row.id,
+        email: row.email,
+        discord_user_id: row.discord_user_id,
+      };
     },
     async updateDiscordUserIdByEmail(email: string, discordUserId: string) {
       const normalized = email.trim().toLowerCase();
@@ -322,6 +360,49 @@ test('getRegistrationStatus throws validation error when email is missing', asyn
   await assert.rejects(
     () => service.getRegistrationStatus({}),
     (error: unknown) => error instanceof DiscordIntegrationValidationError,
+  );
+});
+
+test('setRegistrationDiscordUserId links discord id to the latest pending registration', async () => {
+  const service = createService();
+  const result = await service.setRegistrationDiscordUserId({
+    email: 'PENDING@EXAMPLE.COM',
+    discord_id: '123456789012345678',
+  });
+
+  assert.deepEqual(result, {
+    registration_request: {
+      id: 'registration-1',
+      email: 'pending@example.com',
+      discord_user_id: '123456789012345678',
+    },
+  });
+});
+
+test('setRegistrationDiscordUserId rejects discord id already linked to a user', async () => {
+  const service = createService();
+  USERS[0]!.discord_user_id = '123456789012345678';
+
+  await assert.rejects(
+    () => service.setRegistrationDiscordUserId({
+      email: 'pending@example.com',
+      discord_id: '123456789012345678',
+    }),
+    (error: unknown) => error instanceof DiscordIntegrationValidationError,
+  );
+
+  USERS[0]!.discord_user_id = null;
+});
+
+test('setRegistrationDiscordUserId throws not found when no pending registration exists', async () => {
+  const service = createService();
+
+  await assert.rejects(
+    () => service.setRegistrationDiscordUserId({
+      email: 'approved@example.com',
+      discord_id: '123456789012345678',
+    }),
+    (error: unknown) => error instanceof DiscordIntegrationNotFoundError,
   );
 });
 

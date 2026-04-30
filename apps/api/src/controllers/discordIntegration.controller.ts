@@ -71,6 +71,24 @@ export async function getRegistrationStatus(req: Request, res: Response, next: N
   }
 }
 
+export async function updateRegistrationDiscordId(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await discordUserIntegrationService.setRegistrationDiscordUserId({
+      email: req.body.email,
+      discord_id: req.body.discord_id,
+    });
+
+    res.json({
+      success: true,
+      data,
+      message: 'Registration Discord user ID linked successfully',
+    });
+  } catch (error) {
+    const mapped = toAppError(error);
+    next(mapped ?? error);
+  }
+}
+
 export async function updateUserDiscordId(req: Request, res: Response, next: NextFunction) {
   try {
     const user = await discordUserIntegrationService.setDiscordUserId({

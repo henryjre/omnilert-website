@@ -82,6 +82,7 @@ type ApprovalUserRow = {
   email: string;
   user_key: string | null;
   employee_number: number | null;
+  discord_user_id?: string | null;
 };
 
 type OdooEmployeeByWebsiteKeyRow = {
@@ -341,7 +342,11 @@ function resolveRegistrationProfile(request: any, edits?: RegistrationApprovalPr
 }
 
 function sanitizeRegistrationRequest(row: any): any {
-  const { encrypted_password: _encryptedPassword, ...rest } = row;
+  const {
+    encrypted_password: _encryptedPassword,
+    discord_user_id: _discordUserId,
+    ...rest
+  } = row;
   return rest;
 }
 
@@ -889,6 +894,9 @@ export async function approveRegistrationRequest(input: {
   const residentAssignment = assignments.find((item) => item.companyId === resident.companyId)!;
 
   const normalizedEmail = approvedProfile.email;
+  const registrationDiscordUserId = typeof request.discord_user_id === 'string' && request.discord_user_id.trim()
+    ? request.discord_user_id.trim()
+    : null;
   const requestedAvatarUrl = typeof input.avatarUrl === 'string' && input.avatarUrl.trim().length > 0
     ? input.avatarUrl.trim()
     : approvedProfile.profilePictureUrl ?? undefined;
@@ -1153,6 +1161,7 @@ export async function approveRegistrationRequest(input: {
       employeeNumber,
       firstName: approvedProfile.firstName,
       lastName: approvedProfile.lastName,
+      discordId: registrationDiscordUserId,
     });
   } catch (error) {
     logger.warn(
@@ -1193,14 +1202,25 @@ export async function approveRegistrationRequest(input: {
   const result = await masterDb.transaction(async (trx) => {
     const existingByEmail = (await trx('users')
       .whereRaw('LOWER(email) = ?', [normalizedEmail])
-      .first('id', 'email', 'user_key', 'employee_number')) as ApprovalUserRow | null;
+      .first('id', 'email', 'user_key', 'employee_number', 'discord_user_id')) as ApprovalUserRow | null;
     const existingByUserKey = (await trx('users')
       .where({ user_key: websiteKey })
-      .first('id', 'email', 'user_key', 'employee_number')) as ApprovalUserRow | null;
+      .first('id', 'email', 'user_key', 'employee_number', 'discord_user_id')) as ApprovalUserRow | null;
     const canonicalDecision = selectApprovalCanonicalUsers({
       existingByEmail,
       existingByUserKey,
     });
+    if (registrationDiscordUserId) {
+      const existingDiscordUser = await trx('users')
+        .where({ discord_user_id: registrationDiscordUserId })
+        .first('id');
+      if (
+        existingDiscordUser
+        && (!canonicalDecision.canonicalUserId || existingDiscordUser.id !== canonicalDecision.canonicalUserId)
+      ) {
+        throw new AppError(409, 'Discord ID is already linked to another user');
+      }
+    }
 
     if (canonicalDecision.canonicalUserId && canonicalDecision.duplicateUserId) {
       await mergeRegistrationDuplicateUser({
@@ -1229,6 +1249,9 @@ export async function approveRegistrationRequest(input: {
       if (requestedAvatarUrl) {
         updatePayload.avatar_url = requestedAvatarUrl;
       }
+      if (registrationDiscordUserId) {
+        updatePayload.discord_user_id = registrationDiscordUserId;
+      }
       const [updated] = await trx('users')
         .where({ id: canonicalDecision.canonicalUserId })
         .update(updatePayload)
@@ -1250,6 +1273,9 @@ export async function approveRegistrationRequest(input: {
       };
       if (requestedAvatarUrl) {
         createPayload.avatar_url = requestedAvatarUrl;
+      }
+      if (registrationDiscordUserId) {
+        createPayload.discord_user_id = registrationDiscordUserId;
       }
       const [created] = await trx('users')
         .insert(createPayload)

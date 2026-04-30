@@ -1639,6 +1639,7 @@ export async function unifyPartnerContactsByEmail(input: {
   employeeNumber: number;
   firstName: string;
   lastName: string;
+  discordId?: string | null;
 }): Promise<number | null> {
   const contacts = (await callOdooKw('res.partner', 'search_read', [], {
     domain: [
@@ -1687,20 +1688,22 @@ export async function unifyPartnerContactsByEmail(input: {
     }
   }
 
-  await callOdooKw('res.partner', 'write', [
-    [canonicalId],
-    {
-      company_id: false,
-      x_website_key: input.websiteKey,
-      name: formatEmployeeDisplayName(
-        input.mainCompanyId,
-        input.employeeNumber,
-        input.firstName,
-        input.lastName,
-      ),
-      category_id: [[4, 3]],
-    },
-  ]);
+  const partnerUpdate: Record<string, unknown> = {
+    company_id: false,
+    x_website_key: input.websiteKey,
+    name: formatEmployeeDisplayName(
+      input.mainCompanyId,
+      input.employeeNumber,
+      input.firstName,
+      input.lastName,
+    ),
+    category_id: [[4, 3]],
+  };
+  if (input.discordId) {
+    partnerUpdate.x_discord_id = input.discordId;
+  }
+
+  await callOdooKw('res.partner', 'write', [[canonicalId], partnerUpdate]);
   return canonicalId;
 }
 

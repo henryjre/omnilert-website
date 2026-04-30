@@ -37,8 +37,37 @@ test('registration listing sanitizes encrypted password and approval writes prof
   const source = readFileSync(path.join(apiSrc, 'services', 'registration.service.ts'), 'utf8');
   assert.match(source, /sanitizeRegistrationRequest/);
   assert.match(source, /encrypted_password:\s*_encryptedPassword/);
+  assert.match(source, /discord_user_id:\s*_discordUserId/);
   assert.match(source, /updated:\s*true/);
   assert.match(source, /user_sensitive_info/);
   assert.match(source, /syncUserProfileToOdoo/);
   assert.match(source, /approved_profile:\s*JSON\.stringify\(approvedProfile\)/);
+});
+
+test('registration approval copies pending discord id to approved user', () => {
+  const source = readFileSync(path.join(apiSrc, 'services', 'registration.service.ts'), 'utf8');
+  assert.match(source, /request\.discord_user_id/);
+  assert.match(source, /registrationDiscordUserId/);
+  assert.match(source, /updatePayload\.discord_user_id\s*=\s*registrationDiscordUserId/);
+  assert.match(source, /createPayload\.discord_user_id\s*=\s*registrationDiscordUserId/);
+  assert.match(source, /Discord ID is already linked to another user/);
+});
+
+test('registration approval syncs discord id onto final Odoo partner contact', () => {
+  const registrationSource = readFileSync(path.join(apiSrc, 'services', 'registration.service.ts'), 'utf8');
+  const odooSource = readFileSync(path.join(apiSrc, 'services', 'odoo.service.ts'), 'utf8');
+
+  assert.match(registrationSource, /discordId:\s*registrationDiscordUserId/);
+  assert.match(odooSource, /discordId\?:\s*string \| null/);
+  assert.match(odooSource, /partnerUpdate\.x_discord_id\s*=\s*input\.discordId/);
+});
+
+test('registration requests migration includes discord user id column', () => {
+  const source = readFileSync(
+    path.join(apiSrc, 'migrations', '061_registration_requests_discord_user_id.ts'),
+    'utf8',
+  );
+  assert.match(source, /TABLE_NAME\s*=\s*'registration_requests'/);
+  assert.match(source, /COLUMN_NAME\s*=\s*'discord_user_id'/);
+  assert.match(source, /table\.string\(COLUMN_NAME,\s*32\)\.nullable\(\)/);
 });

@@ -96,11 +96,21 @@ type RegistrationRequestRow = {
   status: RegistrationStatus;
 };
 
+type RegistrationDiscordIdRow = {
+  id: string;
+  email: string;
+  discord_user_id: string | null;
+};
+
 type DiscordRegistrationStatusData = {
   registration: {
     exists: boolean;
     status: RegistrationStatus | null;
   };
+};
+
+type DiscordRegistrationDiscordIdData = {
+  registration_request: RegistrationDiscordIdRow;
 };
 
 export type DiscordUsersListQuery = {
@@ -143,7 +153,12 @@ type DiscordUserIntegrationRepository = {
   findUserById(id: string, includeInactive: boolean): Promise<UserRow | null>;
   findUserByEmail(email: string, includeInactive: boolean): Promise<UserRow | null>;
   findUserByUserKey(userKey: string, includeInactive: boolean): Promise<UserRow | null>;
+  findUserByDiscordUserId(discordUserId: string): Promise<{ id: string; email: string } | null>;
   findLatestRegistrationRequestByEmail(email: string): Promise<RegistrationRequestRow | null>;
+  updatePendingRegistrationDiscordUserId(input: {
+    email: string;
+    discordUserId: string;
+  }): Promise<RegistrationDiscordIdRow | null>;
   updateDiscordUserIdByEmail(email: string, discordUserId: string): Promise<{
     id: string;
     email: string;
@@ -422,12 +437,46 @@ function createDatabaseRepository(): DiscordUserIntegrationRepository {
 
       return (await query) as UserRow | null;
     },
+    async findUserByDiscordUserId(discordUserId) {
+      const row = await db.getDb()('users')
+        .where({ discord_user_id: discordUserId })
+        .first('id', 'email');
+      if (!row) return null;
+      return {
+        id: row.id as string,
+        email: row.email as string,
+      };
+    },
     async findLatestRegistrationRequestByEmail(email) {
       return (await db.getDb()('registration_requests')
         .whereRaw('LOWER(email) = ?', [normalizeEmail(email)])
         .orderBy('requested_at', 'desc')
         .orderBy('id', 'desc')
         .first('status')) as RegistrationRequestRow | null;
+    },
+    async updatePendingRegistrationDiscordUserId(input) {
+      const request = await db.getDb()('registration_requests')
+        .whereRaw('LOWER(email) = ?', [normalizeEmail(input.email)])
+        .where({ status: 'pending' })
+        .orderBy('requested_at', 'desc')
+        .orderBy('id', 'desc')
+        .first('id');
+      if (!request) return null;
+
+      const [updated] = await db.getDb()('registration_requests')
+        .where({ id: request.id })
+        .update({
+          discord_user_id: input.discordUserId,
+          updated_at: new Date(),
+        })
+        .returning(['id', 'email', 'discord_user_id']);
+      if (!updated) return null;
+
+      return {
+        id: updated.id as string,
+        email: updated.email as string,
+        discord_user_id: (updated.discord_user_id as string | null) ?? null,
+      };
     },
     async updateDiscordUserIdByEmail(email, discordUserId) {
       const [updated] = await db.getDb()('users')
@@ -531,6 +580,28 @@ export function createDiscordUserIntegrationService(repository: DiscordUserInteg
           exists: Boolean(registration),
           status: registration?.status ?? null,
         },
+      };
+    },
+    async setRegistrationDiscordUserId(input: {
+      email: string;
+      discord_id: string;
+    }): Promise<DiscordRegistrationDiscordIdData> {
+      const email = normalizeRequiredEmail(input.email);
+      const existingUser = await repository.findUserByDiscordUserId(input.discord_id);
+      if (existingUser) {
+        throw new DiscordIntegrationValidationError('Discord ID is already linked to another user');
+      }
+
+      const updated = await repository.updatePendingRegistrationDiscordUserId({
+        email,
+        discordUserId: input.discord_id,
+      });
+      if (!updated) {
+        throw new DiscordIntegrationNotFoundError('Pending registration request not found for the provided email');
+      }
+
+      return {
+        registration_request: updated,
       };
     },
     async setDiscordUserId(input: { email: string; discord_id: string }): Promise<{
