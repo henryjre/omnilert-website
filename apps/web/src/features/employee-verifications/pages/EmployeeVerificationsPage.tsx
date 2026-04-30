@@ -1397,8 +1397,213 @@ export function EmployeeVerificationsPage() {
                       transition={{ duration: 0.25, ease: 'easeInOut' }}
                       className="space-y-4 px-6 py-4"
                     >
-                      {/* Step 2 placeholder — filled in Task 4 */}
-                      <p className="text-sm text-gray-400">Assignment step coming in next task.</p>
+                      {/* Profile Picture Upload */}
+                      <div className="rounded-xl border border-gray-200 bg-white p-4">
+                        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          Profile Picture <span className="font-normal normal-case text-gray-400">(optional)</span>
+                        </p>
+                        <div className="flex items-center gap-3">
+                          <label className="inline-flex cursor-pointer items-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">
+                            {approveAvatarUploading ? 'Uploading...' : 'Choose image'}
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+                              className="hidden"
+                              disabled={approveAvatarUploading || saving}
+                              onChange={async (event) => {
+                                const file = event.target.files?.[0];
+                                event.target.value = '';
+                                if (!file) return;
+                                await uploadRegistrationAvatar(file);
+                              }}
+                            />
+                          </label>
+                          {approveAvatarUrl && (
+                            <button
+                              type="button"
+                              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+                              onClick={() => {
+                                setApproveAvatarUrl('');
+                                setRegistrationProfileEdits((prev) => ({ ...prev, profilePictureUrl: '' }));
+                              }}
+                              disabled={approveAvatarUploading || saving}
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                        {approveAvatarUrl ? (
+                          <img
+                            src={approveAvatarUrl}
+                            alt="Uploaded registration profile"
+                            className="mt-3 h-24 w-24 rounded-full border border-gray-200 object-cover"
+                          />
+                        ) : (
+                          <p className="mt-2 text-xs text-gray-500">No image uploaded.</p>
+                        )}
+                      </div>
+
+                      {/* Employee Details */}
+                      <div className="rounded-xl border border-gray-200 bg-white p-4">
+                        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          Employee Details <span className="font-normal normal-case text-gray-400">(optional)</span>
+                        </p>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="space-y-1">
+                            <label className="block text-sm font-medium text-gray-700">
+                              Employee Number
+                            </label>
+                            <input
+                              type="number"
+                              min={1}
+                              value={approveEmployeeNumber}
+                              onChange={(e) => setApproveEmployeeNumber(e.target.value)}
+                              placeholder="e.g. 4"
+                              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="block text-sm font-medium text-gray-700">
+                              User Key
+                            </label>
+                            <input
+                              type="text"
+                              value={approveUserKey}
+                              onChange={(e) => setApproveUserKey(e.target.value)}
+                              placeholder="e.g. 7ceced51-2dc6-49fa-a38f-8798978f8763"
+                              autoComplete="off"
+                              spellCheck={false}
+                              className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Roles */}
+                      <div className="rounded-xl border border-gray-200 bg-white p-4">
+                        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          Roles <span className="font-normal normal-case text-red-400">(required)</span>
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {assignmentOptions.roles.map((role) => (
+                            <button
+                              key={role.id}
+                              type="button"
+                              onClick={() => toggleSelection(approveRoleIds, setApproveRoleIds, role.id)}
+                              className={`rounded-full px-3 py-1 text-sm font-medium transition-colors ${
+                                approveRoleIds.includes(role.id)
+                                  ? 'text-white'
+                                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                              }`}
+                              style={approveRoleIds.includes(role.id) ? { backgroundColor: role.color || '#2563eb' } : {}}
+                            >
+                              {role.name}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Companies & Branches */}
+                      <div className="rounded-xl border border-gray-200 bg-white p-4">
+                        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          Companies & Branches <span className="font-normal normal-case text-red-400">(required)</span>
+                        </p>
+                        <div className="space-y-3">
+                          {assignmentOptions.companies.map((company) => {
+                            const selected = approveCompanyIds.includes(company.id);
+                            const selectedBranchIds = approveBranchIdsByCompany[company.id] ?? [];
+                            return (
+                              <div key={company.id} className="rounded-lg border border-gray-200 bg-gray-50 p-2">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleCompanySelection(company.id)}
+                                  className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                                    selected ? 'bg-primary-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-100'
+                                  }`}
+                                >
+                                  {company.name}
+                                </button>
+                                {selected && (
+                                  <div className="mt-2 flex flex-wrap gap-2">
+                                    {company.branches.map((branch) => (
+                                      <button
+                                        key={branch.id}
+                                        type="button"
+                                        onClick={() => toggleCompanyBranchSelection(company.id, branch.id)}
+                                        className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                                          selectedBranchIds.includes(branch.id)
+                                            ? 'bg-emerald-600 text-white'
+                                            : 'bg-white text-gray-700 hover:bg-gray-100'
+                                        }`}
+                                      >
+                                        {branch.name}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Resident Branch */}
+                      <div className="rounded-xl border border-gray-200 bg-white p-4">
+                        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          Resident Branch <span className="font-normal normal-case text-red-400">(required)</span>
+                        </p>
+                        <select
+                          value={approveResidentBranchId ? `${approveResidentCompanyId}:${approveResidentBranchId}` : ''}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            if (!value) {
+                              setApproveResidentCompanyId('');
+                              setApproveResidentBranchId('');
+                              return;
+                            }
+                            const [companyId, branchId] = value.split(':');
+                            setApproveResidentCompanyId(companyId || '');
+                            setApproveResidentBranchId(branchId || '');
+                          }}
+                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                        >
+                          <option value="">Select resident branch</option>
+                          {approveCompanyIds.flatMap((companyId) => {
+                            const company = assignmentOptions.companies.find((item) => item.id === companyId);
+                            if (!company) return [];
+                            const selectedBranchIds = approveBranchIdsByCompany[companyId] ?? [];
+                            return company.branches
+                              .filter((branch) => selectedBranchIds.includes(branch.id))
+                              .map((branch) => (
+                                <option key={`${company.id}-${branch.id}`} value={`${company.id}:${branch.id}`}>
+                                  {company.name} - {branch.name}
+                                </option>
+                              ));
+                          })}
+                        </select>
+                      </div>
+
+                      {/* Approval Progress */}
+                      {(approvalLogs.length > 0 || approvalInProgressId === selectedItem.data.id) && (
+                        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+                          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-blue-700">
+                            Approval Progress
+                          </p>
+                          <div className="max-h-36 space-y-1 overflow-y-auto rounded bg-white p-2">
+                            {approvalLogs.length === 0 && (
+                              <p className="text-xs text-gray-500">Waiting for backend progress events...</p>
+                            )}
+                            {approvalLogs.map((log, idx) => (
+                              <p key={`${log.createdAt}-${idx}`} className="text-xs text-gray-700">
+                                <span className="mr-2 font-medium text-gray-500">
+                                  {new Date(log.createdAt).toLocaleTimeString()}
+                                </span>
+                                {log.message}
+                              </p>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </motion.div>
                   )}
                 </AnimatePresence>
