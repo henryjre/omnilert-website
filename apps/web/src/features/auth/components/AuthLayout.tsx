@@ -85,10 +85,12 @@ export function useAuthSidebar(content: ReactNode, dependencies: any[] = []) {
 
 export function AuthLayout() {
   const [sidebars, setSidebars] = useState<Record<string, ReactNode>>({});
+  const [isTransitioning, setIsTransitioning] = useState(false);
   const location = useLocation();
   const isRegister = location.pathname === '/register';
 
   const isFirstRender = useRef(true);
+  const transitionId = useRef(0);
   const controls = useAnimation();
   const mobileControls = useAnimation();
 
@@ -113,9 +115,19 @@ export function AuthLayout() {
       return;
     }
 
+    const currentTransitionId = transitionId.current + 1;
+    transitionId.current = currentTransitionId;
+    setIsTransitioning(true);
+
+    const finishTransition = () => {
+      if (transitionId.current === currentTransitionId) {
+        setIsTransitioning(false);
+      }
+    };
+
     if (isRegister) {
       // Login -> Register (Sweep right to left)
-      controls.start({
+      const desktopTransition = controls.start({
         width: ['calc(0vw + 380px)', 'calc(100vw + 0px)', 'calc(0vw + 380px)'],
         left: ['calc(100vw - 380px)', 'calc(0vw - 0px)', 'calc(0vw - 0px)'],
         transition: { duration: 0.8, times: [0, 0.5, 1], ease: 'easeInOut' }
@@ -128,15 +140,16 @@ export function AuthLayout() {
       } else {
         mobileControls.set({ opacity: 1 });
       }
-      mobileControls.start({
+      const mobileTransition = mobileControls.start({
         scale: [1, 1.01, 50, 1.01, 1],
         borderRadius: ['16px', '16px', '0.32px', '16px', '16px'],
         opacity: [1, 1, 1, 1, 0],
         transition: { duration: 0.8, times: [0, 0.01, 0.5, 0.99, 1], ease: 'easeInOut' }
       });
+      void Promise.all([desktopTransition, mobileTransition]).then(finishTransition);
     } else {
       // Register -> Login (Sweep left to right)
-      controls.start({
+      const desktopTransition = controls.start({
         width: ['calc(0vw + 380px)', 'calc(100vw + 0px)', 'calc(0vw + 380px)'],
         left: ['calc(0vw - 0px)', 'calc(0vw - 0px)', 'calc(100vw - 380px)'],
         transition: { duration: 0.8, times: [0, 0.5, 1], ease: 'easeInOut' }
@@ -149,21 +162,22 @@ export function AuthLayout() {
       } else {
         mobileControls.set({ opacity: 1 });
       }
-      mobileControls.start({
+      const mobileTransition = mobileControls.start({
         scale: [1, 1.01, 50, 1.01, 1],
         borderRadius: ['16px', '16px', '0.32px', '16px', '16px'],
         opacity: [1, 1, 1, 1, 0],
         transition: { duration: 0.8, times: [0, 0.01, 0.5, 0.99, 1], ease: 'easeInOut' }
       });
+      void Promise.all([desktopTransition, mobileTransition]).then(finishTransition);
     }
   }, [isRegister, controls, mobileControls]);
 
   return (
     <AuthSidebarContext.Provider value={{ setSidebar: handleSetSidebar }}>
-      <div className="relative flex min-h-screen w-full bg-[#faf9f7] text-gray-900 overflow-hidden">
+      <div className="relative flex min-h-screen min-h-[100dvh] w-full bg-[#faf9f7] text-gray-900 overflow-hidden">
 
         {/* Main Content Area (Forms) */}
-        <div className="absolute inset-0 z-10 pointer-events-none overflow-x-hidden">
+        <div className="absolute inset-0 z-10 pointer-events-none overflow-x-hidden overflow-y-auto pb-[env(safe-area-inset-bottom)] lg:overflow-hidden lg:pb-0">
           {/* Mobile Background Decorations */}
           <div className="absolute inset-0 z-0 lg:hidden pointer-events-none overflow-hidden">
             <div className="absolute top-0 left-0 right-0 h-[50vh] bg-gradient-to-b from-primary-50/80 to-transparent" />
@@ -197,6 +211,13 @@ export function AuthLayout() {
             </div>
           </motion.div>
         </motion.div>
+
+        {isTransitioning && (
+          <div
+            aria-hidden="true"
+            className="fixed inset-0 z-[70] cursor-wait"
+          />
+        )}
 
         {/* The Sweeping Blue Curtain (Desktop) */}
         <motion.aside
