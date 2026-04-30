@@ -1169,17 +1169,35 @@ export function EmployeeVerificationsPage() {
               >
           <div className="flex h-full flex-col">
             {(() => {
+              const isRegistrationAssign =
+                selectedItem.type === 'registration' && registrationStep === 'assign';
               const PanelIcon = PANEL_ICON[selectedItem.type];
               return (
                 <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
                   <div className="flex items-center gap-3">
-                    <PanelIcon className="h-5 w-5 text-primary-600" />
+                    {isRegistrationAssign ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          registrationStepDirection.current = -1;
+                          setRegistrationStep('review');
+                        }}
+                        className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                        aria-label="Back to review"
+                      >
+                        <ChevronLeft className="h-5 w-5" />
+                      </button>
+                    ) : (
+                      <PanelIcon className="h-5 w-5 text-primary-600" />
+                    )}
                     <div>
                       <h2 className="text-base font-semibold text-gray-900">
-                        {PANEL_TITLE[selectedItem.type]}
+                        {isRegistrationAssign ? 'Assign & Approve' : PANEL_TITLE[selectedItem.type]}
                       </h2>
                       <p className="text-xs text-gray-500">
-                        {String(selectedItem.data.first_name)} {String(selectedItem.data.last_name)}
+                        {isRegistrationAssign
+                          ? 'Step 2 of 2 — Assignment'
+                          : `${String(selectedItem.data.first_name)} ${String(selectedItem.data.last_name)}`}
                       </p>
                     </div>
                   </div>
