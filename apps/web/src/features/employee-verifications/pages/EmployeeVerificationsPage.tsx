@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -19,7 +19,7 @@ import {
   type VerificationType,
 } from './employeeVerificationTabAccess';
 import {
-  AlertCircle, Calendar, CircleCheck, ClipboardCheck, Clock,
+  AlertCircle, Calendar, ChevronLeft, CircleCheck, ClipboardCheck, Clock,
   Copy, Check, CreditCard, ExternalLink, IdCard, Landmark,
   LayoutGrid, Mail, User, UserRoundPlus, Users, X, XCircle,
 } from 'lucide-react';
@@ -371,6 +371,8 @@ export function EmployeeVerificationsPage() {
   const [approvalLogs, setApprovalLogs] = useState<Array<{ createdAt: string; message: string }>>([]);
   const [approvalInProgressId, setApprovalInProgressId] = useState<string | null>(null);
   const [copiedAccountNumber, setCopiedAccountNumber] = useState(false);
+  const [registrationStep, setRegistrationStep] = useState<'review' | 'assign'>('review');
+  const registrationStepDirection = useRef<1 | -1>(1);
 
   const [approveRoleIds, setApproveRoleIds] = useState<string[]>([]);
   const [approveCompanyIds, setApproveCompanyIds] = useState<string[]>([]);
@@ -607,6 +609,8 @@ export function EmployeeVerificationsPage() {
   }, [socket, fetchData, selectedItem, currentUserId]);
 
   const openPanel = (type: VerificationType, item: any) => {
+    setRegistrationStep('review');
+    registrationStepDirection.current = 1;
     setSelectedItem({ type, data: item });
     setPanelRejectMode(false);
     setPanelRejectReason('');
