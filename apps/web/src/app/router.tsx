@@ -39,15 +39,20 @@ import { ProfitabilityAnalyticsPage } from '@/features/profitability-analytics/p
 import { PosAnalyticsPage } from '@/features/pos-analytics/pages/PosAnalyticsPage';
 import { ProductAnalyticsPage } from '@/features/product-analytics/pages/ProductAnalyticsPage';
 import { PERMISSIONS } from '@omnilert/shared';
-
+import { AuthLayout } from '@/features/auth/components/AuthLayout';
 export const router = createBrowserRouter([
   {
-    path: '/login',
-    element: <LoginPage />,
-  },
-  {
-    path: '/register',
-    element: <RegisterPage />,
+    element: <AuthLayout />,
+    children: [
+      {
+        path: '/login',
+        element: <LoginPage />,
+      },
+      {
+        path: '/register',
+        element: <RegisterPage />,
+      },
+    ],
   },
   {
     path: '/',
