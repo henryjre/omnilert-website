@@ -2076,13 +2076,121 @@ export function EmployeeVerificationsPage() {
             </div>
 
             {canActOnSelected && (
-              <div className="border-t border-gray-200 px-6 py-4">
+              <div className="border-t border-gray-200 bg-white px-6 py-4">
                 {panelError && (
-                  <p className="mb-3 rounded bg-red-50 px-3 py-2 text-sm text-red-600">{panelError}</p>
+                  <p className="mb-3 text-sm text-red-600">{panelError}</p>
                 )}
 
-                {!panelRejectMode ? (
+                {/* Registration: Step 1 footer */}
+                {selectedItem.type === 'registration' && registrationStep === 'review' && (
+                  <>
+                    {panelRejectMode && (
+                      <div className="mb-3 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <label className="text-sm font-medium text-gray-700">Reason for rejection</label>
+                          <button
+                            type="button"
+                            className="text-xs text-gray-400 hover:text-gray-600"
+                            onClick={() => {
+                              setPanelRejectMode(false);
+                              setPanelRejectReason('');
+                              setPanelError('');
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                        <textarea
+                          rows={2}
+                          placeholder="Explain why this registration is being rejected..."
+                          value={panelRejectReason}
+                          onChange={(e) => setPanelRejectReason(e.target.value)}
+                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                        />
+                      </div>
+                    )}
+                    <div className="flex gap-3">
+                      {!panelRejectMode ? (
+                        <>
+                          <Button
+                            className="flex-1"
+                            variant="danger"
+                            disabled={saving}
+                            onClick={() => setPanelRejectMode(true)}
+                          >
+                            <span className="flex items-center justify-center gap-1.5">
+                              <XCircle className="h-4 w-4" />
+                              Reject
+                            </span>
+                          </Button>
+                          <Button
+                            className="flex-1"
+                            variant="success"
+                            disabled={saving}
+                            onClick={() => {
+                              registrationStepDirection.current = 1;
+                              setRegistrationStep('assign');
+                              setPanelError('');
+                            }}
+                          >
+                            <span className="flex items-center justify-center gap-1.5">
+                              Approve Details
+                              <CircleCheck className="h-4 w-4" />
+                            </span>
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button
+                            className="flex-1"
+                            variant="secondary"
+                            disabled={saving}
+                            onClick={() => {
+                              setPanelRejectMode(false);
+                              setPanelRejectReason('');
+                              setPanelError('');
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            className="flex-1"
+                            variant="danger"
+                            disabled={saving || !panelRejectReason.trim()}
+                            onClick={() =>
+                              setConfirmModal({
+                                action: 'reject',
+                                message: `Reject with reason: "${panelRejectReason.trim()}"?`,
+                                onConfirm: rejectSelected,
+                              })
+                            }
+                          >
+                            Confirm Rejection
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {/* Registration: Step 2 footer */}
+                {selectedItem.type === 'registration' && registrationStep === 'assign' && (
                   <div className="flex gap-3">
+                    <Button
+                      className="flex-1"
+                      variant="secondary"
+                      disabled={saving}
+                      onClick={() => {
+                        registrationStepDirection.current = -1;
+                        setRegistrationStep('review');
+                        setPanelError('');
+                      }}
+                    >
+                      <span className="flex items-center justify-center gap-1.5">
+                        <ChevronLeft className="h-4 w-4" />
+                        Back
+                      </span>
+                    </Button>
                     <Button
                       className="flex-1"
                       variant="success"
@@ -2090,66 +2198,93 @@ export function EmployeeVerificationsPage() {
                       onClick={() =>
                         setConfirmModal({
                           action: 'approve',
-                          message: 'Confirm approval of this verification?',
+                          message: 'Approve this registration? This will create the employee account.',
                           onConfirm: approveSelected,
                         })
                       }
                     >
                       <span className="flex items-center justify-center gap-1.5">
                         <CircleCheck className="h-4 w-4" />
-                        Approve
-                      </span>
-                    </Button>
-                    <Button
-                      className="flex-1"
-                      variant="danger"
-                      disabled={saving}
-                      onClick={() => setPanelRejectMode(true)}
-                    >
-                      <span className="flex items-center justify-center gap-1.5">
-                        <XCircle className="h-4 w-4" />
-                        Reject
+                        {saving ? 'Processing...' : 'Approve Registration'}
                       </span>
                     </Button>
                   </div>
-                ) : (
-                  <div className="space-y-3">
-                    <textarea
-                      rows={2}
-                      placeholder="Reason for rejection..."
-                      value={panelRejectReason}
-                      onChange={(e) => setPanelRejectReason(e.target.value)}
-                      className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                    />
-                    <div className="flex gap-3">
-                      <Button
-                        className="flex-1"
-                        variant="danger"
-                        disabled={saving || !panelRejectReason.trim()}
-                        onClick={() =>
-                          setConfirmModal({
-                            action: 'reject',
-                            message: `Reject with reason: "${panelRejectReason.trim()}"?`,
-                            onConfirm: rejectSelected,
-                          })
-                        }
-                      >
-                        Confirm Reject
-                      </Button>
-                      <Button
-                        className="flex-1"
-                        variant="secondary"
-                        disabled={saving}
-                        onClick={() => {
-                          setPanelRejectMode(false);
-                          setPanelRejectReason('');
-                          setPanelError('');
-                        }}
-                      >
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
+                )}
+
+                {/* Non-registration types: original approve/reject footer */}
+                {selectedItem.type !== 'registration' && (
+                  <>
+                    {!panelRejectMode ? (
+                      <div className="flex gap-3">
+                        <Button
+                          className="flex-1"
+                          variant="success"
+                          disabled={saving}
+                          onClick={() =>
+                            setConfirmModal({
+                              action: 'approve',
+                              message: 'Confirm approval of this verification?',
+                              onConfirm: approveSelected,
+                            })
+                          }
+                        >
+                          <span className="flex items-center justify-center gap-1.5">
+                            <CircleCheck className="h-4 w-4" />
+                            Approve
+                          </span>
+                        </Button>
+                        <Button
+                          className="flex-1"
+                          variant="danger"
+                          disabled={saving}
+                          onClick={() => setPanelRejectMode(true)}
+                        >
+                          <span className="flex items-center justify-center gap-1.5">
+                            <XCircle className="h-4 w-4" />
+                            Reject
+                          </span>
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <textarea
+                          rows={2}
+                          placeholder="Reason for rejection..."
+                          value={panelRejectReason}
+                          onChange={(e) => setPanelRejectReason(e.target.value)}
+                          className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                        />
+                        <div className="flex gap-3">
+                          <Button
+                            className="flex-1"
+                            variant="danger"
+                            disabled={saving || !panelRejectReason.trim()}
+                            onClick={() =>
+                              setConfirmModal({
+                                action: 'reject',
+                                message: `Reject with reason: "${panelRejectReason.trim()}"?`,
+                                onConfirm: rejectSelected,
+                              })
+                            }
+                          >
+                            Confirm Reject
+                          </Button>
+                          <Button
+                            className="flex-1"
+                            variant="secondary"
+                            disabled={saving}
+                            onClick={() => {
+                              setPanelRejectMode(false);
+                              setPanelRejectReason('');
+                              setPanelError('');
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}
