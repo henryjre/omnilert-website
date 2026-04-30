@@ -49,7 +49,7 @@ function ContentRenderer() {
   const isRegister = displayState.pathname === '/register';
 
   return (
-    <div className={`absolute top-0 bottom-0 w-full lg:w-[calc(100%-380px)] pointer-events-auto flex flex-col ${isRegister ? 'right-0' : 'left-0'
+    <div className={`absolute top-0 w-full lg:w-[calc(100%-380px)] pointer-events-auto flex flex-col min-h-full ${isRegister ? 'right-0' : 'left-0'
       }`}>
       {displayState.status === 'visible' && (
         <motion.div
@@ -65,7 +65,7 @@ function ContentRenderer() {
               }
             }
           }}
-          className="flex flex-col flex-1 h-full"
+          className="flex flex-col flex-1"
         >
           {displayState.outlet}
         </motion.div>
