@@ -1218,352 +1218,193 @@ export function EmployeeVerificationsPage() {
               );
             })()}
 
-            <div className="flex-1 space-y-5 overflow-y-auto px-6 py-4">
-              {selectedItem.type === 'registration' && (
-                <>
-                  {/* Rejection callout */}
-                  {selectedItem.data.status === 'rejected' && selectedItem.data.rejection_reason && (
-                    <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
-                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
-                      <div>
-                        <p className="text-xs font-semibold text-red-700">Rejection Reason</p>
-                        <p className="mt-0.5 text-sm text-red-600">{String(selectedItem.data.rejection_reason)}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Employee section */}
-                  <section>
-                    <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Employee</h3>
-                    <dl className="space-y-3">
-                      <div className="flex items-start gap-2">
-                        <Mail className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
-                        <div>
-                          <dt className="text-xs text-gray-500">Email</dt>
-                          <dd className="text-sm font-medium text-gray-900">{String(selectedItem.data.email)}</dd>
-                        </div>
-                      </div>
-                      <div className="flex items-start gap-2">
-                        <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
-                        <div>
-                          <dt className="text-xs text-gray-500">Requested</dt>
-                          <dd className="text-sm text-gray-900">
-                            {new Date(selectedItem.data.requested_at as string).toLocaleString()}
-                          </dd>
-                        </div>
-                      </div>
-                      {selectedItem.data.reviewed_at && (
-                        <div className="flex items-start gap-2">
-                          <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+            <div className="flex-1 overflow-y-auto">
+              {selectedItem.type === 'registration' ? (
+                <AnimatePresence mode="wait" initial={false} custom={registrationStepDirection.current}>
+                  {registrationStep === 'review' && (
+                    <motion.div
+                      key="review"
+                      custom={registrationStepDirection.current}
+                      initial={{ x: `${registrationStepDirection.current * 30}%`, opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      exit={{ x: `${registrationStepDirection.current * -30}%`, opacity: 0 }}
+                      transition={{ duration: 0.25, ease: 'easeInOut' }}
+                      className="space-y-4 px-6 py-4"
+                    >
+                      {/* Rejection callout */}
+                      {selectedItem.data.status === 'rejected' && selectedItem.data.rejection_reason && (
+                        <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+                          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
                           <div>
-                            <dt className="text-xs text-gray-500">Reviewed</dt>
-                            <dd className="text-sm text-gray-900">
-                              {new Date(selectedItem.data.reviewed_at as string).toLocaleString()}
-                            </dd>
+                            <p className="text-xs font-semibold text-red-700">Rejection Reason</p>
+                            <p className="mt-0.5 text-sm text-red-600">{String(selectedItem.data.rejection_reason)}</p>
                           </div>
                         </div>
                       )}
-                      {(selectedItem.data.status === 'approved' || selectedItem.data.status === 'rejected')
-                        && selectedItem.data.reviewed_by_name && (
-                        <div className="flex items-start gap-2">
-                          <User className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
-                          <div>
-                            <dt className="text-xs text-gray-500">
-                              {selectedItem.data.status === 'approved' ? 'Approved By' : 'Rejected By'}
-                            </dt>
-                            <dd className="text-sm font-medium text-gray-900">
-                              {String(selectedItem.data.reviewed_by_name)}
-                            </dd>
+
+                      {/* Employee Info — read-only */}
+                      <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Employee</p>
+                        <dl className="space-y-3">
+                          <div className="flex items-start gap-2">
+                            <Mail className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                            <div>
+                              <dt className="text-xs text-gray-500">Email</dt>
+                              <dd className="text-sm font-medium text-gray-900">{String(selectedItem.data.email)}</dd>
+                            </div>
                           </div>
-                        </div>
-                      )}
-                    </dl>
-                  </section>
-
-                  {canActOnSelected && (
-                    <section className="space-y-4 rounded-lg border border-gray-200 bg-white p-3">
-                      <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Submitted Details</h3>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <Input label="First Name" value={registrationProfileEdits.firstName} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, firstName: e.target.value }))} />
-                        <Input label="Middle Name" value={registrationProfileEdits.middleName} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, middleName: e.target.value }))} />
-                        <Input label="Last Name" value={registrationProfileEdits.lastName} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, lastName: e.target.value }))} />
-                        <Input label="Suffix" value={registrationProfileEdits.suffix} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, suffix: e.target.value }))} />
-                        <Input label="Birthday" type="date" value={registrationProfileEdits.birthday} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, birthday: e.target.value }))} />
-                        <label className="block">
-                          <span className="mb-1 block text-sm font-medium text-gray-700">Gender</span>
-                          <select
-                            value={registrationProfileEdits.gender}
-                            onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, gender: e.target.value }))}
-                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                          >
-                            <option value="">Select gender</option>
-                            <option value="male">Male</option>
-                            <option value="female">Female</option>
-                            <option value="other">Other</option>
-                          </select>
-                        </label>
-                        <label className="block sm:col-span-2">
-                          <span className="mb-1 block text-sm font-medium text-gray-700">Marital Status</span>
-                          <select
-                            value={registrationProfileEdits.maritalStatus}
-                            onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, maritalStatus: e.target.value }))}
-                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                          >
-                            <option value="">Select marital status</option>
-                            <option value="single">Single</option>
-                            <option value="married">Married</option>
-                            <option value="cohabitant">Legal Cohabitant</option>
-                            <option value="widower">Widower</option>
-                            <option value="divorced">Divorced</option>
-                          </select>
-                        </label>
-                        <Input className="sm:col-span-2" label="Home Address" value={registrationProfileEdits.address} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, address: e.target.value }))} />
-                        <Input label="Mobile Number" value={registrationProfileEdits.mobileNumber} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, mobileNumber: e.target.value }))} />
-                        <Input label="Email" type="email" value={registrationProfileEdits.email} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, email: e.target.value }))} />
+                          <div className="flex items-start gap-2">
+                            <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                            <div>
+                              <dt className="text-xs text-gray-500">Requested</dt>
+                              <dd className="text-sm text-gray-900">
+                                {new Date(selectedItem.data.requested_at as string).toLocaleString()}
+                              </dd>
+                            </div>
+                          </div>
+                          {selectedItem.data.reviewed_at && (
+                            <div className="flex items-start gap-2">
+                              <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                              <div>
+                                <dt className="text-xs text-gray-500">Reviewed</dt>
+                                <dd className="text-sm text-gray-900">
+                                  {new Date(selectedItem.data.reviewed_at as string).toLocaleString()}
+                                </dd>
+                              </div>
+                            </div>
+                          )}
+                          {(selectedItem.data.status === 'approved' || selectedItem.data.status === 'rejected')
+                            && selectedItem.data.reviewed_by_name && (
+                            <div className="flex items-start gap-2">
+                              <User className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                              <div>
+                                <dt className="text-xs text-gray-500">
+                                  {selectedItem.data.status === 'approved' ? 'Approved By' : 'Rejected By'}
+                                </dt>
+                                <dd className="text-sm font-medium text-gray-900">
+                                  {String(selectedItem.data.reviewed_by_name)}
+                                </dd>
+                              </div>
+                            </div>
+                          )}
+                        </dl>
                       </div>
 
-                      <div className="grid gap-3 border-t border-gray-100 pt-4 sm:grid-cols-2">
-                        <Input label="SSS Number" value={registrationProfileEdits.sssNumber} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, sssNumber: e.target.value }))} />
-                        <Input label="TIN Number" value={registrationProfileEdits.tinNumber} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, tinNumber: e.target.value }))} />
-                        <Input label="Pag-IBIG Number" value={registrationProfileEdits.pagibigNumber} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, pagibigNumber: e.target.value }))} />
-                        <Input label="PhilHealth Number" value={registrationProfileEdits.philhealthNumber} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, philhealthNumber: e.target.value }))} />
-                      </div>
-
-                      <div className="grid gap-3 border-t border-gray-100 pt-4 sm:grid-cols-3">
-                        <Input label="Contact Name" value={registrationProfileEdits.emergencyContact} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, emergencyContact: e.target.value }))} />
-                        <Input label="Contact Number" value={registrationProfileEdits.emergencyPhone} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, emergencyPhone: e.target.value }))} />
-                        <Input label="Relationship" value={registrationProfileEdits.emergencyRelationship} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, emergencyRelationship: e.target.value }))} />
-                      </div>
-
-                      <div className="grid gap-3 border-t border-gray-100 pt-4 sm:grid-cols-2">
-                        {registrationProfileEdits.profilePictureUrl ? (
-                          <a href={registrationProfileEdits.profilePictureUrl} target="_blank" rel="noreferrer" className="group block">
-                            <span className="mb-1 block text-sm font-medium text-gray-700">Profile Picture</span>
-                            <img src={registrationProfileEdits.profilePictureUrl} alt="Submitted profile" className="h-28 w-28 rounded-full border border-gray-200 object-cover transition-opacity group-hover:opacity-80" />
-                          </a>
-                        ) : (
-                          <p className="text-sm text-gray-400">No profile picture submitted.</p>
-                        )}
-                        {registrationProfileEdits.validIdUrl ? (
-                          <a href={registrationProfileEdits.validIdUrl} target="_blank" rel="noreferrer" className="group block">
-                            <span className="mb-1 block text-sm font-medium text-gray-700">Valid ID</span>
-                            <img src={registrationProfileEdits.validIdUrl} alt="Submitted valid ID" className="h-28 w-full rounded-lg border border-gray-200 object-cover transition-opacity group-hover:opacity-80" />
-                          </a>
-                        ) : (
-                          <p className="text-sm text-gray-400">No valid ID submitted.</p>
-                        )}
-                      </div>
-                    </section>
-                  )}
-
-                  {canActOnSelected && (
-                    <>
-                    <div className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
-                        <label className="block text-sm font-medium text-gray-700">
-                          Profile Picture{' '}
-                          <span className="font-normal text-gray-400">(optional)</span>
-                        </label>
-                        <div className="flex items-center gap-3">
-                          <label className="inline-flex cursor-pointer items-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50">
-                            {approveAvatarUploading ? 'Uploading...' : 'Choose image'}
-                            <input
-                              type="file"
-                              accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
-                              className="hidden"
-                              disabled={approveAvatarUploading || saving}
-                              onChange={async (event) => {
-                                const file = event.target.files?.[0];
-                                event.target.value = '';
-                                if (!file) return;
-                                await uploadRegistrationAvatar(file);
-                              }}
-                            />
-                          </label>
-                          {approveAvatarUrl && (
-                            <button
-                              type="button"
-                              className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
-                              onClick={() => {
-                                setApproveAvatarUrl('');
-                                setRegistrationProfileEdits((prev) => ({ ...prev, profilePictureUrl: '' }));
-                              }}
-                              disabled={approveAvatarUploading || saving}
+                      {/* Personal Details — editable */}
+                      <div className="rounded-xl border border-gray-200 bg-white p-4">
+                        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Personal Details</p>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <Input label="First Name" value={registrationProfileEdits.firstName} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, firstName: e.target.value }))} disabled={!canActOnSelected} />
+                          <Input label="Middle Name" value={registrationProfileEdits.middleName} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, middleName: e.target.value }))} disabled={!canActOnSelected} />
+                          <Input label="Last Name" value={registrationProfileEdits.lastName} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, lastName: e.target.value }))} disabled={!canActOnSelected} />
+                          <Input label="Suffix" value={registrationProfileEdits.suffix} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, suffix: e.target.value }))} disabled={!canActOnSelected} />
+                          <Input label="Birthday" type="date" value={registrationProfileEdits.birthday} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, birthday: e.target.value }))} disabled={!canActOnSelected} />
+                          <label className="block">
+                            <span className="mb-1 block text-sm font-medium text-gray-700">Gender</span>
+                            <select
+                              value={registrationProfileEdits.gender}
+                              onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, gender: e.target.value }))}
+                              disabled={!canActOnSelected}
+                              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:bg-gray-50 disabled:text-gray-500"
                             >
-                              Remove
-                            </button>
+                              <option value="">Select gender</option>
+                              <option value="male">Male</option>
+                              <option value="female">Female</option>
+                              <option value="other">Other</option>
+                            </select>
+                          </label>
+                          <label className="block sm:col-span-2">
+                            <span className="mb-1 block text-sm font-medium text-gray-700">Marital Status</span>
+                            <select
+                              value={registrationProfileEdits.maritalStatus}
+                              onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, maritalStatus: e.target.value }))}
+                              disabled={!canActOnSelected}
+                              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:bg-gray-50 disabled:text-gray-500"
+                            >
+                              <option value="">Select marital status</option>
+                              <option value="single">Single</option>
+                              <option value="married">Married</option>
+                              <option value="cohabitant">Legal Cohabitant</option>
+                              <option value="widower">Widower</option>
+                              <option value="divorced">Divorced</option>
+                            </select>
+                          </label>
+                          <Input className="sm:col-span-2" label="Home Address" value={registrationProfileEdits.address} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, address: e.target.value }))} disabled={!canActOnSelected} />
+                          <Input label="Mobile Number" value={registrationProfileEdits.mobileNumber} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, mobileNumber: e.target.value }))} disabled={!canActOnSelected} />
+                          <Input label="Email" type="email" value={registrationProfileEdits.email} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, email: e.target.value }))} disabled={!canActOnSelected} />
+                        </div>
+                      </div>
+
+                      {/* Government IDs — editable */}
+                      <div className="rounded-xl border border-gray-200 bg-white p-4">
+                        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Government IDs</p>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <Input label="SSS Number" value={registrationProfileEdits.sssNumber} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, sssNumber: e.target.value }))} disabled={!canActOnSelected} />
+                          <Input label="TIN Number" value={registrationProfileEdits.tinNumber} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, tinNumber: e.target.value }))} disabled={!canActOnSelected} />
+                          <Input label="Pag-IBIG Number" value={registrationProfileEdits.pagibigNumber} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, pagibigNumber: e.target.value }))} disabled={!canActOnSelected} />
+                          <Input label="PhilHealth Number" value={registrationProfileEdits.philhealthNumber} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, philhealthNumber: e.target.value }))} disabled={!canActOnSelected} />
+                        </div>
+                      </div>
+
+                      {/* Emergency Contact — editable */}
+                      <div className="rounded-xl border border-gray-200 bg-white p-4">
+                        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Emergency Contact</p>
+                        <div className="grid gap-3 sm:grid-cols-3">
+                          <Input label="Contact Name" value={registrationProfileEdits.emergencyContact} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, emergencyContact: e.target.value }))} disabled={!canActOnSelected} />
+                          <Input label="Contact Number" value={registrationProfileEdits.emergencyPhone} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, emergencyPhone: e.target.value }))} disabled={!canActOnSelected} />
+                          <Input label="Relationship" value={registrationProfileEdits.emergencyRelationship} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, emergencyRelationship: e.target.value }))} disabled={!canActOnSelected} />
+                        </div>
+                      </div>
+
+                      {/* Documents — read-only */}
+                      <div className="rounded-xl border border-gray-200 bg-white p-4">
+                        <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Documents</p>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          {registrationProfileEdits.profilePictureUrl ? (
+                            <a href={registrationProfileEdits.profilePictureUrl} target="_blank" rel="noreferrer" className="group block">
+                              <span className="mb-1 block text-sm font-medium text-gray-700">Profile Picture</span>
+                              <img src={registrationProfileEdits.profilePictureUrl} alt="Submitted profile" className="h-28 w-28 rounded-full border border-gray-200 object-cover transition-opacity group-hover:opacity-80" />
+                            </a>
+                          ) : (
+                            <div>
+                              <span className="mb-1 block text-sm font-medium text-gray-700">Profile Picture</span>
+                              <p className="text-sm text-gray-400">No profile picture submitted.</p>
+                            </div>
+                          )}
+                          {registrationProfileEdits.validIdUrl ? (
+                            <a href={registrationProfileEdits.validIdUrl} target="_blank" rel="noreferrer" className="group block">
+                              <span className="mb-1 block text-sm font-medium text-gray-700">Valid ID</span>
+                              <img src={registrationProfileEdits.validIdUrl} alt="Submitted valid ID" className="h-28 w-full rounded-lg border border-gray-200 object-cover transition-opacity group-hover:opacity-80" />
+                            </a>
+                          ) : (
+                            <div>
+                              <span className="mb-1 block text-sm font-medium text-gray-700">Valid ID</span>
+                              <p className="text-sm text-gray-400">No valid ID submitted.</p>
+                            </div>
                           )}
                         </div>
-                        {approveAvatarUrl ? (
-                          <img
-                            src={approveAvatarUrl}
-                            alt="Uploaded registration profile"
-                            className="h-24 w-24 rounded-full border border-gray-200 object-cover"
-                          />
-                        ) : (
-                          <p className="text-xs text-gray-500">No image uploaded.</p>
-                        )}
                       </div>
-
-                      <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
-                        <label className="block text-sm font-medium text-gray-700">
-                          Employee Number{' '}
-                          <span className="font-normal text-gray-400">(optional — auto-assigned if blank)</span>
-                        </label>
-                        <input
-                          type="number"
-                          min={1}
-                          value={approveEmployeeNumber}
-                          onChange={(e) => setApproveEmployeeNumber(e.target.value)}
-                          placeholder="e.g. 4"
-                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                        />
-                      </div>
-
-                      <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
-                        <label className="block text-sm font-medium text-gray-700">
-                          User Key{' '}
-                          <span className="font-normal text-gray-400">(optional)</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={approveUserKey}
-                          onChange={(e) => setApproveUserKey(e.target.value)}
-                          placeholder="e.g. 7ceced51-2dc6-49fa-a38f-8798978f8763"
-                          autoComplete="off"
-                          spellCheck={false}
-                          className="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                        />
-                      </div>
-
-                      <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
-                        <label className="block text-sm font-medium text-gray-700">
-                          Roles (required)
-                        </label>
-                        <div className="flex flex-wrap gap-2">
-                          {assignmentOptions.roles.map((role) => (
-                            <button
-                              key={role.id}
-                              type="button"
-                              onClick={() =>
-                                toggleSelection(approveRoleIds, setApproveRoleIds, role.id)
-                              }
-                              className={`rounded-full px-3 py-1 text-sm font-medium transition-colors ${
-                                approveRoleIds.includes(role.id)
-                                  ? 'text-white'
-                                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                              }`}
-                              style={
-                                approveRoleIds.includes(role.id)
-                                  ? { backgroundColor: role.color || '#2563eb' }
-                                  : {}
-                              }
-                            >
-                              {role.name}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
-                        <label className="block text-sm font-medium text-gray-700">Companies and Branches (required)</label>
-                        <div className="space-y-3">
-                          {assignmentOptions.companies.map((company) => {
-                            const selected = approveCompanyIds.includes(company.id);
-                            const selectedBranchIds = approveBranchIdsByCompany[company.id] ?? [];
-                            return (
-                              <div key={company.id} className="rounded border border-gray-200 bg-white p-2">
-                                <button
-                                  type="button"
-                                  onClick={() => toggleCompanySelection(company.id)}
-                                  className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                                    selected ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                  }`}
-                                >
-                                  {company.name}
-                                </button>
-                                {selected && (
-                                  <div className="mt-2 flex flex-wrap gap-2">
-                                    {company.branches.map((branch) => (
-                                      <button
-                                        key={branch.id}
-                                        type="button"
-                                        onClick={() => toggleCompanyBranchSelection(company.id, branch.id)}
-                                        className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                                          selectedBranchIds.includes(branch.id)
-                                            ? 'bg-emerald-600 text-white'
-                                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                        }`}
-                                      >
-                                        {branch.name}
-                                      </button>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      <div className="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
-                        <label className="block text-sm font-medium text-gray-700">Resident Branch (required)</label>
-                        <select
-                          value={approveResidentBranchId ? `${approveResidentCompanyId}:${approveResidentBranchId}` : ''}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            if (!value) {
-                              setApproveResidentCompanyId('');
-                              setApproveResidentBranchId('');
-                              return;
-                            }
-                            const [companyId, branchId] = value.split(':');
-                            setApproveResidentCompanyId(companyId || '');
-                            setApproveResidentBranchId(branchId || '');
-                          }}
-                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                        >
-                          <option value="">Select resident branch</option>
-                          {approveCompanyIds.flatMap((companyId) => {
-                            const company = assignmentOptions.companies.find((item) => item.id === companyId);
-                            if (!company) return [];
-                            const selectedBranchIds = approveBranchIdsByCompany[companyId] ?? [];
-                            return company.branches
-                              .filter((branch) => selectedBranchIds.includes(branch.id))
-                              .map((branch) => (
-                                <option key={`${company.id}-${branch.id}`} value={`${company.id}:${branch.id}`}>
-                                  {company.name} - {branch.name}
-                                </option>
-                              ));
-                          })}
-                        </select>
-                      </div>
-
-                      {(approvalLogs.length > 0 || approvalInProgressId === selectedItem.data.id) && (
-                        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
-                          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-blue-700">
-                            Approval Progress
-                          </p>
-                          <div className="max-h-36 space-y-1 overflow-y-auto rounded bg-white p-2">
-                            {approvalLogs.length === 0 && (
-                              <p className="text-xs text-gray-500">Waiting for backend progress events...</p>
-                            )}
-                            {approvalLogs.map((log, idx) => (
-                              <p key={`${log.createdAt}-${idx}`} className="text-xs text-gray-700">
-                                <span className="mr-2 font-medium text-gray-500">
-                                  {new Date(log.createdAt).toLocaleTimeString()}
-                                </span>
-                                {log.message}
-                              </p>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </>
+                    </motion.div>
                   )}
-                </>
-              )}
 
-              {selectedItem.type === 'personalInformation' && (
+                  {registrationStep === 'assign' && (
+                    <motion.div
+                      key="assign"
+                      custom={registrationStepDirection.current}
+                      initial={{ x: `${registrationStepDirection.current * 30}%`, opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      exit={{ x: `${registrationStepDirection.current * -30}%`, opacity: 0 }}
+                      transition={{ duration: 0.25, ease: 'easeInOut' }}
+                      className="space-y-4 px-6 py-4"
+                    >
+                      {/* Step 2 placeholder — filled in Task 4 */}
+                      <p className="text-sm text-gray-400">Assignment step coming in next task.</p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              ) : (
+                <div className="space-y-5 px-6 py-4">
+                  {selectedItem.type === 'personalInformation' && (
                 <>
                   <section>
                     <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">Employee</h3>
@@ -2024,6 +1865,8 @@ export function EmployeeVerificationsPage() {
                     </dl>
                   </section>
                 </>
+                  )}
+                </div>
               )}
             </div>
 
