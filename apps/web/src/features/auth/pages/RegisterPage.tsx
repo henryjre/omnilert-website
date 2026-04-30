@@ -979,7 +979,7 @@ export function RegisterPage() {
         </div>
       )}
 
-      <div className="flex flex-1 flex-col justify-start px-5 py-5 sm:justify-center sm:px-10 sm:py-10 lg:px-14 lg:py-12 relative z-10">
+      <div className="flex flex-1 flex-col justify-start px-5 py-5 pb-32 sm:justify-center sm:px-10 sm:py-10 lg:px-14 lg:py-12 relative z-10">
         <div className="mx-auto w-full max-w-2xl">
           {/* Mobile header (matches LoginForm to enable radial transition) */}
           {!success && (
