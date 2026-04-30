@@ -574,7 +574,7 @@ test('account verification submissions are company-scoped and insert company_id'
   );
 });
 
-test('case report creation inserts company_id and sequence-backed case_number', () => {
+test('case report creation inserts company_id and global case_number', () => {
   const source = fs.readFileSync(caseReportServicePath, 'utf8');
 
   const createCaseBlock = source.slice(
@@ -583,9 +583,14 @@ test('case report creation inserts company_id and sequence-backed case_number', 
   );
 
   assert.match(
+    source,
+    /async function getNextGlobalCaseNumber\(\s*trx:\s*Knex\.Transaction\s*\)/,
+    'caseReport.service should define a transaction-scoped global case number allocator',
+  );
+  assert.match(
     createCaseBlock,
-    /getNextCompanySequence\(\s*trx,\s*input\.companyId,\s*'case_number'\s*\)/,
-    'createCaseReport should allocate case_number from company_sequences',
+    /getNextGlobalCaseNumber\(\s*trx\s*\)/,
+    'createCaseReport should allocate case_number from the global case report sequence',
   );
   assert.match(
     createCaseBlock,

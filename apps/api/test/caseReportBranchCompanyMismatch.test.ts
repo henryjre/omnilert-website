@@ -42,7 +42,7 @@ test('case report create flow sends X-Company-Id from the selected branch compan
 
   assert.match(
     modalSource,
-    /companyId:\s*branchValue\?\.companyId\s*\?\?\s*null/,
+    /companyId:\s*selectedBranch\?\.companyId\s*\?\?\s*null/,
     'CreateCaseModal should forward the selected companyId with the chosen branchId',
   );
   assert.match(
@@ -64,6 +64,25 @@ test('api client preserves explicit X-Company-Id headers for cross-company creat
     source,
     /if \(!explicitCompanyHeader && selectedBranchIds\.length > 0 && branches\.length > 0\)/,
     'api client should only derive X-Company-Id from the branch selector when the request did not already provide one',
+  );
+});
+
+test('case report list API accepts an explicit company scope for multi-company branch selections', () => {
+  const source = fs.readFileSync(caseReportApiPath, 'utf8');
+  const listBlock = source.slice(
+    source.indexOf('export async function listCaseReports'),
+    source.indexOf('export async function getCaseReport'),
+  );
+
+  assert.match(
+    listBlock,
+    /companyId\?:\s*string\s*\|\s*null/,
+    'listCaseReports should accept an optional explicit company scope',
+  );
+  assert.match(
+    listBlock,
+    /headers:\s*\{\s*['"]X-Company-Id['"]:\s*companyId\s*\}/,
+    'listCaseReports should pass explicit X-Company-Id headers when loading a selected company',
   );
 });
 

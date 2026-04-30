@@ -104,7 +104,7 @@ export function CaseReportsPage() {
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(() =>
     searchParams.get('caseId'),
   );
-  const { selectedBranchIds, branches } = useBranchStore();
+  const { selectedBranchIds, branches, setSelectedBranchIds } = useBranchStore();
   const branchLabel = useMemo(() => {
     if (branches.length === 0) return '';
     const selectedBranches = branches.filter((b) => selectedBranchIds.includes(b.id));
@@ -187,12 +187,36 @@ export function CaseReportsPage() {
     [filters, statusTab],
   );
 
+  const selectedCompanyIds = useMemo(() => {
+    const companyIds = selectedBranchIds
+      .map((branchId) => branches.find((branch) => branch.id === branchId)?.companyId)
+      .filter((companyId): companyId is string => Boolean(companyId));
+    return Array.from(new Set(companyIds));
+  }, [branches, selectedBranchIds]);
+
   const fetchReports = useCallback(
     async (silent?: boolean) => {
       if (!silent) setLoading(true);
       try {
-        const data = await listCaseReports(appliedFilters);
-        setReports(data.items);
+        const companyIds = selectedCompanyIds.length > 0 ? selectedCompanyIds : [null];
+        const results = await Promise.all(
+          companyIds.map((companyId) => listCaseReports(appliedFilters, companyId)),
+        );
+        const seen = new Set<string>();
+        const items = results
+          .flatMap((result) => result.items)
+          .filter((report) => {
+            if (seen.has(report.id)) return false;
+            seen.add(report.id);
+            return true;
+          })
+          .sort((a, b) => {
+            const direction = appliedFilters.sort_order === 'asc' ? 1 : -1;
+            const aTime = new Date(a.created_at).getTime();
+            const bTime = new Date(b.created_at).getTime();
+            return direction * (aTime - bTime);
+          });
+        setReports(items);
       } catch (err: any) {
         if (!silent) {
           showErrorToast(err.response?.data?.error || 'Failed to load case reports');
@@ -201,7 +225,7 @@ export function CaseReportsPage() {
         if (!silent) setLoading(false);
       }
     },
-    [appliedFilters, showErrorToast],
+    [appliedFilters, selectedCompanyIds, showErrorToast],
   );
 
   const fetchDetail = useCallback(
@@ -804,6 +828,9 @@ export function CaseReportsPage() {
             onClose={() => setCreateOpen(false)}
             onSubmit={async (payload) => {
               const created = await createCaseReport(payload);
+              if (payload.branchId && !selectedBranchIds.includes(payload.branchId)) {
+                setSelectedBranchIds([...selectedBranchIds, payload.branchId]);
+              }
               await fetchReports(true);
               setSelectedCaseId(created.id);
               setSearchParams({ caseId: created.id });

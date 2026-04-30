@@ -27,8 +27,11 @@ export type MentionableRole = {
   color: string | null;
 };
 
-export async function listCaseReports(filters: CaseReportFilters) {
-  const response = await api.get('/case-reports', { params: filters });
+export async function listCaseReports(filters: CaseReportFilters, companyId?: string | null) {
+  const response = await api.get('/case-reports', {
+    params: filters,
+    ...(companyId ? { headers: { 'X-Company-Id': companyId } } : {}),
+  });
   return response.data.data as { items: CaseReport[]; total: number };
 }
 
@@ -238,4 +241,3 @@ export async function completeCaseTask(
   const response = await api.post(`/case-reports/${caseId}/tasks/${taskId}/complete`, { userId });
   return response.data.data as CaseTask;
 }
-

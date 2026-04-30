@@ -274,39 +274,14 @@ async function createSystemMessage(
   return message as CaseMessageRow;
 }
 
-async function getNextCompanySequence(
-  trx: Knex.Transaction,
-  companyId: string,
-  sequenceName: 'case_number' | 'vn_number',
-): Promise<number> {
-  await trx('company_sequences')
-    .insert({
-      company_id: companyId,
-      sequence_name: sequenceName,
-      current_value: 0,
-    })
-    .onConflict(['company_id', 'sequence_name'])
-    .ignore();
+async function getNextGlobalCaseNumber(trx: Knex.Transaction): Promise<number> {
+  await trx.raw('LOCK TABLE case_reports IN EXCLUSIVE MODE');
 
-  const sequenceRow = (await trx('company_sequences')
-    .where({
-      company_id: companyId,
-      sequence_name: sequenceName,
-    })
-    .forUpdate()
-    .first('id', 'current_value')) as { id: string; current_value: number } | undefined;
+  const row = (await trx('case_reports')
+    .max<{ max: number | string | null }>({ max: 'case_number' })
+    .first()) as { max: number | string | null } | undefined;
 
-  if (!sequenceRow) {
-    throw new AppError(500, `Failed to allocate ${sequenceName}`);
-  }
-
-  const nextValue = Number(sequenceRow.current_value) + 1;
-  await trx('company_sequences').where({ id: sequenceRow.id }).update({
-    current_value: nextValue,
-    updated_at: new Date(),
-  });
-
-  return nextValue;
+  return Number(row?.max ?? 0) + 1;
 }
 
 async function resolveUserNames(userIds: string[]): Promise<Record<string, string>> {
@@ -856,7 +831,7 @@ export async function createCaseReport(input: {
   const userNames = await resolveUserNames([input.userId]);
 
   const report = await db.getDb().transaction(async (trx) => {
-    const caseNumber = await getNextCompanySequence(trx, input.companyId, 'case_number');
+    const caseNumber = await getNextGlobalCaseNumber(trx);
     const [created] = await trx('case_reports')
       .insert({
         company_id: input.companyId,
