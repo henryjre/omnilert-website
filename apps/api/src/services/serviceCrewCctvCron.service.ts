@@ -1,5 +1,6 @@
 import { env } from '../config/env.js';
 import { db } from '../config/database.js';
+import type { Knex } from 'knex';
 import { logger } from '../utils/logger.js';
 import { getActiveAttendances, getEmployeeWebsiteKeyByEmployeeId } from './odoo.service.js';
 import { emitStoreAuditEvent } from './storeAuditRealtime.service.js';
@@ -40,6 +41,19 @@ interface ManilaDateParts {
 
 function randomReward(): number {
   return Math.round((15 + Math.random() * 15) * 100) / 100;
+}
+
+export async function hasOpenBreakOrFieldTaskActivity(
+  userId: string,
+  dbConn: Knex = db.getDb(),
+): Promise<boolean> {
+  const activity = await dbConn('shift_activities')
+    .where({ user_id: userId })
+    .whereIn('activity_type', ['break', 'field_task'])
+    .whereNull('end_time')
+    .first('id');
+
+  return Boolean(activity);
 }
 
 function getManilaDateParts(date: Date = new Date()): ManilaDateParts {
@@ -324,6 +338,16 @@ export async function runServiceCrewCctvCron(): Promise<ServiceCrewCctvRunOutcom
           logger.info(
             { employeeId: chosen.employee_id, employeeName: chosen.employee_name },
             'Skipping SCC candidate: not a website user',
+          );
+          stats.skipped += 1;
+          continue;
+        }
+
+        const isOnBreakOrFieldTask = await hasOpenBreakOrFieldTaskActivity(auditedUserId);
+        if (isOnBreakOrFieldTask) {
+          logger.info(
+            { employeeId: chosen.employee_id, employeeName: chosen.employee_name, auditedUserId },
+            'Skipping SCC candidate: user is currently on break or field task',
           );
           stats.skipped += 1;
           continue;

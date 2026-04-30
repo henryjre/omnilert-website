@@ -18,7 +18,42 @@ const {
   SERVICE_CREW_CCTV_HOURLY_JOB_NAME,
   getServiceCrewCctvOccurrenceForHour,
 } = await import('./serviceCrewCctvCronScheduler.js');
-const { initServiceCrewCctvCron, stopServiceCrewCctvCron } = await import('./serviceCrewCctvCron.service.js');
+const {
+  hasOpenBreakOrFieldTaskActivity,
+  initServiceCrewCctvCron,
+  stopServiceCrewCctvCron,
+} = await import('./serviceCrewCctvCron.service.js');
+
+function createShiftActivityDbStub(firstResult: unknown) {
+  const calls: Array<{ method: string; args: unknown[] }> = [];
+  const chain = {
+    where(...args: unknown[]) {
+      calls.push({ method: 'where', args });
+      return chain;
+    },
+    whereIn(...args: unknown[]) {
+      calls.push({ method: 'whereIn', args });
+      return chain;
+    },
+    whereNull(...args: unknown[]) {
+      calls.push({ method: 'whereNull', args });
+      return chain;
+    },
+    async first(...args: unknown[]) {
+      calls.push({ method: 'first', args });
+      return firstResult;
+    },
+  };
+  const dbStub = Object.assign(
+    (tableName: string) => {
+      calls.push({ method: 'table', args: [tableName] });
+      return chain;
+    },
+    { calls },
+  );
+
+  return dbStub;
+}
 
 test('initServiceCrewCctvCron skips scheduling when disabled by env', async () => {
   const occurrence = getServiceCrewCctvOccurrenceForHour(
@@ -61,4 +96,27 @@ test('initServiceCrewCctvCron skips scheduling when disabled by env', async () =
     globalThis.setTimeout = originalSetTimeout;
     globalThis.clearTimeout = originalClearTimeout;
   }
+});
+
+test('hasOpenBreakOrFieldTaskActivity detects an open break or field task for a user', async () => {
+  const dbStub = createShiftActivityDbStub({ id: 'activity-open-break' });
+
+  const result = await hasOpenBreakOrFieldTaskActivity('user-1', dbStub as any);
+
+  assert.equal(result, true);
+  assert.deepEqual(dbStub.calls, [
+    { method: 'table', args: ['shift_activities'] },
+    { method: 'where', args: [{ user_id: 'user-1' }] },
+    { method: 'whereIn', args: ['activity_type', ['break', 'field_task']] },
+    { method: 'whereNull', args: ['end_time'] },
+    { method: 'first', args: ['id'] },
+  ]);
+});
+
+test('hasOpenBreakOrFieldTaskActivity allows users without open break or field task activity', async () => {
+  const dbStub = createShiftActivityDbStub(undefined);
+
+  const result = await hasOpenBreakOrFieldTaskActivity('user-2', dbStub as any);
+
+  assert.equal(result, false);
 });
