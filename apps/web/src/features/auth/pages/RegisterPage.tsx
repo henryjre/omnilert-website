@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import axios from 'axios';
 import Cropper from 'react-easy-crop';
 import { AnimatePresence, motion, type Variants } from 'framer-motion';
@@ -125,15 +125,15 @@ const steps: Array<{
 // ── Animation variants ────────────────────────────────────────────────────────
 
 const stepVariants = {
-  enter: (direction: number) => ({ opacity: 0, x: direction > 0 ? 24 : -24 }),
-  center: {
+  enter: (custom: { direction: number; isFirst: boolean }) => ({ opacity: 0, x: custom.direction > 0 ? 24 : -24 }),
+  center: (custom: { direction: number; isFirst: boolean }) => ({
     opacity: 1,
     x: 0,
-    transition: { type: 'spring' as const, stiffness: 340, damping: 30 },
-  },
-  exit: (direction: number) => ({
+    transition: { type: 'spring' as const, stiffness: 340, damping: 30, delay: custom.isFirst ? 0.4 : 0 },
+  }),
+  exit: (custom: { direction: number; isFirst: boolean }) => ({
     opacity: 0,
-    x: direction > 0 ? -24 : 24,
+    x: custom.direction > 0 ? -24 : 24,
   }),
 };
 
@@ -321,6 +321,11 @@ export function RegisterPage() {
   const [discordInviteUrl, setDiscordInviteUrl] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const isFirstRender = useRef(true);
+
+  useEffect(() => {
+    isFirstRender.current = false;
+  }, []);
 
   const stepIndex = Math.max(0, steps.findIndex((step) => step.id === draft.step));
 
@@ -937,7 +942,7 @@ export function RegisterPage() {
     <>
       {/* Mobile progress bar */}
       {!success && (
-        <div className="border-b border-gray-200/60 bg-white/80 px-5 py-3 backdrop-blur-sm lg:hidden">
+        <div className="sticky top-0 z-50 border-b border-gray-200/60 bg-white/80 px-5 py-3 backdrop-blur-md lg:hidden shadow-sm">
           <div className="mb-2 flex items-center justify-between">
             <Link
               to="/login"
@@ -974,9 +979,34 @@ export function RegisterPage() {
         </div>
       )}
 
-      <div className="flex flex-1 flex-col justify-start px-5 py-5 sm:justify-center sm:px-10 sm:py-10 lg:px-14 lg:py-12">
+      <div className="flex flex-1 flex-col justify-start px-5 py-5 sm:justify-center sm:px-10 sm:py-10 lg:px-14 lg:py-12 relative z-10">
         <div className="mx-auto w-full max-w-2xl">
-          <AnimatePresence mode="wait" custom={direction}>
+          {/* Mobile header (matches LoginForm to enable radial transition) */}
+          {!success && (
+            <div className="mb-8 flex flex-col items-center text-center lg:hidden">
+              <div id="mobile-auth-icon" className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-tr from-primary-600 to-primary-400 shadow-lg shadow-primary-500/30">
+                <UserPlus className="h-6 w-6 text-white" />
+              </div>
+              <motion.div 
+                initial="hidden" 
+                animate="visible" 
+                variants={{
+                  hidden: { opacity: 0, y: 10 },
+                  visible: { opacity: 1, y: 0, transition: { duration: 0.22, ease: 'easeOut', delay: 0.4 } }
+                }}
+              >
+                <h2 className="text-2xl font-bold tracking-tight text-gray-900">
+                  Create Account
+                </h2>
+                <p className="mt-2 text-sm text-gray-500">
+                  Complete your onboarding
+                </p>
+              </motion.div>
+            </div>
+          )}
+
+          <div className="rounded-3xl bg-white/90 p-6 shadow-2xl shadow-primary-500/5 ring-1 ring-gray-200/50 backdrop-blur-xl sm:p-10 mb-8 lg:rounded-none lg:bg-transparent lg:p-0 lg:shadow-none lg:ring-0 lg:backdrop-blur-none lg:mb-0">
+            <AnimatePresence mode="wait" custom={{ direction, isFirst: isFirstRender.current }}>
             {success ? (
               <motion.div
                 key="success"
@@ -1028,7 +1058,7 @@ export function RegisterPage() {
             ) : (
               <motion.div
                 key={draft.step}
-                custom={direction}
+                custom={{ direction, isFirst: isFirstRender.current }}
                 variants={stepVariants}
                 initial="enter"
                 animate="center"
@@ -1079,6 +1109,7 @@ export function RegisterPage() {
               </motion.div>
             )}
           </AnimatePresence>
+          </div>
         </div>
       </div>
     </>

@@ -55,7 +55,7 @@ const formVariants = {
 
 const fieldVariants = {
   hidden: {},
-  visible: { transition: { staggerChildren: 0.055 } },
+  visible: { transition: { staggerChildren: 0.055, delayChildren: 0.4 } },
 };
 
 const fieldItemVariants: Variants = {
@@ -205,8 +205,8 @@ export function LoginForm() {
   };
 
   return (
-    <motion.div variants={fieldVariants} initial="hidden" animate="visible" className="flex flex-col flex-1">
-      <div className="border-b border-gray-200/60 bg-white/80 px-5 py-3 backdrop-blur-sm lg:hidden">
+    <motion.div variants={fieldVariants} initial="hidden" animate="visible" className="flex flex-col flex-1 relative z-10">
+      <div className="sticky top-0 z-50 border-b border-gray-200/60 bg-white/80 px-5 py-3 backdrop-blur-md lg:hidden shadow-sm">
         <div className="flex items-center justify-between">
           <span className="text-sm font-bold tracking-tight text-gray-900">Omnilert</span>
           <button
@@ -238,6 +238,21 @@ export function LoginForm() {
             </p>
           </motion.div>
 
+          {/* Mobile header */}
+          <div className="mb-8 flex flex-col items-center text-center lg:hidden">
+            <div id="mobile-auth-icon" className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-tr from-primary-600 to-primary-400 shadow-lg shadow-primary-500/30">
+              {mode === 'signin' ? <LogIn className="h-6 w-6 text-white" /> : <Building2 className="h-6 w-6 text-white" />}
+            </div>
+            <motion.div variants={fieldItemVariants}>
+              <h2 className="text-2xl font-bold tracking-tight text-gray-900">
+                {mode === 'signin' ? 'Welcome back' : 'Create company'}
+              </h2>
+              <p className="mt-2 text-sm text-gray-500">
+                {mode === 'signin' ? 'Sign in to access your dashboard' : 'Super Admin credentials required'}
+              </p>
+            </motion.div>
+          </div>
+
           {/* Tab switcher — only shown when no companies exist */}
           {hasCompanies === false && (
             <motion.div variants={fieldItemVariants} className="mb-6 grid grid-cols-2 rounded-lg bg-gray-100/80 p-1">
@@ -261,7 +276,7 @@ export function LoginForm() {
           )}
 
           {/* Form section */}
-          <motion.div variants={fieldItemVariants}>
+          <motion.div variants={fieldItemVariants} className="rounded-3xl bg-white/90 p-6 shadow-2xl shadow-primary-500/5 ring-1 ring-gray-200/50 backdrop-blur-xl sm:p-8 mb-6 lg:rounded-none lg:bg-transparent lg:p-0 lg:shadow-none lg:ring-0 lg:backdrop-blur-none lg:mb-0">
             {/* Error banner */}
             <AnimatePresence>
               {error && (
