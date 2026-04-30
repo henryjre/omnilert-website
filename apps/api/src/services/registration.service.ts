@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Knex } from 'knex';
 import { db } from '../config/database.js';
+import { env } from '../config/env.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
 import { decryptText, encryptText } from '../utils/secureText.js';
@@ -85,6 +86,27 @@ type ApprovalUserRow = {
   discord_user_id?: string | null;
 };
 
+type RegistrationApprovalRoleRow = {
+  id: string;
+  name: string;
+  discord_id: string | null;
+};
+
+type RegistrationApprovedDiscordRolePayload = {
+  event: 'registration.approved';
+  discord_user_id: string;
+  user: {
+    id: string;
+    email: string;
+    user_key: string;
+  };
+  roles: Array<{
+    id: string;
+    name: string;
+    discord_role_id: string;
+  }>;
+};
+
 type OdooEmployeeByWebsiteKeyRow = {
   id: number;
   work_email?: string | null;
@@ -157,6 +179,71 @@ export function resolveProvidedUserKeyEmployeeNumberOrThrow(input: {
   }
 
   return null;
+}
+
+export function buildRegistrationApprovedDiscordRolePayload(input: {
+  discordUserId: string;
+  userId: string;
+  email: string;
+  userKey: string;
+  roles: RegistrationApprovalRoleRow[];
+}): RegistrationApprovedDiscordRolePayload {
+  return {
+    event: 'registration.approved',
+    discord_user_id: input.discordUserId,
+    user: {
+      id: input.userId,
+      email: input.email,
+      user_key: input.userKey,
+    },
+    roles: input.roles
+      .map((role) => ({
+        id: role.id,
+        name: role.name,
+        discord_role_id: String(role.discord_id ?? '').trim(),
+      }))
+      .filter((role) => role.discord_role_id.length > 0),
+  };
+}
+
+async function notifyDiscordBotRegistrationApproved(input: {
+  payload: RegistrationApprovedDiscordRolePayload;
+  webhookUrl?: string | null;
+  token?: string | null;
+  fetchImpl?: typeof fetch;
+}): Promise<'sent' | 'skipped'> {
+  const webhookUrl = String(input.webhookUrl ?? env.DISCORD_BOT_REGISTRATION_APPROVED_WEBHOOK_URL ?? '').trim();
+  const token = String(input.token ?? env.DISCORD_BOT_API_TOKEN ?? '').trim();
+
+  if (!webhookUrl || !token) {
+    logger.info(
+      {
+        hasWebhookUrl: Boolean(webhookUrl),
+        hasToken: Boolean(token),
+        discordUserId: input.payload.discord_user_id,
+        userId: input.payload.user.id,
+      },
+      'Skipping Discord registration approval role sync due to missing webhook configuration',
+    );
+    return 'skipped';
+  }
+
+  const response = await (input.fetchImpl ?? fetch)(webhookUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(input.payload),
+    signal: AbortSignal.timeout(5000),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Discord registration approval role sync failed with ${response.status}: ${text.slice(0, 500)}`);
+  }
+
+  return 'sent';
 }
 
 export function selectApprovalCanonicalUsers(input: {
@@ -882,10 +969,16 @@ export async function approveRegistrationRequest(input: {
     message: 'Validating roles and company/branch assignments...',
   });
 
-  const existingRoles = await masterDb('roles').whereIn('id', input.roleIds).select('id');
+  const existingRoles = (await masterDb('roles')
+    .whereIn('id', input.roleIds)
+    .select('id', 'name', 'discord_id')) as RegistrationApprovalRoleRow[];
   if (existingRoles.length !== input.roleIds.length) {
     throw new AppError(400, 'One or more selected roles are invalid');
   }
+  const rolesById = new Map(existingRoles.map((role) => [role.id, role]));
+  const approvedRoleRows = input.roleIds
+    .map((roleId) => rolesById.get(roleId))
+    .filter((role): role is RegistrationApprovalRoleRow => Boolean(role));
 
   const { assignments, resident } = await resolveAssignmentsOrThrow({
     companyAssignments: input.companyAssignments,
@@ -1414,6 +1507,31 @@ export async function approveRegistrationRequest(input: {
       firstCompanySlug: assignments[0]?.companySlug ?? null,
     };
   });
+
+  if (registrationDiscordUserId) {
+    const payload = buildRegistrationApprovedDiscordRolePayload({
+      discordUserId: registrationDiscordUserId,
+      userId: result.userId,
+      email: normalizedEmail,
+      userKey: websiteKey,
+      roles: approvedRoleRows,
+    });
+
+    try {
+      await notifyDiscordBotRegistrationApproved({ payload });
+    } catch (error) {
+      logger.warn(
+        {
+          requestId: input.requestId,
+          userId: result.userId,
+          discordUserId: registrationDiscordUserId,
+          roleCount: payload.roles.length,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to notify Discord bot about registration approval roles; continuing approval',
+      );
+    }
+  }
 
   emitRegistrationApprovalProgress({
     companyId: input.reviewerCompanyId,

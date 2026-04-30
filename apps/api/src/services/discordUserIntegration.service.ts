@@ -1,4 +1,5 @@
 import { db } from '../config/database.js';
+import { updatePartnerDiscordIdByIdentity } from './odoo.service.js';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 50;
@@ -161,9 +162,18 @@ type DiscordUserIntegrationRepository = {
   }): Promise<RegistrationDiscordIdRow | null>;
   updateDiscordUserIdByEmail(email: string, discordUserId: string): Promise<{
     id: string;
+    user_key: string | null;
     email: string;
     discord_user_id: string | null;
   } | null>;
+};
+
+type DiscordUserIntegrationDependencies = {
+  updateOdooPartnerDiscordId(input: {
+    websiteUserKey: string | null;
+    email: string | null;
+    discordId: string;
+  }): Promise<number | null>;
 };
 
 function parsePositiveInt(
@@ -486,12 +496,13 @@ function createDatabaseRepository(): DiscordUserIntegrationRepository {
           discord_user_id: discordUserId,
           updated_at: new Date(),
         })
-        .returning(['id', 'email', 'discord_user_id']);
+        .returning(['id', 'user_key', 'email', 'discord_user_id']);
 
       if (!updated) return null;
 
       return {
         id: updated.id as string,
+        user_key: (updated.user_key as string | null) ?? null,
         email: updated.email as string,
         discord_user_id: (updated.discord_user_id as string | null) ?? null,
       };
@@ -516,7 +527,12 @@ function resolveLookupIdentifier(input: DiscordUserLookupQuery): { kind: 'id' | 
   return provided[0]!;
 }
 
-export function createDiscordUserIntegrationService(repository: DiscordUserIntegrationRepository) {
+export function createDiscordUserIntegrationService(
+  repository: DiscordUserIntegrationRepository,
+  deps: DiscordUserIntegrationDependencies = {
+    updateOdooPartnerDiscordId: updatePartnerDiscordIdByIdentity,
+  },
+) {
   return {
     async listUsers(input: DiscordUsersListQuery): Promise<DiscordIntegrationUsersListData> {
       const page = parsePositiveInt(input.page, 'page', DEFAULT_PAGE);
@@ -613,7 +629,16 @@ export function createDiscordUserIntegrationService(repository: DiscordUserInteg
       if (!updated) {
         throw new DiscordIntegrationNotFoundError('Active user not found for the provided email');
       }
-      return updated;
+      await deps.updateOdooPartnerDiscordId({
+        websiteUserKey: updated.user_key,
+        email: updated.email,
+        discordId: input.discord_id,
+      });
+      return {
+        id: updated.id,
+        email: updated.email,
+        discord_user_id: updated.discord_user_id,
+      };
     },
   };
 }

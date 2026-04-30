@@ -62,6 +62,18 @@ test('registration approval syncs discord id onto final Odoo partner contact', (
   assert.match(odooSource, /partnerUpdate\.x_discord_id\s*=\s*input\.discordId/);
 });
 
+test('registration approval can notify discord bot with approved discord roles', () => {
+  const registrationSource = readFileSync(path.join(apiSrc, 'services', 'registration.service.ts'), 'utf8');
+  const envSource = readFileSync(path.join(apiSrc, 'config', 'env.ts'), 'utf8');
+
+  assert.match(envSource, /DISCORD_BOT_REGISTRATION_APPROVED_WEBHOOK_URL/);
+  assert.match(registrationSource, /buildRegistrationApprovedDiscordRolePayload/);
+  assert.match(registrationSource, /event:\s*'registration\.approved'/);
+  assert.match(registrationSource, /discord_role_id/);
+  assert.match(registrationSource, /notifyDiscordBotRegistrationApproved\(\{\s*payload\s*\}\)/);
+  assert.match(registrationSource, /Authorization:\s*`Bearer \$\{token\}`/);
+});
+
 test('registration requests migration includes discord user id column', () => {
   const source = readFileSync(
     path.join(apiSrc, 'migrations', '061_registration_requests_discord_user_id.ts'),

@@ -50,6 +50,7 @@ const envSchema = z.object({
   SMTP_FROM: z.string().optional(),
   DISCORD_INVITE_URL: z.string().url().default('https://discord.gg/9E2e4TPS7g'),
   DISCORD_BOT_API_TOKEN: z.string().optional(),
+  DISCORD_BOT_REGISTRATION_APPROVED_WEBHOOK_URL: z.string().url().default('https://bot.omnilert.app/website/registration/approved'),
   DISCORD_BOT_CRON_WEBHOOK_URL: z.string().url().optional(),
   DISCORD_BOT_CRON_WEBHOOK_TOKEN: z.string().optional(),
   DISCORD_BOT_CRON_WEBHOOK_TIMEOUT_MS: z.coerce.number().int().min(1).default(5000),

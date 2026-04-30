@@ -1707,6 +1707,26 @@ export async function unifyPartnerContactsByEmail(input: {
   return canonicalId;
 }
 
+export async function updatePartnerDiscordIdByIdentity(input: {
+  websiteUserKey: string | null;
+  email: string | null;
+  discordId: string;
+}): Promise<number | null> {
+  const partner = await resolveCanonicalPartnerByIdentity({
+    websiteUserKey: input.websiteUserKey,
+    email: input.email,
+  });
+
+  if (!partner) {
+    return null;
+  }
+
+  await callOdooKw('res.partner', 'write', [[partner.id], {
+    x_discord_id: input.discordId,
+  }]);
+  return partner.id;
+}
+
 async function fetchImageAsBase64(url: string): Promise<string> {
   const response = await fetch(url);
   if (!response.ok) {

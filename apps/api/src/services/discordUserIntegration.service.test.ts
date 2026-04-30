@@ -141,7 +141,13 @@ function sortRows(rows: FakeUserRow[]): FakeUserRow[] {
   });
 }
 
-function createService() {
+function createService(options: {
+  updateOdooPartnerDiscordId?: (input: {
+    websiteUserKey: string | null;
+    email: string | null;
+    discordId: string;
+  }) => Promise<number | null>;
+} = {}) {
   const repository = {
     async countUsers(includeInactive: boolean) {
       return USERS.filter((user) => includeInactive || user.is_active).length;
@@ -216,13 +222,16 @@ function createService() {
       user.discord_user_id = discordUserId;
       return {
         id: user.id,
+        user_key: user.user_key,
         email: user.email,
         discord_user_id: user.discord_user_id ?? null,
       };
     },
   };
 
-  return createDiscordUserIntegrationService(repository);
+  return createDiscordUserIntegrationService(repository, {
+    updateOdooPartnerDiscordId: options.updateOdooPartnerDiscordId ?? (async () => 1),
+  });
 }
 
 test('listUsers returns active users by default with standard pagination envelope', async () => {
@@ -425,6 +434,33 @@ test('setDiscordUserId updates discord id by email and returns updated user summ
     email: USERS[0]!.email,
     discord_user_id: '1484847611604373564',
   });
+});
+
+test('setDiscordUserId syncs linked discord id to the matching Odoo partner identity', async () => {
+  const syncCalls: Array<{
+    websiteUserKey: string | null;
+    email: string | null;
+    discordId: string;
+  }> = [];
+  const service = createService({
+    async updateOdooPartnerDiscordId(input) {
+      syncCalls.push(input);
+      return 42;
+    },
+  });
+
+  await service.setDiscordUserId({
+    email: 'ACTIVE@EXAMPLE.COM',
+    discord_id: '1484847611604373564',
+  });
+
+  assert.deepEqual(syncCalls, [
+    {
+      websiteUserKey: USERS[0]!.user_key,
+      email: USERS[0]!.email,
+      discordId: '1484847611604373564',
+    },
+  ]);
 });
 
 test('setDiscordUserId throws not found when active user email does not exist', async () => {
