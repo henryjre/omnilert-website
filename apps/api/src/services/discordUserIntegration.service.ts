@@ -335,7 +335,7 @@ function createDatabaseRepository(): DiscordUserIntegrationRepository {
           'roles.id',
           'roles.name',
           'roles.color',
-          'roles.discord_role_id',
+          'roles.discord_id as discord_role_id',
         ) as Promise<RoleRow[]>;
     },
     async listCompaniesForUsers(userIds) {

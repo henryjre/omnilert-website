@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 process.env.JWT_SECRET ??= 'test-jwt-secret-12345';
@@ -18,6 +19,12 @@ const {
   DiscordIntegrationValidationError,
   DiscordIntegrationNotFoundError,
 } = await import('./discordUserIntegration.service.js');
+
+test('discord integration role query aliases roles.discord_id as discord_role_id', () => {
+  const source = readFileSync(new URL('./discordUserIntegration.service.ts', import.meta.url), 'utf8');
+  assert.match(source, /'roles\.discord_id as discord_role_id'/);
+  assert.doesNotMatch(source, /'roles\.discord_role_id'/);
+});
 
 type FakeUserRow = {
   id: string;
