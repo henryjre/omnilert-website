@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { Button } from '@/shared/components/ui/Button';
 import { Input } from '@/shared/components/ui/Input';
-import { MoveLeft } from 'lucide-react';
+import { MoveLeft, UserRoundPlus } from 'lucide-react';
 import axios from 'axios';
 
 interface Company {
@@ -13,7 +13,7 @@ interface Company {
   themeColor?: string;
 }
 
-type AuthMode = 'signin' | 'register' | 'create-company';
+type AuthMode = 'signin' | 'create-company';
 
 function sanitizeRedirectPath(raw: string | null): string {
   if (!raw) return '/dashboard';
@@ -60,12 +60,7 @@ export function LoginForm() {
   const [odooApiKey, setOdooApiKey] = useState('');
   const [superAdminEmail, setSuperAdminEmail] = useState('');
   const [superAdminPassword, setSuperAdminPassword] = useState('');
-  const [registerFirstName, setRegisterFirstName] = useState('');
-  const [registerLastName, setRegisterLastName] = useState('');
-  const [registerEmail, setRegisterEmail] = useState('');
-  const [registerPassword, setRegisterPassword] = useState('');
   const [error, setError] = useState('');
-  const [registerSuccess, setRegisterSuccess] = useState('');
   const [loading, setLoading] = useState(false);
   const [hasCompanies, setHasCompanies] = useState<boolean | null>(null);
   const { login } = useAuth();
@@ -91,7 +86,6 @@ export function LoginForm() {
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setRegisterSuccess('');
     setLoading(true);
 
     try {
@@ -148,31 +142,6 @@ export function LoginForm() {
     }
   };
 
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-
-    try {
-      await axios.post('/api/v1/auth/register-request', {
-        firstName: registerFirstName,
-        lastName: registerLastName,
-        email: registerEmail,
-        password: registerPassword,
-      });
-      setRegisterFirstName('');
-      setRegisterLastName('');
-      setRegisterEmail('');
-      setRegisterPassword('');
-      setError('');
-      setRegisterSuccess('Registration request submitted! Please wait for approval.');
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to submit registration request');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-md">
@@ -181,20 +150,17 @@ export function LoginForm() {
           <p className="mt-2 text-sm text-gray-600">
             {mode === 'signin'
               ? 'Sign in to your account'
-              : mode === 'register'
-              ? 'Submit your registration request'
               : 'Create a company using Super Admin credentials'}
           </p>
         </div>
 
         <div className="rounded-xl border border-gray-200 bg-white p-8 shadow-sm">
-          <div className={`mb-4 grid ${hasCompanies === false ? 'grid-cols-3' : 'grid-cols-2'} rounded-lg bg-gray-100 p-1`}>
+          <div className={`mb-4 grid ${hasCompanies === false ? 'grid-cols-2' : 'grid-cols-1'} rounded-lg bg-gray-100 p-1`}>
             <button
               type="button"
               onClick={() => {
                 setMode('signin');
                 setError('');
-                setRegisterSuccess('');
               }}
               className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                 mode === 'signin' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600'
@@ -202,26 +168,12 @@ export function LoginForm() {
             >
               Sign In
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMode('register');
-                setError('');
-                setRegisterSuccess('');
-              }}
-              className={`rounded-md px-2 py-1.5 text-sm font-medium transition-colors ${
-                mode === 'register' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600'
-              }`}
-            >
-              Register
-            </button>
             {hasCompanies === false && (
               <button
                 type="button"
                 onClick={() => {
                   setMode('create-company');
                   setError('');
-                  setRegisterSuccess('');
                 }}
                 className={`rounded-md px-2 py-1.5 text-sm font-medium transition-colors ${
                   mode === 'create-company' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600'
@@ -261,60 +213,14 @@ export function LoginForm() {
               <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? 'Signing in...' : 'Sign In'}
               </Button>
-            </form>
-          ) : mode === 'register' ? (
-            <form onSubmit={handleRegister} className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <Input
-                  id="registerFirstName"
-                  label="First Name"
-                  type="text"
-                  placeholder="First name"
-                  value={registerFirstName}
-                  onChange={(e) => setRegisterFirstName(e.target.value)}
-                  required
-                />
-                <Input
-                  id="registerLastName"
-                  label="Last Name"
-                  type="text"
-                  placeholder="Last name"
-                  value={registerLastName}
-                  onChange={(e) => setRegisterLastName(e.target.value)}
-                  required
-                />
-              </div>
-
-              <Input
-                id="registerEmail"
-                label="Email"
-                type="email"
-                placeholder="you@example.com"
-                value={registerEmail}
-                onChange={(e) => setRegisterEmail(e.target.value)}
-                required
-              />
-
-              <Input
-                id="registerPassword"
-                label="Password"
-                type="password"
-                placeholder="Enter your password"
-                value={registerPassword}
-                onChange={(e) => setRegisterPassword(e.target.value)}
-                required
-              />
-
-              {error && (
-                <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>
-              )}
-              {registerSuccess && (
-                <div className="rounded-lg bg-green-50 p-3 text-sm text-green-700">{registerSuccess}</div>
-              )}
-
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? 'Submitting request...' : 'Submit Registration Request'}
-              </Button>
+              <button
+                type="button"
+                onClick={() => navigate('/register')}
+                className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:border-primary-200 hover:bg-primary-50 hover:text-primary-700"
+              >
+                <UserRoundPlus className="h-4 w-4" />
+                Go to Registration
+              </button>
             </form>
           ) : mode === 'create-company' && !hasCompanies ? (
             <form onSubmit={handleCreateCompany} className="space-y-4">

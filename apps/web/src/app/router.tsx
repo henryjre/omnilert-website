@@ -3,6 +3,7 @@ import { ProtectedRoute } from '@/features/auth/components/ProtectedRoute';
 import { PermissionGuard } from '@/features/auth/components/PermissionGuard';
 import { DashboardLayout } from '@/features/dashboard/components/DashboardLayout';
 import { LoginPage } from '@/features/auth/pages/LoginPage';
+import { RegisterPage } from '@/features/auth/pages/RegisterPage';
 import { DashboardPage } from '@/features/dashboard/pages/DashboardPage';
 import { ScheduleTab } from '@/features/account/components/ScheduleTab';
 import { AuthorizationRequestsTab } from '@/features/account/components/AuthorizationRequestsTab';
@@ -43,6 +44,10 @@ export const router = createBrowserRouter([
   {
     path: '/login',
     element: <LoginPage />,
+  },
+  {
+    path: '/register',
+    element: <RegisterPage />,
   },
   {
     path: '/',

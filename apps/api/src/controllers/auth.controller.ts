@@ -1,6 +1,9 @@
 import type { Request, Response, NextFunction } from 'express';
+import { registerRequestSchema } from '@omnilert/shared';
+import { env } from '../config/env.js';
 import * as authService from '../services/auth.service.js';
 import * as registrationService from '../services/registration.service.js';
+import { AppError } from '../middleware/errorHandler.js';
 
 export async function login(req: Request, res: Response, next: NextFunction) {
   try {
@@ -59,15 +62,42 @@ export async function me(req: Request, res: Response) {
 
 export async function registerRequest(req: Request, res: Response, next: NextFunction) {
   try {
-    const { firstName, lastName, email, password } = req.body;
+    const parsed = registerRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      const firstError = parsed.error.errors[0]?.message ?? 'Invalid registration request';
+      throw new AppError(400, firstError);
+    }
+    const files = req.files as Record<string, Express.Multer.File[]> | undefined;
+    const profilePictureFile = files?.profilePicture?.[0];
+    const validIdFile = files?.validId?.[0];
     await registrationService.createRegistrationRequest({
-      firstName,
-      lastName,
-      email,
-      password,
+      ...parsed.data,
+      profilePictureFile: profilePictureFile
+        ? {
+          buffer: profilePictureFile.buffer,
+          originalname: profilePictureFile.originalname,
+          mimetype: profilePictureFile.mimetype,
+        }
+        : undefined,
+      validIdFile: validIdFile
+        ? {
+          buffer: validIdFile.buffer,
+          originalname: validIdFile.originalname,
+          mimetype: validIdFile.mimetype,
+        }
+        : undefined,
     });
     res.status(201).json({ success: true, message: 'Request submitted successfully' });
   } catch (err) {
     next(err);
   }
+}
+
+export async function publicConfig(_req: Request, res: Response) {
+  res.json({
+    success: true,
+    data: {
+      discordInviteUrl: env.DISCORD_INVITE_URL,
+    },
+  });
 }

@@ -31,6 +31,7 @@ export async function approve(req: Request, res: Response, next: NextFunction) {
       employeeNumber: req.body.employeeNumber,
       userKey: req.body.userKey,
       avatarUrl: req.body.avatarUrl,
+      profile: req.body.profile,
       avatarStorageRoot: req.companyContext?.companyStorageRoot ?? null,
     });
     res.json({ success: true, data: result });

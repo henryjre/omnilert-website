@@ -381,6 +381,27 @@ export function EmployeeVerificationsPage() {
   const [approveUserKey, setApproveUserKey] = useState('');
   const [approveAvatarUrl, setApproveAvatarUrl] = useState('');
   const [approveAvatarUploading, setApproveAvatarUploading] = useState(false);
+  const [registrationProfileEdits, setRegistrationProfileEdits] = useState({
+    firstName: '',
+    middleName: '',
+    lastName: '',
+    suffix: '',
+    birthday: '',
+    gender: '',
+    maritalStatus: '',
+    address: '',
+    mobileNumber: '',
+    sssNumber: '',
+    tinNumber: '',
+    pagibigNumber: '',
+    philhealthNumber: '',
+    emergencyContact: '',
+    emergencyPhone: '',
+    emergencyRelationship: '',
+    email: '',
+    profilePictureUrl: '',
+    validIdUrl: '',
+  });
   const [personalInfoEdits, setPersonalInfoEdits] = useState({
     firstName: '',
     lastName: '',
@@ -602,8 +623,29 @@ export function EmployeeVerificationsPage() {
       setApproveResidentBranchId('');
       setApproveEmployeeNumber('');
       setApproveUserKey('');
-      setApproveAvatarUrl('');
+      setApproveAvatarUrl(item.profile_picture_url || '');
       setApproveAvatarUploading(false);
+      setRegistrationProfileEdits({
+        firstName: item.first_name || '',
+        middleName: item.middle_name || 'N/A',
+        lastName: item.last_name || '',
+        suffix: item.suffix || '',
+        birthday: item.birthday ? String(item.birthday).slice(0, 10) : '',
+        gender: item.gender || '',
+        maritalStatus: item.marital_status || '',
+        address: item.address || '',
+        mobileNumber: item.mobile_number || '',
+        sssNumber: item.sss_number || '',
+        tinNumber: item.tin_number || '',
+        pagibigNumber: item.pagibig_number || '',
+        philhealthNumber: item.philhealth_number || '',
+        emergencyContact: item.emergency_contact || '',
+        emergencyPhone: item.emergency_phone || '',
+        emergencyRelationship: item.emergency_relationship || '',
+        email: item.email || '',
+        profilePictureUrl: item.profile_picture_url || '',
+        validIdUrl: item.valid_id_url || '',
+      });
     }
 
     if (type === 'personalInformation') {
@@ -753,6 +795,7 @@ export function EmployeeVerificationsPage() {
         throw new Error('Avatar upload response is missing URL');
       }
       setApproveAvatarUrl(avatarUrl);
+      setRegistrationProfileEdits((prev) => ({ ...prev, profilePictureUrl: avatarUrl }));
       showSuccessToast('Profile picture uploaded.');
     } catch (err: any) {
       showErrorToast(err.response?.data?.error || 'Failed to upload profile picture');
@@ -822,6 +865,17 @@ export function EmployeeVerificationsPage() {
           return;
         }
 
+        const registrationProfilePayload: Record<string, unknown> = {
+          ...registrationProfileEdits,
+          profilePictureUrl: approveAvatarUrl || registrationProfileEdits.profilePictureUrl,
+        };
+        if (!registrationProfilePayload.profilePictureUrl) {
+          delete registrationProfilePayload.profilePictureUrl;
+        }
+        if (!registrationProfilePayload.validIdUrl) {
+          delete registrationProfilePayload.validIdUrl;
+        }
+
         await api.post(`/employee-verifications/registration/${selectedItem.data.id}/approve`, {
           roleIds: approveRoleIds,
           companyAssignments,
@@ -829,6 +883,7 @@ export function EmployeeVerificationsPage() {
             companyId: approveResidentCompanyId,
             branchId: approveResidentBranchId,
           },
+          profile: registrationProfilePayload,
           ...(approveEmployeeNumber.trim()
             ? { employeeNumber: parseInt(approveEmployeeNumber, 10) }
             : {}),
@@ -1204,6 +1259,82 @@ export function EmployeeVerificationsPage() {
                   </section>
 
                   {canActOnSelected && (
+                    <section className="space-y-4 rounded-lg border border-gray-200 bg-white p-3">
+                      <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Submitted Details</h3>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Input label="First Name" value={registrationProfileEdits.firstName} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, firstName: e.target.value }))} />
+                        <Input label="Middle Name" value={registrationProfileEdits.middleName} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, middleName: e.target.value }))} />
+                        <Input label="Last Name" value={registrationProfileEdits.lastName} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, lastName: e.target.value }))} />
+                        <Input label="Suffix" value={registrationProfileEdits.suffix} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, suffix: e.target.value }))} />
+                        <Input label="Birthday" type="date" value={registrationProfileEdits.birthday} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, birthday: e.target.value }))} />
+                        <label className="block">
+                          <span className="mb-1 block text-sm font-medium text-gray-700">Gender</span>
+                          <select
+                            value={registrationProfileEdits.gender}
+                            onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, gender: e.target.value }))}
+                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                          >
+                            <option value="">Select gender</option>
+                            <option value="male">Male</option>
+                            <option value="female">Female</option>
+                            <option value="other">Other</option>
+                          </select>
+                        </label>
+                        <label className="block sm:col-span-2">
+                          <span className="mb-1 block text-sm font-medium text-gray-700">Marital Status</span>
+                          <select
+                            value={registrationProfileEdits.maritalStatus}
+                            onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, maritalStatus: e.target.value }))}
+                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                          >
+                            <option value="">Select marital status</option>
+                            <option value="single">Single</option>
+                            <option value="married">Married</option>
+                            <option value="cohabitant">Legal Cohabitant</option>
+                            <option value="widower">Widower</option>
+                            <option value="divorced">Divorced</option>
+                          </select>
+                        </label>
+                        <Input className="sm:col-span-2" label="Home Address" value={registrationProfileEdits.address} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, address: e.target.value }))} />
+                        <Input label="Mobile Number" value={registrationProfileEdits.mobileNumber} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, mobileNumber: e.target.value }))} />
+                        <Input label="Email" type="email" value={registrationProfileEdits.email} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, email: e.target.value }))} />
+                      </div>
+
+                      <div className="grid gap-3 border-t border-gray-100 pt-4 sm:grid-cols-2">
+                        <Input label="SSS Number" value={registrationProfileEdits.sssNumber} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, sssNumber: e.target.value }))} />
+                        <Input label="TIN Number" value={registrationProfileEdits.tinNumber} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, tinNumber: e.target.value }))} />
+                        <Input label="Pag-IBIG Number" value={registrationProfileEdits.pagibigNumber} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, pagibigNumber: e.target.value }))} />
+                        <Input label="PhilHealth Number" value={registrationProfileEdits.philhealthNumber} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, philhealthNumber: e.target.value }))} />
+                      </div>
+
+                      <div className="grid gap-3 border-t border-gray-100 pt-4 sm:grid-cols-3">
+                        <Input label="Contact Name" value={registrationProfileEdits.emergencyContact} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, emergencyContact: e.target.value }))} />
+                        <Input label="Contact Number" value={registrationProfileEdits.emergencyPhone} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, emergencyPhone: e.target.value }))} />
+                        <Input label="Relationship" value={registrationProfileEdits.emergencyRelationship} onChange={(e) => setRegistrationProfileEdits((prev) => ({ ...prev, emergencyRelationship: e.target.value }))} />
+                      </div>
+
+                      <div className="grid gap-3 border-t border-gray-100 pt-4 sm:grid-cols-2">
+                        {registrationProfileEdits.profilePictureUrl ? (
+                          <a href={registrationProfileEdits.profilePictureUrl} target="_blank" rel="noreferrer" className="group block">
+                            <span className="mb-1 block text-sm font-medium text-gray-700">Profile Picture</span>
+                            <img src={registrationProfileEdits.profilePictureUrl} alt="Submitted profile" className="h-28 w-28 rounded-full border border-gray-200 object-cover transition-opacity group-hover:opacity-80" />
+                          </a>
+                        ) : (
+                          <p className="text-sm text-gray-400">No profile picture submitted.</p>
+                        )}
+                        {registrationProfileEdits.validIdUrl ? (
+                          <a href={registrationProfileEdits.validIdUrl} target="_blank" rel="noreferrer" className="group block">
+                            <span className="mb-1 block text-sm font-medium text-gray-700">Valid ID</span>
+                            <img src={registrationProfileEdits.validIdUrl} alt="Submitted valid ID" className="h-28 w-full rounded-lg border border-gray-200 object-cover transition-opacity group-hover:opacity-80" />
+                          </a>
+                        ) : (
+                          <p className="text-sm text-gray-400">No valid ID submitted.</p>
+                        )}
+                      </div>
+                    </section>
+                  )}
+
+                  {canActOnSelected && (
                     <>
                     <div className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
                         <label className="block text-sm font-medium text-gray-700">
@@ -1230,7 +1361,10 @@ export function EmployeeVerificationsPage() {
                             <button
                               type="button"
                               className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
-                              onClick={() => setApproveAvatarUrl('')}
+                              onClick={() => {
+                                setApproveAvatarUrl('');
+                                setRegistrationProfileEdits((prev) => ({ ...prev, profilePictureUrl: '' }));
+                              }}
                               disabled={approveAvatarUploading || saving}
                             >
                               Remove

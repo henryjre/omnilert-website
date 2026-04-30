@@ -570,7 +570,7 @@ async function fetchLiveSnapshotRows(
       const q = dbConn('reward_request_targets as rrt')
         .join('reward_requests as rr', 'rr.id', 'rrt.reward_request_id')
         .where('rr.status', 'approved')
-        .whereBetween(dbConn.raw('COALESCE(rrt.applied_at, rr.reviewed_at, rr.updated_at)'), [todayStart, todayEnd])
+        .whereRaw('COALESCE(rrt.applied_at, rr.reviewed_at, rr.updated_at) BETWEEN ? AND ?', [todayStart, todayEnd])
         .groupBy('rrt.user_id')
         .select(
           'rrt.user_id',

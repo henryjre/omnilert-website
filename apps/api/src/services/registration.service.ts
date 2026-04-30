@@ -12,6 +12,7 @@ import {
   formatEmployeeDisplayName,
   getEmployeeIdentitySnapshot,
   syncAvatarToOdoo,
+  syncUserProfileToOdoo,
   unifyPartnerContactsByEmail,
 } from './odoo.service.js';
 import { sendRegistrationApprovedEmail } from './mail.service.js';
@@ -35,6 +36,37 @@ type CompanyAssignmentInput = {
 type ResidentBranchInput = {
   companyId: string;
   branchId: string;
+};
+
+type RegistrationProfileInput = {
+  firstName: string;
+  middleName: string;
+  lastName: string;
+  suffix?: string;
+  birthday: string;
+  gender: string;
+  maritalStatus: string;
+  address: string;
+  mobileNumber: string;
+  sssNumber?: string;
+  tinNumber?: string;
+  pagibigNumber?: string;
+  philhealthNumber?: string;
+  emergencyContact?: string;
+  emergencyPhone?: string;
+  emergencyRelationship?: string;
+  email: string;
+};
+
+type RegistrationApprovalProfileInput = Partial<RegistrationProfileInput & {
+  profilePictureUrl: string;
+  validIdUrl: string;
+}>;
+
+type RegistrationUploadInput = {
+  buffer: Buffer;
+  originalname: string;
+  mimetype: string;
 };
 
 type ResolvedCompanyAssignment = {
@@ -242,6 +274,75 @@ async function mergeRegistrationDuplicateUser(input: {
 
 function randomPin(): string {
   return String(Math.floor(1000 + Math.random() * 9000));
+}
+
+function cleanString(value: unknown): string {
+  return String(value ?? '').trim().replace(/\s+/g, ' ');
+}
+
+function cleanOptionalString(value: unknown): string | undefined {
+  const cleaned = cleanString(value);
+  return cleaned.length > 0 ? cleaned : undefined;
+}
+
+function buildLegalNameFromRegistration(profile: {
+  firstName: unknown;
+  middleName: unknown;
+  lastName: unknown;
+  suffix?: unknown;
+}): string {
+  return [
+    cleanString(profile.firstName),
+    cleanString(profile.middleName),
+    cleanString(profile.lastName),
+    cleanString(profile.suffix),
+  ].filter(Boolean).join(' ');
+}
+
+function parseJsonObject(value: unknown): Record<string, unknown> {
+  if (!value) return {};
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : {};
+    } catch {
+      return {};
+    }
+  }
+  return typeof value === 'object' ? value as Record<string, unknown> : {};
+}
+
+function resolveRegistrationProfile(request: any, edits?: RegistrationApprovalProfileInput): RegistrationProfileInput & {
+  profilePictureUrl: string | null;
+  validIdUrl: string | null;
+} {
+  const source = { ...request, ...parseJsonObject(request.approved_profile), ...(edits ?? {}) };
+  return {
+    firstName: cleanString(source.firstName ?? source.first_name),
+    middleName: cleanString(source.middleName ?? source.middle_name ?? 'N/A'),
+    lastName: cleanString(source.lastName ?? source.last_name),
+    suffix: cleanOptionalString(source.suffix),
+    birthday: cleanString(source.birthday),
+    gender: cleanString(source.gender),
+    maritalStatus: cleanString(source.maritalStatus ?? source.marital_status),
+    address: cleanString(source.address),
+    mobileNumber: cleanString(source.mobileNumber ?? source.mobile_number),
+    sssNumber: cleanOptionalString(source.sssNumber ?? source.sss_number),
+    tinNumber: cleanOptionalString(source.tinNumber ?? source.tin_number),
+    pagibigNumber: cleanOptionalString(source.pagibigNumber ?? source.pagibig_number),
+    philhealthNumber: cleanOptionalString(source.philhealthNumber ?? source.philhealth_number),
+    emergencyContact: cleanOptionalString(source.emergencyContact ?? source.emergency_contact),
+    emergencyPhone: cleanOptionalString(source.emergencyPhone ?? source.emergency_phone),
+    emergencyRelationship: cleanOptionalString(source.emergencyRelationship ?? source.emergency_relationship),
+    email: normalizeEmail(String(source.email ?? '')),
+    profilePictureUrl: cleanOptionalString(source.profilePictureUrl ?? source.profile_picture_url) ?? null,
+    validIdUrl: cleanOptionalString(source.validIdUrl ?? source.valid_id_url) ?? null,
+  };
+}
+
+function sanitizeRegistrationRequest(row: any): any {
+  const { encrypted_password: _encryptedPassword, ...rest } = row;
+  return rest;
 }
 
 async function emitRegistrationVerificationUpdateGlobal(payload: {
@@ -568,13 +669,33 @@ async function resolveAssignmentsOrThrow(input: {
 }
 
 export async function createRegistrationRequest(input: {
+  id?: string;
   firstName: string;
+  middleName: string;
   lastName: string;
+  suffix?: string;
+  birthday: string;
+  gender: string;
+  maritalStatus: string;
+  address: string;
+  mobileNumber: string;
+  sssNumber?: string;
+  tinNumber?: string;
+  pagibigNumber?: string;
+  philhealthNumber?: string;
+  emergencyContact?: string;
+  emergencyPhone?: string;
+  emergencyRelationship?: string;
   email: string;
   password: string;
+  profilePictureUrl?: string;
+  validIdUrl?: string;
+  profilePictureFile?: RegistrationUploadInput;
+  validIdFile?: RegistrationUploadInput;
 }): Promise<void> {
   const masterDb = db.getDb();
   const email = normalizeEmail(input.email);
+  const requestId = input.id ?? randomUUID();
 
   const existingUser = await masterDb('users')
     .whereRaw('LOWER(email) = ?', [email])
@@ -592,9 +713,55 @@ export async function createRegistrationRequest(input: {
     throw new AppError(409, 'A pending registration request already exists for this email');
   }
 
+  const uploadRegistrationImage = async (
+    file: RegistrationUploadInput | undefined,
+    folderName: string,
+  ): Promise<string | undefined> => {
+    if (!file) return undefined;
+    const folderPath = buildTenantStoragePrefix(
+      'public-registration',
+      requestId,
+      folderName,
+    );
+    const url = await uploadFile(file.buffer, file.originalname, file.mimetype, folderPath);
+    if (!url) {
+      throw new AppError(500, `Failed to upload ${folderName.toLowerCase()}`);
+    }
+    return url;
+  };
+
+  const profilePictureUrl = cleanOptionalString(input.profilePictureUrl)
+    ?? (await uploadRegistrationImage(input.profilePictureFile, 'Profile Picture'));
+  const validIdUrl = cleanOptionalString(input.validIdUrl)
+    ?? (await uploadRegistrationImage(input.validIdFile, 'Valid ID'));
+
+  if (!profilePictureUrl) {
+    throw new AppError(400, 'Profile picture is required');
+  }
+  if (!validIdUrl) {
+    throw new AppError(400, 'Valid ID image is required');
+  }
+
   const [created] = await masterDb('registration_requests').insert({
-    first_name: input.firstName.trim(),
-    last_name: input.lastName.trim(),
+    id: requestId,
+    first_name: cleanString(input.firstName),
+    middle_name: cleanString(input.middleName),
+    last_name: cleanString(input.lastName),
+    suffix: cleanOptionalString(input.suffix) ?? null,
+    birthday: cleanString(input.birthday),
+    gender: cleanString(input.gender),
+    marital_status: cleanString(input.maritalStatus),
+    address: cleanString(input.address),
+    mobile_number: cleanString(input.mobileNumber),
+    sss_number: cleanOptionalString(input.sssNumber) ?? null,
+    tin_number: cleanOptionalString(input.tinNumber) ?? null,
+    pagibig_number: cleanOptionalString(input.pagibigNumber) ?? null,
+    philhealth_number: cleanOptionalString(input.philhealthNumber) ?? null,
+    emergency_contact: cleanOptionalString(input.emergencyContact) ?? null,
+    emergency_phone: cleanOptionalString(input.emergencyPhone) ?? null,
+    emergency_relationship: cleanOptionalString(input.emergencyRelationship) ?? null,
+    profile_picture_url: profilePictureUrl,
+    valid_id_url: validIdUrl,
     email,
     encrypted_password: encryptText(input.password),
     status: REGISTRATION_STATUSES.PENDING,
@@ -610,13 +777,14 @@ export async function createRegistrationRequest(input: {
 
 export async function listRegistrationRequests(): Promise<any[]> {
   const masterDb = db.getDb();
-  return masterDb('registration_requests')
+  const rows = await masterDb('registration_requests')
     .leftJoin('users as reviewers', 'registration_requests.reviewed_by', 'reviewers.id')
     .select(
       'registration_requests.*',
       masterDb.raw("CONCAT(reviewers.first_name, ' ', reviewers.last_name) as reviewed_by_name"),
     )
     .orderBy('registration_requests.requested_at', 'desc');
+  return rows.map(sanitizeRegistrationRequest);
 }
 
 export async function listRegistrationAssignmentOptions(): Promise<{
@@ -677,6 +845,7 @@ export async function approveRegistrationRequest(input: {
   employeeNumber?: number;
   userKey?: string;
   avatarUrl?: string;
+  profile?: RegistrationApprovalProfileInput;
   avatarStorageRoot?: string | null;
 }): Promise<{ requestId: string; userId: string }> {
   const masterDb = db.getDb();
@@ -698,6 +867,7 @@ export async function approveRegistrationRequest(input: {
   if (request.status !== REGISTRATION_STATUSES.PENDING) {
     throw new AppError(400, 'Registration request is already resolved');
   }
+  const approvedProfile = resolveRegistrationProfile(request, input.profile);
 
   emitRegistrationApprovalProgress({
     companyId: input.reviewerCompanyId,
@@ -718,10 +888,10 @@ export async function approveRegistrationRequest(input: {
   });
   const residentAssignment = assignments.find((item) => item.companyId === resident.companyId)!;
 
-  const normalizedEmail = normalizeEmail(String(request.email));
+  const normalizedEmail = approvedProfile.email;
   const requestedAvatarUrl = typeof input.avatarUrl === 'string' && input.avatarUrl.trim().length > 0
     ? input.avatarUrl.trim()
-    : undefined;
+    : approvedProfile.profilePictureUrl ?? undefined;
   const requestedUserKey = normalizeOptionalUserKey(input.userKey);
   const identity = await resolveOrCreateEmployeeIdentity(normalizedEmail);
   const websiteKey = requestedUserKey ?? identity.websiteKey;
@@ -889,7 +1059,7 @@ export async function approveRegistrationRequest(input: {
       .update({ employee_number: employeeNumber, updated_at: new Date() });
   }
 
-  const fullName = `${request.first_name} ${request.last_name}`.trim();
+  const fullName = `${approvedProfile.firstName} ${approvedProfile.lastName}`.trim();
   const residentBranch = residentAssignment.branches.find((item) => item.id === resident.branchId)!;
 
   if (skipOdooEmployeeUpsert) {
@@ -923,8 +1093,8 @@ export async function approveRegistrationRequest(input: {
           name: formatEmployeeDisplayName(
             branch.odooBranchId,
             employeeNumber,
-            String(request.first_name ?? ''),
-            String(request.last_name ?? ''),
+            approvedProfile.firstName,
+            approvedProfile.lastName,
           ),
           workEmail: normalizedEmail,
           pin: sharedPin,
@@ -957,8 +1127,8 @@ export async function approveRegistrationRequest(input: {
       name: formatEmployeeDisplayName(
         DEFAULT_REGISTRATION_COMPANY_ID,
         employeeNumber,
-        String(request.first_name ?? ''),
-        String(request.last_name ?? ''),
+        approvedProfile.firstName,
+        approvedProfile.lastName,
       ),
       workEmail: normalizedEmail,
       pin: sharedPin,
@@ -981,8 +1151,8 @@ export async function approveRegistrationRequest(input: {
       mainCompanyId: residentBranch.odooBranchId,
       websiteKey,
       employeeNumber,
-      firstName: String(request.first_name ?? ''),
-      lastName: String(request.last_name ?? ''),
+      firstName: approvedProfile.firstName,
+      lastName: approvedProfile.lastName,
     });
   } catch (error) {
     logger.warn(
@@ -1044,14 +1214,16 @@ export async function approveRegistrationRequest(input: {
     let userId: string;
     if (canonicalDecision.canonicalUserId) {
       const updatePayload: Record<string, unknown> = {
-        first_name: String(request.first_name ?? '').trim(),
-        last_name: String(request.last_name ?? '').trim(),
+        first_name: approvedProfile.firstName,
+        last_name: approvedProfile.lastName,
         email: normalizedEmail,
+        mobile_number: approvedProfile.mobileNumber,
         password_hash: passwordHash,
         employee_number: employeeNumber,
         user_key: websiteKey,
         is_active: true,
         employment_status: 'active',
+        updated: true,
         updated_at: new Date(),
       };
       if (requestedAvatarUrl) {
@@ -1064,15 +1236,17 @@ export async function approveRegistrationRequest(input: {
       userId = updated.id as string;
     } else {
       const createPayload: Record<string, unknown> = {
-        first_name: String(request.first_name ?? '').trim(),
-        last_name: String(request.last_name ?? '').trim(),
+        first_name: approvedProfile.firstName,
+        last_name: approvedProfile.lastName,
         email: normalizedEmail,
+        mobile_number: approvedProfile.mobileNumber,
         password_hash: passwordHash,
         employee_number: employeeNumber,
         user_key: websiteKey,
         epi_score: avgEpi,
         is_active: true,
         employment_status: 'active',
+        updated: true,
       };
       if (requestedAvatarUrl) {
         createPayload.avatar_url = requestedAvatarUrl;
@@ -1082,6 +1256,44 @@ export async function approveRegistrationRequest(input: {
         .returning('id');
       userId = created.id as string;
     }
+
+    await trx('user_sensitive_info')
+      .insert({
+        user_id: userId,
+        legal_name: buildLegalNameFromRegistration(approvedProfile),
+        birthday: approvedProfile.birthday || null,
+        gender: approvedProfile.gender || null,
+        address: approvedProfile.address,
+        marital_status: approvedProfile.maritalStatus,
+        sss_number: approvedProfile.sssNumber ?? null,
+        tin_number: approvedProfile.tinNumber ?? null,
+        pagibig_number: approvedProfile.pagibigNumber ?? null,
+        philhealth_number: approvedProfile.philhealthNumber ?? null,
+        valid_id_url: approvedProfile.validIdUrl,
+        valid_id_updated_at: approvedProfile.validIdUrl ? new Date() : null,
+        emergency_contact: approvedProfile.emergencyContact ?? null,
+        emergency_phone: approvedProfile.emergencyPhone ?? null,
+        emergency_relationship: approvedProfile.emergencyRelationship ?? null,
+        updated_at: new Date(),
+      })
+      .onConflict('user_id')
+      .merge({
+        legal_name: buildLegalNameFromRegistration(approvedProfile),
+        birthday: approvedProfile.birthday || null,
+        gender: approvedProfile.gender || null,
+        address: approvedProfile.address,
+        marital_status: approvedProfile.maritalStatus,
+        sss_number: approvedProfile.sssNumber ?? null,
+        tin_number: approvedProfile.tinNumber ?? null,
+        pagibig_number: approvedProfile.pagibigNumber ?? null,
+        philhealth_number: approvedProfile.philhealthNumber ?? null,
+        valid_id_url: approvedProfile.validIdUrl,
+        valid_id_updated_at: approvedProfile.validIdUrl ? new Date() : null,
+        emergency_contact: approvedProfile.emergencyContact ?? null,
+        emergency_phone: approvedProfile.emergencyPhone ?? null,
+        emergency_relationship: approvedProfile.emergencyRelationship ?? null,
+        updated_at: new Date(),
+      });
 
     await trx('user_roles').where({ user_id: userId }).delete();
     if (input.roleIds.length > 0) {
@@ -1133,6 +1345,7 @@ export async function approveRegistrationRequest(input: {
         reviewed_by: input.reviewerId,
         reviewed_at: new Date(),
         approved_role_ids: JSON.stringify(input.roleIds),
+        approved_profile: JSON.stringify(approvedProfile),
         approved_user_id: userId,
         resident_company_id: resident.companyId,
         resident_branch_id: resident.branchId,
@@ -1190,6 +1403,35 @@ export async function approveRegistrationRequest(input: {
     password: decryptedPassword,
     companySlug: result.firstCompanySlug ?? undefined,
   });
+
+  try {
+    await syncUserProfileToOdoo(websiteKey, {
+      email: normalizedEmail,
+      mobileNumber: approvedProfile.mobileNumber,
+      legalName: buildLegalNameFromRegistration(approvedProfile),
+      birthday: approvedProfile.birthday || null,
+      gender: approvedProfile.gender || null,
+      maritalStatus: approvedProfile.maritalStatus,
+      address: approvedProfile.address,
+      emergencyContact: approvedProfile.emergencyContact ?? '',
+      emergencyPhone: approvedProfile.emergencyPhone ?? '',
+      firstName: approvedProfile.firstName,
+      lastName: approvedProfile.lastName,
+      employeeNumber,
+      mainCompanyId: residentBranch.odooBranchId,
+    });
+  } catch (error) {
+    logger.warn(
+      {
+        requestId: input.requestId,
+        userId: result.userId,
+        websiteKey,
+        email: normalizedEmail,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      'Failed to sync approved registration profile details to Odoo; continuing approval',
+    );
+  }
 
   if (requestedAvatarUrl) {
     try {

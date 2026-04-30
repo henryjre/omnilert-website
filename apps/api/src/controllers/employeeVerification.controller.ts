@@ -44,6 +44,7 @@ export async function approveRegistration(req: Request, res: Response, next: Nex
       employeeNumber: req.body.employeeNumber,
       userKey: req.body.userKey,
       avatarUrl: req.body.avatarUrl,
+      profile: req.body.profile,
       avatarStorageRoot: req.companyContext?.companyStorageRoot ?? null,
     });
     res.json({ success: true, data: result });
