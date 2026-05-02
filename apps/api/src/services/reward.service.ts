@@ -20,7 +20,7 @@ interface RewardRequestRow {
   epi_delta: number | string;
   reason: string;
   status: RewardRequestStatus;
-  created_by: string;
+  created_by: string | null;
   created_by_name: string | null;
   reviewed_by: string | null;
   reviewed_by_name: string | null;
@@ -73,6 +73,9 @@ function mapTarget(row: RewardTargetRow): RewardRequestTarget {
 }
 
 function mapRequest(row: RewardRequestRow, targets: RewardRequestTarget[]): RewardRequestSummary {
+  const createdByName = row.created_by
+    ? String(row.created_by_name ?? '').trim()
+    : 'Omnilert System';
   const reviewedByName = row.reviewed_by
     ? String(row.reviewed_by_name ?? '').trim() || null
     : row.status === 'approved'
@@ -87,8 +90,8 @@ function mapRequest(row: RewardRequestRow, targets: RewardRequestTarget[]): Rewa
     reason: row.reason,
     epiDelta: toNumber(row.epi_delta),
     targetCount: Number(row.target_count ?? targets.length),
-    createdByUserId: String(row.created_by),
-    createdByName: String(row.created_by_name ?? '').trim(),
+    createdByUserId: row.created_by ? String(row.created_by) : null,
+    createdByName,
     reviewedByUserId: row.reviewed_by ? String(row.reviewed_by) : null,
     reviewedByName,
     reviewedAt: toIso(row.reviewed_at),
@@ -273,7 +276,7 @@ export async function approveRewardRequest(input: {
         id: string;
         company_id: string;
         status: RewardRequestStatus;
-        created_by: string;
+        created_by: string | null;
         epi_delta: number | string;
       }>();
 
@@ -383,7 +386,7 @@ export async function rejectRewardRequest(input: {
     .first<{
       id: string;
       status: RewardRequestStatus;
-      created_by: string;
+        created_by: string | null;
     }>();
 
   if (!request) {
@@ -411,20 +414,22 @@ export async function rejectRewardRequest(input: {
     updated_at: now,
   });
 
-  try {
-    await createAndDispatchNotification({
-      userId: request.created_by,
-      companyId: input.companyId,
-      title: 'Reward Request Rejected',
-      message: `Your reward request was rejected. Reason: ${input.rejectionReason.trim()}`,
-      type: 'warning',
-      linkUrl: '/rewards',
-    });
-  } catch (err) {
-    logger.error(
-      { err, requestId: input.requestId },
-      'Failed to notify reward requester about rejection',
-    );
+  if (request.created_by) {
+    try {
+      await createAndDispatchNotification({
+        userId: request.created_by,
+        companyId: input.companyId,
+        title: 'Reward Request Rejected',
+        message: `Your reward request was rejected. Reason: ${input.rejectionReason.trim()}`,
+        type: 'warning',
+        linkUrl: '/rewards',
+      });
+    } catch (err) {
+      logger.error(
+        { err, requestId: input.requestId },
+        'Failed to notify reward requester about rejection',
+      );
+    }
   }
 
   return getRewardRequestDetail({ companyId: input.companyId, requestId: input.requestId });

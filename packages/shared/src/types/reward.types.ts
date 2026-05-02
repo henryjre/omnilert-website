@@ -19,7 +19,7 @@ export interface RewardRequestSummary {
   reason: string;
   epiDelta: number;
   targetCount: number;
-  createdByUserId: string;
+  createdByUserId: string | null;
   createdByName: string;
   reviewedByUserId: string | null;
   reviewedByName: string | null;

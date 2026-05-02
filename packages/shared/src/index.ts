@@ -205,3 +205,14 @@ export type {
   CreateRewardRequestInput,
   RejectRewardRequestInput,
 } from './validation/reward.schema.js';
+
+export {
+  discordSystemAdjustmentDirectionSchema,
+  discordSystemAdjustmentTypeSchema,
+  createDiscordSystemAdjustmentSchema,
+} from './validation/discordSystemAdjustment.schema.js';
+export type {
+  DiscordSystemAdjustmentDirectionInput,
+  DiscordSystemAdjustmentTypeInput,
+  CreateDiscordSystemAdjustmentInput,
+} from './validation/discordSystemAdjustment.schema.js';

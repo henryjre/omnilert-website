@@ -36,7 +36,7 @@ export interface PayrollAdjustmentRequestSummary {
   reason: string;
   createdAt: string;
   updatedAt: string;
-  createdByUserId: string;
+  createdByUserId: string | null;
   createdByName: string;
   processingOwnerUserId: string | null;
   processingOwnerName: string | null;

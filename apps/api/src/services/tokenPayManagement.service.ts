@@ -240,12 +240,14 @@ export async function listIssuanceRequests(
     reason: (row.reason as string | null) ?? '',
     status: row.status as 'pending' | 'completed' | 'rejected',
     rejectionReason: (row.rejection_reason as string | null) ?? null,
-    issuedByUserId: String(row.issued_by_user_id ?? ''),
+    issuedByUserId: row.issued_by_user_id ? String(row.issued_by_user_id) : null,
     issuedByName: String(row.issued_by ?? ''),
     reviewedByUserId: row.reviewed_by_user_id ? String(row.reviewed_by_user_id) : null,
     reviewedByName: row.reviewed_by_user_id
       ? String(row.reviewed_by_name ?? '').trim() || null
-      : null,
+      : row.status === 'completed' && row.issued_by === 'Omnilert System'
+        ? 'Omnilert System'
+        : null,
     reviewedAt: row.reviewed_at ? new Date(row.reviewed_at as Date).toISOString() : null,
     createdAt: new Date(row.created_at as Date).toISOString(),
   }));

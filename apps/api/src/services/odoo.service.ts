@@ -2698,8 +2698,7 @@ export async function createPayrollAdjustmentSalaryAttachment(input: {
   const dateStart = getTodayManilaYmd();
   const payload: Record<string, unknown> = {
     employee_ids: [[4, input.employeeId]],
-    // DEDUCTION TYPE
-    other_input_type_id: 1,
+    other_input_type_id: input.type === 'issuance' ? 12 : 1,
     monthly_amount: input.monthlyAmount,
     total_amount: input.totalAmount,
     is_refund: input.type === 'deduction',

@@ -44,7 +44,7 @@ export interface TokenPayIssuanceRequest {
   reason: string;
   status: 'pending' | 'completed' | 'rejected';
   rejectionReason: string | null;
-  issuedByUserId: string;
+  issuedByUserId: string | null;
   issuedByName: string;
   reviewedByUserId: string | null;
   reviewedByName: string | null;

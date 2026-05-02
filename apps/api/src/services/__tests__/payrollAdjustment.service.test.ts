@@ -1,5 +1,5 @@
-import assert from 'node:assert/strict';
-import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import { expect, test } from 'vitest';
 
 process.env.JWT_SECRET ??= 'test-jwt-secret-12345';
 process.env.JWT_REFRESH_SECRET ??= 'test-jwt-refresh-secret';
@@ -21,7 +21,7 @@ const {
 test('splitPayrollAdjustmentAllocations assigns the centavo remainder to the last target', () => {
   const allocations = splitPayrollAdjustmentAllocations(100, ['user-1', 'user-2', 'user-3'], 1);
 
-  assert.deepEqual(allocations, [
+  expect(allocations).toEqual([
     {
       userId: 'user-1',
       allocatedTotalAmount: 33.33,
@@ -43,7 +43,7 @@ test('splitPayrollAdjustmentAllocations assigns the centavo remainder to the las
 test('splitPayrollAdjustmentAllocations derives monthly amounts when payroll periods are limited', () => {
   const allocations = splitPayrollAdjustmentAllocations(900, ['user-1', 'user-2'], 3);
 
-  assert.deepEqual(allocations, [
+  expect(allocations).toEqual([
     {
       userId: 'user-1',
       allocatedTotalAmount: 450,
@@ -58,22 +58,41 @@ test('splitPayrollAdjustmentAllocations derives monthly amounts when payroll per
 });
 
 test('derivePayrollAdjustmentParentStatus keeps employee approval until all targets authorize', () => {
-  assert.equal(
+  expect(
     derivePayrollAdjustmentParentStatus(['pending', 'in_progress']),
-    'employee_approval',
-  );
+  ).toBe('employee_approval');
 });
 
 test('derivePayrollAdjustmentParentStatus moves to in progress once all targets authorize', () => {
-  assert.equal(
+  expect(
     derivePayrollAdjustmentParentStatus(['in_progress', 'in_progress']),
-    'in_progress',
-  );
+  ).toBe('in_progress');
 });
 
 test('derivePayrollAdjustmentParentStatus moves to completed once all targets complete', () => {
-  assert.equal(
+  expect(
     derivePayrollAdjustmentParentStatus(['completed', 'completed']),
-    'completed',
-  );
+  ).toBe('completed');
+});
+
+test('payroll adjustment mappings support system-created records', () => {
+  const source = readFileSync(new URL('../payrollAdjustment.service.ts', import.meta.url), 'utf8');
+
+  expect(source).toMatch(/createdByUserId:\s*row\.created_by_user_id \? String\(row\.created_by_user_id\) : null/);
+  expect(source).toMatch(/createdByName:\s*row\.created_by_user_id \? normalizeName\(row\.created_by_name\) : 'Omnilert System'/);
+  expect(source).toMatch(/processingOwnerName:[\s\S]*'Omnilert System'/);
+  expect(source).toMatch(/approvedByName:[\s\S]*'Omnilert System'/);
+  expect(source).toMatch(/leftJoin\('users as creator'/);
+});
+
+test('employee payroll authorization locks base rows before nullable creator joins', () => {
+  const source = readFileSync(new URL('../payrollAdjustment.service.ts', import.meta.url), 'utf8');
+  const helperStart = source.indexOf('async function loadTargetRowForEmployee');
+  const helperEnd = source.indexOf('export async function listPayrollAdjustmentRequests');
+  const helperSource = source.slice(helperStart, helperEnd);
+
+  expect(helperSource).toMatch(/if \(forUpdate\)/);
+  expect(helperSource).toMatch(/select\('target\.id'\)[\s\S]*\.forUpdate\(\)/);
+  expect(helperSource).toMatch(/select\('request\.id'\)[\s\S]*\.forUpdate\(\)/);
+  expect(helperSource).not.toMatch(/query = query\.forUpdate\(\)/);
 });

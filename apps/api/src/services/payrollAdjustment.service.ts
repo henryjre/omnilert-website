@@ -38,8 +38,8 @@ interface RequestRow {
   total_amount: string;
   payroll_periods: number;
   status: PayrollAdjustmentManagerStatus;
-  created_by_user_id: string;
-  created_by_name: string;
+  created_by_user_id: string | null;
+  created_by_name: string | null;
   processing_owner_user_id: string | null;
   processing_owner_name: string | null;
   approved_by_user_id: string | null;
@@ -307,14 +307,22 @@ function mapRequestSummary(
     reason: row.reason,
     createdAt: row.created_at.toISOString(),
     updatedAt: row.updated_at.toISOString(),
-    createdByUserId: String(row.created_by_user_id),
-    createdByName: normalizeName(row.created_by_name),
+    createdByUserId: row.created_by_user_id ? String(row.created_by_user_id) : null,
+    createdByName: row.created_by_user_id ? normalizeName(row.created_by_name) : 'Omnilert System',
     processingOwnerUserId: row.processing_owner_user_id ? String(row.processing_owner_user_id) : null,
-    processingOwnerName: row.processing_owner_name ? normalizeName(row.processing_owner_name) : null,
+    processingOwnerName: row.processing_owner_user_id
+      ? normalizeName(row.processing_owner_name)
+      : row.confirmed_at && !row.processing_owner_user_id
+        ? 'Omnilert System'
+        : null,
     approvedByUserId: row.approved_by_user_id ? String(row.approved_by_user_id) : null,
-    approvedByName: row.approved_by_name ? normalizeName(row.approved_by_name) : null,
+    approvedByName: row.approved_by_user_id
+      ? normalizeName(row.approved_by_name)
+      : row.approved_at && !row.approved_by_user_id
+        ? 'Omnilert System'
+        : null,
     rejectedByUserId: row.rejected_by_user_id ? String(row.rejected_by_user_id) : null,
-    rejectedByName: row.rejected_by_name ? normalizeName(row.rejected_by_name) : null,
+    rejectedByName: row.rejected_by_user_id ? normalizeName(row.rejected_by_name) : null,
     rejectionReason: row.rejection_reason ?? null,
     confirmedAt: toIso(row.confirmed_at),
     approvedAt: toIso(row.approved_at),
@@ -350,7 +358,7 @@ async function loadManagerRequestRow(
   const row = await trx('payroll_adjustment_requests as request')
     .join('companies as company', 'request.company_id', 'company.id')
     .join('branches as branch', 'request.branch_id', 'branch.id')
-    .join('users as creator', 'request.created_by_user_id', 'creator.id')
+    .leftJoin('users as creator', 'request.created_by_user_id', 'creator.id')
     .leftJoin('users as processing_owner', 'request.processing_owner_user_id', 'processing_owner.id')
     .leftJoin('users as approver', 'request.approved_by_user_id', 'approver.id')
     .leftJoin('users as rejector', 'request.rejected_by_user_id', 'rejector.id')
@@ -419,10 +427,42 @@ async function loadTargetRowForEmployee(
   allocatedMonthlyAmount: string;
   odooSalaryAttachmentId: number | null;
 }> {
+  if (forUpdate) {
+    const lockedTarget = await trx('payroll_adjustment_request_targets as target')
+      .join('payroll_adjustment_requests as request', 'target.request_id', 'request.id')
+      .where({
+        'target.id': targetId,
+        'target.user_id': userId,
+      })
+      .modify((builder) => {
+        if (companyId) {
+          builder.andWhere('request.company_id', companyId);
+        }
+      })
+      .whereIn('request.status', ['employee_approval', 'in_progress', 'completed'])
+      .select('target.id')
+      .first()
+      .forUpdate();
+
+    if (!lockedTarget) {
+      throw new AppError(404, 'Payroll adjustment not found');
+    }
+
+    await trx('payroll_adjustment_requests as request')
+      .join('payroll_adjustment_request_targets as target', 'target.request_id', 'request.id')
+      .where({
+        'target.id': targetId,
+        'target.user_id': userId,
+      })
+      .select('request.id')
+      .first()
+      .forUpdate();
+  }
+
   let query = trx('payroll_adjustment_request_targets as target')
     .join('payroll_adjustment_requests as request', 'target.request_id', 'request.id')
     .join('branches as branch', 'request.branch_id', 'branch.id')
-    .join('users as creator', 'request.created_by_user_id', 'creator.id')
+    .leftJoin('users as creator', 'request.created_by_user_id', 'creator.id')
     .where({
       'target.id': targetId,
       'target.user_id': userId,
@@ -440,7 +480,7 @@ async function loadTargetRowForEmployee(
       'request.status as request_status',
       'request.payroll_periods',
       'request.reason',
-      trx.raw(`COALESCE(creator.first_name, '') || ' ' || COALESCE(creator.last_name, '') as issuer_name`),
+      trx.raw(`CASE WHEN creator.id IS NULL THEN 'Omnilert System' ELSE COALESCE(creator.first_name, '') || ' ' || COALESCE(creator.last_name, '') END as issuer_name`),
       'request.created_at',
       'target.authorized_at',
       'target.completed_at',
@@ -452,10 +492,6 @@ async function loadTargetRowForEmployee(
 
   if (companyId) {
     query = query.andWhere('request.company_id', companyId);
-  }
-
-  if (forUpdate) {
-    query = query.forUpdate();
   }
 
   const row = await query as any;
@@ -566,7 +602,7 @@ export async function listPayrollAdjustmentRequests(params: {
   const rows = await baseQuery()
     .join('companies as company', 'request.company_id', 'company.id')
     .join('branches as branch', 'request.branch_id', 'branch.id')
-    .join('users as creator', 'request.created_by_user_id', 'creator.id')
+    .leftJoin('users as creator', 'request.created_by_user_id', 'creator.id')
     .leftJoin('users as processing_owner', 'request.processing_owner_user_id', 'processing_owner.id')
     .leftJoin('users as approver', 'request.approved_by_user_id', 'approver.id')
     .leftJoin('users as rejector', 'request.rejected_by_user_id', 'rejector.id')
@@ -874,7 +910,7 @@ export async function listPayrollAdjustmentEmployeeItems(params: {
   const rows = await baseQuery()
     .join('companies as company', 'request.company_id', 'company.id')
     .join('branches as branch', 'request.branch_id', 'branch.id')
-    .join('users as creator', 'request.created_by_user_id', 'creator.id')
+    .leftJoin('users as creator', 'request.created_by_user_id', 'creator.id')
     .select<EmployeeListRow[]>(
       'target.id',
       'target.request_id',
@@ -929,7 +965,7 @@ export async function listPayrollAdjustmentEmployeeItems(params: {
 
 function trxRawName(knexLike: Knex | Knex.Transaction, alias: string, output: string) {
   return knexLike.raw(
-    `COALESCE(${alias}.first_name, '') || ' ' || COALESCE(${alias}.last_name, '') as ${output}`,
+    `CASE WHEN ${alias}.id IS NULL THEN 'Omnilert System' ELSE COALESCE(${alias}.first_name, '') || ' ' || COALESCE(${alias}.last_name, '') END as ${output}`,
   );
 }
 
@@ -944,7 +980,7 @@ export async function getPayrollAdjustmentEmployeeDetail(params: {
     .join('payroll_adjustment_requests as request', 'target.request_id', 'request.id')
     .join('companies as company', 'request.company_id', 'company.id')
     .join('branches as branch', 'request.branch_id', 'branch.id')
-    .join('users as creator', 'request.created_by_user_id', 'creator.id')
+    .leftJoin('users as creator', 'request.created_by_user_id', 'creator.id')
     .where({
       'target.id': params.targetId,
       'target.user_id': params.userId,

@@ -3,7 +3,7 @@ import { createAndDispatchNotification } from './notification.service.js';
 
 interface AutoApprovedEpiAdjustmentInput {
   companyId: string;
-  createdByUserId: string;
+  createdByUserId: string | null;
   targetUserIds: string[];
   epiDelta: number;
   reason: string;

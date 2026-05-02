@@ -77,6 +77,7 @@ describe('Rewards contracts', () => {
     const service = readRepoFile('apps/api/src/services/reward.service.ts');
     expect(service).toContain("'Omnilert System'");
     expect(service).toContain("row.status === 'approved'");
+    expect(service).toContain("createdByUserId: row.created_by ? String(row.created_by) : null");
   });
 
   test('auto-approved EPI adjustments insert approved requests and apply target deltas', () => {

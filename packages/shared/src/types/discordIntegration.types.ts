@@ -66,3 +66,23 @@ export interface DiscordRegistrationDiscordIdData {
     discord_user_id: string | null;
   };
 }
+
+export type DiscordSystemAdjustmentType = 'token_pay' | 'payroll' | 'epi_adjustment';
+
+export type DiscordSystemAdjustmentDirection = 'addition' | 'deduction';
+
+export interface DiscordSystemAdjustmentRequest {
+  discord_id: string;
+  adjustment_type: DiscordSystemAdjustmentType;
+  adjustment_direction: DiscordSystemAdjustmentDirection;
+  amount: number;
+  reason: string;
+}
+
+export interface DiscordSystemAdjustmentData {
+  adjustment_type: DiscordSystemAdjustmentType;
+  adjustment_direction: DiscordSystemAdjustmentDirection;
+  user_id: string;
+  record_id: string;
+  status: 'completed' | 'employee_approval' | 'approved';
+}

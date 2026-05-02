@@ -5,6 +5,7 @@ import {
   DiscordIntegrationNotFoundError,
   DiscordIntegrationValidationError,
 } from '../services/discordUserIntegration.service.js';
+import { createDiscordSystemAdjustment } from '../services/discordSystemAdjustment.service.js';
 
 function toAppError(error: unknown): AppError | null {
   if (error instanceof DiscordIntegrationValidationError) {
@@ -107,6 +108,20 @@ export async function updateUserDiscordId(req: Request, res: Response, next: Nex
       return;
     }
 
+    const mapped = toAppError(error);
+    next(mapped ?? error);
+  }
+}
+
+export async function createSystemAdjustment(req: Request, res: Response, next: NextFunction) {
+  try {
+    const data = await createDiscordSystemAdjustment(req.body);
+
+    res.status(201).json({
+      success: true,
+      data,
+    });
+  } catch (error) {
     const mapped = toAppError(error);
     next(mapped ?? error);
   }
