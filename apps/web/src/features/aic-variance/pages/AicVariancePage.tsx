@@ -107,6 +107,11 @@ export function AicVariancePage() {
     Boolean(filters.date_to) ||
     filters.sort_order !== 'desc';
 
+  useEffect(() => {
+    const aicId = searchParams.get('aicId');
+    setSelectedAicId((prev) => (prev !== aicId ? aicId : prev));
+  }, [searchParams]);
+
   const appliedFilters = useMemo(
     () => ({
       ...filters,

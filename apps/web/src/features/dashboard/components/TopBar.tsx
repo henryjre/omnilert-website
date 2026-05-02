@@ -240,7 +240,11 @@ export function TopBar({ onOpenSidebar, onOpenAccountSidebar, accountSidebarOpen
       navigate(n.link_url);
       return;
     }
-    if (n.link_url?.startsWith('/case-reports') || n.link_url?.startsWith('/violation-notices')) {
+    if (
+      n.link_url?.startsWith('/case-reports') ||
+      n.link_url?.startsWith('/violation-notices') ||
+      n.link_url?.startsWith('/aic-variance')
+    ) {
       navigate(n.link_url);
       return;
     }

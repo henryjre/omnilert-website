@@ -479,7 +479,7 @@ export function EmployeeNotificationsTab() {
       navigate('/account/profile');
       return;
     }
-    if (linkUrl.startsWith('/case-reports') || linkUrl.startsWith('/violation-notices')) {
+    if (linkUrl.startsWith('/case-reports') || linkUrl.startsWith('/violation-notices') || linkUrl.startsWith('/aic-variance')) {
       navigate(linkUrl);
       return;
     }
@@ -621,7 +621,8 @@ export function EmployeeNotificationsTab() {
           const payslipAdjustmentId = getPayslipAdjustmentId(n.link_url);
           const isDiscussionLink =
             typeof n.link_url === 'string' &&
-            (n.link_url.startsWith('/case-reports') || n.link_url.startsWith('/violation-notices'));
+            (n.link_url.startsWith('/case-reports') || n.link_url.startsWith('/violation-notices') || n.link_url.startsWith('/aic-variance'));
+          const isAicVarianceLink = typeof n.link_url === 'string' && n.link_url.startsWith('/aic-variance');
           const isAuthRequestLink = typeof n.link_url === "string" && n.link_url.startsWith("/account/authorization-requests");
           const isCashRequestLink = typeof n.link_url === "string" && n.link_url.startsWith("/account/cash-requests");
           const isDeletingNotification = deletingNotificationIds.has(n.id);
@@ -668,6 +669,17 @@ export function EmployeeNotificationsTab() {
                         className="text-xs"
                       >
                         View Reply
+                      </Button>
+                    )}
+                    {isAicVarianceLink && !messageId && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        data-no-swipe
+                        onClick={() => { void handleOpenNotificationLink(n); }}
+                        className="text-xs"
+                      >
+                        View AIC
                       </Button>
                     )}
                     {authId && (

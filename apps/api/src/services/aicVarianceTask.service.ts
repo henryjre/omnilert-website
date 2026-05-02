@@ -6,6 +6,7 @@ import { logger } from '../utils/logger.js';
 import { buildTenantStoragePrefix, uploadFile } from './storage.service.js';
 import { createAndDispatchNotification } from './notification.service.js';
 import { emitAicEvent } from './aicVarianceWebhook.service.js';
+import { upsertParticipant } from './aicVariance.service.js';
 
 // ── Row types ─────────────────────────────────────────────────────────────────
 
@@ -179,6 +180,11 @@ export async function createTask(input: {
   if (input.assigneeUserIds.length > 0) {
     await db.getDb()('aic_task_assignees').insert(
       input.assigneeUserIds.map((userId) => ({ task_id: taskRow.id, user_id: userId })),
+    );
+    await Promise.all(
+      [...new Set(input.assigneeUserIds)].map((userId) =>
+        upsertParticipant(input.aicId, userId, { is_joined: true }),
+      ),
     );
   }
 

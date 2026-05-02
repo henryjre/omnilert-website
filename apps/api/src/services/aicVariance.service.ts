@@ -79,7 +79,27 @@ async function getRecordOrThrow(aicId: string): Promise<AicRecordRow> {
   return row as AicRecordRow;
 }
 
-async function upsertParticipant(
+async function hasAicNotificationLink(input: {
+  userId: string;
+  companyId: string;
+  aicId: string;
+}): Promise<boolean> {
+  const linkPrefix = `/aic-variance?aicId=${input.aicId}`;
+  const row = await db
+    .getDb()('employee_notifications')
+    .where({
+      user_id: input.userId,
+      company_id: input.companyId,
+    })
+    .andWhere((query) => {
+      query.where('link_url', linkPrefix).orWhere('link_url', 'like', `${linkPrefix}&%`);
+    })
+    .first('id');
+
+  return Boolean(row);
+}
+
+export async function upsertParticipant(
   aicId: string,
   userId: string,
   patch: Partial<Pick<AicParticipantRow, 'is_joined' | 'is_muted' | 'last_read_at'>>,
@@ -396,6 +416,7 @@ async function notifyMentionedUsers(input: {
 
   await Promise.all(
     [...targetUserIds].map(async (userId) => {
+      await upsertParticipant(input.aicId, userId, { is_joined: true });
       if (mutedSet.has(userId)) return;
       await createAndDispatchNotification({
         userId,
@@ -559,7 +580,14 @@ export async function getAicRecord(input: {
       .getDb()('aic_participants')
       .where({ aic_record_id: input.aicId, user_id: input.userId, is_joined: true })
       .first();
-    if (!participant) throw new AppError(403, 'You are not a participant of this AIC record');
+    if (!participant) {
+      const hasNotificationLink = await hasAicNotificationLink({
+        userId: input.userId,
+        companyId: input.companyId,
+        aicId: input.aicId,
+      });
+      if (!hasNotificationLink) throw new AppError(403, 'You are not a participant of this AIC record');
+    }
   }
 
   await upsertParticipant(input.aicId, input.userId, {
