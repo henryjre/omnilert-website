@@ -72,7 +72,7 @@ export type DiscordSystemAdjustmentType = 'token_pay' | 'payroll' | 'epi_adjustm
 export type DiscordSystemAdjustmentDirection = 'addition' | 'deduction';
 
 export interface DiscordSystemAdjustmentRequest {
-  discord_id: string;
+  discord_id: string | string[];
   adjustment_type: DiscordSystemAdjustmentType;
   adjustment_direction: DiscordSystemAdjustmentDirection;
   amount: number;
@@ -85,4 +85,15 @@ export interface DiscordSystemAdjustmentData {
   user_id: string;
   record_id: string;
   status: 'completed' | 'employee_approval' | 'approved';
+}
+
+export interface DiscordSystemAdjustmentBulkItem {
+  discord_id: string;
+  success: boolean;
+  data: DiscordSystemAdjustmentData | null;
+  error: string | null;
+}
+
+export interface DiscordSystemAdjustmentBulkData {
+  items: DiscordSystemAdjustmentBulkItem[];
 }

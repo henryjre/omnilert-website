@@ -11,18 +11,25 @@ test('discord system adjustments resolve users by active Discord ID', () => {
   expect(serviceSource).toMatch(/is_active:\s*true/);
 });
 
+test('discord system adjustments support single and bulk discord IDs', () => {
+  expect(serviceSource).toMatch(/function normalizeDiscordIds/);
+  expect(serviceSource).toMatch(/!Array\.isArray\(input\.discord_id\)/);
+  expect(serviceSource).toMatch(/const items: DiscordSystemAdjustmentBulkItem\[\] = \[\]/);
+  expect(serviceSource).toMatch(/for \(const discordId of discordIds\)/);
+});
+
 test('token pay and epi adjustments resolve only active company scope', () => {
   expect(serviceSource).toMatch(/function resolveActiveCompanyScope/);
   expect(serviceSource).toMatch(/residentCompanyIds\.length > 0/);
   expect(serviceSource).toMatch(/Could not infer an active company for this user/);
-  expect(serviceSource).toMatch(/if \(input\.adjustment_type === 'token_pay'\)[\s\S]*resolveActiveCompanyScope/);
+  expect(serviceSource).toMatch(/if \(input\.adjustmentType === 'token_pay'\)[\s\S]*resolveActiveCompanyScope/);
   expect(serviceSource).toMatch(/const companyId = await resolveActiveCompanyScope\(targetUser\.id\);\n  return createEpiDeduction/);
 });
 
 test('payroll adjustments resolve resident branch scope', () => {
   expect(serviceSource).toMatch(/'ucb\.assignment_type':\s*'resident'/);
   expect(serviceSource).toMatch(/Could not infer a single resident company and branch/);
-  expect(serviceSource).toMatch(/if \(input\.adjustment_type === 'payroll'\)[\s\S]*resolveResidentScope/);
+  expect(serviceSource).toMatch(/if \(input\.adjustmentType === 'payroll'\)[\s\S]*resolveResidentScope/);
 });
 
 test('discord system token pay adjustments complete with null reviewer and issuer ids', () => {

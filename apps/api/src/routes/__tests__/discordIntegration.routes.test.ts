@@ -56,7 +56,23 @@ test('discord system adjustment schema validates bot payloads', () => {
   }).success).toBe(true);
 
   expect(createDiscordSystemAdjustmentSchema.safeParse({
+    discord_id: ['123456789012345678', '223456789012345678'],
+    adjustment_type: 'token_pay',
+    adjustment_direction: 'deduction',
+    amount: 100,
+    reason: 'Manual Discord adjustment',
+  }).success).toBe(true);
+
+  expect(createDiscordSystemAdjustmentSchema.safeParse({
     discord_id: 'not-discord',
+    adjustment_type: 'token_pay',
+    adjustment_direction: 'deduction',
+    amount: 100,
+    reason: 'Manual Discord adjustment',
+  }).success).toBe(false);
+
+  expect(createDiscordSystemAdjustmentSchema.safeParse({
+    discord_id: [],
     adjustment_type: 'token_pay',
     adjustment_direction: 'deduction',
     amount: 100,

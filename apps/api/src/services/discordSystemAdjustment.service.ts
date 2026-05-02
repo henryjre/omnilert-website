@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type {
   CreateDiscordSystemAdjustmentInput,
+  DiscordSystemAdjustmentBulkData,
+  DiscordSystemAdjustmentBulkItem,
   DiscordSystemAdjustmentDirectionInput,
   DiscordSystemAdjustmentData,
 } from '@omnilert/shared';
@@ -27,6 +29,7 @@ interface TargetScope {
 }
 
 type DiscordSystemAdjustmentResult = DiscordSystemAdjustmentData;
+type DiscordSystemAdjustmentResponse = DiscordSystemAdjustmentData | DiscordSystemAdjustmentBulkData;
 
 async function resolveTargetUser(discordId: string): Promise<TargetUser> {
   const user = await db
@@ -321,31 +324,35 @@ async function createEpiDeduction(input: {
   };
 }
 
-export async function createDiscordSystemAdjustment(
-  input: CreateDiscordSystemAdjustmentInput,
-): Promise<DiscordSystemAdjustmentResult> {
-  const targetUser = await resolveTargetUser(input.discord_id);
+async function createSingleDiscordSystemAdjustment(input: {
+  discordId: string;
+  adjustmentType: CreateDiscordSystemAdjustmentInput['adjustment_type'];
+  adjustmentDirection: CreateDiscordSystemAdjustmentInput['adjustment_direction'];
+  amount: number;
+  reason: string;
+}): Promise<DiscordSystemAdjustmentResult> {
+  const targetUser = await resolveTargetUser(input.discordId);
   const reason = input.reason.trim() || SYSTEM_ADJUSTMENT_REASON;
 
-  if (input.adjustment_type === 'token_pay') {
+  if (input.adjustmentType === 'token_pay') {
     const companyId = await resolveActiveCompanyScope(targetUser.id);
     return createTokenPayDeduction({
       companyId,
       userId: targetUser.id,
       userKey: targetUser.user_key,
-      direction: input.adjustment_direction,
+      direction: input.adjustmentDirection,
       amount: input.amount,
       reason,
     });
   }
 
-  if (input.adjustment_type === 'payroll') {
+  if (input.adjustmentType === 'payroll') {
     const scope = await resolveResidentScope(targetUser.id);
     return createPayrollDeduction({
       companyId: scope.companyId,
       branchId: scope.branchId,
       userId: targetUser.id,
-      direction: input.adjustment_direction,
+      direction: input.adjustmentDirection,
       amount: input.amount,
       reason,
     });
@@ -355,8 +362,62 @@ export async function createDiscordSystemAdjustment(
   return createEpiDeduction({
     companyId,
     userId: targetUser.id,
-    direction: input.adjustment_direction,
+    direction: input.adjustmentDirection,
     amount: input.amount,
     reason,
   });
+}
+
+function normalizeDiscordIds(value: string | string[]): string[] {
+  const ids = Array.isArray(value) ? value : [value];
+  return Array.from(new Set(ids));
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Failed to create adjustment';
+}
+
+export async function createDiscordSystemAdjustment(
+  input: CreateDiscordSystemAdjustmentInput,
+): Promise<DiscordSystemAdjustmentResponse> {
+  const discordIds = normalizeDiscordIds(input.discord_id);
+  const reason = input.reason.trim() || SYSTEM_ADJUSTMENT_REASON;
+
+  if (!Array.isArray(input.discord_id)) {
+    return createSingleDiscordSystemAdjustment({
+      discordId: discordIds[0]!,
+      adjustmentType: input.adjustment_type,
+      adjustmentDirection: input.adjustment_direction,
+      amount: input.amount,
+      reason,
+    });
+  }
+
+  const items: DiscordSystemAdjustmentBulkItem[] = [];
+  for (const discordId of discordIds) {
+    try {
+      const data = await createSingleDiscordSystemAdjustment({
+        discordId,
+        adjustmentType: input.adjustment_type,
+        adjustmentDirection: input.adjustment_direction,
+        amount: input.amount,
+        reason,
+      });
+      items.push({
+        discord_id: discordId,
+        success: true,
+        data,
+        error: null,
+      });
+    } catch (error) {
+      items.push({
+        discord_id: discordId,
+        success: false,
+        data: null,
+        error: errorMessage(error),
+      });
+    }
+  }
+
+  return { items };
 }

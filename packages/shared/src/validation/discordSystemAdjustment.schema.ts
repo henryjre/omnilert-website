@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+const discordSnowflakeSchema = z
+  .string()
+  .regex(/^\d{17,20}$/, 'discord_id must be a valid Discord snowflake');
+
 export const discordSystemAdjustmentTypeSchema = z.enum([
   'token_pay',
   'payroll',
@@ -12,7 +16,10 @@ export const discordSystemAdjustmentDirectionSchema = z.enum([
 ]);
 
 export const createDiscordSystemAdjustmentSchema = z.object({
-  discord_id: z.string().regex(/^\d{17,20}$/, 'discord_id must be a valid Discord snowflake'),
+  discord_id: z.union([
+    discordSnowflakeSchema,
+    z.array(discordSnowflakeSchema).min(1).max(250),
+  ]),
   adjustment_type: discordSystemAdjustmentTypeSchema,
   adjustment_direction: discordSystemAdjustmentDirectionSchema,
   amount: z.coerce
