@@ -9,6 +9,7 @@ import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import { usePermission } from '@/shared/hooks/usePermission';
 import { useSocket } from '@/shared/hooks/useSocket';
 import { useAppToast } from '@/shared/hooks/useAppToast';
+import { useBranchStore } from '@/shared/store/branchStore';
 import type { ViewOption } from '@/shared/components/ui/ViewToggle';
 import {
   completeAicTask,
@@ -75,6 +76,7 @@ export function AicVariancePage() {
   const { hasPermission, hasAnyPermission } = usePermission();
   const { success: showSuccessToast, error: showErrorToast } = useAppToast();
   const { user } = useAuth();
+  const selectedBranchIds = useBranchStore((s) => s.selectedBranchIds);
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [loading, setLoading] = useState(true);
@@ -116,8 +118,9 @@ export function AicVariancePage() {
     () => ({
       ...filters,
       status: statusTab === 'all' ? undefined : statusTab,
+      branchIds: selectedBranchIds,
     }),
-    [filters, statusTab],
+    [filters, selectedBranchIds, statusTab],
   );
 
   const fetchRecords = useCallback(

@@ -859,6 +859,7 @@ export async function approvePayrollAdjustmentRequest(params: {
       targetId: String(target.id),
       userId: String(target.user_id),
       companyId: row.company_id,
+      type: row.type,
     }));
   });
 
@@ -869,7 +870,7 @@ export async function approvePayrollAdjustmentRequest(params: {
         companyId: target.companyId,
         title: 'Payroll Adjustment Authorization Required',
         message: 'A payroll adjustment is awaiting your authorization.',
-        type: 'info',
+        type: target.type === 'issuance' ? 'success' : 'danger',
         linkUrl: `/account/payslip?tab=adjustments&adjustmentId=${target.targetId}`,
       }),
     ),

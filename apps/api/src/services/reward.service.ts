@@ -355,7 +355,7 @@ export async function approveRewardRequest(input: {
         companyId: input.companyId,
         title: notificationTitle,
         message: notificationMessage,
-        type: 'success',
+        type: isEpiAddition ? 'success' : 'danger',
         linkUrl: '/dashboard',
       }),
     ),

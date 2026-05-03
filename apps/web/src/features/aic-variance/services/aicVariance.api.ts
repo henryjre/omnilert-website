@@ -11,6 +11,7 @@ export type AicFilters = {
   date_from?: string;
   date_to?: string;
   sort_order?: 'asc' | 'desc';
+  branchIds?: string[];
 };
 
 export type MentionableUser = { id: string; name: string; avatar_url: string | null };
@@ -23,6 +24,7 @@ export async function listAicRecords(filters: AicFilters) {
   if (filters.date_from) params.set('date_from', filters.date_from);
   if (filters.date_to) params.set('date_to', filters.date_to);
   if (filters.sort_order) params.set('sort_order', filters.sort_order);
+  if (filters.branchIds?.length) params.set('branchIds', filters.branchIds.join(','));
 
   const qs = params.toString();
   const res = await api.get<ApiResponse<{ items: AicRecord[]; total: number }>>(`/aic-variance${qs ? `?${qs}` : ''}`);

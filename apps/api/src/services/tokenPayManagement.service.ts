@@ -345,7 +345,7 @@ export async function approveIssuanceRequest(
       companyId: row.company_id,
       title: 'Token Pay Adjustment Approved',
       message: `Your Token Pay ${row.type === 'credit' ? 'credit' : 'debit'} request for ${amount} token(s) has been approved.`,
-      type: 'success',
+      type: row.type === 'credit' ? 'success' : 'danger',
       linkUrl: '/token-pay',
     });
   } catch {

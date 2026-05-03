@@ -124,7 +124,7 @@ export async function notifyAutoApprovedEpiAdjustmentTargets(
         companyId: adjustment.companyId,
         title,
         message,
-        type: 'success',
+        type: isEpiAddition ? 'success' : 'danger',
         linkUrl: '/dashboard',
       }),
     ),

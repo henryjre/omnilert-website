@@ -5,13 +5,16 @@ import * as aicTaskService from '../services/aicVarianceTask.service.js';
 export async function list(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { companyId } = req.companyContext!;
-    const { sub: userId, roles = [], permissions = [] } = req.user!;
-    const { status, search, date_from, date_to, sort_order } = req.query as Record<string, string>;
+    const { sub: userId, roles = [], permissions = [], branchIds: userBranchIds = [] } = req.user!;
+    const { status, search, date_from, date_to, sort_order, branchIds } = req.query as Record<string, string>;
 
     const records = await aicService.listAicRecords({
       companyId,
       userId,
       roles,
+      permissions,
+      userBranchIds,
+      branchIds: branchIds ? branchIds.split(',').map((id) => id.trim()).filter(Boolean) : undefined,
       status: (status as 'open' | 'resolved') || undefined,
       search,
       date_from,
@@ -28,13 +31,15 @@ export async function list(req: Request, res: Response, next: NextFunction): Pro
 export async function getById(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { companyId } = req.companyContext!;
-    const { sub: userId, roles = [] } = req.user!;
+    const { sub: userId, roles = [], permissions = [], branchIds: userBranchIds = [] } = req.user!;
 
     const record = await aicService.getAicRecord({
       companyId,
       userId,
       aicId: String(req.params.id),
       roles,
+      permissions,
+      userBranchIds,
     });
     res.json({ success: true, data: record });
   } catch (err) {

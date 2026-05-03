@@ -16,6 +16,7 @@ import {
   hydrateUsersByIds,
   resolveCompanyUsersWithPermission,
   resolveRolesWithPermission,
+  userHasCompanyAccess,
 } from './globalUser.service.js';
 import type { GlobalUser } from './globalUser.service.js';
 import { logger } from '../utils/logger.js';
@@ -157,6 +158,50 @@ function hasManagePermission(permissions: string[]): boolean {
 
 function isAdmin(roles: string[]): boolean {
   return roles.includes(SYSTEM_ROLES.ADMINISTRATOR);
+}
+
+function hasAllBranchAccess(permissions: string[]): boolean {
+  return permissions.includes(PERMISSIONS.ADMIN_VIEW_ALL_BRANCHES);
+}
+
+async function canAccessRecordBranch(input: {
+  row: AicRecordRow;
+  userId: string;
+  roles: string[];
+  permissions: string[];
+  userBranchIds: string[];
+}): Promise<boolean> {
+  if (isAdmin(input.roles)) return true;
+  if (input.row.branch_id && input.userBranchIds.includes(input.row.branch_id)) return true;
+  if (hasAllBranchAccess(input.permissions)) {
+    return userHasCompanyAccess(input.userId, input.row.company_id);
+  }
+  return false;
+}
+
+async function resolveAllowedAicBranchIds(input: {
+  requestedBranchIds: string[];
+  userId: string;
+  roles: string[];
+  permissions: string[];
+  userBranchIds: string[];
+}): Promise<string[]> {
+  if (input.requestedBranchIds.length === 0) return [];
+  if (isAdmin(input.roles)) return input.requestedBranchIds;
+  if (!hasAllBranchAccess(input.permissions)) {
+    return input.requestedBranchIds.filter((id) => input.userBranchIds.includes(id));
+  }
+
+  const rows = await db
+    .getDb()('branches as b')
+    .join('user_company_access as uca', 'uca.company_id', 'b.company_id')
+    .whereIn('b.id', input.requestedBranchIds)
+    .where('uca.user_id', input.userId)
+    .where('uca.is_active', true)
+    .where('b.is_active', true)
+    .select('b.id');
+
+  return rows.map((row: any) => String(row.id));
 }
 
 // ─── Message decorations ──────────────────────────────────────────────────────
@@ -530,13 +575,32 @@ export async function listAicRecords(input: {
   companyId: string;
   userId: string;
   roles: string[];
+  permissions: string[];
+  userBranchIds: string[];
+  branchIds?: string[];
   status?: 'open' | 'resolved';
   search?: string;
   date_from?: string;
   date_to?: string;
   sort_order?: 'asc' | 'desc';
 }): Promise<AicRecord[]> {
-  const query = db.getDb()('aic_records as ar').where('ar.company_id', input.companyId);
+  const requestedBranchIds = Array.from(new Set((input.branchIds ?? []).filter(Boolean)));
+  const query = db.getDb()('aic_records as ar');
+
+  if (requestedBranchIds.length > 0) {
+    const allowedBranchIds = await resolveAllowedAicBranchIds({
+      requestedBranchIds,
+      userId: input.userId,
+      roles: input.roles,
+      permissions: input.permissions,
+      userBranchIds: input.userBranchIds,
+    });
+
+    if (allowedBranchIds.length === 0) return [];
+    query.whereIn('ar.branch_id', allowedBranchIds);
+  } else {
+    query.where('ar.company_id', input.companyId);
+  }
 
   if (!isAdmin(input.roles)) {
     query.whereExists(
@@ -571,9 +635,20 @@ export async function getAicRecord(input: {
   userId: string;
   aicId: string;
   roles: string[];
+  permissions: string[];
+  userBranchIds: string[];
 }): Promise<AicRecord & { products: AicProduct[] }> {
   const row = await getRecordOrThrow(input.aicId);
-  if (row.company_id !== input.companyId) throw new AppError(404, 'AIC record not found');
+  if (row.company_id !== input.companyId) {
+    const canAccessBranch = await canAccessRecordBranch({
+      row,
+      userId: input.userId,
+      roles: input.roles,
+      permissions: input.permissions,
+      userBranchIds: input.userBranchIds,
+    });
+    if (!canAccessBranch) throw new AppError(404, 'AIC record not found');
+  }
 
   if (!isAdmin(input.roles)) {
     const participant = await db
@@ -583,7 +658,7 @@ export async function getAicRecord(input: {
     if (!participant) {
       const hasNotificationLink = await hasAicNotificationLink({
         userId: input.userId,
-        companyId: input.companyId,
+        companyId: row.company_id,
         aicId: input.aicId,
       });
       if (!hasNotificationLink) throw new AppError(403, 'You are not a participant of this AIC record');
@@ -683,7 +758,14 @@ export async function resolveAicRecord(input: {
   });
 
   emitUpdated(input.companyId, input.aicId);
-  return getAicRecord({ companyId: input.companyId, userId: input.userId, aicId: input.aicId, roles: [] });
+  return getAicRecord({
+    companyId: input.companyId,
+    userId: input.userId,
+    aicId: input.aicId,
+    roles: [],
+    permissions: [],
+    userBranchIds: [],
+  });
 }
 
 export async function requestViolationNotice(input: {
@@ -721,7 +803,14 @@ export async function requestViolationNotice(input: {
   });
 
   emitUpdated(input.companyId, input.aicId);
-  return getAicRecord({ companyId: input.companyId, userId: input.userId, aicId: input.aicId, roles: [] });
+  return getAicRecord({
+    companyId: input.companyId,
+    userId: input.userId,
+    aicId: input.aicId,
+    roles: [],
+    permissions: [],
+    userBranchIds: [],
+  });
 }
 
 export async function leaveAicDiscussion(input: {

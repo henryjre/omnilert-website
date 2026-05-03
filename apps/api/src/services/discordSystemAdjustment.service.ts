@@ -211,7 +211,7 @@ async function createTokenPayDeduction(input: {
     companyId: input.companyId,
     title: input.direction === 'addition' ? 'Token Pay Added' : 'Token Pay Deducted',
     message: `${input.amount} token(s) have been ${input.direction === 'addition' ? 'added to' : 'deducted from'} your Token Pay balance.`,
-    type: input.direction === 'addition' ? 'success' : 'warning',
+    type: input.direction === 'addition' ? 'success' : 'danger',
     linkUrl: '/token-pay',
   }).catch(() => undefined);
 
@@ -277,7 +277,7 @@ async function createPayrollDeduction(input: {
     companyId: input.companyId,
     title: 'Payroll Adjustment Authorization Required',
     message: 'A payroll adjustment is awaiting your authorization.',
-    type: 'info',
+    type: input.direction === 'addition' ? 'success' : 'danger',
     linkUrl: `/account/payslip?tab=adjustments&adjustmentId=${targetId}`,
   }).catch(() => undefined);
 
