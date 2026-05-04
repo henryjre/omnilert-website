@@ -2499,11 +2499,21 @@ test('management check-in emits user:check-in-status-updated to /user-events/use
 });
 
 test('createAttendanceProcessor skips check-out processing when a check-out log already exists for the same attendance id (idempotency guard)', async () => {
+  const shift = createShift({
+    id: 'shift-complete-duplicate',
+    odoo_shift_id: 970,
+    branch_id: 'branch-service',
+    status: 'ended',
+    check_in_status: 'checked_out',
+    total_worked_hours: 8,
+  });
   const harness = createAttendanceHarness({
+    shifts: [shift],
     websiteUserKey: 'website-user-1',
   });
   const existingLog = {
     id: 'log-existing',
+    shift_id: shift.id,
     log_type: 'check_out',
     odoo_attendance_id: 9701,
     branch_id: 'branch-service',
@@ -2524,13 +2534,65 @@ test('createAttendanceProcessor skips check-out processing when a check-out log 
     x_company_id: 2,
     x_cumulative_minutes: 480,
     x_employee_contact_name: '001 - Alex Crew',
-    x_planning_slot_id: false,
+    x_planning_slot_id: 970,
     x_website_key: 'website-user-1',
   });
 
   assert.equal(harness.logs.length, 0, 'no new shift log should be created for duplicate check-out');
   assert.equal(harness.auths.length, 0, 'no authorization should be created for duplicate check-out');
   assert.deepEqual(result, existingLog, 'should return the existing log unchanged');
+});
+
+test('createAttendanceProcessor replays a stale existing check-out log when shift totals were not finalized', async (t) => {
+  const shift = createShift({
+    id: 'shift-stale-checkout-log',
+    odoo_shift_id: 971,
+    branch_id: 'branch-service',
+    status: 'active',
+    check_in_status: 'checked_in',
+    total_worked_hours: null,
+    shift_start: '2026-03-20T01:00:00.000Z',
+    shift_end: '2026-03-20T09:00:00.000Z',
+  });
+  const existingLog = {
+    id: 'log-stale-checkout',
+    shift_id: shift.id,
+    log_type: 'check_out',
+    odoo_attendance_id: 9711,
+    branch_id: 'branch-service',
+    event_time: '2026-03-20T09:00:00.000Z',
+    odoo_payload: '{}',
+  };
+  const harness = createAttendanceHarness({
+    shifts: [shift],
+    logs: [existingLog],
+    websiteUserKey: 'website-user-1',
+  });
+  installHarnessDb(harness, (cleanup) => t.after(cleanup));
+  const processAttendance = createAttendanceProcessor(harness.deps as any);
+
+  const result = await processAttendance({
+    id: 9711,
+    check_in: '2026-03-20 01:00:00',
+    check_out: '2026-03-20 09:00:00',
+    worked_hours: 8,
+    x_company_id: 2,
+    x_cumulative_minutes: 480,
+    x_employee_contact_name: '001 - Alex Crew',
+    x_planning_slot_id: 971,
+    x_website_key: 'website-user-1',
+  });
+
+  assert.equal(result.id, existingLog.id, 'should reuse the original checkout log');
+  assert.equal(
+    harness.logs.filter((log) => log.log_type === 'check_out' && log.odoo_attendance_id === 9711)
+      .length,
+    1,
+    'should not create a duplicate checkout log while replaying',
+  );
+  assert.equal(shift.total_worked_hours, 8);
+  assert.equal(shift.check_in_status, 'checked_out');
+  assert.equal(shift.status, 'ended');
 });
 
 test('createAttendanceProcessor skips tardiness when x_prev_attendance_id is set (re-check-in after earlier check-out)', async (t) => {

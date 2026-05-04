@@ -1624,10 +1624,26 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
       : null;
 
     const isCheckOut = Boolean(payload.check_out);
+    const existingCheckOutLog = isCheckOut
+      ? await deps.findExistingCheckOutLog(payload.id)
+      : null;
 
-    if (isCheckOut) {
-      const existingLog = await deps.findExistingCheckOutLog(payload.id);
-      if (existingLog) return existingLog;
+    if (existingCheckOutLog) {
+      const existingLogShiftId =
+        existingCheckOutLog.shift_id ?? provisionalInterimShift?.id ?? shift?.id ?? null;
+      const existingLogShift = existingLogShiftId
+        ? existingLogShiftId === shift?.id
+          ? shift
+          : existingLogShiftId === provisionalInterimShift?.id
+            ? provisionalInterimShift
+            : await deps.findShiftById(String(existingLogShiftId))
+        : null;
+
+      const existingCheckOutAlreadyApplied =
+        existingLogShift?.check_in_status === 'checked_out' &&
+        existingLogShift.total_worked_hours != null;
+
+      if (existingCheckOutAlreadyApplied) return existingCheckOutLog;
     }
 
     const logType = isCheckOut ? 'check_out' : 'check_in';
@@ -1641,19 +1657,23 @@ export function createAttendanceProcessor(overrides: Partial<AttendanceProcessor
         ? { ...payload, x_website_key: resolvedIdentity.websiteUserKey }
         : payload;
 
-    let log = await deps.createShiftLog({
-      company_id: branch.company_id,
-      shift_id: provisionalInterimShift?.id ?? shift?.id ?? null,
-      branch_id: branch.id,
-      log_type: logType,
-      odoo_attendance_id: payload.id,
-      event_time: eventTime,
-      worked_hours: payload.worked_hours ?? null,
-      cumulative_minutes: isCheckOut 
-        ? Math.round((eventTime.getTime() - parseOdooUtcDateTime(payload.check_in).getTime()) / 60000)
-        : null,
-      odoo_payload: JSON.stringify(logPayload),
-    });
+    let log =
+      existingCheckOutLog ??
+      (await deps.createShiftLog({
+        company_id: branch.company_id,
+        shift_id: provisionalInterimShift?.id ?? shift?.id ?? null,
+        branch_id: branch.id,
+        log_type: logType,
+        odoo_attendance_id: payload.id,
+        event_time: eventTime,
+        worked_hours: payload.worked_hours ?? null,
+        cumulative_minutes: isCheckOut
+          ? Math.round(
+              (eventTime.getTime() - parseOdooUtcDateTime(payload.check_in).getTime()) / 60000,
+            )
+          : null,
+        odoo_payload: JSON.stringify(logPayload),
+      }));
 
     let updatedTotalWorkedHours: number | null = null;
     let createdInterimShift = false;
