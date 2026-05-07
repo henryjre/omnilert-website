@@ -25,12 +25,12 @@ import { Button } from '@/shared/components/ui/Button';
 import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import { useAppToast } from '@/shared/hooks/useAppToast';
 import type { CaseReportDetail, MentionableRole, MentionableUser } from '../services/caseReport.api';
-import { ChatSection } from './ChatSection';
+import { ChatSection } from '@/shared/components/chat/ChatSection';
 import { normalizeFileForUpload } from '@/shared/utils/fileUpload';
 import { ImagePreviewModal } from './ImagePreviewModal';
-import { TaskList } from './TaskList';
-import { TaskCreationModal } from './TaskCreationModal';
-import { TaskDetailPanel } from './TaskDetailPanel';
+import { TaskList } from '@/shared/components/chat/TaskList';
+import { TaskCreationModal } from '@/shared/components/chat/TaskCreationModal';
+import { TaskDetailPanel } from '@/shared/components/chat/TaskDetailPanel';
 
 interface PendingAttachment {
   tempId: string;

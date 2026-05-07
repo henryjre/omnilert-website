@@ -299,14 +299,11 @@ async function enrichMessages(rows: AicMessageRow[]): Promise<AicMessage[]> {
     for (const r of extra as AicMessageRow[]) messageMap.set(r.id, r);
   }
 
-  return rows
-    .filter((r) => !r.parent_message_id)
-    .map((r) => {
-      const replies = rows
-        .filter((m) => m.parent_message_id === r.id)
-        .map((m) => buildMessage(m, decorations, userNames, avatarMap));
-      return { ...buildMessage(r, decorations, userNames, avatarMap), replies };
-    });
+  const allRows = [...messageMap.values()].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+  );
+
+  return allRows.map((r) => buildMessage(r, decorations, userNames, avatarMap));
 }
 
 function buildMessage(

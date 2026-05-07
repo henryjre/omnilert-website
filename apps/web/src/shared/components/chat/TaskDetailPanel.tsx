@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import type { CaseMessage, CaseTask, CaseTaskAssignee, CaseTaskMessage } from '@omnilert/shared';
-import type { MentionableUser, MentionableRole } from '../services/caseReport.api';
+import type { MentionableUser, MentionableRole } from '@/features/case-reports/services/caseReport.api';
 import { ArrowLeft, CheckCircle2, CheckSquare, Circle, ExternalLink } from 'lucide-react';
 import { Spinner } from '@/shared/components/ui/Spinner';
-import { ChatSection } from './ChatSection';
+import { ChatSection } from '@/shared/components/chat/ChatSection';
 
 // ── Avatar helpers ────────────────────────────────────────────────────────────
 

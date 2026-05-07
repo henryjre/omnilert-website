@@ -33,7 +33,7 @@ import { Button } from '@/shared/components/ui/Button';
 import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import { useAppToast } from '@/shared/hooks/useAppToast';
 import type { MentionableRole, MentionableUser } from '../../case-reports/services/caseReport.api';
-import { ChatSection } from '../../case-reports/components/ChatSection';
+import { ChatSection } from '@/shared/components/chat/ChatSection';
 import { ImagePreviewModal } from '../../case-reports/components/ImagePreviewModal';
 import { normalizeFileForUpload } from '@/shared/utils/fileUpload';
 import {

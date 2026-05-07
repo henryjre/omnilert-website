@@ -269,7 +269,7 @@ export async function createTask(input: {
 
   // Create a discussion-facing case message (the "task bubble")
   const assigneeCount = input.assigneeUserIds.length;
-  const bubbleContent = `📋 Task: ${input.description} — 0 of ${assigneeCount} assignee${assigneeCount === 1 ? '' : 's'} done`;
+  const bubbleContent = `Task: ${input.description} - 0 of ${assigneeCount} assignee${assigneeCount === 1 ? '' : 's'} done`;
 
   const [discussionMsg] = await knex('case_messages')
     .insert({
@@ -288,7 +288,7 @@ export async function createTask(input: {
   await knex('case_messages').insert({
     case_id: input.caseId,
     user_id: input.createdBy,
-    content: `📋 ${creatorName} created a task: ${input.description}`,
+    content: `${creatorName} created a task: ${input.description}`,
     is_system: true,
   });
 
@@ -657,7 +657,7 @@ export async function completeTaskForAssignee(input: {
 
   // Update the discussion bubble content
   if (taskRow.discussion_message_id) {
-    const updatedBubble = `📋 Task: ${taskRow.description} — ${doneCount} of ${allAssignees.length} assignee${allAssignees.length === 1 ? '' : 's'} done`;
+    const updatedBubble = `Task: ${taskRow.description} - ${doneCount} of ${allAssignees.length} assignee${allAssignees.length === 1 ? '' : 's'} done`;
     await knex('case_messages')
       .where({ id: taskRow.discussion_message_id })
       .update({ content: updatedBubble, created_at: new Date(), updated_at: new Date() });
@@ -665,8 +665,8 @@ export async function completeTaskForAssignee(input: {
 
   // System message
   const systemContent = allDone
-    ? `✅ Task completed: ${taskRow.description}`
-    : `✅ ${assigneeName} completed their task: ${taskRow.description}`;
+    ? `Task completed: ${taskRow.description}`
+    : `${assigneeName} completed their task: ${taskRow.description}`;
 
   await knex('case_messages').insert({
     case_id: taskRow.case_id,

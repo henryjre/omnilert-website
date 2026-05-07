@@ -25,10 +25,10 @@ import { Button } from '@/shared/components/ui/Button';
 import { ViewToggle } from '@/shared/components/ui/ViewToggle';
 import { useAppToast } from '@/shared/hooks/useAppToast';
 import type { AicRecordDetail, MentionableRole, MentionableUser } from '../services/aicVariance.api';
-import { ChatSection } from '@/features/case-reports/components/ChatSection';
-import { TaskList } from '@/features/case-reports/components/TaskList';
-import { TaskDetailPanel } from '@/features/case-reports/components/TaskDetailPanel';
-import { TaskCreationModal } from '@/features/case-reports/components/TaskCreationModal';
+import { ChatSection } from '@/shared/components/chat/ChatSection';
+import { TaskList } from '@/shared/components/chat/TaskList';
+import { TaskDetailPanel } from '@/shared/components/chat/TaskDetailPanel';
+import { TaskCreationModal } from '@/shared/components/chat/TaskCreationModal';
 import { AicProductsSection } from './AicProductsSection';
 
 const detailPanelTabs = ['details', 'discussion', 'tasks'] as const;
