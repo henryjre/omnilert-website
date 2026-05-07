@@ -4,6 +4,7 @@ import { Users, X } from 'lucide-react';
 import { canReviewSubmittedRequest, PERMISSIONS } from '@omnilert/shared';
 import type { RewardRequestDetail } from '@omnilert/shared';
 import { Badge } from '@/shared/components/ui/Badge';
+import { LinkedReason } from '@/shared/components/ui/LinkedReason';
 import { Button } from '@/shared/components/ui/Button';
 import { useAppToast } from '@/shared/hooks/useAppToast';
 import { usePermission } from '@/shared/hooks/usePermission';
@@ -183,7 +184,7 @@ export function EpiAdjustmentDetailPanel({ request, onClose, onUpdated }: EpiAdj
           </div>
 
           <div className="divide-y divide-dashed divide-gray-100 px-6 py-2">
-            <DetailRow label="Reason" value={request.reason} />
+            <DetailRow label="Reason" value={<LinkedReason value={request.reason ?? ''} className="text-right" />} />
             <DetailRow label="Requested By" value={request.createdByName || 'Unknown'} />
             <DetailRow label="Submitted" value={formatRewardDate(request.createdAt)} />
             {request.reviewedByName && <DetailRow label="Reviewed By" value={request.reviewedByName} />}

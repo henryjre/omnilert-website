@@ -11,6 +11,7 @@ import { useSocket } from '@/shared/hooks/useSocket';
 import { api } from '@/shared/services/api.client';
 import { applyCompanyThemeFromHex, DEFAULT_THEME_COLOR } from '@/shared/utils/theme';
 import { PERMISSIONS } from '@omnilert/shared';
+import { LinkedReason } from '@/shared/components/ui/LinkedReason';
 import { ShiftAuthReasonModal } from '@/features/account/components/ShiftAuthReasonModal';
 
 function timeAgo(dateStr: string): string {
@@ -379,7 +380,7 @@ export function TopBar({ onOpenSidebar, onOpenAccountSidebar, accountSidebarOpen
                           <p className="truncate text-sm font-semibold text-gray-900">
                             {n.title}
                           </p>
-                          <p className="mt-0.5 line-clamp-3 text-xs text-gray-500">{n.message}</p>
+                          <p className="mt-0.5 line-clamp-3 text-xs text-gray-500"><LinkedReason value={n.message ?? ''} /></p>
                           <p className="mt-1 text-[11px] text-gray-400">{timeAgo(n.created_at)}</p>
                         </div>
                       </button>
@@ -436,7 +437,7 @@ export function TopBar({ onOpenSidebar, onOpenAccountSidebar, accountSidebarOpen
                           <p className="truncate text-sm font-semibold text-gray-900">
                             {n.title}
                           </p>
-                          <p className="mt-0.5 line-clamp-2 text-xs text-gray-500">{n.message}</p>
+                          <p className="mt-0.5 line-clamp-2 text-xs text-gray-500"><LinkedReason value={n.message ?? ''} /></p>
                           <p className="mt-1 text-[11px] text-gray-400">{timeAgo(n.created_at)}</p>
                         </div>
                       </button>

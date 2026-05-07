@@ -1,5 +1,6 @@
 import { ArrowDownCircle, ArrowUpCircle, CalendarDays, CheckCircle2, Clock, X } from 'lucide-react';
 import { Badge } from '@/shared/components/ui/Badge';
+import { LinkedReason } from '@/shared/components/ui/LinkedReason';
 import { Button } from '@/shared/components/ui/Button';
 import {
   formatPayslipAdjustmentCurrency,
@@ -92,7 +93,7 @@ export function PayslipAdjustmentDetailPanel({
             <div className="flex items-start justify-between gap-4 py-2.5">
               <span className="text-xs text-gray-400">Reason</span>
               <span className="max-w-[60%] text-right text-xs font-medium text-gray-700">
-                {adjustment.reason}
+                <LinkedReason value={adjustment.reason ?? ''} />
               </span>
             </div>
             <div className="flex items-start justify-between gap-4 py-2.5">

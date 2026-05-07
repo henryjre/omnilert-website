@@ -15,6 +15,7 @@ import { ShiftExchangeDetailModal } from '@/features/shift-exchange/components/S
 import { PeerEvaluationModal } from '../../peer-evaluations/components/PeerEvaluationModal';
 import { ShiftAuthReasonModal } from './ShiftAuthReasonModal';
 import { Bell, Check, X, Trash2, CheckCheck, Mail } from 'lucide-react';
+import { LinkedReason } from '@/shared/components/ui/LinkedReason';
 
 const SWIPE_MAX_PX = 96;
 const SWIPE_COMMIT_PX = 72;
@@ -654,7 +655,7 @@ export function EmployeeNotificationsTab() {
                         <span className="h-2 w-2 shrink-0 rounded-full bg-primary-500" />
                       )}
                     </div>
-                    <p className="mt-1 text-xs text-gray-600">{n.message}</p>
+                    <p className="mt-1 text-xs text-gray-600"><LinkedReason value={n.message ?? ''} /></p>
                     <p className="mt-1 text-xs text-gray-400">{fmtDateTime(n.created_at)}</p>
                   </div>
 
