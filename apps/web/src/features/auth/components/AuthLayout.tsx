@@ -49,7 +49,7 @@ function ContentRenderer() {
   const isRegister = displayState.pathname === '/register';
 
   return (
-    <div className={`absolute top-0 w-full lg:w-[calc(100%-380px)] pointer-events-auto flex flex-col min-h-full ${isRegister ? 'right-0' : 'left-0'
+    <div className={`relative top-auto w-full pointer-events-auto flex min-h-full flex-col lg:absolute lg:top-0 lg:w-[calc(100%-380px)] ${isRegister ? 'lg:right-0' : 'lg:left-0'
       }`}>
       {displayState.status === 'visible' && (
         <motion.div
@@ -174,10 +174,10 @@ export function AuthLayout() {
 
   return (
     <AuthSidebarContext.Provider value={{ setSidebar: handleSetSidebar }}>
-      <div className="relative flex min-h-screen min-h-[100dvh] w-full bg-[#faf9f7] text-gray-900 overflow-hidden">
+      <div className="relative flex min-h-screen min-h-[100svh] w-full overflow-x-hidden bg-[#faf9f7] text-gray-900 lg:min-h-[100dvh] lg:overflow-hidden">
 
         {/* Main Content Area (Forms) */}
-        <div className="absolute inset-0 z-10 pointer-events-none overflow-x-hidden overflow-y-auto pb-[env(safe-area-inset-bottom)] lg:overflow-hidden lg:pb-0">
+        <div className="relative z-10 min-h-[100svh] w-full pointer-events-none overflow-x-hidden pb-[env(safe-area-inset-bottom)] lg:absolute lg:inset-0 lg:min-h-0 lg:overflow-hidden lg:pb-0">
           {/* Mobile Background Decorations */}
           <div className="absolute inset-0 z-0 lg:hidden pointer-events-none overflow-hidden">
             <div className="absolute top-0 left-0 right-0 h-[50vh] bg-gradient-to-b from-primary-50/80 to-transparent" />

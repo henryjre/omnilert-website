@@ -37,3 +37,11 @@ test('registration page requires image-only uploads with ten megabyte cap', () =
   assert.match(source, /profilePicture/);
   assert.match(source, /validId/);
 });
+
+test('auth layout keeps mobile registration in document flow for iOS Safari scrolling', () => {
+  const source = readFileSync(path.join(srcDir, 'features', 'auth', 'components', 'AuthLayout.tsx'), 'utf8');
+  assert.match(source, /min-h-\[100svh\]/);
+  assert.match(source, /pb-\[env\(safe-area-inset-bottom\)\]/);
+  assert.match(source, /lg:absolute lg:inset-0/);
+  assert.match(source, /relative top-auto w-full pointer-events-auto flex min-h-full flex-col lg:absolute/);
+});
