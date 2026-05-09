@@ -243,12 +243,6 @@ async function processBatch(reference: string, batchKey: string): Promise<void> 
     const branchId = String(branchRow.id);
     const aic_date = products[0]!.aic_date;
 
-    const existing = await db.getDb()('aic_records').where({ company_id: companyId, reference }).first('id');
-    if (existing) {
-      logger.info({ reference, companyId }, 'AIC webhook: record already exists, skipping');
-      return;
-    }
-
     const record = await db.getDb().transaction(async (trx: Knex.Transaction) => {
       const aicNumber = await getNextAicNumber(trx, companyId);
 

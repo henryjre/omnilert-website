@@ -38,7 +38,7 @@ Odoo sends one webhook payload per `stock.move.line` when an inventory count is 
 | `created_at` | TIMESTAMPTZ NOT NULL DEFAULT now() | |
 | `updated_at` | TIMESTAMPTZ NOT NULL DEFAULT now() | |
 
-Unique constraint: `(company_id, reference)` — prevents duplicate AIC records for the same inventory count.
+`reference` is descriptive text from Odoo, not the identity of an AIC variance. Multiple AIC records may share the same reference.
 
 #### `aic_products`
 | Column | Type | Notes |
@@ -121,7 +121,7 @@ processBatch(reference):
   products = batchMap[reference]; delete batchMap[reference]; delete timerMap[reference]
   company = resolveCompanyByOdooBranchId(products[0].company_id)
   branch = found via same lookup
-  upsert guard: if aic_records(company_id, reference) exists → skip (idempotent)
+  create a new AIC record; reference is not used for duplicate suppression
   insert aic_records + aic_products in one transaction
   auto-join all users with aic_variance.manage in company as participants
   notify each of those users (see Notifications)

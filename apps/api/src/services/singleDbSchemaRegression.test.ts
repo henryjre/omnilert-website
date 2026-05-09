@@ -22,6 +22,8 @@ const assignedBranchServicePath = path.join(srcDir, 'services', 'assignedBranch.
 const caseReportServicePath = path.join(srcDir, 'services', 'caseReport.service.ts');
 const aicVarianceControllerPath = path.join(srcDir, 'controllers', 'aicVariance.controller.ts');
 const aicVarianceServicePath = path.join(srcDir, 'services', 'aicVariance.service.ts');
+const aicVarianceWebhookServicePath = path.join(srcDir, 'services', 'aicVarianceWebhook.service.ts');
+const aicReferenceNotUniqueMigrationPath = path.join(srcDir, 'migrations', '063_aic_reference_not_unique.ts');
 const violationNoticeServicePath = path.join(srcDir, 'services', 'violationNotice.service.ts');
 const webhookServicePath = path.join(srcDir, 'services', 'webhook.service.ts');
 const dashboardControllerPath = path.join(srcDir, 'controllers', 'dashboard.controller.ts');
@@ -679,6 +681,27 @@ test('AIC variance message endpoints authorize cross-company accessible records 
     controllerSource,
     /const \{ sub: userId, roles = \[\], permissions = \[\], branchIds: userBranchIds = \[\] \} = req\.user!;/,
     'AIC variance message controller should pass the user access scope into the service',
+  );
+});
+
+test('AIC variance references are descriptions, not duplicate keys', () => {
+  const webhookSource = fs.readFileSync(aicVarianceWebhookServicePath, 'utf8');
+  const migrationSource = fs.readFileSync(aicReferenceNotUniqueMigrationPath, 'utf8');
+
+  assert.doesNotMatch(
+    webhookSource,
+    /where\(\{\s*company_id:\s*companyId,\s*reference\s*\}\)\.first\('id'\)/,
+    'AIC webhook should not skip records solely because company_id + reference already exists',
+  );
+  assert.doesNotMatch(
+    webhookSource,
+    /record already exists, skipping/,
+    'AIC webhook should not treat repeated references as duplicate AIC records',
+  );
+  assert.match(
+    migrationSource,
+    /DROP CONSTRAINT IF EXISTS aic_records_company_reference_unique/,
+    'AIC reference migration should remove the company/reference uniqueness constraint',
   );
 });
 
