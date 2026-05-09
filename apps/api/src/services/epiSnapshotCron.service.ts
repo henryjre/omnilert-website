@@ -1,6 +1,11 @@
 import { db } from '../config/database.js';
 import { logger } from '../utils/logger.js';
-import { calculateKpiScores, type KpiBreakdown, type UserKpiData } from './epiCalculation.service.js';
+import {
+  applyGlobalAverageEpiBand,
+  calculateKpiScores,
+  type KpiBreakdown,
+  type UserKpiData,
+} from './epiCalculation.service.js';
 import { generateEpiReportPdf, generateManagerSummaryPdf, type EpiReportData } from './epiReport.service.js';
 import { sendWeeklyEpiEmail, sendManagerEpiSummaryEmail } from './mail.service.js';
 import { runDailyEmployeeRollingMetricSnapshot } from './employeeAnalyticsSnapshot.service.js';
@@ -32,7 +37,26 @@ interface EpiHistoryEntry {
 interface MasterUserRow {
   id: string;
   user_key: string;
-  epi_score: number;
+  epi_score: number | string | null;
+}
+
+function toNumber(value: number | string | null | undefined, fallback: number): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+}
+
+function roundToTwo(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+export function calculateWeeklyEligibleGlobalAverageEpi(users: Array<Pick<MasterUserRow, 'epi_score'>>): number {
+  if (users.length === 0) return 100;
+  const total = users.reduce((sum, user) => sum + toNumber(user.epi_score, 100), 0);
+  return roundToTwo(total / users.length);
 }
 
 function getWeeklyEligibilityCutoffDate(referenceDate: Date = new Date()): Date {
@@ -643,6 +667,7 @@ export async function runWeeklyEpiSnapshot(input?: { scheduledFor?: Date }): Pro
 
   const masterDb = db.getDb();
   const users = await getWeeklyEligibleServiceCrewUsers(scheduledFor);
+  const globalAverageEpi = calculateWeeklyEligibleGlobalAverageEpi(users);
   const reportDataList: EpiReportData[] = [];
   let succeeded = 0;
   let failed = 0;
@@ -660,10 +685,15 @@ export async function runWeeklyEpiSnapshot(input?: { scheduledFor?: Date }): Pro
   for (const user of users) {
     try {
       const kpiData = await fetchUserKpiData(user.id, user.user_key);
-      const { breakdown, delta, raw_delta, capped } = await calculateKpiScores(kpiData);
+      const { breakdown, raw_delta } = await calculateKpiScores(kpiData);
 
-      const epiBefore = Number(user.epi_score ?? 100);
-      const epiAfter = Math.round((epiBefore + delta) * 100) / 100;
+      const epiBefore = toNumber(user.epi_score, 100);
+      const appliedEpi = applyGlobalAverageEpiBand({
+        epiBefore,
+        rawDelta: raw_delta,
+        globalAverageEpi,
+      });
+      const { delta, capped, epiAfter } = appliedEpi;
 
       const entry: EpiHistoryEntry = {
         type: 'weekly',
@@ -673,7 +703,7 @@ export async function runWeeklyEpiSnapshot(input?: { scheduledFor?: Date }): Pro
         delta,
         kpi_breakdown: breakdown,
         capped,
-        raw_delta,
+        raw_delta: appliedEpi.raw_delta,
       };
 
       await masterDb('users')
@@ -693,7 +723,7 @@ export async function runWeeklyEpiSnapshot(input?: { scheduledFor?: Date }): Pro
           epiBefore,
           epiAfter,
           delta,
-          rawDelta: raw_delta,
+          rawDelta: appliedEpi.raw_delta,
           capped,
           kpiBreakdown: breakdown,
           reportDate: snapshotDate,

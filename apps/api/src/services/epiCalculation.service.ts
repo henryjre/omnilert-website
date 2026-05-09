@@ -40,6 +40,15 @@ export interface EpiDeltaResult {
   capped: boolean;
 }
 
+export interface AppliedEpiBandResult {
+  epiAfter: number;
+  delta: number;
+  raw_delta: number;
+  capped: boolean;
+  lowerBound: number;
+  upperBound: number;
+}
+
 export interface KpiComputationWindow {
   from: Date;
   to: Date;
@@ -237,6 +246,53 @@ function serviceEfficiencyImpact(score: number): number {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function roundToTwo(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+export function applyGlobalAverageEpiBand(input: {
+  epiBefore: number;
+  rawDelta: number;
+  globalAverageEpi: number;
+}): AppliedEpiBandResult {
+  const epiBefore = roundToTwo(Number.isFinite(input.epiBefore) ? input.epiBefore : 100);
+  const raw_delta = Number.isFinite(input.rawDelta) ? input.rawDelta : 0;
+  const roundedRawDelta = roundToTwo(raw_delta);
+  const globalAverageEpi = Number.isFinite(input.globalAverageEpi) && input.globalAverageEpi > 0
+    ? input.globalAverageEpi
+    : 100;
+  const lowerBound = roundToTwo(globalAverageEpi * 0.9);
+  const upperBound = roundToTwo(globalAverageEpi * 1.1);
+
+  let epiAfter: number;
+  const proposedEpiAfter = roundToTwo(epiBefore + roundedRawDelta);
+
+  if (epiBefore > upperBound) {
+    epiAfter = roundedRawDelta < 0 ? Math.max(proposedEpiAfter, lowerBound) : epiBefore;
+  } else if (epiBefore < lowerBound) {
+    epiAfter = roundedRawDelta > 0 ? Math.min(proposedEpiAfter, upperBound) : epiBefore;
+  } else {
+    epiAfter = clamp(proposedEpiAfter, lowerBound, upperBound);
+  }
+
+  epiAfter = roundToTwo(epiAfter);
+  const delta = roundToTwo(epiAfter - epiBefore);
+  const capped = Math.abs(delta - roundedRawDelta) >= 0.005;
+
+  return {
+    epiAfter,
+    delta,
+    raw_delta,
+    capped,
+    lowerBound,
+    upperBound,
+  };
+}
 
 function dateRangeFilter(dateStr: string, from: Date, to: Date): boolean {
   const d = parseUtcTimestamp(dateStr);

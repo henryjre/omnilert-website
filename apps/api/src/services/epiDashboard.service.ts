@@ -1,13 +1,13 @@
 import { db } from '../config/database.js';
 import { logger } from '../utils/logger.js';
 import {
+  applyGlobalAverageEpiBand,
   calculateKpiScores,
   calculateKpiScoresBatch,
   getWrsStatusSummary,
   type KpiBreakdown,
   type UserKpiData,
   type WrsStatusSummary,
-  type EpiDeltaResult,
 } from './epiCalculation.service.js';
 import { getOdooEmployeeIdsByWebsiteKey } from './odooQuery.service.js';
 
@@ -296,6 +296,10 @@ function roundToTenth(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
+function roundToTwo(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
 function toNumber(value: number | string | null | undefined, fallback: number): number {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string') {
@@ -303,6 +307,10 @@ function toNumber(value: number | string | null | undefined, fallback: number): 
     if (Number.isFinite(parsed)) return parsed;
   }
   return fallback;
+}
+
+function getWeeklyEligibilityCutoffDate(referenceDate: Date = new Date()): Date {
+  return new Date(referenceDate.getTime() - THIRTY_DAY_WINDOW_MS);
 }
 
 function createEmptyCriteria(): DashboardCriteria {
@@ -444,7 +452,12 @@ async function fetchMonthlyHistoryFromSnapshots(userId: string): Promise<Histori
 
 
 
-async function buildCurrentLiveSnapshot(user: UserKpiData, officialEpiScore: number, monthKey?: string): Promise<CurrentLiveSnapshot | null> {
+async function buildCurrentLiveSnapshot(
+  user: UserKpiData,
+  officialEpiScore: number,
+  globalAverageEpi: number,
+  monthKey?: string,
+): Promise<CurrentLiveSnapshot | null> {
   if (!user.userKey) return null;
 
   const now = new Date();
@@ -464,7 +477,7 @@ async function buildCurrentLiveSnapshot(user: UserKpiData, officialEpiScore: num
     from = new Date(now.getTime() - THIRTY_DAY_WINDOW_MS);
   }
 
-  const { breakdown, delta, raw_delta, capped } = await calculateKpiScores({
+  const { breakdown, raw_delta } = await calculateKpiScores({
     userId: user.userId,
     userKey: user.userKey,
     cssAudits: user.cssAudits,
@@ -473,6 +486,11 @@ async function buildCurrentLiveSnapshot(user: UserKpiData, officialEpiScore: num
     rewardRequests: user.rewardRequests,
     violationNotices: user.violationNotices,
   }, { window: { from, to }, minRecords: 1 });
+  const appliedEpi = applyGlobalAverageEpiBand({
+    epiBefore: officialEpiScore,
+    rawDelta: raw_delta,
+    globalAverageEpi,
+  });
 
   const dateForLabel = monthKey ? new Date(`${monthKey}-01`) : now;
 
@@ -481,10 +499,10 @@ async function buildCurrentLiveSnapshot(user: UserKpiData, officialEpiScore: num
     monthLabel: getMonthLabel(dateForLabel),
     year: getYear(dateForLabel),
     asOfDateTime: now.toISOString(),
-    projectedEpiScore: roundToTenth(officialEpiScore + delta),
-    delta,
-    rawDelta: raw_delta,
-    capped,
+    projectedEpiScore: roundToTenth(appliedEpi.epiAfter),
+    delta: appliedEpi.delta,
+    rawDelta: appliedEpi.raw_delta,
+    capped: appliedEpi.capped,
     criteria: breakdownToCriteria(breakdown),
     wrsStatus: getWrsStatusSummary(user.peerEvaluations, from, to),
   };
@@ -563,6 +581,17 @@ export async function getGlobalAverageHistory(): Promise<Record<string, number>>
     result[key] = roundToTenth(toNumber(row.average, 100));
   }
   return result;
+}
+
+async function getWeeklyEligibleServiceCrewGlobalAverageEpi(referenceDate: Date = new Date()): Promise<number> {
+  const masterDb = db.getDb();
+  const cutoffDate = getWeeklyEligibilityCutoffDate(referenceDate);
+  const row = await applyGlobalLeaderboardFilters(masterDb('users as u'), masterDb)
+    .where('u.created_at', '<=', cutoffDate)
+    .avg('u.epi_score as average')
+    .first() as { average: number | string | null } | undefined;
+
+  return roundToTwo(toNumber(row?.average, 100));
 }
 
 function compareLeaderboardSummaryEntries(a: EpiLeaderboardSummaryEntry, b: EpiLeaderboardSummaryEntry): number {
@@ -716,11 +745,12 @@ export function applyGlobalLeaderboardFilters(query: any, masterDb: any) {
 export async function getEpiDashboard(userId: string): Promise<EpiDashboardResponse> {
   const masterDb = db.getDb();
   const currentMonthKey = getCurrentMonthKey();
-  const [row, globalAverageByMonth] = await Promise.all([
+  const [row, globalAverageByMonth, globalAverageEpi] = await Promise.all([
     masterDb('users')
       .where({ id: userId })
       .first('id as userId', 'user_key as userKey', 'epi_score') as Promise<DashboardUserRow | undefined>,
     getGlobalAverageHistory(),
+    getWeeklyEligibleServiceCrewGlobalAverageEpi(),
   ]);
 
   if (!row) {
@@ -739,7 +769,7 @@ export async function getEpiDashboard(userId: string): Promise<EpiDashboardRespo
   let currentLive: CurrentLiveSnapshot | null = null;
   try {
     const kpiData = await fetchUserKpiData(row.userId, row.userKey);
-    currentLive = await buildCurrentLiveSnapshot(kpiData, officialEpiScore);
+    currentLive = await buildCurrentLiveSnapshot(kpiData, officialEpiScore, globalAverageEpi);
   } catch (error) {
     logger.error({ err: error, userId }, 'Failed to build live EPI dashboard snapshot');
   }
@@ -830,10 +860,13 @@ export async function getEpiLeaderboard(currentUserId: string, monthKey: string)
     monthKey,
     currentMonthKey,
   });
+  const currentGlobalAverageEpi = isCurrentMonthSelection(monthKey, currentMonthKey)
+    ? await getWeeklyEligibleServiceCrewGlobalAverageEpi()
+    : null;
 
   // ── LIVE PROJECTION BATCHING (Only for current month)
   // This ensures the summary ranking uses the EXACT same live scores as the details
-  if (isCurrentMonthSelection(monthKey, currentMonthKey) && summaryEntries.length > 0) {
+  if (currentGlobalAverageEpi !== null && summaryEntries.length > 0) {
     try {
       const activeUserIds = summaryEntries.map(e => e.userId);
       const userKeyMap = new Map(summaryRows.map(r => [r.userId, r.userKey]));
@@ -853,8 +886,13 @@ export async function getEpiLeaderboard(currentUserId: string, monthKey: string)
       // Update the summary entries with live projected scores
       for (const entry of summaryEntries) {
         const live = liveResults.get(entry.userId);
-        if (live) {
-          entry.projectedEpiScore = roundToTenth(entry.displayEpiScore! + live.delta);
+        if (live && entry.displayEpiScore !== null) {
+          const appliedEpi = applyGlobalAverageEpiBand({
+            epiBefore: entry.displayEpiScore,
+            rawDelta: live.raw_delta,
+            globalAverageEpi: currentGlobalAverageEpi,
+          });
+          entry.projectedEpiScore = roundToTenth(appliedEpi.epiAfter);
         }
       }
       
@@ -910,7 +948,13 @@ export async function getEpiLeaderboardDetail(
   if (isCurrentMonth || (isImmediatelyPreceding && !getHistoricalMonth(detailRow.monthlyHistory, monthKey))) {
     try {
       const kpiData = await fetchUserKpiData(row.userId, row.userKey);
-      currentLive = await buildCurrentLiveSnapshot(kpiData, detailRow.officialEpiScore, isCurrentMonth ? undefined : monthKey);
+      const globalAverageEpi = await getWeeklyEligibleServiceCrewGlobalAverageEpi();
+      currentLive = await buildCurrentLiveSnapshot(
+        kpiData,
+        detailRow.officialEpiScore,
+        globalAverageEpi,
+        isCurrentMonth ? undefined : monthKey,
+      );
     } catch (error) {
       logger.error({ err: error, userId: row.userId }, 'Failed to build live leaderboard detail snapshot');
     }

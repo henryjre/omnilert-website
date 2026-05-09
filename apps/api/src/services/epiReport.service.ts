@@ -149,16 +149,27 @@ export async function generateEpiReportPdf(data: EpiReportData): Promise<Buffer>
       .fillColor('#1e40af')
       .fontSize(8)
       .font('DM-Sans-Bold')
-      .text('NET PERFORMANCE SHIFT', 215, summaryY + 16, { width: 165, align: 'center' });
+      .text('APPLIED EPI SHIFT', 215, summaryY + 16, { width: 165, align: 'center' });
+    const deltaSign = data.delta >= 0 ? '+' : '';
     const rawSign = data.rawDelta >= 0 ? '+' : '';
     doc
-      .fillColor(impactColor(data.rawDelta))
+      .fillColor(impactColor(data.delta))
       .fontSize(20)
       .font('DM-Sans-Bold')
-      .text(`${rawSign}${data.rawDelta.toFixed(2)}`, 215, summaryY + 30, {
+      .text(`${deltaSign}${data.delta.toFixed(2)}`, 215, summaryY + 30, {
         width: 165,
         align: 'center',
       });
+    if (data.capped) {
+      doc
+        .fillColor(NEUTRAL_GRAY)
+        .fontSize(7)
+        .font('DM-Sans-Regular')
+        .text(`Calculated KPI impact: ${rawSign}${data.rawDelta.toFixed(2)}`, 215, summaryY + 52, {
+          width: 165,
+          align: 'center',
+        });
+    }
 
     // Final
     doc
@@ -277,12 +288,20 @@ export async function generateEpiReportPdf(data: EpiReportData): Promise<Buffer>
       .fillColor(OMNILERT_NAVY)
       .fontSize(10)
       .font('DM-Sans-Bold')
-      .text('Net Weekly EPI Impact', 60, rowY);
+      .text('Applied Weekly EPI Movement', 60, rowY);
     doc
-      .fillColor(impactColor(data.rawDelta))
+      .fillColor(impactColor(data.delta))
       .fontSize(11)
       .font('DM-Sans-Bold')
-      .text(`${rawSign}${data.rawDelta.toFixed(2)}`, 460, rowY, { width: 85, align: 'right' });
+      .text(`${deltaSign}${data.delta.toFixed(2)}`, 460, rowY, { width: 85, align: 'right' });
+    if (data.capped) {
+      rowY += 14;
+      doc
+        .fillColor(NEUTRAL_GRAY)
+        .fontSize(8)
+        .font('DM-Sans-Regular')
+        .text(`Calculated KPI impact before global-average cap: ${rawSign}${data.rawDelta.toFixed(2)}`, 60, rowY);
+    }
 
     doc.fontSize(8).fillColor('#94a3b8').text('OMNILERT ANALYTICS · CONFIDENTIAL · 2026', 50, 770, {
       align: 'center',
