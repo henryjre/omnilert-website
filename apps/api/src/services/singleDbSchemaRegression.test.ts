@@ -20,6 +20,8 @@ const employeeRequirementServicePath = path.join(srcDir, 'services', 'employeeRe
 const employeeVerificationServicePath = path.join(srcDir, 'services', 'employeeVerification.service.ts');
 const assignedBranchServicePath = path.join(srcDir, 'services', 'assignedBranch.service.ts');
 const caseReportServicePath = path.join(srcDir, 'services', 'caseReport.service.ts');
+const aicVarianceControllerPath = path.join(srcDir, 'controllers', 'aicVariance.controller.ts');
+const aicVarianceServicePath = path.join(srcDir, 'services', 'aicVariance.service.ts');
 const violationNoticeServicePath = path.join(srcDir, 'services', 'violationNotice.service.ts');
 const webhookServicePath = path.join(srcDir, 'services', 'webhook.service.ts');
 const dashboardControllerPath = path.join(srcDir, 'controllers', 'dashboard.controller.ts');
@@ -642,6 +644,41 @@ test('grouped users endpoint is company-context scoped and supports peer evaluat
     routesSource,
     /PERMISSIONS\.STORE_AUDIT_MANAGE/,
     'grouped-users route should allow store audit managers requesting VNs',
+  );
+});
+
+test('AIC variance message endpoints authorize cross-company accessible records before mutating', () => {
+  const controllerSource = fs.readFileSync(aicVarianceControllerPath, 'utf8');
+  const serviceSource = fs.readFileSync(aicVarianceServicePath, 'utf8');
+  const sendMessageBlock = serviceSource.slice(
+    serviceSource.indexOf('export async function sendMessage(input: {'),
+    serviceSource.indexOf('export async function editMessage(input: {'),
+  );
+
+  assert.match(
+    serviceSource,
+    /async function assertCanAccessAicRecord/,
+    'AIC variance service should centralize record access checks for cross-company records',
+  );
+  assert.doesNotMatch(
+    sendMessageBlock,
+    /record\.company_id\s*!==\s*input\.companyId/,
+    'AIC variance message sending should not reject records solely because they belong to another accessible company',
+  );
+  assert.match(
+    sendMessageBlock,
+    /emitAicEvent\('aic-variance:message', record\.company_id/,
+    'AIC variance message sending should emit socket events to the record company',
+  );
+  assert.match(
+    sendMessageBlock,
+    /notifyReplyRecipient\(\{\s*companyId:\s*record\.company_id/s,
+    'AIC variance reply notifications should use the record company',
+  );
+  assert.match(
+    controllerSource,
+    /const \{ sub: userId, roles = \[\], permissions = \[\], branchIds: userBranchIds = \[\] \} = req\.user!;/,
+    'AIC variance message controller should pass the user access scope into the service',
   );
 });
 

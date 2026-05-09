@@ -2,6 +2,23 @@ import type { Request, Response, NextFunction } from 'express';
 import * as aicService from '../services/aicVariance.service.js';
 import * as aicTaskService from '../services/aicVarianceTask.service.js';
 
+function getUploadedFiles(req: Request): Express.Multer.File[] {
+  const files = (req as Request & { files?: Express.Multer.File[] | Record<string, Express.Multer.File[]> }).files;
+  if (!files) return [];
+  return Array.isArray(files) ? files : Object.values(files).flat();
+}
+
+function parseStringArray(value: unknown): string[] | undefined {
+  if (Array.isArray(value)) return value.map((item) => String(item));
+  if (typeof value !== 'string' || !value.trim()) return undefined;
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map((item) => String(item)) : undefined;
+  } catch {
+    return value.split(',').map((item) => item.trim()).filter(Boolean);
+  }
+}
+
 export async function list(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { companyId } = req.companyContext!;
@@ -125,7 +142,15 @@ export async function markRead(req: Request, res: Response, next: NextFunction):
 export async function listMessages(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { companyId } = req.companyContext!;
-    const messages = await aicService.listMessages({ companyId, aicId: String(req.params.id) });
+    const { sub: userId, roles = [], permissions = [], branchIds: userBranchIds = [] } = req.user!;
+    const messages = await aicService.listMessages({
+      companyId,
+      aicId: String(req.params.id),
+      userId,
+      roles,
+      permissions,
+      userBranchIds,
+    });
     res.json({ success: true, data: messages });
   } catch (err) {
     next(err);
@@ -135,19 +160,24 @@ export async function listMessages(req: Request, res: Response, next: NextFuncti
 export async function sendMessage(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { companyId } = req.companyContext!;
-    const { sub: userId } = req.user!;
-    const { content, parentMessageId, mentionedUserIds, mentionedRoleIds } = req.body as {
+    const { sub: userId, roles = [], permissions = [], branchIds: userBranchIds = [] } = req.user!;
+    const { content, parentMessageId } = req.body as {
       content: string;
       parentMessageId?: string;
-      mentionedUserIds?: string[];
-      mentionedRoleIds?: string[];
     };
-    const files = (req.files as Express.Multer.File[]) ?? [];
+    const mentionedUserIds =
+      parseStringArray(req.body.mentionedUserIds) ?? parseStringArray(req.body['mentionedUserIds[]']) ?? [];
+    const mentionedRoleIds =
+      parseStringArray(req.body.mentionedRoleIds) ?? parseStringArray(req.body['mentionedRoleIds[]']) ?? [];
+    const files = getUploadedFiles(req);
 
     const messages = await aicService.sendMessage({
       companyId,
       aicId: String(req.params.id),
       userId,
+      roles,
+      permissions,
+      userBranchIds,
       content,
       parentMessageId,
       mentionedUserIds,
@@ -163,16 +193,18 @@ export async function sendMessage(req: Request, res: Response, next: NextFunctio
 export async function editMessage(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { companyId } = req.companyContext!;
-    const { sub: userId, permissions = [] } = req.user!;
+    const { sub: userId, roles = [], permissions = [], branchIds: userBranchIds = [] } = req.user!;
     const { content } = req.body as { content: string };
 
     await aicService.editMessage({
       companyId,
       aicId: String(req.params.id),
       userId,
+      roles,
       messageId: String(req.params.messageId),
       content,
       permissions,
+      userBranchIds,
     });
     res.json({ success: true });
   } catch (err) {
@@ -183,14 +215,16 @@ export async function editMessage(req: Request, res: Response, next: NextFunctio
 export async function deleteMessage(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { companyId } = req.companyContext!;
-    const { sub: userId, permissions = [] } = req.user!;
+    const { sub: userId, roles = [], permissions = [], branchIds: userBranchIds = [] } = req.user!;
 
     await aicService.deleteMessage({
       companyId,
       aicId: String(req.params.id),
       userId,
+      roles,
       messageId: String(req.params.messageId),
       permissions,
+      userBranchIds,
     });
     res.json({ success: true });
   } catch (err) {
@@ -201,15 +235,18 @@ export async function deleteMessage(req: Request, res: Response, next: NextFunct
 export async function toggleReaction(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { companyId } = req.companyContext!;
-    const { sub: userId } = req.user!;
+    const { sub: userId, roles = [], permissions = [], branchIds: userBranchIds = [] } = req.user!;
     const { emoji } = req.body as { emoji: string };
 
     await aicService.toggleReaction({
       companyId,
       aicId: String(req.params.id),
       userId,
+      roles,
       messageId: String(req.params.messageId),
       emoji,
+      permissions,
+      userBranchIds,
     });
     res.json({ success: true });
   } catch (err) {

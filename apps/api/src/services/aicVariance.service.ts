@@ -11,7 +11,7 @@ import { PERMISSIONS, SYSTEM_ROLES } from '@omnilert/shared';
 import { db } from '../config/database.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { createAndDispatchNotification } from './notification.service.js';
-import { buildTenantStoragePrefix, deleteFile, uploadFile } from './storage.service.js';
+import { buildTenantStoragePrefix, deleteFile, getCompanyStorageRoot, uploadFile } from './storage.service.js';
 import {
   hydrateUsersByIds,
   resolveCompanyUsersWithPermission,
@@ -78,6 +78,11 @@ async function getRecordOrThrow(aicId: string): Promise<AicRecordRow> {
   const row = await db.getDb()('aic_records').where({ id: aicId }).first();
   if (!row) throw new AppError(404, 'AIC record not found');
   return row as AicRecordRow;
+}
+
+async function resolveCompanyStorageRoot(companyId: string): Promise<string> {
+  const row = await db.getDb()('companies').where({ id: companyId }).first('slug');
+  return getCompanyStorageRoot(String(row?.slug ?? companyId));
 }
 
 async function hasAicNotificationLink(input: {
@@ -177,6 +182,41 @@ async function canAccessRecordBranch(input: {
     return userHasCompanyAccess(input.userId, input.row.company_id);
   }
   return false;
+}
+
+async function assertCanAccessAicRecord(input: {
+  row: AicRecordRow;
+  requestCompanyId: string;
+  userId: string;
+  roles: string[];
+  permissions: string[];
+  userBranchIds: string[];
+}): Promise<void> {
+  if (input.row.company_id !== input.requestCompanyId) {
+    const canAccessBranch = await canAccessRecordBranch({
+      row: input.row,
+      userId: input.userId,
+      roles: input.roles,
+      permissions: input.permissions,
+      userBranchIds: input.userBranchIds,
+    });
+    if (!canAccessBranch) throw new AppError(404, 'AIC record not found');
+  }
+
+  if (!isAdmin(input.roles)) {
+    const participant = await db
+      .getDb()('aic_participants')
+      .where({ aic_record_id: input.row.id, user_id: input.userId, is_joined: true })
+      .first();
+    if (!participant) {
+      const hasNotificationLink = await hasAicNotificationLink({
+        userId: input.userId,
+        companyId: input.row.company_id,
+        aicId: input.row.id,
+      });
+      if (!hasNotificationLink) throw new AppError(403, 'You are not a participant of this AIC record');
+    }
+  }
 }
 
 async function resolveAllowedAicBranchIds(input: {
@@ -636,31 +676,14 @@ export async function getAicRecord(input: {
   userBranchIds: string[];
 }): Promise<AicRecord & { products: AicProduct[] }> {
   const row = await getRecordOrThrow(input.aicId);
-  if (row.company_id !== input.companyId) {
-    const canAccessBranch = await canAccessRecordBranch({
-      row,
-      userId: input.userId,
-      roles: input.roles,
-      permissions: input.permissions,
-      userBranchIds: input.userBranchIds,
-    });
-    if (!canAccessBranch) throw new AppError(404, 'AIC record not found');
-  }
-
-  if (!isAdmin(input.roles)) {
-    const participant = await db
-      .getDb()('aic_participants')
-      .where({ aic_record_id: input.aicId, user_id: input.userId, is_joined: true })
-      .first();
-    if (!participant) {
-      const hasNotificationLink = await hasAicNotificationLink({
-        userId: input.userId,
-        companyId: row.company_id,
-        aicId: input.aicId,
-      });
-      if (!hasNotificationLink) throw new AppError(403, 'You are not a participant of this AIC record');
-    }
-  }
+  await assertCanAccessAicRecord({
+    row,
+    requestCompanyId: input.companyId,
+    userId: input.userId,
+    roles: input.roles,
+    permissions: input.permissions,
+    userBranchIds: input.userBranchIds,
+  });
 
   await upsertParticipant(input.aicId, input.userId, {
     last_read_at: new Date(),
@@ -839,7 +862,21 @@ export async function markAicRead(input: { aicId: string; userId: string }): Pro
 export async function listMessages(input: {
   companyId: string;
   aicId: string;
+  userId: string;
+  roles: string[];
+  permissions: string[];
+  userBranchIds: string[];
 }): Promise<AicMessage[]> {
+  const record = await getRecordOrThrow(input.aicId);
+  await assertCanAccessAicRecord({
+    row: record,
+    requestCompanyId: input.companyId,
+    userId: input.userId,
+    roles: input.roles,
+    permissions: input.permissions,
+    userBranchIds: input.userBranchIds,
+  });
+
   const rows = (await db
     .getDb()('aic_messages')
     .where({ aic_record_id: input.aicId })
@@ -853,6 +890,9 @@ export async function sendMessage(input: {
   companyId: string;
   aicId: string;
   userId: string;
+  roles: string[];
+  permissions: string[];
+  userBranchIds: string[];
   content: string;
   parentMessageId?: string | null;
   mentionedUserIds?: string[];
@@ -860,7 +900,14 @@ export async function sendMessage(input: {
   files?: Express.Multer.File[];
 }): Promise<AicMessage[]> {
   const record = await getRecordOrThrow(input.aicId);
-  if (record.company_id !== input.companyId) throw new AppError(404, 'AIC record not found');
+  await assertCanAccessAicRecord({
+    row: record,
+    requestCompanyId: input.companyId,
+    userId: input.userId,
+    roles: input.roles,
+    permissions: input.permissions,
+    userBranchIds: input.userBranchIds,
+  });
 
   let parentMessage: AicMessageRow | null = null;
   if (input.parentMessageId) {
@@ -895,7 +942,7 @@ export async function sendMessage(input: {
   }
 
   if (input.files?.length) {
-    const storagePrefix = buildTenantStoragePrefix(input.companyId);
+    const storagePrefix = buildTenantStoragePrefix(await resolveCompanyStorageRoot(record.company_id));
     await Promise.all(
       input.files.map(async (file) => {
         const folder = `${storagePrefix}/aic-messages/${messageRow.id}`;
@@ -916,7 +963,7 @@ export async function sendMessage(input: {
   await db.getDb()('aic_records').where({ id: input.aicId }).update({ updated_at: new Date() });
 
   const replyNotified = await notifyReplyRecipient({
-    companyId: input.companyId,
+    companyId: record.company_id,
     aicId: input.aicId,
     messageId: messageRow.id,
     senderId: input.userId,
@@ -925,7 +972,7 @@ export async function sendMessage(input: {
 
   if (input.mentionedUserIds?.length || input.mentionedRoleIds?.length) {
     await notifyMentionedUsers({
-      companyId: input.companyId,
+      companyId: record.company_id,
       aicId: input.aicId,
       messageId: messageRow.id,
       senderId: input.userId,
@@ -935,18 +982,37 @@ export async function sendMessage(input: {
     });
   }
 
-  emitAicEvent('aic-variance:message', input.companyId, { aicId: input.aicId, messageId: messageRow.id });
-  return listMessages({ companyId: input.companyId, aicId: input.aicId });
+  emitAicEvent('aic-variance:message', record.company_id, { aicId: input.aicId, messageId: messageRow.id });
+  return listMessages({
+    companyId: input.companyId,
+    aicId: input.aicId,
+    userId: input.userId,
+    roles: input.roles,
+    permissions: input.permissions,
+    userBranchIds: input.userBranchIds,
+  });
 }
 
 export async function editMessage(input: {
   companyId: string;
   aicId: string;
   userId: string;
+  roles: string[];
   messageId: string;
   content: string;
   permissions: string[];
+  userBranchIds: string[];
 }): Promise<void> {
+  const record = await getRecordOrThrow(input.aicId);
+  await assertCanAccessAicRecord({
+    row: record,
+    requestCompanyId: input.companyId,
+    userId: input.userId,
+    roles: input.roles,
+    permissions: input.permissions,
+    userBranchIds: input.userBranchIds,
+  });
+
   const msg = await db.getDb()('aic_messages').where({ id: input.messageId, aic_record_id: input.aicId }).first() as AicMessageRow | undefined;
   if (!msg) throw new AppError(404, 'Message not found');
   if (msg.user_id !== input.userId && !hasManagePermission(input.permissions)) {
@@ -957,32 +1023,57 @@ export async function editMessage(input: {
     is_edited: true,
     updated_at: new Date(),
   });
-  emitAicEvent('aic-variance:message', input.companyId, { aicId: input.aicId, messageId: input.messageId });
+  emitAicEvent('aic-variance:message', record.company_id, { aicId: input.aicId, messageId: input.messageId });
 }
 
 export async function deleteMessage(input: {
   companyId: string;
   aicId: string;
   userId: string;
+  roles: string[];
   messageId: string;
   permissions: string[];
+  userBranchIds: string[];
 }): Promise<void> {
+  const record = await getRecordOrThrow(input.aicId);
+  await assertCanAccessAicRecord({
+    row: record,
+    requestCompanyId: input.companyId,
+    userId: input.userId,
+    roles: input.roles,
+    permissions: input.permissions,
+    userBranchIds: input.userBranchIds,
+  });
+
   const msg = await db.getDb()('aic_messages').where({ id: input.messageId, aic_record_id: input.aicId }).first() as AicMessageRow | undefined;
   if (!msg) throw new AppError(404, 'Message not found');
   if (msg.user_id !== input.userId && !hasManagePermission(input.permissions)) {
     throw new AppError(403, 'Cannot delete this message');
   }
   await db.getDb()('aic_messages').where({ id: input.messageId }).update({ is_deleted: true, updated_at: new Date() });
-  emitAicEvent('aic-variance:message', input.companyId, { aicId: input.aicId, messageId: input.messageId });
+  emitAicEvent('aic-variance:message', record.company_id, { aicId: input.aicId, messageId: input.messageId });
 }
 
 export async function toggleReaction(input: {
   companyId: string;
   aicId: string;
   userId: string;
+  roles: string[];
   messageId: string;
   emoji: string;
+  permissions: string[];
+  userBranchIds: string[];
 }): Promise<void> {
+  const record = await getRecordOrThrow(input.aicId);
+  await assertCanAccessAicRecord({
+    row: record,
+    requestCompanyId: input.companyId,
+    userId: input.userId,
+    roles: input.roles,
+    permissions: input.permissions,
+    userBranchIds: input.userBranchIds,
+  });
+
   const existing = await db
     .getDb()('aic_message_reactions')
     .where({ message_id: input.messageId, user_id: input.userId, emoji: input.emoji })
@@ -998,7 +1089,7 @@ export async function toggleReaction(input: {
     });
   }
 
-  emitAicEvent('aic-variance:reaction', input.companyId, { aicId: input.aicId, messageId: input.messageId });
+  emitAicEvent('aic-variance:reaction', record.company_id, { aicId: input.aicId, messageId: input.messageId });
 }
 
 export async function uploadAttachment(input: {
