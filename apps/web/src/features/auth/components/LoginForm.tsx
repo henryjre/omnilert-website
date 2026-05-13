@@ -3,8 +3,10 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { Button } from '@/shared/components/ui/Button';
 import { Input } from '@/shared/components/ui/Input';
+import { AnimatedModal } from '@/shared/components/ui/AnimatedModal';
+import { useAppToast } from '@/shared/hooks/useAppToast';
 import { AnimatePresence, motion, type Variants } from 'framer-motion';
-import { ArrowRight, Building2, LogIn, MoveLeft, UserRoundPlus } from 'lucide-react';
+import { ArrowRight, Building2, KeyRound, LogIn, Mail, MoveLeft, UserRoundPlus, X } from 'lucide-react';
 import { useAuthSidebar } from './AuthLayout';
 import axios from 'axios';
 
@@ -78,10 +80,14 @@ export function LoginForm() {
   const [odooApiKey, setOdooApiKey] = useState('');
   const [superAdminEmail, setSuperAdminEmail] = useState('');
   const [superAdminPassword, setSuperAdminPassword] = useState('');
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [hasCompanies, setHasCompanies] = useState<boolean | null>(null);
   const { login } = useAuth();
+  const { success: showSuccessToast, error: showErrorToast } = useAppToast();
 
   useAuthSidebar(
     <>
@@ -145,6 +151,11 @@ export function LoginForm() {
 
   const navigate = useNavigate();
 
+  const openForgotPassword = () => {
+    setForgotEmail(email.trim());
+    setForgotOpen(true);
+  };
+
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -201,6 +212,32 @@ export function LoginForm() {
       setError(err.response?.data?.error || 'Failed to create company');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const nextEmail = forgotEmail.trim();
+    if (!nextEmail) {
+      showErrorToast('Enter the email address for your account.');
+      return;
+    }
+
+    setForgotLoading(true);
+    try {
+      await axios.post('/api/v1/auth/forgot-password', { email: nextEmail });
+      setForgotOpen(false);
+      showSuccessToast('Password reset link sent.');
+    } catch (err: any) {
+      if (err.response?.status === 404) {
+        showErrorToast('Email not found.');
+      } else if (err.response?.status === 429) {
+        showErrorToast(err.response?.data?.error || 'You can request another password reset after 30 minutes.');
+      } else {
+        showErrorToast(err.response?.data?.error || 'Failed to request password reset.');
+      }
+    } finally {
+      setForgotLoading(false);
     }
   };
 
@@ -334,6 +371,15 @@ export function LoginForm() {
                         onChange={(e) => setPassword(e.target.value)}
                         required
                       />
+                      <div className="mt-2 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={openForgotPassword}
+                          className="text-xs font-semibold text-primary-600 transition-colors hover:text-primary-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+                        >
+                          Forgot password?
+                        </button>
+                      </div>
                     </motion.div>
 
                     <motion.div variants={fieldItemVariants} className="pt-1">
@@ -461,6 +507,57 @@ export function LoginForm() {
           </motion.div>
         </div>
       </div>
+
+      <AnimatePresence>
+        {forgotOpen ? (
+          <AnimatedModal onBackdropClick={forgotLoading ? undefined : () => setForgotOpen(false)} maxWidth="max-w-md" zIndexClass="z-[80]">
+            <form onSubmit={handleForgotPassword} className="overflow-hidden rounded-xl">
+              <div className="border-b border-gray-100 bg-gradient-to-br from-primary-700 to-primary-600 px-5 py-5 text-white">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/12 ring-1 ring-white/15">
+                      <KeyRound className="h-5 w-5 text-amber-300" />
+                    </span>
+                    <div>
+                      <h3 className="text-lg font-bold tracking-tight">Reset password</h3>
+                      <p className="mt-1 text-sm text-white/70">We will send a one-time link to your email.</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label="Close forgot password dialog"
+                    onClick={() => setForgotOpen(false)}
+                    disabled={forgotLoading}
+                    className="rounded-lg p-1.5 text-white/70 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-5 p-5">
+                <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm leading-6 text-blue-900">
+                  Reset links expire after 10 minutes. You can request another link after 30 minutes.
+                </div>
+                <Input
+                  id="forgotEmail"
+                  label="Email address"
+                  type="email"
+                  placeholder="you@example.com"
+                  value={forgotEmail}
+                  onChange={(event) => setForgotEmail(event.target.value)}
+                  autoComplete="email"
+                  required
+                />
+                <Button type="submit" className="w-full" disabled={forgotLoading}>
+                  {forgotLoading ? 'Sending link...' : 'Send reset link'}
+                  {!forgotLoading && <Mail className="ml-2 h-4 w-4" />}
+                </Button>
+              </div>
+            </form>
+          </AnimatedModal>
+        ) : null}
+      </AnimatePresence>
     </motion.div>
   );
 }

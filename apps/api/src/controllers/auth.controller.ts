@@ -46,6 +46,26 @@ export async function refresh(req: Request, res: Response, next: NextFunction) {
   }
 }
 
+export async function forgotPassword(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { email } = req.body;
+    await authService.forgotPassword(email);
+    res.json({ success: true, message: 'Password reset email sent.' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function resetPassword(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { token, newPassword } = req.body;
+    await authService.resetPassword(token, newPassword);
+    res.json({ success: true, message: 'Password updated successfully.' });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function logout(req: Request, res: Response, next: NextFunction) {
   try {
     const { refreshToken } = req.body;

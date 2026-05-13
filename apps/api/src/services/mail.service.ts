@@ -3,6 +3,7 @@ import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 
 const MAIL_WEBHOOK_URL = 'https://n8n.omnilert.app/webhook/omnilert_mail';
+const FORGOT_PASSWORD_WEBHOOK_URL = 'https://n8n.omnilert.app/webhook-test/forgot-password';
 const MAIL_WEBHOOK_TIMEOUT_MS = 15000;
 
 /**
@@ -73,6 +74,44 @@ export async function sendRegistrationApprovedEmail(input: {
       employmentAccessLink,
     },
   });
+}
+
+export async function sendForgotPasswordEmail(input: {
+  to: string;
+  fullName: string;
+  email: string;
+  resetLink: string;
+  expiresInMinutes: number;
+}): Promise<void> {
+  const token = jwt.sign({ iss: 'omnilert-api' }, env.JWT_SECRET, {
+    algorithm: 'HS256',
+    expiresIn: '5m',
+  });
+;
+  const response = await fetch(FORGOT_PASSWORD_WEBHOOK_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      type: 'forgot_password',
+      to: input.to,
+      subject: 'Reset your Omnilert password',
+      data: {
+        fullName: input.fullName,
+        email: input.email,
+        resetLink: input.resetLink,
+        expiresInMinutes: input.expiresInMinutes,
+      },
+    }),
+    signal: AbortSignal.timeout(MAIL_WEBHOOK_TIMEOUT_MS),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Forgot password webhook failed with status ${response.status}: ${errorText.slice(0, 500)}`);
+  }
 }
 
 // ─── Weekly EPI Reports (Employees) ──────────────────────────────────────────

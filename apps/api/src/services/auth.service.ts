@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { db } from '../config/database.js';
-import { comparePassword } from '../utils/password.js';
+import { env } from '../config/env.js';
+import { comparePassword, hashPassword } from '../utils/password.js';
 import { logger } from '../utils/logger.js';
 import {
   signAccessToken,
@@ -15,6 +16,10 @@ import {
   loadGlobalUserRolesAndPermissions,
   normalizeEmail,
 } from './globalUser.service.js';
+import { sendForgotPasswordEmail } from './mail.service.js';
+
+const PASSWORD_RESET_EXPIRES_MINUTES = 10;
+const PASSWORD_RESET_COOLDOWN_MINUTES = 30;
 
 interface SuperAdminRow {
   id: string;
@@ -28,6 +33,15 @@ interface CompanyRow {
   name: string;
   slug: string;
   theme_color: string | null;
+}
+
+function hashResetToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+function buildPasswordResetUrl(token: string): string {
+  const baseUrl = env.CLIENT_URL.replace(/\/+$/, '');
+  return `${baseUrl}/reset-password?token=${encodeURIComponent(token)}`;
 }
 
 let systemRoleDefaultsEnsured = false;
@@ -519,6 +533,102 @@ export async function listLoginCompanies(userId: string): Promise<Array<{
     slug: company.slug,
     themeColor: company.theme_color,
   }));
+}
+
+export async function forgotPassword(email: string): Promise<void> {
+  const normalizedEmail = normalizeEmail(email);
+  const now = new Date();
+
+  const superAdmin = await db.getDb()('super_admins')
+    .whereRaw('LOWER(email) = ?', [normalizedEmail])
+    .first('id');
+  if (superAdmin) {
+    throw new AppError(404, 'Email not found');
+  }
+
+  const user = await db.getDb()('users')
+    .whereRaw('LOWER(email) = ?', [normalizedEmail])
+    .andWhere({ is_active: true })
+    .first('id', 'email', 'first_name', 'last_name');
+  if (!user) {
+    throw new AppError(404, 'Email not found');
+  }
+
+  const latestRequest = await db.getDb()('password_reset_tokens')
+    .where({ user_id: user.id })
+    .orderBy('created_at', 'desc')
+    .first('created_at');
+  if (latestRequest?.created_at) {
+    const latestCreatedAt = new Date(latestRequest.created_at).getTime();
+    const cooldownEndsAt = latestCreatedAt + PASSWORD_RESET_COOLDOWN_MINUTES * 60 * 1000;
+    if (cooldownEndsAt > now.getTime()) {
+      throw new AppError(429, 'You can request another password reset after 30 minutes');
+    }
+  }
+
+  const token = crypto.randomBytes(32).toString('base64url');
+  const tokenHash = hashResetToken(token);
+  const expiresAt = new Date(now.getTime() + PASSWORD_RESET_EXPIRES_MINUTES * 60 * 1000);
+  const resetLink = buildPasswordResetUrl(token);
+  const fullName = `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim() || 'Omnilert user';
+
+  await db.getDb()('password_reset_tokens').insert({
+    user_id: user.id,
+    token_hash: tokenHash,
+    expires_at: expiresAt,
+  });
+
+  try {
+    await sendForgotPasswordEmail({
+      to: user.email,
+      fullName,
+      email: user.email,
+      resetLink,
+      expiresInMinutes: PASSWORD_RESET_EXPIRES_MINUTES,
+    });
+  } catch (error) {
+    await db.getDb()('password_reset_tokens').where({ token_hash: tokenHash }).delete();
+    logger.error({ err: error, userId: user.id }, 'Failed to send password reset email');
+    throw new AppError(502, 'Failed to send password reset email');
+  }
+}
+
+export async function resetPassword(token: string, newPassword: string): Promise<void> {
+  const tokenHash = hashResetToken(token);
+  const now = new Date();
+
+  const resetToken = await db.getDb()('password_reset_tokens')
+    .where({ token_hash: tokenHash })
+    .whereNull('used_at')
+    .where('expires_at', '>', now)
+    .first('id', 'user_id');
+  if (!resetToken) {
+    throw new AppError(400, 'Password reset link is invalid or expired');
+  }
+
+  const user = await db.getDb()('users')
+    .where({ id: resetToken.user_id, is_active: true })
+    .first('id');
+  if (!user) {
+    throw new AppError(400, 'Password reset link is invalid or expired');
+  }
+
+  const passwordHash = await hashPassword(newPassword);
+
+  await db.getDb().transaction(async (trx) => {
+    await trx('users')
+      .where({ id: resetToken.user_id })
+      .update({ password_hash: passwordHash, updated_at: now });
+
+    await trx('password_reset_tokens')
+      .where({ user_id: resetToken.user_id })
+      .whereNull('used_at')
+      .update({ used_at: now });
+
+    await trx('refresh_tokens')
+      .where({ user_id: resetToken.user_id, is_revoked: false })
+      .update({ is_revoked: true });
+  });
 }
 
 /** @deprecated Company switching is no longer used. Always resolves to the Omnilert root company. */

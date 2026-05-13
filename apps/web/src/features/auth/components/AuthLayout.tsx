@@ -88,6 +88,7 @@ export function AuthLayout() {
   const [isTransitioning, setIsTransitioning] = useState(false);
   const location = useLocation();
   const isRegister = location.pathname === '/register';
+  const activeSidebar = sidebars[location.pathname] ?? sidebars['/login'];
 
   const isFirstRender = useRef(true);
   const transitionId = useRef(0);
@@ -251,14 +252,14 @@ export function AuthLayout() {
                 {sidebars['/register']}
               </motion.div>
             ) : (
-              <motion.div
+            <motion.div
                 key="login-sidebar"
                 initial={{ opacity: 0, filter: 'blur(4px)' }}
                 animate={{ opacity: 1, filter: 'blur(0px)', transition: { delay: 0.8, duration: 0.4 } }}
                 exit={{ opacity: 0, filter: 'blur(4px)', transition: { duration: 0.2 } }}
                 className="absolute right-0 top-0 bottom-0 w-[380px] flex flex-col justify-between z-10"
               >
-                {sidebars['/login']}
+                {activeSidebar}
               </motion.div>
             )}
           </AnimatePresence>

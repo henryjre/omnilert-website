@@ -1,6 +1,12 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { loginSchema, refreshTokenSchema, switchCompanySchema } from '@omnilert/shared';
+import {
+  forgotPasswordSchema,
+  loginSchema,
+  refreshTokenSchema,
+  resetPasswordSchema,
+  switchCompanySchema,
+} from '@omnilert/shared';
 import { validateBody } from '../middleware/validateRequest.js';
 import { authenticate } from '../middleware/auth.js';
 import * as authController from '../controllers/auth.controller.js';
@@ -17,6 +23,8 @@ const registrationUpload = multer({
 // Tenant auth
 router.post('/login', validateBody(loginSchema), authController.login);
 router.post('/refresh', validateBody(refreshTokenSchema), authController.refresh);
+router.post('/forgot-password', validateBody(forgotPasswordSchema), authController.forgotPassword);
+router.post('/reset-password', validateBody(resetPasswordSchema), authController.resetPassword);
 router.post('/logout', authController.logout);
 router.get('/me', authenticate, authController.me);
 router.get('/companies', authenticate, authController.listCompanies);
