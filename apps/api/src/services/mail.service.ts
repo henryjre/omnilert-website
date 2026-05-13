@@ -3,7 +3,7 @@ import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 
 const MAIL_WEBHOOK_URL = 'https://n8n.omnilert.app/webhook/omnilert_mail';
-const FORGOT_PASSWORD_WEBHOOK_URL = 'https://n8n.omnilert.app/webhook-test/forgot-password';
+const FORGOT_PASSWORD_WEBHOOK_URL = 'https://n8n.omnilert.app/webhook/forgot-password';
 const MAIL_WEBHOOK_TIMEOUT_MS = 15000;
 
 /**
