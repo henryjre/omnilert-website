@@ -6,6 +6,7 @@ import {
   refreshTokenSchema,
   resetPasswordSchema,
   switchCompanySchema,
+  validateResetPasswordTokenSchema,
 } from '@omnilert/shared';
 import { validateBody } from '../middleware/validateRequest.js';
 import { authenticate } from '../middleware/auth.js';
@@ -25,6 +26,7 @@ router.post('/login', validateBody(loginSchema), authController.login);
 router.post('/refresh', validateBody(refreshTokenSchema), authController.refresh);
 router.post('/forgot-password', validateBody(forgotPasswordSchema), authController.forgotPassword);
 router.post('/reset-password', validateBody(resetPasswordSchema), authController.resetPassword);
+router.post('/reset-password/validate', validateBody(validateResetPasswordTokenSchema), authController.validateResetPasswordToken);
 router.post('/logout', authController.logout);
 router.get('/me', authenticate, authController.me);
 router.get('/companies', authenticate, authController.listCompanies);

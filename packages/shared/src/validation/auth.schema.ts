@@ -23,6 +23,10 @@ export const resetPasswordSchema = z.object({
   newPassword: z.string().min(6, 'Password must be at least 6 characters'),
 });
 
+export const validateResetPasswordTokenSchema = z.object({
+  token: z.string().min(1, 'Reset token is required'),
+});
+
 export const registerRequestSchema = z.object({
   firstName: z.string().min(1, 'First name is required').max(100),
   middleName: z.string().min(1, 'Middle name is required; enter N/A if none').max(100),
@@ -154,6 +158,7 @@ export type SwitchCompanyInput = z.infer<typeof switchCompanySchema>;
 export type RefreshTokenInput = z.infer<typeof refreshTokenSchema>;
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+export type ValidateResetPasswordTokenInput = z.infer<typeof validateResetPasswordTokenSchema>;
 export type RegisterRequestInput = z.infer<typeof registerRequestSchema>;
 export type ApproveRegistrationRequestInput = z.infer<typeof approveRegistrationRequestSchema>;
 export type RejectRegistrationRequestInput = z.infer<typeof rejectRegistrationRequestSchema>;

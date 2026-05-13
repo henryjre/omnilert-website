@@ -1,56 +1,77 @@
-import jwt from 'jsonwebtoken';
+import { Resend } from 'resend';
+import type { AuditResultsWebhookPayload } from '@omnilert/shared';
 import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
+import {
+  renderForgotPasswordEmail,
+  renderRegistrationApprovedEmail,
+} from './emailTemplates/authTemplates.js';
+import { renderAuditResultsEmail } from './emailTemplates/auditTemplates.js';
+import {
+  renderManagerEpiSummaryEmail,
+  renderWeeklyEpiEmail,
+} from './emailTemplates/epiTemplates.js';
 
-const MAIL_WEBHOOK_URL = 'https://n8n.omnilert.app/webhook/omnilert_mail';
-const FORGOT_PASSWORD_WEBHOOK_URL = 'https://n8n.omnilert.app/webhook/forgot-password';
-const MAIL_WEBHOOK_TIMEOUT_MS = 15000;
+type ResendAttachment = {
+  filename: string;
+  content: Buffer | string;
+  contentType?: string;
+};
 
-/**
- * Dispatches a secure, authenticated webhook to n8n for email processing.
- */
-async function sendMailWebhook(input: {
-  type: string;
-  to: string;
+type SendResendEmailInput = {
+  to: string | string[];
   subject: string;
-  data: Record<string, unknown>;
-}): Promise<void> {
-  const token = jwt.sign({ iss: 'omnilert-api' }, env.JWT_SECRET, {
-    algorithm: 'HS256',
-    expiresIn: '5m',
-  });
+  html: string;
+  text?: string;
+  attachments?: ResendAttachment[];
+  tags?: Array<{ name: string; value: string }>;
+};
 
+let resendClient: Resend | null = null;
+
+function getResendClient(): Resend {
+  if (!env.RESEND_API_KEY) {
+    throw new Error('RESEND_API_KEY is required to send email');
+  }
+
+  resendClient ??= new Resend(env.RESEND_API_KEY);
+  return resendClient;
+}
+
+function getResendFromEmail(): string {
+  if (!env.RESEND_FROM_EMAIL) {
+    throw new Error('RESEND_FROM_EMAIL is required to send email');
+  }
+  return env.RESEND_FROM_EMAIL;
+}
+
+export async function sendResendEmail(input: SendResendEmailInput): Promise<void> {
   try {
-    const response = await fetch(MAIL_WEBHOOK_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        type: input.type,
-        to: input.to,
-        subject: input.subject,
-        data: input.data,
-      }),
-      signal: AbortSignal.timeout(MAIL_WEBHOOK_TIMEOUT_MS),
+    const { error } = await getResendClient().emails.send({
+      from: getResendFromEmail(),
+      to: input.to,
+      subject: input.subject,
+      html: input.html,
+      text: input.text,
+      attachments: input.attachments,
+      tags: input.tags,
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Mail webhook failed with status ${response.status}: ${errorText.slice(0, 500)}`);
+    if (error) {
+      throw new Error(`Resend email failed: ${error.message}`);
     }
   } catch (error) {
-    logger.error({ 
-      err: error, 
-      type: input.type, 
-      recipient: input.to 
-    }, 'Failed to dispatch email webhook');
+    logger.error(
+      {
+        err: error,
+        recipient: input.to,
+        subject: input.subject,
+      },
+      'Failed to send Resend email',
+    );
     throw error;
   }
 }
-
-// ─── Registration & Onboarding ───────────────────────────────────────────────
 
 export async function sendRegistrationApprovedEmail(input: {
   to: string;
@@ -61,18 +82,18 @@ export async function sendRegistrationApprovedEmail(input: {
 }): Promise<void> {
   const discordLink = env.DISCORD_INVITE_URL;
   const employmentAccessLink = buildEmploymentAccessLink(input.companySlug);
-  
-  await sendMailWebhook({
-    type: 'registration_approved',
+
+  await sendResendEmail({
     to: input.to,
     subject: 'Omnilert Registration Approved',
-    data: {
+    html: renderRegistrationApprovedEmail({
       fullName: input.fullName,
       email: input.email,
       password: input.password,
       discordLink,
       employmentAccessLink,
-    },
+    }),
+    tags: [{ name: 'email_type', value: 'registration_approved' }],
   });
 }
 
@@ -83,38 +104,13 @@ export async function sendForgotPasswordEmail(input: {
   resetLink: string;
   expiresInMinutes: number;
 }): Promise<void> {
-  const token = jwt.sign({ iss: 'omnilert-api' }, env.JWT_SECRET, {
-    algorithm: 'HS256',
-    expiresIn: '5m',
+  await sendResendEmail({
+    to: input.to,
+    subject: 'Reset your Omnilert password',
+    html: renderForgotPasswordEmail(input),
+    tags: [{ name: 'email_type', value: 'forgot_password' }],
   });
-;
-  const response = await fetch(FORGOT_PASSWORD_WEBHOOK_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      type: 'forgot_password',
-      to: input.to,
-      subject: 'Reset your Omnilert password',
-      data: {
-        fullName: input.fullName,
-        email: input.email,
-        resetLink: input.resetLink,
-        expiresInMinutes: input.expiresInMinutes,
-      },
-    }),
-    signal: AbortSignal.timeout(MAIL_WEBHOOK_TIMEOUT_MS),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Forgot password webhook failed with status ${response.status}: ${errorText.slice(0, 500)}`);
-  }
 }
-
-// ─── Weekly EPI Reports (Employees) ──────────────────────────────────────────
 
 export async function sendWeeklyEpiEmail(
   to: string,
@@ -125,26 +121,20 @@ export async function sendWeeklyEpiEmail(
   reportDate: string,
   pdfBuffer: Buffer,
 ): Promise<void> {
-  await sendMailWebhook({
-    type: 'weekly_epi_report',
+  await sendResendEmail({
     to,
     subject: `Your Weekly EPI Performance Report - ${reportDate}`,
-    data: {
-      employeeName,
-      epiBefore,
-      epiAfter,
-      delta,
-      reportDate,
-      attachment: {
-        content: pdfBuffer.toString('base64'),
+    html: renderWeeklyEpiEmail({ employeeName, epiBefore, epiAfter, delta, reportDate }),
+    attachments: [
+      {
+        content: pdfBuffer,
         filename: `EPI_Report_${employeeName.replace(/\s+/g, '_')}_${reportDate}.pdf`,
         contentType: 'application/pdf',
       },
-    },
+    ],
+    tags: [{ name: 'email_type', value: 'weekly_epi_report' }],
   });
 }
-
-// ─── Manager EPI Summary Reports ─────────────────────────────────────────────
 
 export async function sendManagerEpiSummaryEmail(
   to: string,
@@ -155,26 +145,29 @@ export async function sendManagerEpiSummaryEmail(
   reportDate: string,
   pdfBuffer: Buffer,
 ): Promise<void> {
-  await sendMailWebhook({
-    type: 'epi_manager_summary',
+  await sendResendEmail({
     to,
     subject: `EPI Weekly Summary: ${companyName} - ${reportDate}`,
-    data: {
-      managerName,
-      companyName,
-      totalEmployees,
-      avgDelta,
-      reportDate,
-      attachment: {
-        content: pdfBuffer.toString('base64'),
+    html: renderManagerEpiSummaryEmail({ managerName, companyName, totalEmployees, avgDelta, reportDate }),
+    attachments: [
+      {
+        content: pdfBuffer,
         filename: `Manager_EPI_Summary_${companyName.replace(/\s+/g, '_')}_${reportDate}.pdf`,
         contentType: 'application/pdf',
       },
-    },
+    ],
+    tags: [{ name: 'email_type', value: 'epi_manager_summary' }],
   });
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+export async function sendAuditResultsEmail(payload: AuditResultsWebhookPayload): Promise<void> {
+  await sendResendEmail({
+    to: payload.recipient.email,
+    subject: 'Audit Completion Receipt',
+    html: renderAuditResultsEmail(payload),
+    tags: [{ name: 'email_type', value: 'audit_result' }],
+  });
+}
 
 function buildEmploymentAccessLink(companySlug?: string): string {
   const base = env.CLIENT_URL?.trim() || 'http://localhost:5173';

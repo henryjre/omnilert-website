@@ -41,6 +41,7 @@
     "pg-boss": "^12.13.0",
     "pino": "^9.5.0",
     "pino-pretty": "^11.3.0",
+    "resend": "^6.12.3",
     "socket.io": "^4.8.0",
     "socket.io-client": "^4.8.3",
     "uuid": "^10.0.0",

@@ -631,6 +631,26 @@ export async function resetPassword(token: string, newPassword: string): Promise
   });
 }
 
+export async function validateResetPasswordToken(token: string): Promise<void> {
+  const tokenHash = hashResetToken(token);
+  const resetToken = await db.getDb()('password_reset_tokens')
+    .where({ token_hash: tokenHash })
+    .whereNull('used_at')
+    .where('expires_at', '>', new Date())
+    .first('id', 'user_id');
+
+  if (!resetToken) {
+    throw new AppError(400, 'Password reset link is invalid or expired');
+  }
+
+  const user = await db.getDb()('users')
+    .where({ id: resetToken.user_id, is_active: true })
+    .first('id');
+  if (!user) {
+    throw new AppError(400, 'Password reset link is invalid or expired');
+  }
+}
+
 /** @deprecated Company switching is no longer used. Always resolves to the Omnilert root company. */
 export async function switchCompany(userId: string, _companySlug: string) {
   await ensureSystemRolePermissionDefaults();

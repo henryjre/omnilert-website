@@ -1,12 +1,8 @@
 import type { AuditResultsWebhookPayload, StoreAudit } from '@omnilert/shared';
-import jwt from 'jsonwebtoken';
 import { db } from '../config/database.js';
-import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
+import { sendAuditResultsEmail } from './mail.service.js';
 import { getEmployeeWebsiteKeyByEmployeeId } from './odoo.service.js';
-
-const AUDIT_RESULTS_WEBHOOK_URL = 'https://n8n.omnilert.app/webhook/omnilert_mail';
-const AUDIT_RESULTS_WEBHOOK_TIMEOUT_MS = 5000;
 
 type LoggerLike = {
   warn: (...args: unknown[]) => void;
@@ -53,7 +49,6 @@ type NotifyCompletedStoreAuditInput = {
 };
 
 type StoreAuditResultsWebhookNotifierDeps = {
-  webhookUrl: string;
   resolveServiceCrewCctvWebsiteUserKey: (odooEmployeeId: number) => Promise<string | null>;
   findUserById: (
     userId: string,
@@ -67,7 +62,7 @@ type StoreAuditResultsWebhookNotifierDeps = {
     companyId: string,
     audit: StoreAuditWebhookAudit,
   ) => Promise<AuditResultsCompany>;
-  sendWebhook: (payload: AuditResultsWebhookPayload) => Promise<void>;
+  sendEmail: (payload: AuditResultsWebhookPayload) => Promise<void>;
   log: LoggerLike;
 };
 
@@ -211,48 +206,16 @@ async function defaultFindCompanyById(
   };
 }
 
-async function defaultSendWebhook(payload: AuditResultsWebhookPayload): Promise<void> {
-  const token = jwt.sign({ iss: 'omnilert-api' }, env.JWT_SECRET, {
-    algorithm: 'HS256',
-    expiresIn: '1m',
-  });
-
-  const response = await fetch(AUDIT_RESULTS_WEBHOOK_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-    },
-    body: JSON.stringify({
-      type: 'audit_result',
-      to: payload.recipient.email,
-      subject: 'Audit Completion Receipt',
-      data: payload,
-    }),
-    signal: AbortSignal.timeout(AUDIT_RESULTS_WEBHOOK_TIMEOUT_MS),
-  });
-
-  if (response.ok) {
-    return;
-  }
-
-  const responseText = await response.text();
-  throw new Error(
-    `Audit results webhook failed with ${response.status}: ${responseText.slice(0, 500)}`,
-  );
-}
-
 export function createStoreAuditResultsWebhookNotifier(
   overrides: Partial<StoreAuditResultsWebhookNotifierDeps> = {},
 ) {
   const deps: StoreAuditResultsWebhookNotifierDeps = {
-    webhookUrl: overrides.webhookUrl ?? AUDIT_RESULTS_WEBHOOK_URL,
     resolveServiceCrewCctvWebsiteUserKey:
       overrides.resolveServiceCrewCctvWebsiteUserKey ?? getEmployeeWebsiteKeyByEmployeeId,
     findUserById: overrides.findUserById ?? defaultFindUserById,
     findUserByUserKey: overrides.findUserByUserKey ?? defaultFindUserByUserKey,
     findCompanyById: overrides.findCompanyById ?? defaultFindCompanyById,
-    sendWebhook: overrides.sendWebhook ?? defaultSendWebhook,
+    sendEmail: overrides.sendEmail ?? sendAuditResultsEmail,
     log: overrides.log ?? logger,
   };
 
@@ -301,36 +264,7 @@ export function createStoreAuditResultsWebhookNotifier(
     });
 
     try {
-      if (deps.sendWebhook === defaultSendWebhook && deps.webhookUrl !== AUDIT_RESULTS_WEBHOOK_URL) {
-        const token = jwt.sign({ iss: 'omnilert-api' }, env.JWT_SECRET, {
-          algorithm: 'HS256',
-          expiresIn: '1m',
-        });
-
-        const response = await fetch(deps.webhookUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            type: 'audit_result',
-            to: payload.recipient.email,
-            subject: 'Audit Completion Receipt',
-            data: payload,
-          }),
-          signal: AbortSignal.timeout(AUDIT_RESULTS_WEBHOOK_TIMEOUT_MS),
-        });
-
-        if (!response.ok) {
-          const responseText = await response.text();
-          throw new Error(
-            `Audit results webhook failed with ${response.status}: ${responseText.slice(0, 500)}`,
-          );
-        }
-      } else {
-        await deps.sendWebhook(payload);
-      }
+      await deps.sendEmail(payload);
 
       return {
         status: 'sent' as const,
@@ -338,11 +272,11 @@ export function createStoreAuditResultsWebhookNotifier(
     } catch (error) {
       deps.log.error(
         { err: error, auditId: input.audit.id, auditType: input.audit.type },
-        'Failed to deliver audit results webhook',
+        'Failed to deliver audit results email',
       );
       return {
         status: 'skipped' as const,
-        reason: 'webhook_failed' as const,
+        reason: 'email_failed' as const,
       };
     }
   };

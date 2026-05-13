@@ -48,6 +48,8 @@ const envSchema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
   SMTP_FROM: z.string().optional(),
+  RESEND_API_KEY: z.string().optional(),
+  RESEND_FROM_EMAIL: z.string().optional(),
   DISCORD_INVITE_URL: z.string().url().default('https://discord.gg/9E2e4TPS7g'),
   DISCORD_BOT_API_TOKEN: z.string().optional(),
   DISCORD_BOT_REGISTRATION_APPROVED_WEBHOOK_URL: z.string().url().default('https://bot.omnilert.app/website/registration/approved'),

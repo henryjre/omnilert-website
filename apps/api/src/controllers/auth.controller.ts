@@ -66,6 +66,16 @@ export async function resetPassword(req: Request, res: Response, next: NextFunct
   }
 }
 
+export async function validateResetPasswordToken(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { token } = req.body;
+    await authService.validateResetPasswordToken(token);
+    res.json({ success: true, message: 'Password reset link is valid.' });
+  } catch (err) {
+    next(err);
+  }
+}
+
 export async function logout(req: Request, res: Response, next: NextFunction) {
   try {
     const { refreshToken } = req.body;

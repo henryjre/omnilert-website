@@ -13,8 +13,10 @@ test('forgot password auth routes are public and validated', () => {
 
   assert.match(routes, /router\.post\('\/forgot-password',\s*validateBody\(forgotPasswordSchema\),\s*authController\.forgotPassword\)/);
   assert.match(routes, /router\.post\('\/reset-password',\s*validateBody\(resetPasswordSchema\),\s*authController\.resetPassword\)/);
+  assert.match(routes, /router\.post\('\/reset-password\/validate',\s*validateBody\(validateResetPasswordTokenSchema\),\s*authController\.validateResetPasswordToken\)/);
   assert.doesNotMatch(routes, /authenticate,\s*validateBody\(forgotPasswordSchema\)/);
   assert.doesNotMatch(routes, /authenticate,\s*validateBody\(resetPasswordSchema\)/);
+  assert.doesNotMatch(routes, /authenticate,\s*validateBody\(validateResetPasswordTokenSchema\)/);
 });
 
 test('forgot password service enforces normal-user reset rules', () => {
@@ -27,20 +29,24 @@ test('forgot password service enforces normal-user reset rules', () => {
   assert.match(service, /db\.getDb\(\)\('super_admins'\)/);
   assert.match(service, /throw new AppError\(404,\s*'Email not found'\)/);
   assert.match(service, /throw new AppError\(429,\s*'You can request another password reset after 30 minutes'\)/);
+  assert.match(service, /where\(\{\s*token_hash:\s*tokenHash\s*\}\)[\s\S]*whereNull\('used_at'\)[\s\S]*where\('expires_at',\s*'>',\s*now\)/);
+  assert.match(service, /export async function validateResetPasswordToken[\s\S]*whereNull\('used_at'\)[\s\S]*where\('expires_at',\s*'>',\s*new Date\(\)\)[\s\S]*where\(\{\s*id:\s*resetToken\.user_id,\s*is_active:\s*true\s*\}\)/);
   assert.match(service, /trx\('password_reset_tokens'\)[\s\S]*whereNull\('used_at'\)[\s\S]*update\(\{\s*used_at: now\s*\}\)/);
   assert.match(service, /trx\('refresh_tokens'\)[\s\S]*update\(\{\s*is_revoked: true\s*\}\)/);
 });
 
-test('forgot password email webhook contract matches n8n requirements', () => {
+test('forgot password email contract uses Resend and includes reset details', () => {
   const mailService = readFileSync(path.join(apiSrc, 'services', 'mail.service.ts'), 'utf8');
+  const authTemplates = readFileSync(path.join(apiSrc, 'services', 'emailTemplates', 'authTemplates.ts'), 'utf8');
   const template = readFileSync(path.join(repoRoot, 'docs', 'email_templates', 'forgot_password.html'), 'utf8');
 
-  assert.match(mailService, /https:\/\/n8n\.omnilert\.app\/webhook-test\/forgot-password/);
-  assert.match(mailService, /jwt\.sign\(\{\s*iss:\s*'omnilert-api'\s*\},\s*env\.JWT_SECRET/);
-  assert.match(mailService, /'Authorization':\s*`Bearer \$\{token\}`/);
-  assert.match(mailService, /type:\s*'forgot_password'/);
-  assert.match(mailService, /resetLink:\s*input\.resetLink/);
-  assert.match(mailService, /expiresInMinutes:\s*input\.expiresInMinutes/);
+  assert.match(mailService, /new Resend\(env\.RESEND_API_KEY\)/);
+  assert.match(mailService, /from:\s*getResendFromEmail\(\)/);
+  assert.match(mailService, /name:\s*'email_type',\s*value:\s*'forgot_password'/);
+  assert.match(mailService, /renderForgotPasswordEmail\(input\)/);
+  assert.match(authTemplates, /input\.resetLink/);
+  assert.match(authTemplates, /input\.expiresInMinutes/);
+  assert.doesNotMatch(mailService, /n8n\.omnilert\.app/);
   assert.match(template, /\{\{\s*\$json\.body\.data\.resetLink\s*\}\}/);
   assert.match(template, /\{\{\s*\$json\.body\.data\.expiresInMinutes\s*\}\}/);
 });

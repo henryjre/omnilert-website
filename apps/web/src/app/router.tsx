@@ -43,6 +43,10 @@ import { PERMISSIONS } from '@omnilert/shared';
 import { AuthLayout } from '@/features/auth/components/AuthLayout';
 export const router = createBrowserRouter([
   {
+    path: '/reset-password',
+    element: <ResetPasswordPage />,
+  },
+  {
     element: <AuthLayout />,
     children: [
       {
@@ -52,10 +56,6 @@ export const router = createBrowserRouter([
       {
         path: '/register',
         element: <RegisterPage />,
-      },
-      {
-        path: '/reset-password',
-        element: <ResetPasswordPage />,
       },
     ],
   },
