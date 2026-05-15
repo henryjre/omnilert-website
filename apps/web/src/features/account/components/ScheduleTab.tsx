@@ -64,6 +64,7 @@ const ACCOUNT_SHIFT_STATUS_CONFIG: Record<string, { label: string; cls: string }
   open: { label: 'Upcoming', cls: 'bg-blue-100 text-blue-700' },
   active: { label: 'Active', cls: 'bg-green-100 text-green-700' },
   ended: { label: 'Closed', cls: 'bg-red-100 text-red-700' },
+  absent: { label: 'Absent', cls: 'bg-gray-100 text-gray-700' },
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -1861,7 +1862,7 @@ function MyShiftCardSkeleton() {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-type TabType = 'all' | 'open' | 'active' | 'ended';
+type TabType = 'all' | 'open' | 'active' | 'ended' | 'absent';
 type SortBy = 'shift_start' | 'allocated_hours';
 type SortOrder = 'asc' | 'desc';
 interface Filters {
@@ -2299,6 +2300,7 @@ export function ScheduleTab() {
     { id: 'active', label: 'Active', icon: PlayCircle },
     { id: 'open', label: 'Upcoming', icon: CalendarClock },
     { id: 'ended', label: 'Closed', icon: CircleCheck },
+    { id: 'absent', label: 'Absent', icon: XCircle },
   ];
 
   const hasActiveFilters =

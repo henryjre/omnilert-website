@@ -24,6 +24,7 @@ import {
   initShiftAuthorizationCron,
   stopShiftAuthorizationCron,
 } from './services/shiftAuthorizationCron.service.js';
+import { initShiftAbsenceCron, stopShiftAbsenceCron } from './services/shiftAbsenceCron.service.js';
 import { initEpiSnapshotCrons, stopEpiSnapshotCrons } from './services/epiSnapshotCron.service.js';
 import {
   initNotificationRetentionCron,
@@ -85,6 +86,12 @@ async function shutdown(signal: string): Promise<void> {
   }
 
   try {
+    stopShiftAbsenceCron();
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to stop shift absence cron');
+  }
+
+  try {
     stopEpiSnapshotCrons();
   } catch (error) {
     logger.error({ err: error }, 'Failed to stop EPI snapshot crons');
@@ -117,6 +124,7 @@ async function bootstrap(): Promise<void> {
   initPeerEvaluationCron();
   initPosAlertsMonitor();
   initShiftAuthorizationCron();
+  initShiftAbsenceCron();
   await initEpiSnapshotCrons();
   initNotificationRetentionCron();
 

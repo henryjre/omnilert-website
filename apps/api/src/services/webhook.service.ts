@@ -350,6 +350,9 @@ export async function processEmployeeShift(payload: {
       }
     }
 
+    // Planning-slot webhooks own schedule metadata only. Attendance lifecycle fields
+    // (`status`, `check_in_status`, `total_worked_hours`, `pending_approvals`) must
+    // remain owned by attendance and authorization flows.
     const [updated] = await tenantDb('employee_shifts')
       .where({ id: existing.id })
       .update({

@@ -17,6 +17,7 @@ const { db } = await import('../config/database.js');
 const {
   createAttendanceProcessor,
   emitAttendanceSocketEvent,
+  processEmployeeShift,
   reassignUserToSingleCheckedInBranch,
   shouldPreserveInterimDutyPlanningSlotDelete,
 } = await import('./webhook.service.js');
@@ -768,6 +769,8 @@ function createHarnessTenantDb(harness: HarnessShape) {
     switch (tableName) {
       case 'employee_shifts':
         return harness.shifts as Array<Record<string, unknown>>;
+      case 'branches':
+        return harness.branches as Array<Record<string, unknown>>;
       case 'shift_activities':
         return harness.activities as Array<Record<string, unknown>>;
       case 'shift_logs':
@@ -937,6 +940,121 @@ test('shouldPreserveInterimDutyPlanningSlotDelete preserves rejected interim-dut
   assert.equal(shouldPreserveInterimDutyPlanningSlotDelete(['approved']), true);
   assert.equal(shouldPreserveInterimDutyPlanningSlotDelete(['no_approval_needed']), false);
   assert.equal(shouldPreserveInterimDutyPlanningSlotDelete([]), false);
+});
+
+test('processEmployeeShift preserves ended shift lifecycle fields on planning publish', async (t) => {
+  const planningPayload = {
+    id: 1869,
+    _id: 1869,
+    _model: 'planning.slot',
+    _action: 'Send Webhook Notification: Planning Shift Published(#1609)',
+    company_id: 12,
+    x_role_name: 'Straight Duty',
+    end_datetime: '2026-05-01 11:00:00',
+    x_role_color: 2,
+    x_website_key: 'website-user-1',
+    start_datetime: '2026-04-30 23:00:00',
+    x_employee_avatar: 'https://example.com/avatar.png',
+    x_employee_contact_name: '1066 - Charles Kent Pamintuan',
+  };
+  const shift = createShift({
+    id: 'shift-ended',
+    odoo_shift_id: 1869,
+    branch_id: 'branch-main',
+    user_id: 'user-1',
+    employee_name: '1066 - Charles Kent Pamintuan',
+    employee_avatar_url: 'https://example.com/avatar.png',
+    duty_type: 'Straight Duty',
+    duty_color: 2,
+    shift_start: '2026-04-30T23:00:00.000Z',
+    shift_end: '2026-05-01T11:00:00.000Z',
+    allocated_hours: 12,
+    status: 'ended',
+    check_in_status: 'checked_out',
+    total_worked_hours: 12.1,
+    pending_approvals: 3,
+    odoo_payload: JSON.stringify(planningPayload),
+  });
+  const harness = createAttendanceHarness({
+    shifts: [shift],
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+  });
+  installHarnessDb(harness, (cleanup) => t.after(cleanup));
+
+  const updated = await processEmployeeShift(planningPayload);
+
+  assert.equal(updated.id, 'shift-ended');
+  assert.equal(shift.status, 'ended');
+  assert.equal(shift.check_in_status, 'checked_out');
+  assert.equal(shift.total_worked_hours, 12.1);
+  assert.equal(shift.pending_approvals, 3);
+});
+
+test('processEmployeeShift preserves active and absent shift lifecycle fields on planning publish', async (t) => {
+  const planningPayload = {
+    id: 1870,
+    _id: 1870,
+    _model: 'planning.slot',
+    _action: 'Send Webhook Notification: Planning Shift Published(#1610)',
+    company_id: 12,
+    x_role_name: 'Straight Duty',
+    end_datetime: '2026-05-01 11:00:00',
+    x_role_color: 2,
+    x_website_key: 'website-user-1',
+    start_datetime: '2026-04-30 23:00:00',
+    x_employee_avatar: 'https://example.com/avatar.png',
+    x_employee_contact_name: '1066 - Charles Kent Pamintuan',
+  };
+  const activeShift = createShift({
+    id: 'shift-active',
+    odoo_shift_id: 1870,
+    branch_id: 'branch-main',
+    user_id: 'user-1',
+    employee_name: '1066 - Charles Kent Pamintuan',
+    employee_avatar_url: 'https://example.com/avatar.png',
+    duty_type: 'Straight Duty',
+    duty_color: 2,
+    status: 'active',
+    check_in_status: 'checked_in',
+    total_worked_hours: 1.5,
+    pending_approvals: 2,
+    odoo_payload: JSON.stringify(planningPayload),
+  });
+  const absentPayload = { ...planningPayload, id: 1871, _id: 1871 };
+  const absentShift = createShift({
+    id: 'shift-absent',
+    odoo_shift_id: 1871,
+    branch_id: 'branch-main',
+    user_id: 'user-1',
+    employee_name: '1066 - Charles Kent Pamintuan',
+    employee_avatar_url: 'https://example.com/avatar.png',
+    duty_type: 'Straight Duty',
+    duty_color: 2,
+    status: 'absent',
+    check_in_status: null,
+    total_worked_hours: 0,
+    pending_approvals: 0,
+    odoo_payload: JSON.stringify(absentPayload),
+  });
+  const harness = createAttendanceHarness({
+    shifts: [activeShift, absentShift],
+    websiteUserKey: 'website-user-1',
+    resolvedUserId: 'user-1',
+  });
+  installHarnessDb(harness, (cleanup) => t.after(cleanup));
+
+  await processEmployeeShift(planningPayload);
+  await processEmployeeShift(absentPayload);
+
+  assert.equal(activeShift.status, 'active');
+  assert.equal(activeShift.check_in_status, 'checked_in');
+  assert.equal(activeShift.total_worked_hours, 1.5);
+  assert.equal(activeShift.pending_approvals, 2);
+  assert.equal(absentShift.status, 'absent');
+  assert.equal(absentShift.check_in_status, null);
+  assert.equal(absentShift.total_worked_hours, 0);
+  assert.equal(absentShift.pending_approvals, 0);
 });
 
 test('createAttendanceProcessor creates a synthetic interim-duty shift for unlinked attendance on checkout', async (t) => {

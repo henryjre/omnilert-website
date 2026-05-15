@@ -77,6 +77,7 @@ const SHIFT_STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
   open: { label: 'Upcoming', cls: 'bg-blue-100 text-blue-700' },
   active: { label: 'Active', cls: 'bg-green-100 text-green-700' },
   ended: { label: 'Closed', cls: 'bg-red-100 text-red-700' },
+  absent: { label: 'Absent', cls: 'bg-gray-100 text-gray-700' },
   on_break: { label: 'On Break', cls: 'bg-gray-100 text-gray-700' },
   field_task: { label: 'Field Task', cls: 'bg-purple-100 text-purple-700' },
 };
@@ -1901,7 +1902,7 @@ const ShiftDetailPanel = memo(
 
 // --- Page ---
 
-type TabType = 'all' | 'open' | 'active' | 'ended';
+type TabType = 'all' | 'open' | 'active' | 'ended' | 'absent';
 
 interface Filters {
   employeeName: string;
@@ -2393,6 +2394,7 @@ export function EmployeeShiftsPage() {
     { id: 'open', label: 'Upcoming', icon: CalendarClock },
     { id: 'active', label: 'Active', icon: PlayCircle },
     { id: 'ended', label: 'Closed', icon: CircleCheck },
+    { id: 'absent', label: 'Absent', icon: XCircle },
   ];
 
   const pageSize = isMobile ? 6 : 12;

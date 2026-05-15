@@ -99,7 +99,8 @@ export type CronJobNotificationFamily =
   | 'service_crew_cctv'
   | 'epi_snapshot'
   | 'peer_evaluation_expiry'
-  | 'notification_retention';
+  | 'notification_retention'
+  | 'shift_absence';
 
 export interface CronJobNotificationJob {
   name: string;
