@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 process.env.JWT_SECRET ??= 'test-jwt-secret-12345';
@@ -70,4 +71,13 @@ test('mapBreakdownToRollingMetricSnapshot returns rolling metrics plus branch AO
     hygieneComplianceRate: 97.8,
     sopComplianceRate: 96.4,
   });
+});
+
+test('getEmployeeMetricDailySnapshots excludes archived and inactive employees', () => {
+  const source = readFileSync(new URL('./employeeAnalyticsSnapshot.service.ts', import.meta.url), 'utf8');
+
+  assert.match(
+    source,
+    /\.whereBetween\('s\.snapshot_date', \[startYmd, endYmd\]\)[\s\S]*\.where\('u\.is_active', true\)[\s\S]*\.where\('u\.employment_status', 'active'\)/,
+  );
 });

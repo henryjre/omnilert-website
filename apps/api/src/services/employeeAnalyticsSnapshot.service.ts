@@ -721,6 +721,8 @@ export async function getEmployeeMetricDailySnapshots(input: {
       's.calculation_version as calculationVersion',
     )
     .whereBetween('s.snapshot_date', [startYmd, endYmd])
+    .where('u.is_active', true)
+    .where('u.employment_status', 'active')
     .orderBy('s.snapshot_date', 'asc')
     .orderBy('s.user_id', 'asc');
 
