@@ -32,6 +32,10 @@ type ShiftAuthorizationExpiryRunnerDeps = {
   logError: (context: Record<string, unknown>, message: string) => void;
 };
 
+function toErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 const defaultShiftAuthorizationExpiryRunnerDeps: ShiftAuthorizationExpiryRunnerDeps = {
   now: () => new Date(),
   listPendingReasonRequiredAuthorizations: async () =>
@@ -92,6 +96,7 @@ export function createShiftAuthorizationExpiryRunner(
     let processed = 0;
     let succeeded = 0;
     let failed = 0;
+    const failures: Array<{ authId: string | null; error: string }> = [];
 
     try {
       const now = deps.now();
@@ -122,6 +127,10 @@ export function createShiftAuthorizationExpiryRunner(
           succeeded += 1;
         } catch (err) {
           failed += 1;
+          failures.push({
+            authId: typeof auth.id === 'string' ? auth.id : null,
+            error: toErrorMessage(err),
+          });
           deps.logError({ err, authId: auth.id }, 'Failed to process shift authorization expiry');
         }
       }
@@ -132,11 +141,17 @@ export function createShiftAuthorizationExpiryRunner(
     } catch (error) {
       deps.logError({ err: error }, 'Shift authorizations expiry cron run failed');
       failed += 1;
+      failures.push({
+        authId: null,
+        error: toErrorMessage(error),
+      });
     }
 
     const finishedAt = deps.now();
     const status: 'success' | 'failed' = failed > 0 ? 'failed' : 'success';
-    const errorMessage = failed > 0 ? `Failed processing ${failed} authorizations` : null;
+    const errorMessage = failed > 0
+      ? JSON.stringify({ failed, failures })
+      : null;
 
     await deps.notifyCronJobRun({
       jobName: SHIFT_AUTH_EXPIRY_JOB_NAME,

@@ -158,3 +158,52 @@ test('createShiftAuthorizationExpiryRunner auto-rejects expired missing-reason a
     skipped: 0,
   });
 });
+
+test('createShiftAuthorizationExpiryRunner includes underlying failure details in cron notification', async () => {
+  const now = new Date('2026-04-11T12:00:00.000Z');
+  const cronRuns: Array<Record<string, unknown>> = [];
+
+  const runExpiry = createShiftAuthorizationExpiryRunner({
+    now: () => now,
+    listPendingReasonRequiredAuthorizations: async () => [
+      {
+        id: 'auth-failing',
+        auth_type: 'early_check_in',
+        needs_employee_reason: true,
+        employee_reason: '',
+        status: 'pending',
+        shift_id: 'shift-failing',
+        created_at: '2026-04-10T10:00:00.000Z',
+      },
+    ],
+    rejectAuthorization: async () => {
+      throw new Error('Odoo request failed with 500');
+    },
+    notifyCronJobRun: async (input: Record<string, unknown>) => {
+      cronRuns.push(input);
+    },
+    reconcileManagedOvertime: async () => undefined,
+    logInfo: () => undefined,
+    logError: () => undefined,
+  } as any);
+
+  await runExpiry({ source: 'scheduled' });
+
+  assert.equal(cronRuns.length, 1);
+  assert.equal(cronRuns[0]?.status, 'failed');
+  assert.deepEqual(JSON.parse(String(cronRuns[0]?.errorMessage)), {
+    failed: 1,
+    failures: [
+      {
+        authId: 'auth-failing',
+        error: 'Odoo request failed with 500',
+      },
+    ],
+  });
+  assert.deepEqual(cronRuns[0]?.stats, {
+    processed: 1,
+    succeeded: 0,
+    failed: 1,
+    skipped: 0,
+  });
+});
