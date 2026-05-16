@@ -73,11 +73,15 @@ test('mapBreakdownToRollingMetricSnapshot returns rolling metrics plus branch AO
   });
 });
 
-test('getEmployeeMetricDailySnapshots excludes archived and inactive employees', () => {
+test('employee analytics snapshot reads exclude archived and inactive employees', () => {
   const source = readFileSync(new URL('./employeeAnalyticsSnapshot.service.ts', import.meta.url), 'utf8');
 
   assert.match(
     source,
     /\.whereBetween\('s\.snapshot_date', \[startYmd, endYmd\]\)[\s\S]*\.where\('u\.is_active', true\)[\s\S]*\.where\('u\.employment_status', 'active'\)/,
+  );
+  assert.match(
+    source,
+    /const q = dbConn\('users as u'\)[\s\S]*\.whereExists\(function\(\)[\s\S]*\.where\('u\.is_active', true\)[\s\S]*\.where\('u\.employment_status', 'active'\)[\s\S]*\.select\('u\.id', 'u\.first_name', 'u\.last_name', 'u\.avatar_url', 'u\.epi_score'\)/,
   );
 });

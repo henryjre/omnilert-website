@@ -608,6 +608,8 @@ async function fetchLiveSnapshotRows(
             .whereRaw('s.user_id = u.id')
             .where('s.snapshot_date', '>=', thirtyDaysAgoYmd);
         })
+        .where('u.is_active', true)
+        .where('u.employment_status', 'active')
         .select('u.id', 'u.first_name', 'u.last_name', 'u.avatar_url', 'u.epi_score');
       if (filterUserId) q.where('u.id', filterUserId);
       return q;
