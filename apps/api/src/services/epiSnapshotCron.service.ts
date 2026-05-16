@@ -10,7 +10,7 @@ import { generateEpiReportPdf, generateManagerSummaryPdf, type EpiReportData } f
 import { sendWeeklyEpiEmail, sendManagerEpiSummaryEmail } from './mail.service.js';
 import { runDailyEmployeeRollingMetricSnapshot } from './employeeAnalyticsSnapshot.service.js';
 import { getOdooEmployeeIdsByWebsiteKey } from './odooQuery.service.js';
-import { notifyCronJobRun } from './cronNotification.service.js';
+import { buildCronFailureErrorMessage, notifyCronJobRun } from './cronNotification.service.js';
 import type { CronJobNotificationStats } from '@omnilert/shared';
 
 const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
@@ -570,7 +570,16 @@ async function runScheduledJob(job: ScheduledSnapshotJob, scheduledFor: Date, so
       attempt: null,
       status: 'failed',
       message: 'EPI snapshot job failed',
-      errorMessage: error instanceof Error ? error.message : String(error),
+      errorMessage: buildCronFailureErrorMessage({
+        failed: 1,
+        failures: [
+          {
+            entityType: 'scheduled_job',
+            entityId: job.name,
+            error,
+          },
+        ],
+      }),
       stats: null,
     });
   }

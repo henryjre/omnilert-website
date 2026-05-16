@@ -1,5 +1,5 @@
 import { logger } from '../utils/logger.js';
-import { notifyCronJobRun } from './cronNotification.service.js';
+import { buildCronFailureErrorMessage, notifyCronJobRun } from './cronNotification.service.js';
 import {
   deleteNotificationsOlderThan,
   emitDeletedNotificationEvents,
@@ -73,7 +73,16 @@ export function createNotificationRetentionRunner(
       }
     } catch (error) {
       failed = 1;
-      errorMessage = 'Failed purging stale notifications';
+      errorMessage = buildCronFailureErrorMessage({
+        failed,
+        failures: [
+          {
+            entityType: 'cron_run',
+            entityId: null,
+            error,
+          },
+        ],
+      });
       deps.logError({ err: error }, 'Notification retention cron run failed');
     }
 

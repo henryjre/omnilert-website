@@ -1,6 +1,10 @@
 import { db } from '../config/database.js';
 import { logger } from '../utils/logger.js';
-import { notifyCronJobRun } from './cronNotification.service.js';
+import {
+  buildCronFailureErrorMessage,
+  notifyCronJobRun,
+  type CronJobFailureDetailInput,
+} from './cronNotification.service.js';
 import {
   EXPIRING_EMPLOYEE_REASON_AUTH_TYPES,
   createShiftAuthorizationRejectResolver,
@@ -31,10 +35,6 @@ type ShiftAuthorizationExpiryRunnerDeps = {
   logInfo: (context: Record<string, unknown>, message: string) => void;
   logError: (context: Record<string, unknown>, message: string) => void;
 };
-
-function toErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 const defaultShiftAuthorizationExpiryRunnerDeps: ShiftAuthorizationExpiryRunnerDeps = {
   now: () => new Date(),
@@ -96,7 +96,7 @@ export function createShiftAuthorizationExpiryRunner(
     let processed = 0;
     let succeeded = 0;
     let failed = 0;
-    const failures: Array<{ authId: string | null; error: string }> = [];
+    const failures: CronJobFailureDetailInput[] = [];
 
     try {
       const now = deps.now();
@@ -128,8 +128,9 @@ export function createShiftAuthorizationExpiryRunner(
         } catch (err) {
           failed += 1;
           failures.push({
-            authId: typeof auth.id === 'string' ? auth.id : null,
-            error: toErrorMessage(err),
+            entityType: 'shift_authorization',
+            entityId: typeof auth.id === 'string' ? auth.id : null,
+            error: err,
           });
           deps.logError({ err, authId: auth.id }, 'Failed to process shift authorization expiry');
         }
@@ -142,15 +143,16 @@ export function createShiftAuthorizationExpiryRunner(
       deps.logError({ err: error }, 'Shift authorizations expiry cron run failed');
       failed += 1;
       failures.push({
-        authId: null,
-        error: toErrorMessage(error),
+        entityType: 'cron_run',
+        entityId: null,
+        error,
       });
     }
 
     const finishedAt = deps.now();
     const status: 'success' | 'failed' = failed > 0 ? 'failed' : 'success';
     const errorMessage = failed > 0
-      ? JSON.stringify({ failed, failures })
+      ? buildCronFailureErrorMessage({ failed, failures })
       : null;
 
     await deps.notifyCronJobRun({

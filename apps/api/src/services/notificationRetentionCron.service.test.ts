@@ -94,7 +94,16 @@ test('createNotificationRetentionRunner reports scheduled failures when stale de
   assert.equal(cronRuns.length, 1);
   assert.equal(cronRuns[0]?.source, 'scheduled');
   assert.equal(cronRuns[0]?.status, 'failed');
-  assert.equal(cronRuns[0]?.errorMessage, 'Failed purging stale notifications');
+  assert.deepEqual(JSON.parse(String(cronRuns[0]?.errorMessage)), {
+    failed: 1,
+    failures: [
+      {
+        entityType: 'cron_run',
+        entityId: null,
+        error: 'database unavailable',
+      },
+    ],
+  });
   assert.deepEqual(cronRuns[0]?.stats, {
     processed: 0,
     succeeded: 0,

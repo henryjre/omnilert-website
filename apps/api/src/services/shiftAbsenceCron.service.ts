@@ -1,7 +1,11 @@
 import { db } from '../config/database.js';
 import { getIO } from '../config/socket.js';
 import { logger } from '../utils/logger.js';
-import { notifyCronJobRun } from './cronNotification.service.js';
+import {
+  buildCronFailureErrorMessage,
+  notifyCronJobRun,
+  type CronJobFailureDetailInput,
+} from './cronNotification.service.js';
 
 let cronHandle: NodeJS.Timeout | null = null;
 const SHIFT_ABSENCE_JOB_NAME = 'shift-absence-marker';
@@ -116,6 +120,7 @@ export function createShiftAbsenceRunner(overrides: Partial<ShiftAbsenceRunnerDe
     let succeeded = 0;
     let failed = 0;
     let skipped = 0;
+    const failures: CronJobFailureDetailInput[] = [];
 
     try {
       const now = deps.now();
@@ -135,6 +140,11 @@ export function createShiftAbsenceRunner(overrides: Partial<ShiftAbsenceRunnerDe
           succeeded += 1;
         } catch (err) {
           failed += 1;
+          failures.push({
+            entityType: 'shift',
+            entityId: shift.id,
+            error: err,
+          });
           deps.logError({ err, shiftId: shift.id }, 'Failed to mark shift absent');
         }
       }
@@ -147,6 +157,11 @@ export function createShiftAbsenceRunner(overrides: Partial<ShiftAbsenceRunnerDe
       }
     } catch (err) {
       failed += 1;
+      failures.push({
+        entityType: 'cron_run',
+        entityId: null,
+        error: err,
+      });
       deps.logError({ err }, 'Shift absence cron run failed');
     }
 
@@ -165,7 +180,9 @@ export function createShiftAbsenceRunner(overrides: Partial<ShiftAbsenceRunnerDe
         status === 'failed'
           ? 'Shift absence cron run failed'
           : 'Shift absence cron run completed',
-      errorMessage: status === 'failed' ? `Failed processing ${failed} shifts` : null,
+      errorMessage: status === 'failed'
+        ? buildCronFailureErrorMessage({ failed, failures })
+        : null,
       stats: {
         processed,
         succeeded,

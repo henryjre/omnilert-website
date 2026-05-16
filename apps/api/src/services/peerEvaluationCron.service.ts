@@ -1,7 +1,11 @@
 import { db } from '../config/database.js';
 import { getIO } from '../config/socket.js';
 import { logger } from '../utils/logger.js';
-import { notifyCronJobRun } from './cronNotification.service.js';
+import {
+  buildCronFailureErrorMessage,
+  notifyCronJobRun,
+  type CronJobFailureDetailInput,
+} from './cronNotification.service.js';
 
 let cronHandle: NodeJS.Timeout | null = null;
 const PEER_EVALUATION_EXPIRY_JOB_NAME = 'peer-evaluation-expiry';
@@ -19,7 +23,7 @@ export async function runPeerEvaluationExpiryRun(
   const startedAt = new Date();
   let companiesProcessed = 0;
   let companyFailures = 0;
-  const failedCompanyIds: string[] = [];
+  const failures: CronJobFailureDetailInput[] = [];
 
   const companies = await db.getDb()('companies')
     .where({ is_active: true })
@@ -124,7 +128,11 @@ export async function runPeerEvaluationExpiryRun(
       }
     } catch (error) {
       companyFailures += 1;
-      failedCompanyIds.push(String(company.id));
+      failures.push({
+        entityType: 'company',
+        entityId: String(company.id),
+        error,
+      });
       logger.error(
         { err: error, companyId: company.id },
         'Peer evaluation expiry cron failed for company',
@@ -139,7 +147,7 @@ export async function runPeerEvaluationExpiryRun(
   const succeededCompanyCount = Math.max(0, companiesProcessed - failedCompanyCount);
   const status: 'success' | 'failed' = failedCompanyCount > 0 ? 'failed' : 'success';
   const errorMessage = failedCompanyCount > 0
-    ? `Failed company IDs: ${failedCompanyIds.join(', ')}`
+    ? buildCronFailureErrorMessage({ failed: failedCompanyCount, failures })
     : null;
 
   await notifyCronJobRun({

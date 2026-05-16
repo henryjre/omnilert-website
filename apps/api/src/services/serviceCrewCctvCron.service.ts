@@ -13,7 +13,7 @@ import {
   createServiceCrewCctvOccurrenceExecutor,
   type ServiceCrewCctvRunOutcome,
 } from './serviceCrewCctvCronRuntime.js';
-import { notifyCronJobRun } from './cronNotification.service.js';
+import { buildCronFailureErrorMessage, notifyCronJobRun } from './cronNotification.service.js';
 
 let scheduledHandle: NodeJS.Timeout | null = null;
 let initialized = false;
@@ -420,7 +420,18 @@ const executeServiceCrewCctvOccurrence = createServiceCrewCctvOccurrenceExecutor
       attempt: null,
       status: result.status,
       message: result.message,
-      errorMessage: result.errorMessage ?? null,
+      errorMessage: result.status === 'failed' && result.errorMessage
+        ? buildCronFailureErrorMessage({
+          failed: 1,
+          failures: [
+            {
+              entityType: 'scheduled_job',
+              entityId: SERVICE_CREW_CCTV_HOURLY_JOB_NAME,
+              error: result.errorMessage,
+            },
+          ],
+        })
+        : null,
       stats: result.stats ?? null,
     });
   },

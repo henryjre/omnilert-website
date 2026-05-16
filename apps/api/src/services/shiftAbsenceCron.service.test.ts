@@ -189,3 +189,53 @@ test('createShiftAbsenceRunner is idempotent after a shift is marked absent', as
     skipped: 0,
   });
 });
+
+test('createShiftAbsenceRunner includes underlying failure details in cron notification', async () => {
+  const now = new Date('2026-05-01T12:00:00.000Z');
+  const cronRuns: Array<Record<string, unknown>> = [];
+
+  const runAbsence = createShiftAbsenceRunner({
+    now: () => now,
+    listAbsentCandidates: async () => [
+      {
+        id: 'shift-failing',
+        company_id: 'company-1',
+        branch_id: 'branch-1',
+        user_id: 'user-1',
+        status: 'open',
+      },
+    ],
+    markShiftAbsent: async () => {
+      throw new Error('shift update timed out');
+    },
+    createAbsenceLog: async () => ({}),
+    emitSocketEvent: () => undefined,
+    notifyCronJobRun: async (input: Record<string, unknown>) => {
+      cronRuns.push(input);
+      return { status: 'skipped', reason: 'non_production' } as const;
+    },
+    logInfo: () => undefined,
+    logError: () => undefined,
+  } as any);
+
+  await runAbsence({ source: 'scheduled' });
+
+  assert.equal(cronRuns.length, 1);
+  assert.equal(cronRuns[0]?.status, 'failed');
+  assert.deepEqual(JSON.parse(String(cronRuns[0]?.errorMessage)), {
+    failed: 1,
+    failures: [
+      {
+        entityType: 'shift',
+        entityId: 'shift-failing',
+        error: 'shift update timed out',
+      },
+    ],
+  });
+  assert.deepEqual(cronRuns[0]?.stats, {
+    processed: 1,
+    succeeded: 0,
+    failed: 1,
+    skipped: 0,
+  });
+});

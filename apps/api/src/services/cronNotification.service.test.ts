@@ -14,6 +14,7 @@ process.env.OPENAI_ORGANIZATION_ID ??= 'test-openai-org';
 process.env.OPENAI_PROJECT_ID ??= 'test-openai-project';
 
 const {
+  buildCronFailureErrorMessage,
   buildCronJobNotificationPayload,
   createCronJobNotifier,
   shouldSendCronJobNotification,
@@ -93,6 +94,54 @@ test('buildCronJobNotificationPayload produces the universal success payload sha
       timezone: 'Asia/Manila',
     },
   });
+});
+
+test('buildCronFailureErrorMessage produces the structured failure details string', () => {
+  const errorMessage = buildCronFailureErrorMessage({
+    failed: 2,
+    failures: [
+      {
+        entityType: 'shift_authorization',
+        entityId: 'auth-1',
+        error: new Error('Odoo request failed with 500'),
+      },
+      {
+        entityType: 'cron_run',
+        entityId: null,
+        error: 'database unavailable',
+      },
+    ],
+  });
+
+  assert.deepEqual(JSON.parse(errorMessage), {
+    failed: 2,
+    failures: [
+      {
+        entityType: 'shift_authorization',
+        entityId: 'auth-1',
+        error: 'Odoo request failed with 500',
+      },
+      {
+        entityType: 'cron_run',
+        entityId: null,
+        error: 'database unavailable',
+      },
+    ],
+  });
+});
+
+test('buildCronFailureErrorMessage defaults failed count to failure detail length', () => {
+  const errorMessage = buildCronFailureErrorMessage({
+    failures: [
+      {
+        entityType: 'scheduled_job',
+        entityId: 'epi-weekly-snapshot',
+        error: 'snapshot failed',
+      },
+    ],
+  });
+
+  assert.equal(JSON.parse(errorMessage).failed, 1);
 });
 
 test('shouldSendCronJobNotification enforces production-only and status/source policy', () => {
@@ -252,7 +301,16 @@ test('createCronJobNotifier retries webhook failures and remains non-throwing', 
     attempt: null,
     status: 'failed',
     message: 'Peer evaluation expiry cron run failed',
-    errorMessage: 'Failed company IDs: company-1',
+    errorMessage: buildCronFailureErrorMessage({
+      failed: 1,
+      failures: [
+        {
+          entityType: 'company',
+          entityId: 'company-1',
+          error: 'Peer evaluation expiry failed',
+        },
+      ],
+    }),
     stats: {
       processed: 4,
       succeeded: 3,
@@ -265,4 +323,3 @@ test('createCronJobNotifier retries webhook failures and remains non-throwing', 
   assert.equal(attempts, 4);
   assert.equal(logger.errors.length, 1);
 });
-

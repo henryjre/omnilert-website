@@ -195,7 +195,8 @@ test('createShiftAuthorizationExpiryRunner includes underlying failure details i
     failed: 1,
     failures: [
       {
-        authId: 'auth-failing',
+        entityType: 'shift_authorization',
+        entityId: 'auth-failing',
         error: 'Odoo request failed with 500',
       },
     ],

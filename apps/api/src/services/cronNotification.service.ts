@@ -41,6 +41,12 @@ export type NotifyCronJobRunInput = {
   stats?: Partial<CronJobNotificationStats> | null;
 };
 
+export type CronJobFailureDetailInput = {
+  entityType: string;
+  entityId?: string | null;
+  error: unknown;
+};
+
 type ShouldSendCronJobNotificationInput = {
   environment: 'development' | 'production' | 'test';
   jobName: string;
@@ -87,9 +93,25 @@ function normalizeStats(stats: Partial<CronJobNotificationStats> | null | undefi
   };
 }
 
-function toErrorMessage(error: unknown): string {
+export function toErrorMessage(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error);
   return raw.slice(0, 4000);
+}
+
+export function buildCronFailureErrorMessage(input: {
+  failed?: number | null;
+  failures: CronJobFailureDetailInput[];
+}): string {
+  const failures = input.failures.map((failure) => ({
+    entityType: toErrorMessage(failure.entityType),
+    entityId: failure.entityId ?? null,
+    error: toErrorMessage(failure.error),
+  }));
+
+  return JSON.stringify({
+    failed: normalizeNumber(input.failed) ?? failures.length,
+    failures,
+  });
 }
 
 export function shouldSendCronJobNotification(
