@@ -58,5 +58,5 @@ export function deriveOvertimeMinutes(input: {
     }
   }
 
-  return Math.max(0, paidMinutes - allocatedMinutes);
+  return Math.max(0, Math.round(paidMinutes - allocatedMinutes));
 }

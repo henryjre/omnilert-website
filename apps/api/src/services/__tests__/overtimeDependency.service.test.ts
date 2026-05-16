@@ -95,4 +95,14 @@ describe('deriveOvertimeMinutes', () => {
     });
     expect(minutes).toBe(0);
   });
+
+  it('rounds decimal hour calculations to whole minutes for integer persistence', () => {
+    const minutes = deriveOvertimeMinutes({
+      totalWorkedHours: 9.32,
+      totalBreakHours: 1,
+      allocatedHours: 7,
+      resolvedAdjustments: [],
+    });
+    expect(minutes).toBe(79);
+  });
 });
